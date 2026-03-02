@@ -1,0 +1,20 @@
+import asyncio
+import logging
+
+from app.worker.delivery_worker import run_delivery_loop
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+logger = logging.getLogger("nekonoverse.worker")
+
+
+async def run_worker():
+    logger.info("Nekonoverse worker started")
+    await run_delivery_loop()
+
+
+def main():
+    asyncio.run(run_worker())
+
+
+if __name__ == "__main__":
+    main()

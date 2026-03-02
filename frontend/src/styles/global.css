@@ -1,0 +1,361 @@
+:root {
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-card: #0f3460;
+  --text-primary: #e0e0e0;
+  --text-secondary: #a0a0b0;
+  --accent: #e94560;
+  --accent-hover: #ff6b81;
+  --border: #2a2a4a;
+  --radius: 8px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+  line-height: 1.6;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+a:hover {
+  color: var(--accent-hover);
+}
+
+.page-container {
+  max-width: 600px;
+  margin: 40px auto;
+  padding: 0 20px;
+}
+
+.auth-form {
+  background: var(--bg-secondary);
+  padding: 32px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.auth-form h2 {
+  margin-bottom: 24px;
+}
+
+.auth-form .field {
+  margin-bottom: 16px;
+}
+
+.auth-form label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.auth-form input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 16px;
+}
+
+.auth-form input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.auth-form button {
+  width: 100%;
+  padding: 12px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  font-size: 16px;
+  cursor: pointer;
+  margin-top: 8px;
+}
+
+.auth-form button:hover {
+  background: var(--accent-hover);
+}
+
+.auth-form button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.auth-form .error {
+  background: rgba(233, 69, 96, 0.15);
+  color: var(--accent);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  margin-bottom: 16px;
+  font-size: 14px;
+}
+
+.auth-form .alt-action {
+  margin-top: 16px;
+  text-align: center;
+  color: var(--text-secondary);
+  font-size: 14px;
+}
+
+.home-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+}
+
+.btn {
+  display: inline-block;
+  padding: 10px 24px;
+  background: var(--accent);
+  color: white;
+  border-radius: var(--radius);
+  font-size: 16px;
+}
+
+.btn:hover {
+  background: var(--accent-hover);
+  color: white;
+}
+
+.btn-secondary {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+}
+
+.btn-secondary:hover {
+  background: var(--bg-secondary);
+}
+
+/* Note Composer */
+.note-composer {
+  background: var(--bg-secondary);
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin-bottom: 24px;
+}
+
+.note-composer textarea {
+  width: 100%;
+  padding: 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 15px;
+  font-family: inherit;
+  resize: vertical;
+  min-height: 80px;
+}
+
+.note-composer textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.composer-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.char-count {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.composer-footer button {
+  padding: 8px 20px;
+  background: var(--accent);
+  color: white;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 14px;
+}
+
+.composer-footer button:hover {
+  background: var(--accent-hover);
+}
+
+.composer-footer button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Timeline */
+.timeline {
+  margin-top: 24px;
+}
+
+.timeline h2 {
+  margin-bottom: 16px;
+  font-size: 18px;
+}
+
+.timeline .empty {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 40px 0;
+}
+
+/* Note Card */
+.note-card {
+  background: var(--bg-secondary);
+  padding: 16px;
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+  margin-bottom: 8px;
+}
+
+.note-header {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.note-display-name {
+  font-size: 15px;
+}
+
+.note-handle {
+  font-size: 13px;
+  color: var(--text-secondary);
+}
+
+.note-time {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-left: auto;
+}
+
+.note-content {
+  font-size: 15px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.note-content a {
+  color: var(--accent);
+}
+
+/* Reactions */
+.note-reactions {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+}
+
+.reaction-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.reaction-badge:hover {
+  border-color: var(--accent);
+}
+
+.reaction-me {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.15);
+}
+
+.error {
+  background: rgba(233, 69, 96, 0.15);
+  color: var(--accent);
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  font-size: 14px;
+}
+
+/* Reaction Bar */
+.reaction-bar {
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  position: relative;
+}
+
+.reaction-add-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  background: var(--bg-primary);
+  border: 1px dashed var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 16px;
+}
+
+.reaction-add-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* Emoji Picker */
+.emoji-picker {
+  position: absolute;
+  bottom: 36px;
+  left: 0;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px;
+  z-index: 100;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+}
+
+.emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 4px;
+}
+
+.emoji-btn {
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 20px;
+}
+
+.emoji-btn:hover {
+  background: var(--bg-secondary);
+}
