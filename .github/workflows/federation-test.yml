@@ -1,0 +1,38 @@
+name: Federation Test
+
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    branches: [main, master]
+
+jobs:
+  federation-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start services
+        run: docker compose -f docker-compose.federation.yml up -d --build --wait
+        timeout-minutes: 8
+
+      - name: Run federation tests
+        run: docker compose -f docker-compose.federation.yml run --rm test-runner
+
+      - name: Collect logs
+        if: always()
+        run: |
+          docker compose -f docker-compose.federation.yml logs app-a app-b worker-a worker-b > federation-logs.txt 2>&1
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: federation-logs
+          path: federation-logs.txt
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.federation.yml down -v

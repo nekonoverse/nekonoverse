@@ -85,10 +85,9 @@ async def authorize_form(
         </body></html>
         """)
 
-    from app.valkey_client import valkey_pool
+    from app.valkey_client import valkey
 
-    async with valkey_pool.client() as conn:
-        user_id_str = await conn.get(f"session:{session_id}")
+    user_id_str = await valkey.get(f"session:{session_id}")
     if not user_id_str:
         raise HTTPException(status_code=401, detail="Session expired")
 

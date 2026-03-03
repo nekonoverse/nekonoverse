@@ -247,15 +247,14 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
     # Idempotency check via Valkey
     activity_id = activity.get("id")
     if activity_id:
-        from app.valkey_client import valkey_pool
+        from app.valkey_client import valkey
 
-        async with valkey_pool.client() as conn:
-            already_seen = await conn.set(
-                f"seen_activity:{activity_id}", "1", nx=True, ex=86400
-            )
-            if not already_seen:
-                logger.info("Duplicate activity %s, skipping", activity_id)
-                return
+        already_seen = await valkey.set(
+            f"seen_activity:{activity_id}", "1", nx=True, ex=86400
+        )
+        if not already_seen:
+            logger.info("Duplicate activity %s, skipping", activity_id)
+            return
 
     from app.activitypub.handlers import create, delete, follow, like, undo
 

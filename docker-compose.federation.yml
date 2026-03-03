@@ -1,0 +1,185 @@
+services:
+  # ── Instance A ──────────────────────────────────────────────
+  postgres-a:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - federation
+
+  valkey-a:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - federation
+
+  app-a:
+    build: ./backend
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-a:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-a:6379/0
+      DOMAIN: instance-a
+      SECRET_KEY: test-secret-key-a
+      DEBUG: "true"
+    depends_on:
+      postgres-a:
+        condition: service_healthy
+      valkey-a:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - federation
+
+  worker-a:
+    build: ./backend
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-a:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-a:6379/0
+      DOMAIN: instance-a
+      SECRET_KEY: test-secret-key-a
+      DEBUG: "true"
+    depends_on:
+      app-a:
+        condition: service_healthy
+    networks:
+      - federation
+
+  nginx-a:
+    image: nginx:alpine
+    environment:
+      BACKEND_HOST: app-a
+    volumes:
+      - ./tests/federation/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    entrypoint: /bin/sh
+    command: >
+      -c "envsubst '$$BACKEND_HOST' < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    depends_on:
+      app-a:
+        condition: service_healthy
+    networks:
+      federation:
+        aliases:
+          - instance-a
+
+  # ── Instance B ──────────────────────────────────────────────
+  postgres-b:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - federation
+
+  valkey-b:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - federation
+
+  app-b:
+    build: ./backend
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-b:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-b:6379/0
+      DOMAIN: instance-b
+      SECRET_KEY: test-secret-key-b
+      DEBUG: "true"
+    depends_on:
+      postgres-b:
+        condition: service_healthy
+      valkey-b:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - federation
+
+  worker-b:
+    build: ./backend
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-b:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-b:6379/0
+      DOMAIN: instance-b
+      SECRET_KEY: test-secret-key-b
+      DEBUG: "true"
+    depends_on:
+      app-b:
+        condition: service_healthy
+    networks:
+      - federation
+
+  nginx-b:
+    image: nginx:alpine
+    environment:
+      BACKEND_HOST: app-b
+    volumes:
+      - ./tests/federation/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    entrypoint: /bin/sh
+    command: >
+      -c "envsubst '$$BACKEND_HOST' < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    depends_on:
+      app-b:
+        condition: service_healthy
+    networks:
+      federation:
+        aliases:
+          - instance-b
+
+  # ── Test Runner ─────────────────────────────────────────────
+  test-runner:
+    profiles: ["test"]
+    build: ./tests/federation
+    environment:
+      INSTANCE_A_URL: http://instance-a
+      INSTANCE_B_URL: http://instance-b
+      INSTANCE_A_DOMAIN: instance-a
+      INSTANCE_B_DOMAIN: instance-b
+    depends_on:
+      nginx-a:
+        condition: service_started
+      nginx-b:
+        condition: service_started
+      worker-a:
+        condition: service_started
+      worker-b:
+        condition: service_started
+    networks:
+      - federation
+
+networks:
+  federation:
+    driver: bridge

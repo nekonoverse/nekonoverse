@@ -42,7 +42,7 @@ class Actor(Base):
     )
     last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    local_user = relationship("User", back_populates="actor", uselist=False)
+    local_user = relationship("User", back_populates="actor", uselist=False, lazy="selectin")
     notes = relationship("Note", back_populates="actor")
     reactions = relationship("Reaction", back_populates="actor")
 

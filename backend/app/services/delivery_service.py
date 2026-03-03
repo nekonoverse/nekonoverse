@@ -25,9 +25,8 @@ async def enqueue_delivery(
     await db.commit()
 
     # Notify worker via Valkey
-    from app.valkey_client import valkey_pool
+    from app.valkey_client import valkey
 
-    async with valkey_pool.client() as conn:
-        await conn.lpush("delivery:queue", str(job.id))
+    await valkey.lpush("delivery:queue", str(job.id))
 
     return job

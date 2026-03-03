@@ -16,7 +16,7 @@ from app.database import async_session
 from app.models.actor import Actor
 from app.models.delivery import DeliveryJob
 from app.models.user import User
-from app.valkey_client import valkey_pool
+from app.valkey_client import valkey as valkey_client
 
 logger = logging.getLogger(__name__)
 
@@ -123,8 +123,7 @@ async def run_delivery_loop():
             had_work = await process_jobs()
             if not had_work:
                 # Wait for notification from Valkey
-                async with valkey_pool.client() as conn:
-                    result = await conn.brpop("delivery:queue", timeout=5)
+                result = await valkey_client.brpop("delivery:queue", timeout=5)
                     # result is discarded -- we just use it as a wake-up signal
         except Exception:
             logger.exception("Error in delivery worker loop")

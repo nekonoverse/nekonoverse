@@ -1,6 +1,6 @@
 import uuid
 
-from passlib.hash import bcrypt
+import bcrypt as _bcrypt
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -53,7 +53,7 @@ async def create_user(
     # Create user
     user = User(
         email=email,
-        password_hash=bcrypt.hash(password),
+        password_hash=_bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode(),
         actor_id=actor_id,
         private_key_pem=private_pem,
     )
@@ -70,7 +70,7 @@ async def authenticate_user(db: AsyncSession, email: str, password: str) -> User
     user = result.scalar_one_or_none()
     if user is None:
         return None
-    if not bcrypt.verify(password, user.password_hash):
+    if not _bcrypt.checkpw(password.encode(), user.password_hash.encode()):
         return None
     return user
 

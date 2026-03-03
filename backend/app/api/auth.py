@@ -51,12 +51,10 @@ async def login(
     if user is None:
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    # Store session in Valkey (import lazily to avoid startup issues)
-    from app.valkey_client import valkey_pool
+    from app.valkey_client import valkey
 
     session_id = uuid.uuid4().hex
-    async with valkey_pool.client() as conn:
-        await conn.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
+    await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
 
     response.set_cookie(
         SESSION_COOKIE,
@@ -72,10 +70,9 @@ async def login(
 async def logout(request: Request, response: Response):
     session_id = get_session_id(request)
     if session_id:
-        from app.valkey_client import valkey_pool
+        from app.valkey_client import valkey
 
-        async with valkey_pool.client() as conn:
-            await conn.delete(f"session:{session_id}")
+        await valkey.delete(f"session:{session_id}")
     response.delete_cookie(SESSION_COOKIE)
     return {"ok": True}
 
@@ -89,10 +86,9 @@ async def verify_credentials(
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    from app.valkey_client import valkey_pool
+    from app.valkey_client import valkey
 
-    async with valkey_pool.client() as conn:
-        user_id_str = await conn.get(f"session:{session_id}")
+    user_id_str = await valkey.get(f"session:{session_id}")
     if not user_id_str:
         raise HTTPException(status_code=401, detail="Session expired")
 

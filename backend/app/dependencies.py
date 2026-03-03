@@ -22,10 +22,9 @@ async def get_current_user(
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
 
-    from app.valkey_client import valkey_pool
+    from app.valkey_client import valkey
 
-    async with valkey_pool.client() as conn:
-        user_id_str = await conn.get(f"session:{session_id}")
+    user_id_str = await valkey.get(f"session:{session_id}")
     if not user_id_str:
         raise HTTPException(status_code=401, detail="Session expired")
 
@@ -44,10 +43,9 @@ async def get_optional_user(
     if not session_id:
         return None
 
-    from app.valkey_client import valkey_pool
+    from app.valkey_client import valkey
 
-    async with valkey_pool.client() as conn:
-        user_id_str = await conn.get(f"session:{session_id}")
+    user_id_str = await valkey.get(f"session:{session_id}")
     if not user_id_str:
         return None
 

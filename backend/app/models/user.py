@@ -31,5 +31,5 @@ class User(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
 
-    actor = relationship("Actor", back_populates="local_user")
+    actor = relationship("Actor", back_populates="local_user", lazy="selectin")
     oauth_tokens = relationship("OAuthToken", back_populates="user")
