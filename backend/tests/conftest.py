@@ -1,0 +1,152 @@
+import os
+import uuid
+from collections.abc import AsyncGenerator
+from unittest.mock import AsyncMock, patch
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import event
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+
+# Override settings BEFORE importing any app modules
+os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://nekonoverse:changeme@localhost:5432/nekonoverse_test")
+os.environ.setdefault("VALKEY_URL", "valkey://localhost:6379/1")
+os.environ.setdefault("DOMAIN", "localhost")
+os.environ.setdefault("SECRET_KEY", "test-secret-key")
+os.environ.setdefault("DEBUG", "true")
+os.environ.setdefault("REGISTRATION_OPEN", "true")
+
+# Import all models so relationships resolve
+import app.models.actor  # noqa: F401
+import app.models.delivery  # noqa: F401
+import app.models.follow  # noqa: F401
+import app.models.note  # noqa: F401
+import app.models.oauth  # noqa: F401
+import app.models.reaction  # noqa: F401
+import app.models.user  # noqa: F401
+from app.models.base import Base
+
+
+TEST_DATABASE_URL = os.environ["DATABASE_URL"]
+
+
+@pytest.fixture(scope="session")
+async def db_engine():
+    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await engine.dispose()
+
+
+@pytest.fixture
+async def db(db_engine) -> AsyncGenerator[AsyncSession, None]:
+    async with db_engine.connect() as connection:
+        trans = await connection.begin()
+        session = AsyncSession(bind=connection, expire_on_commit=False)
+
+        # Start a nested (savepoint) transaction so that application code's
+        # commit() only commits the savepoint, not the outer transaction.
+        nested = await connection.begin_nested()
+
+        @event.listens_for(session.sync_session, "after_transaction_end")
+        def restart_savepoint(sess, transaction):
+            if transaction.nested and not transaction._parent.nested:
+                sess.begin_nested()
+
+        yield session
+
+        await session.close()
+        await trans.rollback()
+
+
+@pytest.fixture
+def mock_valkey():
+    mock = AsyncMock()
+    mock.get = AsyncMock(return_value=None)
+    mock.set = AsyncMock(return_value=True)
+    mock.lpush = AsyncMock(return_value=1)
+    mock.delete = AsyncMock(return_value=1)
+    mock.brpop = AsyncMock(return_value=None)
+    with patch("app.valkey_client.valkey", mock):
+        yield mock
+
+
+@pytest.fixture
+async def app_client(db, mock_valkey) -> AsyncGenerator[AsyncClient, None]:
+    from app.dependencies import get_db
+    from app.main import app
+
+    async def override_get_db():
+        yield db
+
+    app.dependency_overrides[get_db] = override_get_db
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+        yield client
+    app.dependency_overrides.clear()
+
+
+@pytest.fixture
+async def test_user(db):
+    from app.services.user_service import create_user
+    return await create_user(db, "testuser", "test@example.com", "password1234", display_name="Test User")
+
+
+@pytest.fixture
+async def test_user_b(db):
+    from app.services.user_service import create_user
+    return await create_user(db, "testuser_b", "testb@example.com", "password1234", display_name="Test User B")
+
+
+@pytest.fixture
+async def authed_client(app_client, test_user, mock_valkey):
+    session_id = "test-session-id"
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", session_id)
+    return app_client
+
+
+async def make_remote_actor(db, *, username="remote", domain="remote.example"):
+    from app.models.actor import Actor
+    from app.utils.crypto import generate_rsa_keypair
+    _, public_pem = generate_rsa_keypair()
+    actor = Actor(
+        ap_id=f"http://{domain}/users/{username}",
+        username=username,
+        domain=domain,
+        display_name=username.title(),
+        inbox_url=f"http://{domain}/users/{username}/inbox",
+        outbox_url=f"http://{domain}/users/{username}/outbox",
+        shared_inbox_url=f"http://{domain}/inbox",
+        followers_url=f"http://{domain}/users/{username}/followers",
+        public_key_pem=public_pem,
+    )
+    db.add(actor)
+    await db.flush()
+    return actor
+
+
+async def make_note(db, actor, *, content="Hello world", visibility="public", local=True):
+    from app.models.note import Note
+    from app.utils.sanitize import text_to_html
+    note_id = uuid.uuid4()
+    public = "https://www.w3.org/ns/activitystreams#Public"
+    to_list = [public] if visibility == "public" else []
+    cc_list = [actor.followers_url or ""] if visibility == "public" else []
+    note = Note(
+        id=note_id,
+        ap_id=f"http://localhost/notes/{note_id}",
+        actor_id=actor.id,
+        content=text_to_html(content),
+        source=content,
+        visibility=visibility,
+        to=to_list,
+        cc=cc_list,
+        local=local,
+    )
+    db.add(note)
+    await db.flush()
+    return note

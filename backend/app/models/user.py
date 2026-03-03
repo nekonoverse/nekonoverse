@@ -19,7 +19,7 @@ class User(Base):
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actors.id"), unique=True, nullable=False
     )
-    is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    role: Mapped[str] = mapped_column(String(20), default="user", server_default="user", nullable=False)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     private_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
@@ -33,3 +33,15 @@ class User(Base):
 
     actor = relationship("Actor", back_populates="local_user", lazy="selectin")
     oauth_tokens = relationship("OAuthToken", back_populates="user")
+
+    @property
+    def is_admin(self) -> bool:
+        return self.role == "admin"
+
+    @property
+    def is_moderator(self) -> bool:
+        return self.role == "moderator"
+
+    @property
+    def is_staff(self) -> bool:
+        return self.role in ("admin", "moderator")

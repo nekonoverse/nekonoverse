@@ -34,6 +34,7 @@ services:
       DOMAIN: instance-a
       SECRET_KEY: test-secret-key-a
       DEBUG: "true"
+      REGISTRATION_OPEN: "true"
     depends_on:
       postgres-a:
         condition: service_healthy
@@ -56,6 +57,7 @@ services:
       DOMAIN: instance-a
       SECRET_KEY: test-secret-key-a
       DEBUG: "true"
+      REGISTRATION_OPEN: "true"
     depends_on:
       app-a:
         condition: service_healthy
@@ -114,6 +116,7 @@ services:
       DOMAIN: instance-b
       SECRET_KEY: test-secret-key-b
       DEBUG: "true"
+      REGISTRATION_OPEN: "true"
     depends_on:
       postgres-b:
         condition: service_healthy
@@ -136,6 +139,7 @@ services:
       DOMAIN: instance-b
       SECRET_KEY: test-secret-key-b
       DEBUG: "true"
+      REGISTRATION_OPEN: "true"
     depends_on:
       app-b:
         condition: service_healthy

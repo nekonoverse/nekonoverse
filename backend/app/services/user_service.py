@@ -16,6 +16,7 @@ async def create_user(
     email: str,
     password: str,
     display_name: str | None = None,
+    role: str = "user",
 ) -> User:
     # Check if username or email already exists
     existing_actor = await db.execute(
@@ -55,6 +56,7 @@ async def create_user(
         email=email,
         password_hash=_bcrypt.hashpw(password.encode(), _bcrypt.gensalt()).decode(),
         actor_id=actor_id,
+        role=role,
         private_key_pem=private_pem,
     )
     db.add(user)
@@ -65,11 +67,14 @@ async def create_user(
     return user
 
 
-async def authenticate_user(db: AsyncSession, email: str, password: str) -> User | None:
-    result = await db.execute(select(User).where(User.email == email))
-    user = result.scalar_one_or_none()
-    if user is None:
+async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
+    result = await db.execute(
+        select(Actor).where(Actor.username == username, Actor.domain.is_(None))
+    )
+    actor = result.scalar_one_or_none()
+    if actor is None or actor.local_user is None:
         return None
+    user = actor.local_user
     if not _bcrypt.checkpw(password.encode(), user.password_hash.encode()):
         return None
     return user

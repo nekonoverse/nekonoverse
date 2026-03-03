@@ -35,10 +35,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     command: >
-      uvicorn app.main:app
-      --host 0.0.0.0
-      --port 8000
-      --reload
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
       VALKEY_URL: valkey://valkey:6379/0
@@ -81,7 +78,7 @@ services:
     restart: unless-stopped
     command: npx --yes vite dev --host 0.0.0.0 --port 3000
     environment:
-      VITE_API_URL: http://localhost:8000
+      VITE_API_URL: ""
     volumes:
       - ./frontend:/app
       - /app/node_modules

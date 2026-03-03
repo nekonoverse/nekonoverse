@@ -12,7 +12,7 @@ class UserRegisterRequest(BaseModel):
 
 
 class UserLoginRequest(BaseModel):
-    email: EmailStr
+    username: str
     password: str
 
 
@@ -23,6 +23,7 @@ class UserResponse(BaseModel):
     avatar_url: str | None
     header_url: str | None
     summary: str | None
+    role: str = "user"
     created_at: datetime
 
     model_config = {"from_attributes": True}

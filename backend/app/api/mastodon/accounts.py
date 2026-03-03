@@ -55,26 +55,6 @@ async def unfollow(
     return {"ok": True}
 
 
-@router.get("/{actor_id}")
-async def get_account(actor_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
-    result = await db.execute(select(Actor).where(Actor.id == actor_id))
-    actor = result.scalar_one_or_none()
-    if not actor:
-        raise HTTPException(status_code=404, detail="Actor not found")
-
-    return {
-        "id": str(actor.id),
-        "username": actor.username,
-        "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
-        "display_name": actor.display_name,
-        "note": actor.summary or "",
-        "avatar": actor.avatar_url or "",
-        "header": actor.header_url or "",
-        "url": actor.ap_id,
-        "created_at": actor.created_at.isoformat(),
-    }
-
-
 @router.get("/lookup")
 async def lookup_account(
     acct: str,
@@ -100,4 +80,24 @@ async def lookup_account(
         "display_name": actor.display_name,
         "note": actor.summary or "",
         "url": actor.ap_id,
+    }
+
+
+@router.get("/{actor_id}")
+async def get_account(actor_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    actor = result.scalar_one_or_none()
+    if not actor:
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    return {
+        "id": str(actor.id),
+        "username": actor.username,
+        "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
+        "display_name": actor.display_name,
+        "note": actor.summary or "",
+        "avatar": actor.avatar_url or "",
+        "header": actor.header_url or "",
+        "url": actor.ap_id,
+        "created_at": actor.created_at.isoformat(),
     }

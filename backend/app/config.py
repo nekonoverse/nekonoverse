@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     domain: str = "localhost"
     secret_key: str = "change-this-to-a-random-secret-key"
     debug: bool = True
+    registration_open: bool = False
 
     @property
     def server_url(self) -> str:

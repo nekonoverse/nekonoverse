@@ -45,6 +45,39 @@ _EMOJI_PATTERN = re.compile(
 )
 
 
+def _is_single_emoji_sequence(text: str) -> bool:
+    """Check if text is a single emoji sequence (handles ZWJ, flags, skin tones)."""
+    if not text:
+        return False
+
+    # Check if it contains ZWJ — if so, it's a compound emoji (e.g. family)
+    if "\u200d" in text:
+        # All non-ZWJ, non-modifier chars should be emoji
+        return True
+
+    # Count base emoji characters (excluding modifiers and variation selectors)
+    count = 0
+    i = 0
+    while i < len(text):
+        cp = ord(text[i])
+        # Skip variation selectors and other modifiers
+        if cp in (0xFE0F, 0xFE0E, 0x20E3) or 0x200B <= cp <= 0x200F:
+            i += 1
+            continue
+        if 0x1F3FB <= cp <= 0x1F3FF:  # Skin tone modifiers
+            i += 1
+            continue
+        # Regional indicators come in pairs for flags
+        if 0x1F1E0 <= cp <= 0x1F1FF:
+            if i + 1 < len(text) and 0x1F1E0 <= ord(text[i + 1]) <= 0x1F1FF:
+                count += 1
+                i += 2
+                continue
+        count += 1
+        i += 1
+    return count == 1
+
+
 def is_single_emoji(text: str) -> bool:
     """Check if a string is a single emoji (possibly a compound one with ZWJ)."""
     if not text or len(text) > 20:
@@ -56,7 +89,7 @@ def is_single_emoji(text: str) -> bool:
 
     # Use the pattern for common emoji
     if _EMOJI_PATTERN.match(text):
-        return True
+        return _is_single_emoji_sequence(text)
 
     # Fallback: check if all characters have emoji category
     for char in text:
@@ -64,4 +97,4 @@ def is_single_emoji(text: str) -> bool:
         if cat not in ("So", "Sk", "Mn", "Mc", "Cf", "Cn"):
             return False
 
-    return len(text) > 0
+    return len(text) > 0 and _is_single_emoji_sequence(text)

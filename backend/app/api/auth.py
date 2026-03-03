@@ -18,6 +18,11 @@ def get_session_id(request: Request) -> str | None:
 
 @router.post("/accounts", response_model=UserResponse, status_code=201)
 async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)):
+    from app.config import settings
+
+    if not settings.registration_open:
+        raise HTTPException(status_code=403, detail="Registration is closed")
+
     try:
         user = await create_user(
             db=db,
@@ -37,6 +42,7 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
         avatar_url=actor.avatar_url,
         header_url=actor.header_url,
         summary=actor.summary,
+        role=user.role,
         created_at=user.created_at,
     )
 
@@ -47,9 +53,9 @@ async def login(
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
-    user = await authenticate_user(db, body.email, body.password)
+    user = await authenticate_user(db, body.username, body.password)
     if user is None:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        raise HTTPException(status_code=401, detail="Invalid username or password")
 
     from app.valkey_client import valkey
 
@@ -104,5 +110,6 @@ async def verify_credentials(
         avatar_url=actor.avatar_url,
         header_url=actor.header_url,
         summary=actor.summary,
+        role=user.role,
         created_at=user.created_at,
     )

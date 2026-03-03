@@ -28,9 +28,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+cors_origins = [
+    "http://localhost:3000",
+    settings.server_url,
+]
+# Allow Tailscale / LAN access in debug mode
+if settings.debug:
+    cors_origins.append("http://100.68.9.116:3000")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[f"http://localhost:3000", settings.server_url],
+    allow_origins=cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -46,7 +54,7 @@ async def instance_info():
         "version": "0.1.0",
         "urls": {},
         "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
-        "registrations": True,
+        "registrations": settings.registration_open,
     }
 
 

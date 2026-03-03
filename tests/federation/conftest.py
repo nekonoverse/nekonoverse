@@ -65,8 +65,8 @@ class InstanceClient:
         resp.raise_for_status()
         return resp.json()
 
-    def login(self, email: str, password: str):
-        resp = self.http.post("/api/v1/auth/login", json={"email": email, "password": password})
+    def login(self, username: str, password: str):
+        resp = self.http.post("/api/v1/auth/login", json={"username": username, "password": password})
         resp.raise_for_status()
         # Session cookie is stored in the client automatically
         return resp.json()
@@ -173,7 +173,7 @@ def instance_b() -> InstanceClient:
 def alice(instance_a: InstanceClient) -> dict:
     """Register and login alice on instance A."""
     user = instance_a.register("alice", "alice@example.com", "password1234", "Alice")
-    instance_a.login("alice@example.com", "password1234")
+    instance_a.login("alice", "password1234")
     return user
 
 
@@ -181,5 +181,5 @@ def alice(instance_a: InstanceClient) -> dict:
 def bob(instance_b: InstanceClient) -> dict:
     """Register and login bob on instance B."""
     user = instance_b.register("bob", "bob@example.com", "password1234", "Bob")
-    instance_b.login("bob@example.com", "password1234")
+    instance_b.login("bob", "password1234")
     return user
