@@ -1,8 +1,10 @@
 import { createSignal } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { register } from "../../stores/auth";
+import { useI18n } from "../../i18n";
 
 export default function RegisterForm() {
+  const { t } = useI18n();
   const [username, setUsername] = createSignal("");
   const [email, setEmail] = createSignal("");
   const [password, setPassword] = createSignal("");
@@ -18,7 +20,7 @@ export default function RegisterForm() {
       await register(username(), email(), password());
       navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Registration failed");
+      setError(err instanceof Error ? err.message : t("auth.registerFailed"));
     } finally {
       setLoading(false);
     }
@@ -26,10 +28,10 @@ export default function RegisterForm() {
 
   return (
     <form onSubmit={handleSubmit} class="auth-form">
-      <h2>Register</h2>
+      <h2>{t("common.register")}</h2>
       {error() && <div class="error">{error()}</div>}
       <div class="field">
-        <label for="username">Username</label>
+        <label for="username">{t("auth.username")}</label>
         <input
           id="username"
           type="text"
@@ -40,7 +42,7 @@ export default function RegisterForm() {
         />
       </div>
       <div class="field">
-        <label for="email">Email</label>
+        <label for="email">{t("auth.email")}</label>
         <input
           id="email"
           type="email"
@@ -50,7 +52,7 @@ export default function RegisterForm() {
         />
       </div>
       <div class="field">
-        <label for="password">Password</label>
+        <label for="password">{t("auth.password")}</label>
         <input
           id="password"
           type="password"
@@ -61,10 +63,10 @@ export default function RegisterForm() {
         />
       </div>
       <button type="submit" disabled={loading()}>
-        {loading() ? "Registering..." : "Register"}
+        {loading() ? t("auth.registering") : t("common.register")}
       </button>
       <p class="alt-action">
-        Already have an account? <a href="/login">Login</a>
+        {t("auth.hasAccount")} <a href="/login">{t("common.login")}</a>
       </p>
     </form>
   );

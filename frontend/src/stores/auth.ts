@@ -26,10 +26,10 @@ export async function fetchCurrentUser() {
   }
 }
 
-export async function login(email: string, password: string) {
+export async function login(username: string, password: string) {
   await apiRequest("/api/v1/auth/login", {
     method: "POST",
-    body: { email, password },
+    body: { username, password },
   });
   await fetchCurrentUser();
 }
@@ -44,5 +44,5 @@ export async function register(username: string, email: string, password: string
     method: "POST",
     body: { username, email, password },
   });
-  await login(email, password);
+  await login(username, password);
 }

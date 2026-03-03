@@ -1,23 +1,30 @@
-import { createSignal } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { login } from "../../stores/auth";
+import { fetchInstance, registrationOpen } from "../../stores/instance";
+import { useI18n } from "../../i18n";
 
 export default function LoginForm() {
-  const [email, setEmail] = createSignal("");
+  const { t } = useI18n();
+  const [username, setUsername] = createSignal("");
   const [password, setPassword] = createSignal("");
   const [error, setError] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const navigate = useNavigate();
+
+  onMount(() => {
+    fetchInstance();
+  });
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();
     setError("");
     setLoading(true);
     try {
-      await login(email(), password());
+      await login(username(), password());
       navigate("/");
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Login failed");
+      setError(err instanceof Error ? err.message : t("auth.loginFailed"));
     } finally {
       setLoading(false);
     }
@@ -25,20 +32,20 @@ export default function LoginForm() {
 
   return (
     <form onSubmit={handleSubmit} class="auth-form">
-      <h2>Login</h2>
+      <h2>{t("common.login")}</h2>
       {error() && <div class="error">{error()}</div>}
       <div class="field">
-        <label for="email">Email</label>
+        <label for="username">{t("auth.username")}</label>
         <input
-          id="email"
-          type="email"
-          value={email()}
-          onInput={(e) => setEmail(e.currentTarget.value)}
+          id="username"
+          type="text"
+          value={username()}
+          onInput={(e) => setUsername(e.currentTarget.value)}
           required
         />
       </div>
       <div class="field">
-        <label for="password">Password</label>
+        <label for="password">{t("auth.password")}</label>
         <input
           id="password"
           type="password"
@@ -48,11 +55,13 @@ export default function LoginForm() {
         />
       </div>
       <button type="submit" disabled={loading()}>
-        {loading() ? "Logging in..." : "Login"}
+        {loading() ? t("auth.loggingIn") : t("common.login")}
       </button>
-      <p class="alt-action">
-        Don't have an account? <a href="/register">Register</a>
-      </p>
+      <Show when={registrationOpen()}>
+        <p class="alt-action">
+          {t("auth.noAccount")} <a href="/register">{t("common.register")}</a>
+        </p>
+      </Show>
     </form>
   );
 }

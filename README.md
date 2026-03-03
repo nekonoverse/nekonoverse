@@ -11,13 +11,14 @@
 - **HTTP Signature** — RSA-SHA256 による署名・検証
 - **配信キュー** — PostgreSQL + Valkey による非同期配信、指数バックオフでリトライ
 - **WebFinger / NodeInfo** — 標準的なサーバー間ディスカバリ
+- **多言語 UI** — 日本語（デフォルト）・英語対応、ブラウザ言語自動検出
 
 ## 技術スタック
 
 | レイヤー | 技術 |
 |---------|------|
 | バックエンド | Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic |
-| フロントエンド | SolidJS, Vite, TypeScript |
+| フロントエンド | SolidJS, Vite, TypeScript, @solid-primitives/i18n |
 | データベース | PostgreSQL 17 |
 | キャッシュ/セッション | Valkey 8 |
 | インフラ | Docker Compose, GitHub Actions |
@@ -42,8 +43,11 @@ SECRET_KEY=$(openssl rand -base64 32)
 DEBUG=true
 EOF
 
+# 開発用 Compose ファイルをコピー
+cp docker-compose.dev.yml.example docker-compose.dev.yml
+
 # 起動
-docker compose up -d
+docker compose -f docker-compose.dev.yml up -d
 ```
 
 - バックエンド API: http://localhost:8000
@@ -52,7 +56,7 @@ docker compose up -d
 ### 管理者ユーザーの作成
 
 ```bash
-docker compose exec app python -m app.cli create-admin \
+docker compose -f docker-compose.dev.yml exec app python -m app.cli create-admin \
   --username neko \
   --email neko@example.com \
   --password your-secure-password
@@ -69,6 +73,27 @@ docker compose exec app python -m app.cli create-admin \
 | `SECRET_KEY` | セッション署名用の秘密鍵 | (必須) |
 | `DEBUG` | デバッグモード (`true` で HTTP、`false` で HTTPS) | `true` |
 | `REGISTRATION_OPEN` | ユーザー登録を開放するか | `false` |
+
+## Docker Compose 構成
+
+| ファイル | 用途 |
+|---------|------|
+| `docker-compose.dev.yml.example` | 開発用テンプレート（ホットリロード、ソースマウント、ポート直接公開） |
+| `docker-compose.yml.example` | 本番用テンプレート（nginx リバースプロキシ、TLS、ワーカー 4 プロセス） |
+| `docker-compose.federation.yml` | 連合 E2E テスト用 |
+
+開発時は `.example` をコピーして使います。`docker-compose.yml` と `docker-compose.dev.yml` は `.gitignore` 対象です。
+
+```bash
+# 開発
+cp docker-compose.dev.yml.example docker-compose.dev.yml
+docker compose -f docker-compose.dev.yml up -d
+
+# 本番
+cp docker-compose.yml.example docker-compose.yml
+# nginx.conf を用意し、TLS 証明書を設定
+docker compose up -d
+```
 
 ## プロジェクト構成
 
@@ -110,15 +135,36 @@ nekonoverse/
 │   └── pyproject.toml
 ├── frontend/                       # SolidJS フロントエンド
 │   └── src/
-│       ├── App.tsx                  # ルーター
-│       ├── pages/                   # ページコンポーネント
-│       ├── components/              # UIコンポーネント
-│       ├── stores/                  # 状態管理
-│       └── api/                     # API クライアント
-├── tests/federation/                # 連合 E2E テスト
-├── docker-compose.yml               # 開発環境
-└── docker-compose.federation.yml    # 連合テスト環境
+│       ├── App.tsx                  # ルーター + I18nProvider
+│       ├── i18n/                   # 多言語対応
+│       │   ├── index.tsx           #   Provider + useI18n hook
+│       │   └── dictionaries/       #   言語辞書
+│       │       ├── ja.ts           #     日本語 (デフォルト)
+│       │       └── en.ts           #     英語
+│       ├── pages/                  # ページコンポーネント
+│       ├── components/             # UIコンポーネント
+│       ├── stores/                 # 状態管理
+│       └── api/                    # API クライアント
+├── tests/federation/               # 連合 E2E テスト
+├── docker-compose.dev.yml.example  # 開発環境テンプレート
+├── docker-compose.yml.example      # 本番環境テンプレート
+└── docker-compose.federation.yml   # 連合テスト環境
 ```
+
+## 多言語対応 (i18n)
+
+フロントエンドは `@solid-primitives/i18n` による多言語対応を実装しています。
+
+- **対応言語**: 日本語 (ja)、英語 (en)
+- **デフォルト**: 日本語（ブラウザ言語で自動検出）
+- **切替**: 右上のボタンで `JA` ↔ `EN` をトグル
+- **永続化**: `localStorage` に保存、リロード後も保持
+
+### 言語の追加方法
+
+1. `frontend/src/i18n/dictionaries/` に新しい辞書ファイル（例: `ko.ts`）を作成
+2. `frontend/src/i18n/index.tsx` の `dictionaries` と `locales` に追加
+3. 型定義は `ja.ts` の `Dictionary` 型で保証されるため、キーの過不足がコンパイル時に検出されます
 
 ## API エンドポイント
 
@@ -210,10 +256,10 @@ oauth_applications / oauth_tokens (OAuth 2.0)
 
 ```bash
 # Docker 内で実行
-docker compose exec app python -m pytest tests/ -v
+docker compose -f docker-compose.dev.yml exec app python -m pytest tests/ -v
 ```
 
-219 テスト — ユーティリティ、サービス層、API エンドポイント、ActivityPub ハンドラー、配信ワーカー、認証ミドルウェア、CLI をカバー。
+237 テスト (30 テストファイル) — API エンドポイント、サービス層、ActivityPub ハンドラー、WebFinger、NodeInfo、配信ワーカー、HTTP Signature、認証ミドルウェア、CLI、設定、ユーティリティをカバー。
 
 ### 連合 E2E テスト
 
@@ -229,16 +275,26 @@ docker compose -f docker-compose.federation.yml run --rm test-runner
 ## 本番デプロイ
 
 ```bash
+# Compose ファイルをコピー
+cp docker-compose.yml.example docker-compose.yml
+
 # .env の設定
-DEBUG=false
+cat <<'EOF' > .env
+DB_PASSWORD=<強力なパスワード>
 DOMAIN=your-domain.example
 SECRET_KEY=<ランダムな文字列>
-REGISTRATION_OPEN=false  # 必要に応じて true
+DEBUG=false
+REGISTRATION_OPEN=false
+EOF
+
+# nginx.conf を用意 (TLS 終端 + リバースプロキシ)
+# 起動
+docker compose up -d
 ```
 
-- `DEBUG=false` で HTTPS モードになります。リバースプロキシ (nginx) で TLS 終端してください
+- `DEBUG=false` で HTTPS モードになります。nginx で TLS 終端してください
 - `DOMAIN` に実際のドメイン名を設定してください（ActivityPub ID に使用されるため、後から変更できません）
-- PostgreSQL と Valkey のパスワードは本番用に変更してください
+- 本番用 Compose は app/frontend を `expose` のみ（ポート直接公開なし）、nginx 経由でアクセスします
 
 ## ライセンス
 

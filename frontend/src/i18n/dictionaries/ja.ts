@@ -1,0 +1,31 @@
+export const ja = {
+  "app.title": "Nekonoverse",
+  "app.tagline": "ねこに優しいActivityPubサーバー",
+  "common.loading": "読み込み中...",
+  "common.login": "ログイン",
+  "common.register": "新規登録",
+  "auth.username": "ユーザー名",
+  "auth.email": "メールアドレス",
+  "auth.password": "パスワード",
+  "auth.loggingIn": "ログイン中...",
+  "auth.loginFailed": "ログインに失敗しました",
+  "auth.registering": "登録中...",
+  "auth.registerFailed": "登録に失敗しました",
+  "auth.noAccount": "アカウントをお持ちでないですか？",
+  "auth.hasAccount": "すでにアカウントをお持ちですか？",
+  "auth.registrationClosed": "新規登録は受け付けていません",
+  "auth.registrationClosedDesc":
+    "このサーバーは現在新規登録を受け付けていません。",
+  "auth.backToLogin": "ログインに戻る",
+  "timeline.public": "公開タイムライン",
+  "timeline.loading": "タイムラインを読み込み中...",
+  "timeline.empty": "まだ投稿がありません。",
+  "composer.placeholder": "いまどうしてる？",
+  "composer.posting": "投稿中...",
+  "composer.post": "投稿",
+  "composer.failed": "投稿に失敗しました",
+  "lang.ja": "日本語",
+  "lang.en": "English",
+} as const;
+
+export type Dictionary = typeof ja;

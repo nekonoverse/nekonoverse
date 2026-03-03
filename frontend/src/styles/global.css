@@ -359,3 +359,25 @@ a:hover {
 .emoji-btn:hover {
   background: var(--bg-secondary);
 }
+
+/* Language Switcher */
+.lang-switcher {
+  position: fixed;
+  top: 12px;
+  right: 12px;
+  padding: 6px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  z-index: 200;
+}
+
+.lang-switcher:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}

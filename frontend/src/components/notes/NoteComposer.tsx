@@ -1,11 +1,13 @@
 import { createSignal } from "solid-js";
 import { createNote, type Note } from "../../api/statuses";
+import { useI18n } from "../../i18n";
 
 interface Props {
   onPost?: (note: Note) => void;
 }
 
 export default function NoteComposer(props: Props) {
+  const { t } = useI18n();
   const [content, setContent] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal("");
@@ -20,7 +22,7 @@ export default function NoteComposer(props: Props) {
       setContent("");
       props.onPost?.(note);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to post");
+      setError(err instanceof Error ? err.message : t("composer.failed"));
     } finally {
       setLoading(false);
     }
@@ -32,14 +34,14 @@ export default function NoteComposer(props: Props) {
       <textarea
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
-        placeholder="What's on your mind?"
+        placeholder={t("composer.placeholder")}
         rows={3}
         maxLength={5000}
       />
       <div class="composer-footer">
         <span class="char-count">{content().length} / 5000</span>
         <button type="submit" disabled={loading() || !content().trim()}>
-          {loading() ? "Posting..." : "Post"}
+          {loading() ? t("composer.posting") : t("composer.post")}
         </button>
       </div>
     </form>

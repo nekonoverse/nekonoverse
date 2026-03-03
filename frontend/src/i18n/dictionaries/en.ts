@@ -1,0 +1,31 @@
+import type { Dictionary } from "./ja";
+
+export const en: Dictionary = {
+  "app.title": "Nekonoverse",
+  "app.tagline": "A cat-friendly ActivityPub server",
+  "common.loading": "Loading...",
+  "common.login": "Login",
+  "common.register": "Register",
+  "auth.username": "Username",
+  "auth.email": "Email",
+  "auth.password": "Password",
+  "auth.loggingIn": "Logging in...",
+  "auth.loginFailed": "Login failed",
+  "auth.registering": "Registering...",
+  "auth.registerFailed": "Registration failed",
+  "auth.noAccount": "Don't have an account?",
+  "auth.hasAccount": "Already have an account?",
+  "auth.registrationClosed": "Registration Closed",
+  "auth.registrationClosedDesc":
+    "This server is not accepting new registrations at this time.",
+  "auth.backToLogin": "Back to Login",
+  "timeline.public": "Public Timeline",
+  "timeline.loading": "Loading timeline...",
+  "timeline.empty": "No posts yet.",
+  "composer.placeholder": "What's on your mind?",
+  "composer.posting": "Posting...",
+  "composer.post": "Post",
+  "composer.failed": "Failed to post",
+  "lang.ja": "日本語",
+  "lang.en": "English",
+};
