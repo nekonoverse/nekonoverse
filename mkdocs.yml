@@ -1,0 +1,47 @@
+site_name: Nekonoverse
+site_url: https://nananek.github.io/nekonoverse
+site_description: 猫にやさしい ActivityPub サーバー
+repo_url: https://github.com/nananek/nekonoverse
+repo_name: nananek/nekonoverse
+
+theme:
+  name: material
+  language: ja
+  palette:
+    scheme: slate
+    primary: custom
+    accent: pink
+  features:
+    - navigation.sections
+    - navigation.expand
+    - navigation.top
+    - search.highlight
+    - content.code.copy
+
+extra_css:
+  - stylesheets/extra.css
+
+nav:
+  - ホーム: index.md
+  - クイックスタート: quickstart.md
+  - API リファレンス: api.md
+  - アーキテクチャ: architecture.md
+  - 多言語対応: i18n.md
+  - 変更履歴: changelog.md
+
+plugins:
+  - search
+
+markdown_extensions:
+  - tables
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets:
+      check_paths: true
+  - attr_list
+  - toc:
+      permalink: true

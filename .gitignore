@@ -40,3 +40,6 @@ htmlcov/
 .coverage
 
 volumes/
+
+# MkDocs
+site/
