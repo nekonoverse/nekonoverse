@@ -19,7 +19,7 @@ jobs:
         timeout-minutes: 8
 
       - name: Run federation tests
-        run: docker compose -f docker-compose.federation.yml run --rm test-runner
+        run: docker compose -f docker-compose.federation.yml run --rm --no-deps test-runner
 
       - name: Collect logs
         if: always()
