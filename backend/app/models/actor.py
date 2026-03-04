@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, Index, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -49,6 +49,7 @@ class Actor(Base):
     __table_args__ = (
         UniqueConstraint("username", "domain", name="uq_actors_username_domain"),
         Index("ix_actors_domain_username", "domain", "username"),
+        Index("ix_actors_lower_username_domain", func.lower(username), "domain", unique=True),
     )
 
     @property

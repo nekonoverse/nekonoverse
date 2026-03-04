@@ -22,8 +22,9 @@ async def get_actor_by_ap_id(db: AsyncSession, ap_id: str) -> Actor | None:
 async def get_actor_by_username(
     db: AsyncSession, username: str, domain: str | None = None
 ) -> Actor | None:
+    lookup = username.lower() if domain is None else username
     result = await db.execute(
-        select(Actor).where(Actor.username == username, Actor.domain == domain)
+        select(Actor).where(Actor.username == lookup, Actor.domain == domain)
     )
     return result.scalar_one_or_none()
 

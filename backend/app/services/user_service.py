@@ -18,6 +18,7 @@ async def create_user(
     display_name: str | None = None,
     role: str = "user",
 ) -> User:
+    username = username.lower()
     # Check if username or email already exists
     existing_actor = await db.execute(
         select(Actor).where(Actor.username == username, Actor.domain.is_(None))
@@ -69,7 +70,7 @@ async def create_user(
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
     result = await db.execute(
-        select(Actor).where(Actor.username == username, Actor.domain.is_(None))
+        select(Actor).where(Actor.username == username.lower(), Actor.domain.is_(None))
     )
     actor = result.scalar_one_or_none()
     if actor is None or actor.local_user is None:
@@ -82,7 +83,7 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
 
 async def reset_password(db: AsyncSession, username: str, new_password: str) -> User:
     result = await db.execute(
-        select(Actor).where(Actor.username == username, Actor.domain.is_(None))
+        select(Actor).where(Actor.username == username.lower(), Actor.domain.is_(None))
     )
     actor = result.scalar_one_or_none()
     if actor is None or actor.local_user is None:
