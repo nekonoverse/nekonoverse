@@ -7,6 +7,7 @@
 - **ActivityPub 準拠** — Misskey・Mastodon・Pleroma 等と相互に連合
 - **絵文字リアクション** — Misskey 互換 (`Like` + `_misskey_reaction`) & Pleroma 互換 (`EmojiReact`)
 - **Mastodon 互換 API** — 既存の Mastodon クライアントアプリから接続可能
+- **パスキー (WebAuthn)** — パスワードレス認証に対応、設定画面で管理
 - **OAuth 2.0** — Authorization Code + PKCE、Client Credentials に対応
 - **HTTP Signature** — RSA-SHA256 による署名・検証
 - **配信キュー** — PostgreSQL + Valkey による非同期配信、指数バックオフでリトライ
@@ -32,7 +33,7 @@
 ### 起動
 
 ```bash
-git clone https://github.com/yourname/nekonoverse.git
+git clone https://github.com/nananek/nekonoverse.git
 cd nekonoverse
 
 # 環境変数を設定
@@ -73,6 +74,7 @@ docker compose -f docker-compose.dev.yml exec app python -m app.cli create-admin
 | `SECRET_KEY` | セッション署名用の秘密鍵 | (必須) |
 | `DEBUG` | デバッグモード (`true` で HTTP、`false` で HTTPS) | `true` |
 | `REGISTRATION_OPEN` | ユーザー登録を開放するか | `false` |
+| `FRONTEND_URL` | フロントエンドの URL（パスキー検証で使用） | `http://localhost:3000` |
 
 ## Docker Compose 構成
 
@@ -111,9 +113,11 @@ nekonoverse/
 │   │   │   ├── reaction.py         #   Reaction (絵文字リアクション)
 │   │   │   ├── follow.py           #   Follow (フォロー関係)
 │   │   │   ├── delivery.py         #   DeliveryJob (配信キュー)
+│   │   │   ├── passkey.py          #   PasskeyCredential (WebAuthn)
 │   │   │   └── oauth.py            #   OAuth アプリ・トークン
 │   │   ├── api/                    # REST API エンドポイント
 │   │   │   ├── auth.py             #   認証 (登録/ログイン/ログアウト)
+│   │   │   ├── passkey.py          #   パスキー (WebAuthn)
 │   │   │   ├── oauth.py            #   OAuth 2.0
 │   │   │   └── mastodon/           #   Mastodon 互換 API
 │   │   │       ├── accounts.py     #     アカウント操作
@@ -142,6 +146,10 @@ nekonoverse/
 │       │       ├── ja.ts           #     日本語 (デフォルト)
 │       │       └── en.ts           #     英語
 │       ├── pages/                  # ページコンポーネント
+│       │   ├── Home.tsx            #   ホーム + タイムライン
+│       │   ├── Login.tsx           #   ログイン (パスキー対応)
+│       │   ├── Register.tsx        #   ユーザー登録
+│       │   └── Settings.tsx        #   設定 (パスキー管理)
 │       ├── components/             # UIコンポーネント
 │       ├── stores/                 # 状態管理
 │       └── api/                    # API クライアント
@@ -176,6 +184,17 @@ nekonoverse/
 | `POST` | `/api/v1/auth/login` | ログイン |
 | `POST` | `/api/v1/auth/logout` | ログアウト |
 | `GET` | `/api/v1/accounts/verify_credentials` | 現在のユーザー情報 |
+
+### パスキー (WebAuthn)
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/v1/passkey/register/options` | 登録チャレンジ取得 |
+| `POST` | `/api/v1/passkey/register/verify` | 登録検証・保存 |
+| `POST` | `/api/v1/passkey/authenticate/options` | 認証チャレンジ取得 |
+| `POST` | `/api/v1/passkey/authenticate/verify` | 認証検証・セッション作成 |
+| `GET` | `/api/v1/passkey/credentials` | パスキー一覧 |
+| `DELETE` | `/api/v1/passkey/credentials/{id}` | パスキー削除 |
 
 ### Mastodon 互換 API
 
@@ -223,6 +242,7 @@ nekonoverse/
 ```
 actors (ローカル & リモート)
   └── users (ローカルユーザーのみ: 認証情報 + RSA 秘密鍵)
+       └── passkey_credentials (WebAuthn パスキー)
   └── notes (投稿)
        └── reactions (絵文字リアクション)
   └── followers (フォロー関係)
@@ -259,7 +279,7 @@ oauth_applications / oauth_tokens (OAuth 2.0)
 docker compose -f docker-compose.dev.yml exec app python -m pytest tests/ -v
 ```
 
-237 テスト (30 テストファイル) — API エンドポイント、サービス層、ActivityPub ハンドラー、WebFinger、NodeInfo、配信ワーカー、HTTP Signature、認証ミドルウェア、CLI、設定、ユーティリティをカバー。
+251 テスト (31 テストファイル) — API エンドポイント（パスキー含む）、サービス層、ActivityPub ハンドラー、WebFinger、NodeInfo、配信ワーカー、HTTP Signature、認証ミドルウェア、CLI、設定、ユーティリティをカバー。
 
 ### 連合 E2E テスト
 

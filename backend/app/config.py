@@ -8,6 +8,7 @@ class Settings(BaseSettings):
     secret_key: str = "change-this-to-a-random-secret-key"
     debug: bool = True
     registration_open: bool = False
+    frontend_url: str = "http://localhost:3000"
 
     @property
     def server_url(self) -> str:

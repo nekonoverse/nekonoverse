@@ -38,3 +38,5 @@ Thumbs.db
 # Coverage
 htmlcov/
 .coverage
+
+volumes/

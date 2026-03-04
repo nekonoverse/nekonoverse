@@ -50,6 +50,10 @@ export default function Home() {
             </div>
           }
         >
+          <div class="home-user-bar">
+            <span>{currentUser()!.display_name || currentUser()!.username}</span>
+            <a href="/settings" class="btn btn-secondary btn-small">{t("settings.title")}</a>
+          </div>
           <NoteComposer onPost={handleNewNote} />
         </Show>
       </Show>

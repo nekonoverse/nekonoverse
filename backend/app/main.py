@@ -11,6 +11,7 @@ from app.api.mastodon.accounts import router as accounts_router
 from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.timelines import router as timelines_router
 from app.api.oauth import router as oauth_router
+from app.api.passkey import router as passkey_router
 from app.config import settings
 
 
@@ -68,6 +69,7 @@ app.include_router(accounts_router)
 app.include_router(statuses_router)
 app.include_router(timelines_router)
 app.include_router(oauth_router)
+app.include_router(passkey_router)
 app.include_router(webfinger_router)
 app.include_router(nodeinfo_router)
 app.include_router(ap_router)

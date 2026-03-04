@@ -1,5 +1,6 @@
 import { createSignal } from "solid-js";
 import { apiRequest } from "../api/client";
+import { authenticateWithPasskey as _authenticateWithPasskey } from "../api/passkey";
 
 export interface CurrentUser {
   id: string;
@@ -37,6 +38,11 @@ export async function login(username: string, password: string) {
 export async function logout() {
   await apiRequest("/api/v1/auth/logout", { method: "POST" });
   setCurrentUser(null);
+}
+
+export async function loginWithPasskey() {
+  await _authenticateWithPasskey();
+  await fetchCurrentUser();
 }
 
 export async function register(username: string, email: string, password: string) {

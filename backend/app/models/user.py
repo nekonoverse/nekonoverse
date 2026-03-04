@@ -33,6 +33,12 @@ class User(Base):
 
     actor = relationship("Actor", back_populates="local_user", lazy="selectin")
     oauth_tokens = relationship("OAuthToken", back_populates="user")
+    passkey_credentials = relationship(
+        "PasskeyCredential",
+        back_populates="user",
+        cascade="all, delete-orphan",
+        lazy="selectin",
+    )
 
     @property
     def is_admin(self) -> bool:
