@@ -3,9 +3,22 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db
-from app.schemas.user import UserLoginRequest, UserRegisterRequest, UserResponse
-from app.services.user_service import authenticate_user, create_user, get_user_by_id
+from app.dependencies import get_current_user, get_db
+from app.models.user import User
+from app.schemas.user import (
+    ChangePasswordRequest,
+    UpdateProfileRequest,
+    UserLoginRequest,
+    UserRegisterRequest,
+    UserResponse,
+)
+from app.services.user_service import (
+    authenticate_user,
+    change_password,
+    create_user,
+    get_user_by_id,
+    update_display_name,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
@@ -34,17 +47,7 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    actor = user.actor
-    return UserResponse(
-        id=user.id,
-        username=actor.username,
-        display_name=actor.display_name,
-        avatar_url=actor.avatar_url,
-        header_url=actor.header_url,
-        summary=actor.summary,
-        role=user.role,
-        created_at=user.created_at,
-    )
+    return _user_response(user)
 
 
 @router.post("/auth/login")
@@ -102,6 +105,10 @@ async def verify_credentials(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    return _user_response(user)
+
+
+def _user_response(user: User) -> UserResponse:
     actor = user.actor
     return UserResponse(
         id=user.id,
@@ -113,3 +120,26 @@ async def verify_credentials(
         role=user.role,
         created_at=user.created_at,
     )
+
+
+@router.patch("/accounts/update_credentials", response_model=UserResponse)
+async def update_credentials(
+    body: UpdateProfileRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    user = await update_display_name(db, user, body.display_name)
+    return _user_response(user)
+
+
+@router.post("/auth/change_password")
+async def change_password_endpoint(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await change_password(db, user, body.current_password, body.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}

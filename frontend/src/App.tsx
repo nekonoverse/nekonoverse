@@ -1,18 +1,29 @@
 import { Router, Route } from "@solidjs/router";
-import { lazy } from "solid-js";
+import { lazy, type ParentProps } from "solid-js";
 import { I18nProvider } from "./i18n";
-import LanguageSwitcher from "./components/layout/LanguageSwitcher";
+import { initTheme } from "./stores/theme";
+import Navbar from "./components/layout/Navbar";
+
+initTheme();
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login"));
 const Register = lazy(() => import("./pages/Register"));
 const Settings = lazy(() => import("./pages/Settings"));
 
+function Layout(props: ParentProps) {
+  return (
+    <>
+      <Navbar />
+      {props.children}
+    </>
+  );
+}
+
 export default function App() {
   return (
     <I18nProvider>
-      <LanguageSwitcher />
-      <Router>
+      <Router root={Layout}>
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />

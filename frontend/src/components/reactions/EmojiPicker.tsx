@@ -10,15 +10,19 @@ const EMOJI_LIST = [
 interface Props {
   onSelect: (emoji: string) => void;
   onClose: () => void;
+  usedEmojis?: string[];
 }
 
 export default function EmojiPicker(props: Props) {
+  const isUsed = (emoji: string) => props.usedEmojis?.includes(emoji) ?? false;
+
   return (
     <div class="emoji-picker">
       <div class="emoji-grid">
         {EMOJI_LIST.map((emoji) => (
           <button
-            class="emoji-btn"
+            class={`emoji-btn${isUsed(emoji) ? " emoji-used" : ""}`}
+            disabled={isUsed(emoji)}
             onClick={() => {
               props.onSelect(emoji);
               props.onClose();

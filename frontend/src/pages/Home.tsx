@@ -1,7 +1,7 @@
 import { createSignal, onMount, Show, For } from "solid-js";
 import { currentUser, authLoading, fetchCurrentUser } from "../stores/auth";
 import { fetchInstance, registrationOpen } from "../stores/instance";
-import { getPublicTimeline, type Note } from "../api/statuses";
+import { getPublicTimeline, getNote, type Note } from "../api/statuses";
 import { useI18n } from "../i18n";
 import NoteComposer from "../components/notes/NoteComposer";
 import NoteCard from "../components/notes/NoteCard";
@@ -32,9 +32,17 @@ export default function Home() {
     setNotes((prev) => [note, ...prev]);
   };
 
+  const refreshNote = async (noteId: string) => {
+    try {
+      const updated = await getNote(noteId);
+      setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <div class="page-container">
-      <h1>{t("app.title")}</h1>
       <Show when={!authLoading()} fallback={<p>{t("common.loading")}</p>}>
         <Show
           when={currentUser()}
@@ -50,10 +58,6 @@ export default function Home() {
             </div>
           }
         >
-          <div class="home-user-bar">
-            <span>{currentUser()!.display_name || currentUser()!.username}</span>
-            <a href="/settings" class="btn btn-secondary btn-small">{t("settings.title")}</a>
-          </div>
           <NoteComposer onPost={handleNewNote} />
         </Show>
       </Show>
@@ -62,7 +66,7 @@ export default function Home() {
         <h2>{t("timeline.public")}</h2>
         <Show when={!timelineLoading()} fallback={<p>{t("timeline.loading")}</p>}>
           <Show when={notes().length > 0} fallback={<p class="empty">{t("timeline.empty")}</p>}>
-            <For each={notes()}>{(note) => <NoteCard note={note} />}</For>
+            <For each={notes()}>{(note) => <NoteCard note={note} onReactionUpdate={() => refreshNote(note.id)} />}</For>
           </Show>
         </Show>
       </div>

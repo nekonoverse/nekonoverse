@@ -6,8 +6,34 @@
   --text-secondary: #a0a0b0;
   --accent: #e94560;
   --accent-hover: #ff6b81;
+  --accent-text: #ffffff;
   --border: #2a2a4a;
   --radius: 8px;
+  --font-size-base: 16px;
+}
+
+[data-theme="light"] {
+  --bg-primary: #f0f0f0;
+  --bg-secondary: #ffffff;
+  --bg-card: #e4e4e4;
+  --text-primary: #1a1a1a;
+  --text-secondary: #555555;
+  --accent: #d63851;
+  --accent-hover: #b82e44;
+  --accent-text: #ffffff;
+  --border: #cccccc;
+}
+
+[data-theme="novel"] {
+  --bg-primary: #eee3cd;
+  --bg-secondary: #f7f0e3;
+  --bg-card: #e0d3b8;
+  --text-primary: #2a2015;
+  --text-secondary: #5c4e3a;
+  --accent: #a04828;
+  --accent-hover: #c45e35;
+  --accent-text: #f7f0e3;
+  --border: #c8b898;
 }
 
 * {
@@ -20,6 +46,7 @@ body {
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
+  font-size: var(--font-size-base);
   line-height: 1.6;
 }
 
@@ -32,9 +59,74 @@ a:hover {
   color: var(--accent-hover);
 }
 
+/* Navbar */
+.navbar {
+  background: var(--bg-secondary);
+  border-bottom: 1px solid var(--border);
+  position: sticky;
+  top: 0;
+  z-index: 200;
+}
+
+.navbar-inner {
+  max-width: 600px;
+  margin: 0 auto;
+  padding: 0 20px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 3.2em;
+}
+
+.navbar-brand {
+  font-weight: 700;
+  font-size: 1.1em;
+  color: var(--text-primary);
+}
+
+.navbar-brand:hover {
+  color: var(--accent);
+}
+
+.navbar-links {
+  display: flex;
+  align-items: center;
+  gap: 1em;
+}
+
+.navbar-link {
+  color: var(--text-secondary);
+  font-size: 0.875em;
+}
+
+.navbar-link:hover {
+  color: var(--text-primary);
+}
+
+.navbar-link.active {
+  color: var(--accent);
+}
+
+.navbar-lang {
+  padding: 4px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.75em;
+  font-weight: 600;
+  letter-spacing: 0.05em;
+}
+
+.navbar-lang:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
 .page-container {
   max-width: 600px;
-  margin: 40px auto;
+  margin: 24px auto;
   padding: 0 20px;
 }
 
@@ -57,7 +149,7 @@ a:hover {
   display: block;
   margin-bottom: 4px;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.875em;
 }
 
 .auth-form input {
@@ -67,7 +159,7 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-primary);
-  font-size: 16px;
+  font-size: 1em;
 }
 
 .auth-form input:focus {
@@ -79,10 +171,10 @@ a:hover {
   width: 100%;
   padding: 12px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-text);
   border: none;
   border-radius: var(--radius);
-  font-size: 16px;
+  font-size: 1em;
   cursor: pointer;
   margin-top: 8px;
 }
@@ -102,14 +194,14 @@ a:hover {
   padding: 10px 12px;
   border-radius: var(--radius);
   margin-bottom: 16px;
-  font-size: 14px;
+  font-size: 0.875em;
 }
 
 .auth-form .alt-action {
   margin-top: 16px;
   text-align: center;
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.875em;
 }
 
 .home-actions {
@@ -122,14 +214,14 @@ a:hover {
   display: inline-block;
   padding: 10px 24px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-text);
   border-radius: var(--radius);
-  font-size: 16px;
+  font-size: 1em;
 }
 
 .btn:hover {
   background: var(--accent-hover);
-  color: white;
+  color: var(--accent-text);
 }
 
 .btn-secondary {
@@ -157,7 +249,7 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: 1em;
   font-family: inherit;
   resize: vertical;
   min-height: 80px;
@@ -176,18 +268,18 @@ a:hover {
 }
 
 .char-count {
-  font-size: 13px;
+  font-size: 0.8em;
   color: var(--text-secondary);
 }
 
 .composer-footer button {
   padding: 8px 20px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-text);
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875em;
 }
 
 .composer-footer button:hover {
@@ -206,7 +298,7 @@ a:hover {
 
 .timeline h2 {
   margin-bottom: 16px;
-  font-size: 18px;
+  font-size: 1.125em;
 }
 
 .timeline .empty {
@@ -233,22 +325,22 @@ a:hover {
 }
 
 .note-display-name {
-  font-size: 15px;
+  font-size: 1em;
 }
 
 .note-handle {
-  font-size: 13px;
+  font-size: 0.85em;
   color: var(--text-secondary);
 }
 
 .note-time {
-  font-size: 12px;
+  font-size: 0.75em;
   color: var(--text-secondary);
   margin-left: auto;
 }
 
 .note-content {
-  font-size: 15px;
+  font-size: 1em;
   line-height: 1.5;
   word-break: break-word;
 }
@@ -273,7 +365,7 @@ a:hover {
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: 999px;
-  font-size: 14px;
+  font-size: 0.9em;
   cursor: pointer;
 }
 
@@ -292,7 +384,7 @@ a:hover {
   padding: 10px 12px;
   border-radius: var(--radius);
   margin-bottom: 12px;
-  font-size: 14px;
+  font-size: 0.875em;
 }
 
 /* Reaction Bar */
@@ -309,14 +401,14 @@ a:hover {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
+  width: 1.75em;
+  height: 1.75em;
   background: var(--bg-primary);
   border: 1px dashed var(--border);
   border-radius: 999px;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 16px;
+  font-size: 1em;
 }
 
 .reaction-add-btn:hover {
@@ -344,8 +436,8 @@ a:hover {
 }
 
 .emoji-btn {
-  width: 36px;
-  height: 36px;
+  width: 2.25em;
+  height: 2.25em;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -353,43 +445,48 @@ a:hover {
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
-  font-size: 20px;
+  font-size: 1.25em;
 }
 
-.emoji-btn:hover {
+.emoji-btn:hover:not(:disabled) {
   background: var(--bg-secondary);
 }
 
-/* Language Switcher */
-.lang-switcher {
-  position: fixed;
-  top: 12px;
-  right: 12px;
-  padding: 6px 12px;
-  background: var(--bg-secondary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
+.emoji-btn.emoji-used {
+  opacity: 0.3;
+  cursor: not-allowed;
+}
+
+/* Settings Tabs */
+.settings-tabs {
+  display: flex;
+  gap: 0;
+  margin: 16px 0 20px;
+  border-bottom: 1px solid var(--border);
+}
+
+.settings-tab {
+  flex: 1;
+  padding: 12px 16px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  z-index: 200;
+  font-size: 0.9em;
+  font-weight: 500;
 }
 
-.lang-switcher:hover {
-  border-color: var(--accent);
+.settings-tab:hover {
   color: var(--text-primary);
 }
 
-/* Settings */
-.settings-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
+.settings-tab-active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
 }
 
+/* Settings */
 .settings-section {
   background: var(--bg-secondary);
   padding: 20px;
@@ -404,12 +501,47 @@ a:hover {
 
 .settings-username {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.875em;
 }
 
 .btn-small {
   padding: 6px 14px;
-  font-size: 13px;
+  font-size: 0.8em;
+}
+
+.settings-form-group {
+  margin-bottom: 16px;
+}
+
+.settings-form-group label {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--text-secondary);
+  font-size: 0.875em;
+}
+
+.settings-form-group input {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 1em;
+}
+
+.settings-form-group input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-success {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  margin-bottom: 12px;
+  font-size: 0.875em;
 }
 
 .btn-danger-full {
@@ -419,7 +551,7 @@ a:hover {
   color: var(--accent);
   border: 1px solid var(--accent);
   border-radius: var(--radius);
-  font-size: 16px;
+  font-size: 1em;
   cursor: pointer;
 }
 
@@ -427,11 +559,33 @@ a:hover {
   background: rgba(233, 69, 96, 0.15);
 }
 
-.home-user-bar {
+/* Theme Selector */
+.theme-selector {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.theme-btn {
+  flex: 1;
+  padding: 10px 16px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.875em;
+}
+
+.theme-btn:hover {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.theme-btn.theme-active {
+  border-color: var(--accent);
+  background: rgba(233, 69, 96, 0.15);
+  color: var(--accent);
 }
 
 /* Passkey Manager */
@@ -441,7 +595,7 @@ a:hover {
 
 .passkey-empty {
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: 0.875em;
 }
 
 .passkey-list {
@@ -468,12 +622,12 @@ a:hover {
 }
 
 .passkey-name {
-  font-size: 15px;
+  font-size: 1em;
 }
 
 .passkey-date,
 .passkey-last-used {
-  font-size: 12px;
+  font-size: 0.75em;
   color: var(--text-secondary);
 }
 
@@ -490,7 +644,7 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: 0.875em;
 }
 
 .passkey-add input:focus {
@@ -501,11 +655,11 @@ a:hover {
 .passkey-add button {
   padding: 8px 16px;
   background: var(--accent);
-  color: white;
+  color: var(--accent-text);
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
-  font-size: 14px;
+  font-size: 0.875em;
   white-space: nowrap;
 }
 
@@ -525,7 +679,7 @@ a:hover {
   border: 1px solid var(--accent);
   border-radius: var(--radius);
   cursor: pointer;
-  font-size: 13px;
+  font-size: 0.8em;
 }
 
 .btn-danger:hover {
@@ -539,7 +693,7 @@ a:hover {
   gap: 12px;
   margin: 16px 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: 0.8em;
 }
 
 .passkey-divider::before,
@@ -556,7 +710,7 @@ a:hover {
   color: var(--text-primary);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  font-size: 16px;
+  font-size: 1em;
   cursor: pointer;
 }
 

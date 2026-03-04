@@ -43,6 +43,7 @@ export default function ReactionBar(props: Props) {
         <EmojiPicker
           onSelect={(emoji) => handleReaction(emoji)}
           onClose={() => setShowPicker(false)}
+          usedEmojis={props.reactions.filter((r) => r.me).map((r) => r.emoji)}
         />
       </Show>
     </div>

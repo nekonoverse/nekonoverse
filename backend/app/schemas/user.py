@@ -16,6 +16,15 @@ class UserLoginRequest(BaseModel):
     password: str
 
 
+class UpdateProfileRequest(BaseModel):
+    display_name: str | None = Field(None, max_length=255)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
+
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     username: str

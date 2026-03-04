@@ -62,6 +62,10 @@ export async function getHomeTimeline(params?: {
   return apiRequest<Note[]>(`/api/v1/timelines/home${qs ? `?${qs}` : ""}`);
 }
 
+export async function getNote(noteId: string): Promise<Note> {
+  return apiRequest<Note>(`/api/v1/statuses/${noteId}`);
+}
+
 export async function reactToNote(noteId: string, emoji: string): Promise<void> {
   await apiRequest(`/api/v1/statuses/${noteId}/react/${encodeURIComponent(emoji)}`, {
     method: "POST",
