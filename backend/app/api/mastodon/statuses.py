@@ -29,7 +29,7 @@ def note_to_response(note, reactions: list[dict] | None = None) -> NoteResponse:
             id=actor.id,
             username=actor.username,
             display_name=actor.display_name,
-            avatar_url=actor.avatar_url,
+            avatar_url=actor.avatar_url or "/default-avatar.svg",
             ap_id=actor.ap_id,
             domain=actor.domain,
         ),

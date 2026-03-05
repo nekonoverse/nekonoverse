@@ -21,10 +21,17 @@ export default function NoteCard(props: Props) {
   return (
     <div class="note-card">
       <div class="note-header">
-        <strong class="note-display-name">
-          {props.note.actor.display_name || props.note.actor.username}
-        </strong>
-        <span class="note-handle">{actorHandle(props.note.actor)}</span>
+        <img
+          class="note-avatar"
+          src={props.note.actor.avatar_url || "/default-avatar.svg"}
+          alt=""
+        />
+        <div class="note-header-text">
+          <strong class="note-display-name">
+            {props.note.actor.display_name || props.note.actor.username}
+          </strong>
+          <span class="note-handle">{actorHandle(props.note.actor)}</span>
+        </div>
         <span class="note-time">{formatTime(props.note.published)}</span>
       </div>
       <div class="note-content" innerHTML={props.note.content} />

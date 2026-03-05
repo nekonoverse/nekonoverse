@@ -318,10 +318,25 @@ a:hover {
 
 .note-header {
   display: flex;
-  align-items: baseline;
-  gap: 8px;
+  align-items: center;
+  gap: 10px;
   margin-bottom: 8px;
+}
+
+.note-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.note-header-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
   flex-wrap: wrap;
+  min-width: 0;
 }
 
 .note-display-name {
@@ -337,6 +352,7 @@ a:hover {
   font-size: 0.75em;
   color: var(--text-secondary);
   margin-left: auto;
+  flex-shrink: 0;
 }
 
 .note-content {
