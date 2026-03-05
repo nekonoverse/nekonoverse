@@ -210,12 +210,11 @@ function AccountTab() {
         <div class="avatar-upload" style="margin-top: 16px">
           <label>{t("settings.avatar")}</label>
           <div class="avatar-preview-row">
-            <Show
-              when={currentUser()!.avatar_url}
-              fallback={<div class="avatar-placeholder" />}
-            >
-              <img class="avatar-preview" src={currentUser()!.avatar_url!} alt="avatar" />
-            </Show>
+            <img
+              class="avatar-preview"
+              src={currentUser()!.avatar_url || "/default-avatar.svg"}
+              alt="avatar"
+            />
             <label class="btn btn-small avatar-file-btn">
               {avatarUploading() ? t("common.loading") : t("settings.avatarUpload")}
               <input

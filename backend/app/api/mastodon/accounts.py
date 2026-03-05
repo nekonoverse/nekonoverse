@@ -96,7 +96,7 @@ async def get_account(actor_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
         "display_name": actor.display_name,
         "note": actor.summary or "",
-        "avatar": actor.avatar_url or "",
+        "avatar": actor.avatar_url or "/default-avatar.svg",
         "header": actor.header_url or "",
         "url": actor.ap_id,
         "created_at": actor.created_at.isoformat(),

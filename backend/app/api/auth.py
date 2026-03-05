@@ -107,13 +107,16 @@ async def verify_credentials(
     return _user_response(user)
 
 
+DEFAULT_AVATAR_PATH = "/default-avatar.svg"
+
+
 def _user_response(user: User) -> UserResponse:
     actor = user.actor
     return UserResponse(
         id=user.id,
         username=actor.username,
         display_name=actor.display_name,
-        avatar_url=actor.avatar_url,
+        avatar_url=actor.avatar_url or DEFAULT_AVATAR_PATH,
         header_url=actor.header_url,
         summary=actor.summary,
         role=user.role,
