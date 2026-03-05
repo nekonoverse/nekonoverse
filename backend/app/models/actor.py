@@ -41,6 +41,12 @@ class Actor(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    avatar_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("drive_files.id", ondelete="SET NULL"), nullable=True,
+    )
+    header_file_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("drive_files.id", ondelete="SET NULL"), nullable=True,
+    )
 
     local_user = relationship("User", back_populates="actor", uselist=False, lazy="selectin")
     notes = relationship("Note", back_populates="actor")

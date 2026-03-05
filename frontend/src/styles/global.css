@@ -544,6 +544,41 @@ a:hover {
   font-size: 0.875em;
 }
 
+/* Avatar Upload */
+.avatar-upload label:first-child {
+  display: block;
+  margin-bottom: 8px;
+  color: var(--text-secondary);
+  font-size: 0.875em;
+}
+
+.avatar-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.avatar-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 2px solid var(--border);
+}
+
+.avatar-placeholder {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: var(--bg-primary);
+  border: 2px dashed var(--border);
+}
+
+.avatar-file-btn {
+  cursor: pointer;
+}
+
 .btn-danger-full {
   width: 100%;
   padding: 12px;

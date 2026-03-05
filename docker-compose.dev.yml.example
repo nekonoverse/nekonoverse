@@ -29,6 +29,22 @@ services:
       timeout: 5s
       retries: 5
 
+  nekono3s:
+    image: ghcr.io/nananek/nekono3s:latest
+    restart: unless-stopped
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-nekonoverse}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-changeme-s3}
+      S3_STORAGE_PATH: /data
+      S3_REGION: us-east-1
+    volumes:
+      - nekono3s_data:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
   app:
     build:
       context: ./backend
@@ -43,6 +59,11 @@ services:
       DOMAIN: ${DOMAIN:-localhost}
       SECRET_KEY: ${SECRET_KEY}
       DEBUG: ${DEBUG:-true}
+      S3_ENDPOINT_URL: http://nekono3s:8080
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-nekonoverse}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-changeme-s3}
+      S3_BUCKET: ${S3_BUCKET:-nekonoverse}
+      S3_REGION: us-east-1
     volumes:
       - ./backend:/app
     ports:
@@ -51,6 +72,8 @@ services:
       postgresql:
         condition: service_healthy
       valkey:
+        condition: service_healthy
+      nekono3s:
         condition: service_healthy
 
   worker:
@@ -65,12 +88,19 @@ services:
       VALKEY_URL: valkey://valkey:6379/0
       DOMAIN: ${DOMAIN:-localhost}
       SECRET_KEY: ${SECRET_KEY}
+      S3_ENDPOINT_URL: http://nekono3s:8080
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-nekonoverse}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-changeme-s3}
+      S3_BUCKET: ${S3_BUCKET:-nekonoverse}
+      S3_REGION: us-east-1
     volumes:
       - ./backend:/app
     depends_on:
       postgresql:
         condition: service_healthy
       valkey:
+        condition: service_healthy
+      nekono3s:
         condition: service_healthy
 
   frontend:
@@ -91,3 +121,4 @@ services:
 volumes:
   postgresql_data:
   valkey_data:
+  nekono3s_data:

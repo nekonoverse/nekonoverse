@@ -2,9 +2,22 @@ import { apiRequest } from "./client";
 import type { CurrentUser } from "../stores/auth";
 
 export async function updateDisplayName(displayName: string | null): Promise<CurrentUser> {
+  const formData = new FormData();
+  if (displayName !== null) {
+    formData.append("display_name", displayName);
+  }
   return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
     method: "PATCH",
-    body: { display_name: displayName },
+    formData,
+  });
+}
+
+export async function updateAvatar(file: File): Promise<CurrentUser> {
+  const formData = new FormData();
+  formData.append("avatar", file);
+  return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
+    method: "PATCH",
+    formData,
   });
 }
 

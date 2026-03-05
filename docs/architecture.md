@@ -4,12 +4,15 @@
 
 ```
 actors (ローカル & リモート)
+  ├── avatar_file_id → drive_files
+  └── header_file_id → drive_files
   └── users (ローカルユーザーのみ: 認証情報 + RSA 秘密鍵)
        └── passkey_credentials (WebAuthn パスキー)
   └── notes (投稿)
        └── reactions (絵文字リアクション)
   └── followers (フォロー関係)
 
+drive_files (メディアファイル: ユーザー所有 or サーバー所有)
 delivery_queue (ActivityPub 配信ジョブ)
 oauth_applications / oauth_tokens (OAuth 2.0)
 ```
@@ -52,3 +55,13 @@ oauth_applications / oauth_tokens (OAuth 2.0)
 ### OAuth 2.0
 
 Authorization Code + PKCE フローに対応。サードパーティアプリからの認証に使用。
+
+## メディアストレージ
+
+S3 互換ストレージを使用し、手動 SigV4 署名でファイルの読み書きを行う（boto3 不要）。
+
+- **アップロード**: `POST /api/v1/media` → S3 に保存 → DriveFile レコード作成
+- **配信**: `GET /media/{key}` → バックエンドが SigV4 署名付きで S3 から取得しストリーミング配信（Cache-Control 付き）
+- **ドライブ**: ユーザーごとのファイル管理。`server_file=true` でサーバー所有ファイル（アイコン等）
+- **制限**: 画像のみ (JPEG, PNG, GIF, WebP, AVIF)、最大 10MB
+- **画像情報**: 純 Python で PNG/JPEG/GIF/WebP のサイズを抽出（Pillow 不要）

@@ -9,11 +9,20 @@ class Settings(BaseSettings):
     debug: bool = True
     registration_open: bool = False
     frontend_url: str = "http://localhost:3000"
+    s3_endpoint_url: str = "http://nekono3s:8080"
+    s3_access_key_id: str = "nekonoverse"
+    s3_secret_access_key: str = "changeme-s3"
+    s3_bucket: str = "nekonoverse"
+    s3_region: str = "us-east-1"
 
     @property
     def server_url(self) -> str:
         scheme = "http" if self.debug else "https"
         return f"{scheme}://{self.domain}"
+
+    @property
+    def media_url(self) -> str:
+        return f"{self.server_url}/media"
 
     model_config = {"env_file": ".env"}
 

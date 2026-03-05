@@ -16,6 +16,7 @@ import app.models.delivery  # noqa: F401
 import app.models.follow  # noqa: F401
 import app.models.note  # noqa: F401
 import app.models.oauth  # noqa: F401
+import app.models.drive_file  # noqa: F401
 import app.models.reaction  # noqa: F401
 import app.models.user  # noqa: F401
 from app.database import async_session, engine

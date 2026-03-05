@@ -70,6 +70,8 @@ export const ja = {
   "settings.confirmPassword": "新しいパスワードの確認",
   "settings.passwordMismatch": "パスワードが一致しません",
   "settings.passwordChanged": "パスワードを変更しました",
+  "settings.avatar": "アバター",
+  "settings.avatarUpload": "画像を選択",
 } as const;
 
 export type Dictionary = typeof ja;

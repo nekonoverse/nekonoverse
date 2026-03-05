@@ -1,13 +1,12 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.user import (
     ChangePasswordRequest,
-    UpdateProfileRequest,
     UserLoginRequest,
     UserRegisterRequest,
     UserResponse,
@@ -124,11 +123,32 @@ def _user_response(user: User) -> UserResponse:
 
 @router.patch("/accounts/update_credentials", response_model=UserResponse)
 async def update_credentials(
-    body: UpdateProfileRequest,
+    display_name: str | None = Form(None),
+    avatar: UploadFile | None = File(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    user = await update_display_name(db, user, body.display_name)
+    if display_name is not None:
+        user = await update_display_name(db, user, display_name or None)
+
+    if avatar:
+        from app.services.drive_service import file_to_url, upload_drive_file
+
+        data = await avatar.read()
+        try:
+            drive_file = await upload_drive_file(
+                db=db, owner=user, data=data,
+                filename=avatar.filename or "avatar",
+                mime_type=avatar.content_type or "image/png",
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        user.actor.avatar_url = file_to_url(drive_file)
+        user.actor.avatar_file_id = drive_file.id
+        await db.commit()
+        await db.refresh(user)
+
     return _user_response(user)
 
 

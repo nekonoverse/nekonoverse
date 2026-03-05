@@ -3,7 +3,7 @@ import { useNavigate } from "@solidjs/router";
 import { currentUser, authLoading, fetchCurrentUser, logout } from "../stores/auth";
 import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
 import { useI18n } from "../i18n";
-import { updateDisplayName, changePassword } from "../api/settings";
+import { updateDisplayName, updateAvatar, changePassword } from "../api/settings";
 import PasskeyManager from "../components/PasskeyManager";
 
 type Tab = "account" | "appearance" | "security";
@@ -129,6 +129,10 @@ function AccountTab() {
   const [saveMsg, setSaveMsg] = createSignal("");
   const [saveError, setSaveError] = createSignal("");
 
+  const [avatarUploading, setAvatarUploading] = createSignal(false);
+  const [avatarMsg, setAvatarMsg] = createSignal("");
+  const [avatarError, setAvatarError] = createSignal("");
+
   const [currentPw, setCurrentPw] = createSignal("");
   const [newPw, setNewPw] = createSignal("");
   const [confirmPw, setConfirmPw] = createSignal("");
@@ -153,6 +157,26 @@ function AccountTab() {
       setSaveError(e.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleAvatarChange = async (e: Event) => {
+    const input = e.currentTarget as HTMLInputElement;
+    const file = input.files?.[0];
+    if (!file) return;
+
+    setAvatarUploading(true);
+    setAvatarMsg("");
+    setAvatarError("");
+    try {
+      await updateAvatar(file);
+      await fetchCurrentUser();
+      setAvatarMsg(t("settings.saved"));
+    } catch (err: any) {
+      setAvatarError(err.message);
+    } finally {
+      setAvatarUploading(false);
+      input.value = "";
     }
   };
 
@@ -182,6 +206,30 @@ function AccountTab() {
       <div class="settings-section">
         <h3>{t("settings.account")}</h3>
         <p class="settings-username">@{currentUser()!.username}</p>
+
+        <div class="avatar-upload" style="margin-top: 16px">
+          <label>{t("settings.avatar")}</label>
+          <div class="avatar-preview-row">
+            <Show
+              when={currentUser()!.avatar_url}
+              fallback={<div class="avatar-placeholder" />}
+            >
+              <img class="avatar-preview" src={currentUser()!.avatar_url!} alt="avatar" />
+            </Show>
+            <label class="btn btn-small avatar-file-btn">
+              {avatarUploading() ? t("common.loading") : t("settings.avatarUpload")}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp"
+                onChange={handleAvatarChange}
+                disabled={avatarUploading()}
+                style="display: none"
+              />
+            </label>
+          </div>
+          <Show when={avatarMsg()}><p class="settings-success">{avatarMsg()}</p></Show>
+          <Show when={avatarError()}><p class="error">{avatarError()}</p></Show>
+        </div>
 
         <div class="settings-form-group" style="margin-top: 16px">
           <label>{t("settings.displayName")}</label>

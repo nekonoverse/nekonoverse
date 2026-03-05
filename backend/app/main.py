@@ -11,15 +11,21 @@ from app.api.mastodon.accounts import router as accounts_router
 from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.timelines import router as timelines_router
 from app.api.oauth import router as oauth_router
+from app.api.admin import router as admin_router
+from app.api.media import router as media_router
 from app.api.passkey import router as passkey_router
 from app.config import settings
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Startup
+    import logging
+    from app.storage import ensure_bucket
+    try:
+        await ensure_bucket()
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not ensure S3 bucket: %s", e)
     yield
-    # Shutdown
 
 
 app = FastAPI(
@@ -48,7 +54,16 @@ app.add_middleware(
 
 @app.get("/api/v1/instance")
 async def instance_info():
-    return {
+    thumbnail_url = None
+    try:
+        from app.valkey_client import valkey
+        icon_url = await valkey.get("server:icon_url")
+        if icon_url:
+            thumbnail_url = icon_url
+    except Exception:
+        pass
+
+    resp: dict = {
         "uri": settings.domain,
         "title": "Nekonoverse",
         "description": "A cat-friendly ActivityPub server",
@@ -57,6 +72,9 @@ async def instance_info():
         "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
         "registrations": settings.registration_open,
     }
+    if thumbnail_url:
+        resp["thumbnail"] = {"url": thumbnail_url}
+    return resp
 
 
 @app.get("/api/v1/health")
@@ -70,6 +88,8 @@ app.include_router(statuses_router)
 app.include_router(timelines_router)
 app.include_router(oauth_router)
 app.include_router(passkey_router)
+app.include_router(media_router)
+app.include_router(admin_router)
 app.include_router(webfinger_router)
 app.include_router(nodeinfo_router)
 app.include_router(ap_router)

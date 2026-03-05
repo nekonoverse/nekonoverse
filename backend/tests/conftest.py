@@ -19,6 +19,7 @@ os.environ.setdefault("REGISTRATION_OPEN", "true")
 # Import all models so relationships resolve
 import app.models.actor  # noqa: F401
 import app.models.delivery  # noqa: F401
+import app.models.drive_file  # noqa: F401
 import app.models.follow  # noqa: F401
 import app.models.note  # noqa: F401
 import app.models.oauth  # noqa: F401

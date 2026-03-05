@@ -72,4 +72,6 @@ export const en: Dictionary = {
   "settings.confirmPassword": "Confirm New Password",
   "settings.passwordMismatch": "Passwords do not match",
   "settings.passwordChanged": "Password changed successfully",
+  "settings.avatar": "Avatar",
+  "settings.avatarUpload": "Choose image",
 };

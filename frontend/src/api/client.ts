@@ -4,21 +4,24 @@ interface RequestOptions {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
+  formData?: FormData;
 }
 
 export async function apiRequest<T>(path: string, options: RequestOptions = {}): Promise<T> {
-  const { method = "GET", body, headers = {} } = options;
+  const { method = "GET", body, headers = {}, formData } = options;
 
   const config: RequestInit = {
     method,
     credentials: "include",
-    headers: {
+    headers: formData ? { ...headers } : {
       "Content-Type": "application/json",
       ...headers,
     },
   };
 
-  if (body) {
+  if (formData) {
+    config.body = formData;
+  } else if (body) {
     config.body = JSON.stringify(body);
   }
 
