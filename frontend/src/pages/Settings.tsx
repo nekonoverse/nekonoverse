@@ -1,12 +1,17 @@
-import { createSignal, createEffect, onMount, Show } from "solid-js";
+import { createSignal, onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { currentUser, authLoading, fetchCurrentUser, logout } from "../stores/auth";
 import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
-import { useI18n } from "../i18n";
-import { updateDisplayName, updateAvatar, changePassword } from "../api/settings";
+import {
+  defaultVisibility, setDefaultVisibility,
+  rememberVisibility, setRememberVisibility,
+} from "../stores/composer";
+import VisibilitySelector from "../components/notes/VisibilitySelector";
+import { useI18n, locales, type Locale } from "../i18n";
+import { changePassword } from "../api/settings";
 import PasskeyManager from "../components/PasskeyManager";
 
-type Tab = "account" | "appearance" | "security";
+type Tab = "posting" | "appearance" | "security";
 
 export default function Settings() {
   const { t } = useI18n();
@@ -28,7 +33,7 @@ export default function Settings() {
 
       <div class="settings-tabs">
         {([
-          { key: "account" as Tab, label: t("settings.tabAccount") },
+          { key: "posting" as Tab, label: t("settings.tabPosting") },
           { key: "appearance" as Tab, label: t("settings.tabAppearance") },
           { key: "security" as Tab, label: t("settings.tabSecurity") },
         ]).map((tab) => (
@@ -41,8 +46,8 @@ export default function Settings() {
         ))}
       </div>
 
-      <Show when={activeTab() === "account"}>
-        <AccountTab />
+      <Show when={activeTab() === "posting"}>
+        <PostingTab />
       </Show>
       <Show when={activeTab() === "appearance"}>
         <AppearanceTab />
@@ -55,10 +60,24 @@ export default function Settings() {
 }
 
 function AppearanceTab() {
-  const { t } = useI18n();
+  const { t, locale, setLocale } = useI18n();
 
   return (
     <>
+      <div class="settings-section">
+        <h3>{t("settings.language")}</h3>
+        <div class="theme-selector">
+          {locales.map((item) => (
+            <button
+              class={`theme-btn${locale() === item.code ? " theme-active" : ""}`}
+              onClick={() => setLocale(item.code as Locale)}
+            >
+              {item.name}
+            </button>
+          ))}
+        </div>
+      </div>
+
       <div class="settings-section">
         <h3>{t("settings.theme")}</h3>
         <div class="theme-selector">
@@ -81,14 +100,15 @@ function AppearanceTab() {
         <h3>{t("settings.fontSize")}</h3>
         <div class="theme-selector">
           {([
-            { key: "small" as FontSize, label: t("settings.fontSmall") },
-            { key: "medium" as FontSize, label: t("settings.fontMedium") },
-            { key: "large" as FontSize, label: t("settings.fontLarge") },
-            { key: "xlarge" as FontSize, label: t("settings.fontXLarge") },
-            { key: "xxlarge" as FontSize, label: t("settings.fontXXLarge") },
+            { key: "small" as FontSize, label: t("settings.fontSmall"), size: "14px" },
+            { key: "medium" as FontSize, label: t("settings.fontMedium"), size: "16px" },
+            { key: "large" as FontSize, label: t("settings.fontLarge"), size: "20px" },
+            { key: "xlarge" as FontSize, label: t("settings.fontXLarge"), size: "24px" },
+            { key: "xxlarge" as FontSize, label: t("settings.fontXXLarge"), size: "28px" },
           ]).map((item) => (
             <button
               class={`theme-btn${fontSize() === item.key ? " theme-active" : ""}`}
+              style={{ "font-size": item.size }}
               onClick={() => setFontSize(item.key)}
             >
               {item.label}
@@ -96,7 +116,30 @@ function AppearanceTab() {
           ))}
         </div>
       </div>
+
     </>
+  );
+}
+
+function PostingTab() {
+  const { t } = useI18n();
+
+  return (
+    <div class="settings-section">
+      <h3>{t("settings.defaultVisibility")}</h3>
+      <VisibilitySelector
+        value={defaultVisibility()}
+        onChange={(v) => setDefaultVisibility(v)}
+      />
+      <label class="toggle-label">
+        <input
+          type="checkbox"
+          checked={rememberVisibility()}
+          onChange={(e) => setRememberVisibility(e.currentTarget.checked)}
+        />
+        {t("settings.rememberVisibility")}
+      </label>
+    </div>
   );
 }
 
@@ -122,63 +165,14 @@ function AuthGuard(props: { children: any }) {
   );
 }
 
-function AccountTab() {
+function SecurityTab(props: { onLogout: () => void }) {
   const { t } = useI18n();
-  const [displayName, setDisplayName] = createSignal("");
-  const [saving, setSaving] = createSignal(false);
-  const [saveMsg, setSaveMsg] = createSignal("");
-  const [saveError, setSaveError] = createSignal("");
-
-  const [avatarUploading, setAvatarUploading] = createSignal(false);
-  const [avatarMsg, setAvatarMsg] = createSignal("");
-  const [avatarError, setAvatarError] = createSignal("");
-
   const [currentPw, setCurrentPw] = createSignal("");
   const [newPw, setNewPw] = createSignal("");
   const [confirmPw, setConfirmPw] = createSignal("");
   const [changingPw, setChangingPw] = createSignal(false);
   const [pwMsg, setPwMsg] = createSignal("");
   const [pwError, setPwError] = createSignal("");
-
-  createEffect(() => {
-    const user = currentUser();
-    if (user) setDisplayName(user.display_name ?? "");
-  });
-
-  const handleSaveDisplayName = async () => {
-    setSaving(true);
-    setSaveMsg("");
-    setSaveError("");
-    try {
-      await updateDisplayName(displayName() || null);
-      await fetchCurrentUser();
-      setSaveMsg(t("settings.saved"));
-    } catch (e: any) {
-      setSaveError(e.message);
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleAvatarChange = async (e: Event) => {
-    const input = e.currentTarget as HTMLInputElement;
-    const file = input.files?.[0];
-    if (!file) return;
-
-    setAvatarUploading(true);
-    setAvatarMsg("");
-    setAvatarError("");
-    try {
-      await updateAvatar(file);
-      await fetchCurrentUser();
-      setAvatarMsg(t("settings.saved"));
-    } catch (err: any) {
-      setAvatarError(err.message);
-    } finally {
-      setAvatarUploading(false);
-      input.value = "";
-    }
-  };
 
   const handleChangePassword = async () => {
     setPwMsg("");
@@ -203,53 +197,6 @@ function AccountTab() {
 
   return (
     <AuthGuard>
-      <div class="settings-section">
-        <h3>{t("settings.account")}</h3>
-        <p class="settings-username">@{currentUser()!.username}</p>
-
-        <div class="avatar-upload" style="margin-top: 16px">
-          <label>{t("settings.avatar")}</label>
-          <div class="avatar-preview-row">
-            <img
-              class="avatar-preview"
-              src={currentUser()!.avatar_url || "/default-avatar.svg"}
-              alt="avatar"
-            />
-            <label class="btn btn-small avatar-file-btn">
-              {avatarUploading() ? t("common.loading") : t("settings.avatarUpload")}
-              <input
-                type="file"
-                accept="image/jpeg,image/png,image/gif,image/webp"
-                onChange={handleAvatarChange}
-                disabled={avatarUploading()}
-                style="display: none"
-              />
-            </label>
-          </div>
-          <Show when={avatarMsg()}><p class="settings-success">{avatarMsg()}</p></Show>
-          <Show when={avatarError()}><p class="error">{avatarError()}</p></Show>
-        </div>
-
-        <div class="settings-form-group" style="margin-top: 16px">
-          <label>{t("settings.displayName")}</label>
-          <input
-            type="text"
-            value={displayName()}
-            onInput={(e) => setDisplayName(e.currentTarget.value)}
-            placeholder={t("settings.displayNamePlaceholder")}
-          />
-        </div>
-        <Show when={saveMsg()}><p class="settings-success">{saveMsg()}</p></Show>
-        <Show when={saveError()}><p class="error">{saveError()}</p></Show>
-        <button
-          class="btn btn-small"
-          onClick={handleSaveDisplayName}
-          disabled={saving()}
-        >
-          {t("settings.save")}
-        </button>
-      </div>
-
       <div class="settings-section">
         <h3>{t("settings.changePassword")}</h3>
         <Show when={pwMsg()}><p class="settings-success">{pwMsg()}</p></Show>
@@ -286,15 +233,7 @@ function AccountTab() {
           {t("settings.changePassword")}
         </button>
       </div>
-    </AuthGuard>
-  );
-}
 
-function SecurityTab(props: { onLogout: () => void }) {
-  const { t } = useI18n();
-
-  return (
-    <AuthGuard>
       <div class="settings-section">
         <PasskeyManager />
       </div>
