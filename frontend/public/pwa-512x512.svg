@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="64" fill="#f5e6f0"/>
+  <!-- Cat ears -->
+  <path d="M128 208 L176 80 L224 192Z" fill="#f9a8d4"/>
+  <path d="M384 208 L336 80 L288 192Z" fill="#f9a8d4"/>
+  <path d="M144 200 L176 104 L208 192Z" fill="#fce4ec"/>
+  <path d="M368 200 L336 104 L304 192Z" fill="#fce4ec"/>
+  <!-- Head -->
+  <circle cx="256" cy="288" r="120" fill="#fff5f5"/>
+  <!-- Cheeks -->
+  <circle cx="176" cy="320" r="24" fill="#fbb4c8" opacity="0.5"/>
+  <circle cx="336" cy="320" r="24" fill="#fbb4c8" opacity="0.5"/>
+  <!-- Eyes -->
+  <ellipse cx="208" cy="272" rx="16" ry="20" fill="#5b4a6a"/>
+  <ellipse cx="304" cy="272" rx="16" ry="20" fill="#5b4a6a"/>
+  <circle cx="214" cy="266" r="6" fill="#fff"/>
+  <circle cx="310" cy="266" r="6" fill="#fff"/>
+  <!-- Nose -->
+  <path d="M248 304 L256 316 L264 304Z" fill="#f9a8d4"/>
+  <!-- Mouth -->
+  <path d="M232 324 Q256 344 280 324" stroke="#c48b9f" stroke-width="6" fill="none" stroke-linecap="round"/>
+  <!-- Whiskers -->
+  <line x1="120" y1="296" x2="184" y2="304" stroke="#d4a0b9" stroke-width="4" stroke-linecap="round"/>
+  <line x1="120" y1="320" x2="184" y2="320" stroke="#d4a0b9" stroke-width="4" stroke-linecap="round"/>
+  <line x1="328" y1="304" x2="392" y2="296" stroke="#d4a0b9" stroke-width="4" stroke-linecap="round"/>
+  <line x1="328" y1="320" x2="392" y2="320" stroke="#d4a0b9" stroke-width="4" stroke-linecap="round"/>
+</svg>

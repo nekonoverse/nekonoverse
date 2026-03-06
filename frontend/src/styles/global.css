@@ -107,22 +107,6 @@ a:hover {
   color: var(--accent);
 }
 
-.navbar-lang {
-  padding: 4px 10px;
-  background: var(--bg-primary);
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  color: var(--text-secondary);
-  cursor: pointer;
-  font-size: 0.75em;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-}
-
-.navbar-lang:hover {
-  border-color: var(--accent);
-  color: var(--text-primary);
-}
 
 .page-container {
   max-width: 600px;
@@ -260,6 +244,50 @@ a:hover {
   border-color: var(--accent);
 }
 
+.visibility-select {
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.composer-actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+}
+
+.visibility-select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.toggle-label input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  accent-color: var(--accent);
+}
+
+.settings-label {
+  display: block;
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
 .composer-footer {
   display: flex;
   justify-content: space-between;
@@ -309,6 +337,8 @@ a:hover {
 
 /* Note Card */
 .note-card {
+  display: flex;
+  gap: 14px;
   background: var(--bg-secondary);
   padding: 16px;
   border-radius: var(--radius);
@@ -316,19 +346,24 @@ a:hover {
   margin-bottom: 8px;
 }
 
+.note-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.note-body {
+  flex: 1;
+  min-width: 0;
+}
+
 .note-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin-bottom: 8px;
-}
-
-.note-avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex-shrink: 0;
+  margin-bottom: 6px;
 }
 
 .note-header-text {
@@ -376,13 +411,18 @@ a:hover {
 .reaction-badge {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
+  gap: 5px;
+  padding: 4px 10px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
   border-radius: 999px;
-  font-size: 0.9em;
+  font-size: 0.95em;
   cursor: pointer;
+}
+
+.reaction-badge .twemoji {
+  height: 1.4em;
+  width: 1.4em;
 }
 
 .reaction-badge:hover {
@@ -449,6 +489,18 @@ a:hover {
   display: grid;
   grid-template-columns: repeat(5, 1fr);
   gap: 4px;
+}
+
+.twemoji {
+  height: 1.2em;
+  width: 1.2em;
+  vertical-align: -0.2em;
+  display: inline-block;
+}
+
+.emoji-btn .twemoji {
+  height: 1.4em;
+  width: 1.4em;
 }
 
 .emoji-btn {
@@ -593,6 +645,29 @@ a:hover {
 
 .avatar-file-btn {
   cursor: pointer;
+}
+
+.header-preview-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.header-preview {
+  width: 200px;
+  height: 70px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  border: 2px solid var(--border);
+}
+
+.header-placeholder {
+  width: 200px;
+  height: 70px;
+  border-radius: var(--radius);
+  background: var(--bg-primary);
+  border: 2px dashed var(--border);
 }
 
 .btn-danger-full {
@@ -772,4 +847,290 @@ a:hover {
 .btn-passkey:disabled {
   opacity: 0.6;
   cursor: not-allowed;
+}
+
+/* Profile Page */
+.profile-header {
+  position: relative;
+  margin-bottom: 60px;
+}
+
+.profile-header-img {
+  width: 100%;
+  height: 200px;
+  object-fit: cover;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.profile-header-placeholder {
+  width: 100%;
+  height: 200px;
+  background: var(--bg-card);
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.profile-avatar {
+  width: 96px;
+  height: 96px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 4px solid var(--bg-primary);
+  position: absolute;
+  bottom: -48px;
+  left: 20px;
+  background: var(--bg-secondary);
+}
+
+.profile-info {
+  background: var(--bg-secondary);
+  padding: 16px 20px;
+  border: 1px solid var(--border);
+  border-radius: 0 0 var(--radius) var(--radius);
+  margin-bottom: 20px;
+}
+
+.profile-info-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.profile-display-name {
+  font-size: 1.25em;
+}
+
+.profile-edit-btn {
+  padding: 6px 16px;
+  background: transparent;
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: 0.8em;
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.profile-edit-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.profile-handle {
+  display: block;
+  color: var(--text-secondary);
+  font-size: 0.875em;
+  margin-bottom: 8px;
+}
+
+.profile-bio {
+  margin-top: 8px;
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.profile-joined {
+  display: block;
+  margin-top: 8px;
+  font-size: 0.8em;
+  color: var(--text-secondary);
+}
+
+.profile-posts {
+  margin-top: 8px;
+}
+
+.profile-posts h3 {
+  margin-bottom: 12px;
+  font-size: 1.1em;
+}
+
+.profile-posts .empty {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 40px 0;
+}
+
+/* Note Avatar Link */
+.note-avatar-link {
+  flex-shrink: 0;
+}
+
+.note-display-name-link {
+  color: var(--text-primary);
+}
+
+.note-display-name-link:hover {
+  text-decoration: underline;
+}
+
+/* Hover Card */
+.hover-card-wrapper {
+  position: relative;
+  display: inline;
+}
+
+.hover-card {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  z-index: 300;
+  width: 300px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  padding: 16px;
+  margin-top: 4px;
+}
+
+.hover-card-loading {
+  height: 60px;
+}
+
+.hover-card-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.hover-card-avatar {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.hover-card-names {
+  min-width: 0;
+}
+
+.hover-card-display-name {
+  display: block;
+  font-size: 1em;
+}
+
+.hover-card-handle {
+  display: block;
+  font-size: 0.8em;
+  color: var(--text-secondary);
+}
+
+.hover-card-bio {
+  margin-top: 10px;
+  font-size: 0.85em;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  word-break: break-word;
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+}
+
+/* Profile Inline Edit */
+.profile-header-editable {
+  position: relative;
+  cursor: pointer;
+}
+
+.profile-header-editable:hover .profile-overlay {
+  opacity: 1;
+}
+
+.profile-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 1.5em;
+  opacity: 0;
+  transition: opacity 0.15s;
+  border-radius: var(--radius) var(--radius) 0 0;
+}
+
+.profile-avatar-editable {
+  position: absolute;
+  bottom: -48px;
+  left: 20px;
+  cursor: pointer;
+}
+
+.profile-avatar-editable:hover .profile-avatar-overlay {
+  opacity: 1;
+}
+
+.profile-avatar-editable .profile-avatar {
+  position: static;
+}
+
+.profile-avatar-overlay {
+  position: absolute;
+  inset: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.4);
+  color: #fff;
+  font-size: 1.25em;
+  opacity: 0;
+  transition: opacity 0.15s;
+  border-radius: 50%;
+}
+
+.profile-edit-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 1.25em;
+  font-weight: bold;
+  min-width: 0;
+}
+
+.profile-edit-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.profile-edit-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+/* PWA Update Banner */
+.pwa-update-banner {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 12px 20px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border);
+  font-size: 0.875em;
+}
+
+.pwa-update-banner button {
+  padding: 6px 16px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 0.875em;
+}
+
+.pwa-update-banner button:hover {
+  background: var(--accent-hover);
 }
