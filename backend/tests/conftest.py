@@ -17,7 +17,8 @@ if _prod_url and "nekonoverse_test" not in _prod_url:
     os.environ["DATABASE_URL"] = _prod_url.rsplit("/", 1)[0] + "/nekonoverse_test"
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://nekonoverse:changeme@localhost:5432/nekonoverse_test")
 os.environ.setdefault("VALKEY_URL", "valkey://localhost:6379/1")
-os.environ.setdefault("DOMAIN", "localhost")
+os.environ["DOMAIN"] = "localhost"
+os.environ["FRONTEND_URL"] = "http://localhost:3000"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("REGISTRATION_OPEN", "true")

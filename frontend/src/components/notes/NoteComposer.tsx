@@ -1,6 +1,14 @@
 import { createSignal } from "solid-js";
 import { createNote, type Note } from "../../api/statuses";
 import { useI18n } from "../../i18n";
+import {
+  getInitialVisibility,
+  rememberVisibility,
+  defaultVisibility,
+  setLastVisibility,
+  type Visibility,
+} from "../../stores/composer";
+import VisibilitySelector from "./VisibilitySelector";
 
 interface Props {
   onPost?: (note: Note) => void;
@@ -9,6 +17,7 @@ interface Props {
 export default function NoteComposer(props: Props) {
   const { t } = useI18n();
   const [content, setContent] = createSignal("");
+  const [visibility, setVisibility] = createSignal<Visibility>(getInitialVisibility());
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal("");
 
@@ -18,8 +27,15 @@ export default function NoteComposer(props: Props) {
     setLoading(true);
     setError("");
     try {
-      const note = await createNote(content());
+      const note = await createNote(content(), visibility());
       setContent("");
+
+      if (rememberVisibility()) {
+        setLastVisibility(visibility());
+      } else {
+        setVisibility(defaultVisibility());
+      }
+
       props.onPost?.(note);
     } catch (err) {
       setError(err instanceof Error ? err.message : t("composer.failed"));
@@ -40,9 +56,12 @@ export default function NoteComposer(props: Props) {
       />
       <div class="composer-footer">
         <span class="char-count">{content().length} / 5000</span>
-        <button type="submit" disabled={loading() || !content().trim()}>
-          {loading() ? t("composer.posting") : t("composer.post")}
-        </button>
+        <div class="composer-actions">
+          <VisibilitySelector value={visibility()} onChange={setVisibility} />
+          <button type="submit" disabled={loading() || !content().trim()}>
+            {loading() ? t("composer.posting") : t("composer.post")}
+          </button>
+        </div>
       </div>
     </form>
   );

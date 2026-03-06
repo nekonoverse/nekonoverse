@@ -2,6 +2,7 @@ import { createSignal, Show } from "solid-js";
 import type { ReactionSummary } from "../../api/statuses";
 import { reactToNote, unreactToNote } from "../../api/statuses";
 import EmojiPicker from "./EmojiPicker";
+import Emoji from "../Emoji";
 
 interface Props {
   noteId: string;
@@ -33,7 +34,7 @@ export default function ReactionBar(props: Props) {
           class={`reaction-badge ${r.me ? "reaction-me" : ""}`}
           onClick={() => handleReaction(r.emoji)}
         >
-          {r.emoji} {r.count}
+          <Emoji emoji={r.emoji} /> {r.count}
         </button>
       ))}
       <button class="reaction-add-btn" onClick={() => setShowPicker(!showPicker())}>

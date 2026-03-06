@@ -1,22 +1,27 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
-  <rect width="128" height="128" rx="64" fill="#2a2a4a"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="10 10 108 108" fill="none">
+  <rect width="128" height="128" rx="64" fill="#f5e6f0"/>
   <!-- Cat ears -->
-  <path d="M32 52 L44 20 L56 48Z" fill="#e94560"/>
-  <path d="M96 52 L84 20 L72 48Z" fill="#e94560"/>
-  <path d="M36 50 L44 26 L52 48Z" fill="#1a1a2e"/>
-  <path d="M92 50 L84 26 L76 48Z" fill="#1a1a2e"/>
+  <path d="M32 52 L44 20 L56 48Z" fill="#f9a8d4"/>
+  <path d="M96 52 L84 20 L72 48Z" fill="#f9a8d4"/>
+  <path d="M36 50 L44 26 L52 48Z" fill="#fce4ec"/>
+  <path d="M92 50 L84 26 L76 48Z" fill="#fce4ec"/>
   <!-- Head -->
-  <circle cx="64" cy="72" r="30" fill="#a0a0b0"/>
+  <circle cx="64" cy="72" r="30" fill="#fff5f5"/>
+  <!-- Cheeks -->
+  <circle cx="44" cy="80" r="6" fill="#fbb4c8" opacity="0.5"/>
+  <circle cx="84" cy="80" r="6" fill="#fbb4c8" opacity="0.5"/>
   <!-- Eyes -->
-  <ellipse cx="52" cy="68" rx="4" ry="5" fill="#1a1a2e"/>
-  <ellipse cx="76" cy="68" rx="4" ry="5" fill="#1a1a2e"/>
+  <ellipse cx="52" cy="68" rx="4" ry="5" fill="#5b4a6a"/>
+  <ellipse cx="76" cy="68" rx="4" ry="5" fill="#5b4a6a"/>
+  <circle cx="53.5" cy="66.5" r="1.5" fill="#fff"/>
+  <circle cx="77.5" cy="66.5" r="1.5" fill="#fff"/>
   <!-- Nose -->
-  <path d="M62 76 L64 79 L66 76Z" fill="#e94560"/>
+  <path d="M62 76 L64 79 L66 76Z" fill="#f9a8d4"/>
   <!-- Mouth -->
-  <path d="M58 81 Q64 86 70 81" stroke="#1a1a2e" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+  <path d="M58 81 Q64 86 70 81" stroke="#c48b9f" stroke-width="1.5" fill="none" stroke-linecap="round"/>
   <!-- Whiskers -->
-  <line x1="30" y1="74" x2="46" y2="76" stroke="#1a1a2e" stroke-width="1" stroke-linecap="round"/>
-  <line x1="30" y1="80" x2="46" y2="80" stroke="#1a1a2e" stroke-width="1" stroke-linecap="round"/>
-  <line x1="82" y1="76" x2="98" y2="74" stroke="#1a1a2e" stroke-width="1" stroke-linecap="round"/>
-  <line x1="82" y1="80" x2="98" y2="80" stroke="#1a1a2e" stroke-width="1" stroke-linecap="round"/>
+  <line x1="30" y1="74" x2="46" y2="76" stroke="#d4a0b9" stroke-width="1" stroke-linecap="round"/>
+  <line x1="30" y1="80" x2="46" y2="80" stroke="#d4a0b9" stroke-width="1" stroke-linecap="round"/>
+  <line x1="82" y1="76" x2="98" y2="74" stroke="#d4a0b9" stroke-width="1" stroke-linecap="round"/>
+  <line x1="82" y1="80" x2="98" y2="80" stroke="#d4a0b9" stroke-width="1" stroke-linecap="round"/>
 </svg>

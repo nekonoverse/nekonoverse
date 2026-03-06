@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.actor import Actor
 
@@ -29,6 +30,42 @@ async def get_actor_by_username(
     return result.scalar_one_or_none()
 
 
+async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
+    """Get a local actor's key_id and private_key_pem for signed fetches."""
+    from app.models.user import User
+
+    result = await db.execute(
+        select(User).options(selectinload(User.actor)).limit(1)
+    )
+    user = result.scalar_one_or_none()
+    if not user or not user.actor:
+        return None
+    key_id = f"{user.actor.ap_id}#main-key"
+    return key_id, user.private_key_pem
+
+
+async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
+    """Perform a signed HTTP GET (Authorized Fetch / Secure Mode)."""
+    from app.activitypub.http_signature import sign_request
+
+    signing = await _get_signing_key(db)
+    headers = {"Accept": AP_ACCEPT}
+
+    if signing:
+        key_id, private_key_pem = signing
+        sig_headers = sign_request(
+            private_key_pem=private_key_pem,
+            key_id=key_id,
+            method="GET",
+            url=url,
+            body=None,
+        )
+        headers.update(sig_headers)
+
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        return await client.get(url, headers=headers, follow_redirects=True)
+
+
 async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
     """Fetch a remote actor by AP ID, cache in DB."""
     # Check cache first
@@ -39,17 +76,12 @@ async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
             return existing
 
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
-            resp = await client.get(
-                ap_id,
-                headers={"Accept": AP_ACCEPT},
-                follow_redirects=True,
-            )
-            if resp.status_code != 200:
-                logger.warning("Failed to fetch actor %s: HTTP %d", ap_id, resp.status_code)
-                return existing
+        resp = await _signed_get(db, ap_id)
+        if not resp or resp.status_code != 200:
+            logger.warning("Failed to fetch actor %s: HTTP %s", ap_id, resp.status_code if resp else "no response")
+            return existing
 
-            data = resp.json()
+        data = resp.json()
     except Exception:
         logger.exception("Error fetching remote actor %s", ap_id)
         return existing

@@ -1,18 +1,13 @@
 import { Show } from "solid-js";
 import { useLocation } from "@solidjs/router";
 import { currentUser } from "../../stores/auth";
-import { useI18n, locales, type Locale } from "../../i18n";
+import { useI18n } from "../../i18n";
 
 export default function Navbar() {
-  const { t, locale, setLocale } = useI18n();
+  const { t } = useI18n();
   const location = useLocation();
 
   const isActive = (path: string) => location.pathname === path;
-
-  const nextLocale = () => {
-    const idx = locales.findIndex((l) => l.code === locale());
-    return locales[(idx + 1) % locales.length];
-  };
 
   return (
     <nav class="navbar">
@@ -34,13 +29,6 @@ export default function Navbar() {
               {t("settings.title")}
             </a>
           </Show>
-          <button
-            class="navbar-lang"
-            onClick={() => setLocale(nextLocale().code as Locale)}
-            title={nextLocale().name}
-          >
-            {nextLocale().code.toUpperCase()}
-          </button>
         </div>
       </div>
     </nav>

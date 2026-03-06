@@ -17,7 +17,8 @@ class Settings(BaseSettings):
 
     @property
     def server_url(self) -> str:
-        scheme = "http" if self.debug else "https"
+        # Derive scheme from frontend_url (which reflects the actual public URL)
+        scheme = "https" if self.frontend_url.startswith("https") else "http"
         return f"{scheme}://{self.domain}"
 
     @property

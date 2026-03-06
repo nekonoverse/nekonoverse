@@ -8,14 +8,16 @@ import {
 import { flatten, translator } from "@solid-primitives/i18n";
 import { ja, type Dictionary } from "./dictionaries/ja";
 import { en } from "./dictionaries/en";
+import { neko } from "./dictionaries/neko";
 
-export type Locale = "ja" | "en";
+export type Locale = "ja" | "en" | "neko";
 
-const dictionaries: Record<Locale, Dictionary> = { ja, en };
+const dictionaries: Record<Locale, Dictionary> = { ja, en, neko };
 
 export const locales: { code: Locale; name: string }[] = [
   { code: "ja", name: "日本語" },
   { code: "en", name: "English" },
+  { code: "neko", name: "ねこ語" },
 ];
 
 function detectLocale(): Locale {

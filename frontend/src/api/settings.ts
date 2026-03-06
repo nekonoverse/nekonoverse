@@ -21,6 +21,15 @@ export async function updateAvatar(file: File): Promise<CurrentUser> {
   });
 }
 
+export async function updateHeader(file: File): Promise<CurrentUser> {
+  const formData = new FormData();
+  formData.append("header", file);
+  return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
+    method: "PATCH",
+    formData,
+  });
+}
+
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await apiRequest("/api/v1/auth/change_password", {
     method: "POST",

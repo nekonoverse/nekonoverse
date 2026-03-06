@@ -128,6 +128,7 @@ def _user_response(user: User) -> UserResponse:
 async def update_credentials(
     display_name: str | None = Form(None),
     avatar: UploadFile | None = File(None),
+    header: UploadFile | None = File(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -149,6 +150,24 @@ async def update_credentials(
 
         user.actor.avatar_url = file_to_url(drive_file)
         user.actor.avatar_file_id = drive_file.id
+        await db.commit()
+        await db.refresh(user)
+
+    if header:
+        from app.services.drive_service import file_to_url, upload_drive_file
+
+        data = await header.read()
+        try:
+            drive_file = await upload_drive_file(
+                db=db, owner=user, data=data,
+                filename=header.filename or "header",
+                mime_type=header.content_type or "image/png",
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        user.actor.header_url = file_to_url(drive_file)
+        user.actor.header_file_id = drive_file.id
         await db.commit()
         await db.refresh(user)
 

@@ -92,12 +92,12 @@ def verify_signature(
     if "signature" not in params or "headers" not in params or "keyId" not in params:
         return False
 
-    # Check Date header freshness (allow 30 seconds skew)
+    # Check Date header freshness (allow 12 hours skew, same as Mastodon)
     if "date" in headers:
         try:
             request_date = parsedate_to_datetime(headers["date"])
             now = datetime.now(timezone.utc)
-            if abs((now - request_date).total_seconds()) > 30:
+            if abs((now - request_date).total_seconds()) > 43200:
                 return False
         except Exception:
             return False
