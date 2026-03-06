@@ -35,6 +35,26 @@ async def get_current_user(
     return user
 
 
+async def get_staff_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    user = await get_current_user(request, db)
+    if not user.is_staff:
+        raise HTTPException(status_code=403, detail="Staff only")
+    return user
+
+
+async def get_admin_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    user = await get_current_user(request, db)
+    if not user.is_admin:
+        raise HTTPException(status_code=403, detail="Admin only")
+    return user
+
+
 async def get_optional_user(
     request: Request,
     db: AsyncSession = Depends(get_db),

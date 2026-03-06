@@ -41,6 +41,8 @@ class Actor(Base):
         onupdate=lambda: datetime.now(timezone.utc),
     )
     last_fetched_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    suspended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    silenced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     avatar_file_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey("drive_files.id", ondelete="SET NULL", name="fk_actors_avatar_file_id", use_alter=True),
@@ -65,3 +67,11 @@ class Actor(Base):
     @property
     def is_local(self) -> bool:
         return self.domain is None
+
+    @property
+    def is_suspended(self) -> bool:
+        return self.suspended_at is not None
+
+    @property
+    def is_silenced(self) -> bool:
+        return self.silenced_at is not None

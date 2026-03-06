@@ -167,8 +167,13 @@ async def get_public_timeline(
 ) -> list[Note]:
     query = (
         select(Note)
+        .join(Actor, Note.actor_id == Actor.id)
         .options(*_note_load_options())
-        .where(Note.visibility == "public", Note.deleted_at.is_(None))
+        .where(
+            Note.visibility == "public",
+            Note.deleted_at.is_(None),
+            Actor.silenced_at.is_(None),
+        )
     )
     if local_only:
         query = query.where(Note.local.is_(True))

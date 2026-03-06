@@ -34,6 +34,20 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     )
     post_count = post_count_result.scalar() or 0
 
+    # Load server settings
+    node_name = "Nekonoverse"
+    node_description = "A cat-friendly ActivityPub server"
+    try:
+        from app.services.server_settings_service import get_setting
+        name = await get_setting(db, "server_name")
+        if name:
+            node_name = name
+        desc = await get_setting(db, "server_description")
+        if desc:
+            node_description = desc
+    except Exception:
+        pass
+
     return {
         "version": "2.0",
         "software": {"name": "nekonoverse", "version": "0.1.0"},
@@ -49,8 +63,8 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
             "localPosts": post_count,
         },
         "metadata": {
-            "nodeName": "Nekonoverse",
-            "nodeDescription": "A cat-friendly ActivityPub server",
+            "nodeName": node_name,
+            "nodeDescription": node_description,
             "features": ["emoji_reactions"],
         },
     }

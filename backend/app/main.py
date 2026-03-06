@@ -56,7 +56,7 @@ app.add_middleware(
 
 
 @app.get("/api/v1/instance")
-async def instance_info():
+async def instance_info(db: AsyncSession = Depends(get_db)):
     thumbnail_url = None
     try:
         from app.valkey_client import valkey
@@ -66,10 +66,24 @@ async def instance_info():
     except Exception:
         pass
 
+    # Load server settings
+    title = "Nekonoverse"
+    description = "A cat-friendly ActivityPub server"
+    try:
+        from app.services.server_settings_service import get_setting
+        name = await get_setting(db, "server_name")
+        if name:
+            title = name
+        desc = await get_setting(db, "server_description")
+        if desc:
+            description = desc
+    except Exception:
+        pass
+
     resp: dict = {
         "uri": settings.domain,
-        "title": "Nekonoverse",
-        "description": "A cat-friendly ActivityPub server",
+        "title": title,
+        "description": description,
         "version": "0.1.0",
         "urls": {},
         "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},

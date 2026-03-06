@@ -245,6 +245,27 @@ def render_ordered_collection(collection_id: str, total_items: int, first_page: 
     }
 
 
+def render_flag_activity(
+    activity_id: str,
+    actor_ap_id: str,
+    target_actor_ap_id: str,
+    note_ap_ids: list[str] | None = None,
+    content: str = "",
+) -> dict:
+    """Render a Flag (report) activity for federation."""
+    obj = [target_actor_ap_id]
+    if note_ap_ids:
+        obj.extend(note_ap_ids)
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Flag",
+        "actor": actor_ap_id,
+        "object": obj,
+        "content": content,
+    }
+
+
 def render_ordered_collection_page(
     page_id: str,
     part_of: str,

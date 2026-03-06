@@ -41,6 +41,10 @@ async def get_actor(username: str, request: Request, db: AsyncSession = Depends(
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
+    # Suspended actors return 410 Gone
+    if actor.is_suspended:
+        raise HTTPException(status_code=410, detail="Gone")
+
     if not is_ap_request(request):
         # Redirect to profile page for browsers
         return Response(status_code=302, headers={"Location": f"/@{username}"})
@@ -244,6 +248,18 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
     activity_type = activity.get("type", "")
     logger.info("Processing inbox activity: type=%s id=%s", activity_type, activity.get("id"))
 
+    # Domain block check
+    actor_id_str = activity.get("actor", "")
+    if actor_id_str:
+        from urllib.parse import urlparse
+
+        from app.services.domain_block_service import is_domain_blocked
+
+        domain = urlparse(actor_id_str).hostname
+        if domain and await is_domain_blocked(db, domain):
+            logger.info("Rejected activity from blocked domain: %s", domain)
+            return
+
     # Idempotency check via Valkey
     activity_id = activity.get("id")
     if activity_id:
@@ -256,7 +272,7 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
             logger.info("Duplicate activity %s, skipping", activity_id)
             return
 
-    from app.activitypub.handlers import announce, create, delete, follow, like, undo, update
+    from app.activitypub.handlers import announce, create, delete, flag, follow, like, undo, update
 
     handler_map = {
         "Create": create.handle_create,
@@ -269,6 +285,7 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
         "Delete": delete.handle_delete,
         "Announce": announce.handle_announce,
         "Update": update.handle_update,
+        "Flag": flag.handle_flag,
     }
 
     handler = handler_map.get(activity_type)
