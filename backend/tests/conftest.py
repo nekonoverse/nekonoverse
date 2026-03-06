@@ -25,6 +25,7 @@ os.environ.setdefault("REGISTRATION_OPEN", "true")
 
 # Import all models so relationships resolve
 import app.models.actor  # noqa: F401
+import app.models.bookmark  # noqa: F401
 import app.models.custom_emoji  # noqa: F401
 import app.models.delivery  # noqa: F401
 import app.models.domain_block  # noqa: F401
@@ -33,12 +34,15 @@ import app.models.follow  # noqa: F401
 import app.models.moderation_log  # noqa: F401
 import app.models.note  # noqa: F401
 import app.models.note_attachment  # noqa: F401
+import app.models.notification  # noqa: F401
 import app.models.oauth  # noqa: F401
 import app.models.passkey  # noqa: F401
 import app.models.reaction  # noqa: F401
 import app.models.report  # noqa: F401
 import app.models.server_setting  # noqa: F401
 import app.models.user  # noqa: F401
+import app.models.user_block  # noqa: F401
+import app.models.user_mute  # noqa: F401
 from app.models.base import Base
 
 

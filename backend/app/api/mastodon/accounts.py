@@ -14,6 +14,7 @@ from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
 from app.services.follow_service import follow_actor, unfollow_actor
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
+relationships_router = APIRouter(prefix="/api/v1", tags=["relationships"])
 
 
 @router.post("/{actor_id}/follow")
@@ -129,6 +130,98 @@ def _actor_to_account(actor: Actor) -> dict:
     }
 
 
+@router.post("/{actor_id}/block")
+async def block_account(
+    actor_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.block_service import block_actor
+
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    if target.id == user.actor_id:
+        raise HTTPException(status_code=422, detail="Cannot block yourself")
+
+    try:
+        await block_actor(db, user, target)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {"ok": True}
+
+
+@router.post("/{actor_id}/unblock")
+async def unblock_account(
+    actor_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.block_service import unblock_actor
+
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    try:
+        await unblock_actor(db, user, target)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {"ok": True}
+
+
+@router.post("/{actor_id}/mute")
+async def mute_account(
+    actor_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.mute_service import mute_actor
+
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="Actor not found")
+    if target.id == user.actor_id:
+        raise HTTPException(status_code=422, detail="Cannot mute yourself")
+
+    try:
+        await mute_actor(db, user, target)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {"ok": True}
+
+
+@router.post("/{actor_id}/unmute")
+async def unmute_account(
+    actor_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.mute_service import unmute_actor
+
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    target = result.scalar_one_or_none()
+    if not target:
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    try:
+        await unmute_actor(db, user, target)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {"ok": True}
+
+
 @router.get("/{actor_id}/statuses")
 async def get_account_statuses(
     actor_id: uuid.UUID,
@@ -193,3 +286,38 @@ async def get_account(actor_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Actor not found")
 
     return _actor_to_account(actor)
+
+
+# --- Block/Mute lists (different prefix) ---
+
+
+@relationships_router.get("/blocks")
+async def list_blocks(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.block_service import get_blocked_ids
+
+    blocked_ids = await get_blocked_ids(db, user.actor_id)
+    if not blocked_ids:
+        return []
+
+    result = await db.execute(select(Actor).where(Actor.id.in_(blocked_ids)))
+    actors = result.scalars().all()
+    return [_actor_to_account(a) for a in actors]
+
+
+@relationships_router.get("/mutes")
+async def list_mutes(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.mute_service import get_muted_ids
+
+    muted_ids = await get_muted_ids(db, user.actor_id)
+    if not muted_ids:
+        return []
+
+    result = await db.execute(select(Actor).where(Actor.id.in_(muted_ids)))
+    actors = result.scalars().all()
+    return [_actor_to_account(a) for a in actors]

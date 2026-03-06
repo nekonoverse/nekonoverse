@@ -146,6 +146,15 @@ async def react_to_note(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
+    # Notify note author
+    if note.actor.is_local:
+        from app.services.notification_service import create_notification
+        await create_notification(
+            db, "reaction", note.actor_id, user.actor_id, note.id,
+            reaction_emoji=emoji,
+        )
+        await db.commit()
+
     return {"ok": True}
 
 
@@ -217,6 +226,15 @@ async def reblog_status(
     db.add(reblog_note)
     original.renotes_count = original.renotes_count + 1
     await db.commit()
+
+    # Notify original note author
+    if original.actor.is_local:
+        from app.services.notification_service import create_notification
+        await create_notification(
+            db, "renote", original.actor_id, actor.id, original.id,
+        )
+        await db.commit()
+
     await db.refresh(reblog_note, ["actor", "attachments"])
 
     # Deliver Announce to followers
@@ -289,6 +307,48 @@ async def unreblog_status(
     inboxes = await get_follower_inboxes(db, actor.id)
     for inbox_url in inboxes:
         await enqueue_delivery(db, actor.id, inbox_url, undo_activity)
+
+    return {"ok": True}
+
+
+@router.post("/{note_id}/bookmark")
+async def bookmark_status(
+    note_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.bookmark_service import create_bookmark
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await create_bookmark(db, user.actor_id, note_id)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {"ok": True}
+
+
+@router.post("/{note_id}/unbookmark")
+async def unbookmark_status(
+    note_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.bookmark_service import remove_bookmark
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await remove_bookmark(db, user.actor_id, note_id)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     return {"ok": True}
 

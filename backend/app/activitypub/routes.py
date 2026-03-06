@@ -272,7 +272,7 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
             logger.info("Duplicate activity %s, skipping", activity_id)
             return
 
-    from app.activitypub.handlers import announce, create, delete, flag, follow, like, undo, update
+    from app.activitypub.handlers import announce, block, create, delete, flag, follow, like, undo, update
 
     handler_map = {
         "Create": create.handle_create,
@@ -286,6 +286,7 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
         "Announce": announce.handle_announce,
         "Update": update.handle_update,
         "Flag": flag.handle_flag,
+        "Block": block.handle_block,
     }
 
     handler = handler_map.get(activity_type)

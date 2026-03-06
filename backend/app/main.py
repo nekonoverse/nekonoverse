@@ -10,7 +10,9 @@ from app.activitypub.nodeinfo import router as nodeinfo_router
 from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
 from app.api.auth import router as auth_router
-from app.api.mastodon.accounts import router as accounts_router
+from app.api.mastodon.accounts import relationships_router, router as accounts_router
+from app.api.mastodon.bookmarks import router as bookmarks_router
+from app.api.mastodon.notifications import router as notifications_router
 from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.timelines import router as timelines_router
 from app.api.oauth import router as oauth_router
@@ -118,6 +120,9 @@ async def health():
 
 app.include_router(auth_router)
 app.include_router(accounts_router)
+app.include_router(relationships_router)
+app.include_router(notifications_router)
+app.include_router(bookmarks_router)
 app.include_router(statuses_router)
 app.include_router(timelines_router)
 app.include_router(oauth_router)

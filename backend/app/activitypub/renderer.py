@@ -245,6 +245,16 @@ def render_ordered_collection(collection_id: str, total_items: int, first_page: 
     }
 
 
+def render_block_activity(activity_id: str, actor_ap_id: str, target_ap_id: str) -> dict:
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Block",
+        "actor": actor_ap_id,
+        "object": target_ap_id,
+    }
+
+
 def render_flag_activity(
     activity_id: str,
     actor_ap_id: str,

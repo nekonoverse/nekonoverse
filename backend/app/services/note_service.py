@@ -127,6 +127,29 @@ async def create_note(
         for inbox_url in inboxes:
             await enqueue_delivery(db, actor.id, inbox_url, activity)
 
+    # Send notifications
+    from app.services.notification_service import create_notification
+
+    # Mention notifications (local actors only)
+    for m in mention_data:
+        if not m.get("domain"):  # local actor
+            from app.services.actor_service import get_actor_by_username
+            mentioned = await get_actor_by_username(db, m["username"], None)
+            if mentioned:
+                await create_notification(
+                    db, "mention", mentioned.id, actor.id, note_id,
+                )
+
+    # Reply notification
+    if in_reply_to_id:
+        parent = await get_note_by_id(db, in_reply_to_id)
+        if parent and parent.actor.is_local:
+            await create_notification(
+                db, "reply", parent.actor_id, actor.id, note_id,
+            )
+
+    await db.commit()
+
     # Re-query after delivery commits to get fresh state
     return await get_note_by_id(db, note_id)
 
@@ -159,11 +182,22 @@ async def get_note_by_ap_id(db: AsyncSession, ap_id: str) -> Note | None:
     return result.scalar_one_or_none()
 
 
+async def _get_excluded_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
+    """Get IDs of actors blocked or muted by the given actor."""
+    from app.services.block_service import get_blocked_ids
+    from app.services.mute_service import get_muted_ids
+
+    blocked = await get_blocked_ids(db, actor_id)
+    muted = await get_muted_ids(db, actor_id)
+    return list(set(blocked + muted))
+
+
 async def get_public_timeline(
     db: AsyncSession,
     limit: int = 20,
     max_id: uuid.UUID | None = None,
     local_only: bool = False,
+    current_actor_id: uuid.UUID | None = None,
 ) -> list[Note]:
     query = (
         select(Note)
@@ -177,6 +211,10 @@ async def get_public_timeline(
     )
     if local_only:
         query = query.where(Note.local.is_(True))
+    if current_actor_id:
+        excluded = await _get_excluded_ids(db, current_actor_id)
+        if excluded:
+            query = query.where(Note.actor_id.not_in(excluded))
     if max_id:
         # Get the published time of max_id note for cursor pagination
         sub = select(Note.published).where(Note.id == max_id).scalar_subquery()
@@ -207,11 +245,15 @@ async def get_home_timeline(
     # Include self
     following_ids.append(actor_id)
 
+    # Exclude blocked/muted actors
+    excluded = await _get_excluded_ids(db, actor_id)
+    visible_ids = [fid for fid in following_ids if fid not in excluded]
+
     query = (
         select(Note)
         .options(*_note_load_options())
         .where(
-            Note.actor_id.in_(following_ids),
+            Note.actor_id.in_(visible_ids),
             Note.deleted_at.is_(None),
             Note.visibility.in_(["public", "unlisted", "followers"]),
         )
