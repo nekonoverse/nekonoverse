@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -286,6 +287,27 @@ async def get_account(actor_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
         raise HTTPException(status_code=404, detail="Actor not found")
 
     return _actor_to_account(actor)
+
+
+class MoveRequest(BaseModel):
+    target_ap_id: str
+
+
+@router.post("/move")
+async def move_account(
+    body: MoveRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Initiate account migration to a target actor."""
+    from app.services.move_service import initiate_move
+
+    try:
+        await initiate_move(db, user, body.target_ap_id)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    return {"ok": True}
 
 
 # --- Block/Mute lists (different prefix) ---

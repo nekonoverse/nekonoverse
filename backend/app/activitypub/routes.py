@@ -153,6 +153,28 @@ async def get_following_collection(username: str, db: AsyncSession = Depends(get
     )
 
 
+@router.get("/users/{username}/featured")
+async def get_featured(username: str, db: AsyncSession = Depends(get_db)):
+    actor = await get_actor_by_username(db, username, domain=None)
+    if not actor:
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    from app.services.pinned_note_service import get_pinned_notes
+
+    pins = await get_pinned_notes(db, actor.id)
+    items = [render_note(pin.note) for pin in pins if pin.note]
+
+    featured_url = f"{settings.server_url}/users/{username}/featured"
+    collection = {
+        "@context": "https://www.w3.org/ns/activitystreams",
+        "id": featured_url,
+        "type": "OrderedCollection",
+        "totalItems": len(items),
+        "orderedItems": items,
+    }
+    return Response(content=json.dumps(collection), media_type=AP_CONTENT_TYPE)
+
+
 @router.get("/notes/{note_id}")
 async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)):
     from app.services.note_service import get_note_by_id
@@ -272,7 +294,7 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
             logger.info("Duplicate activity %s, skipping", activity_id)
             return
 
-    from app.activitypub.handlers import announce, block, create, delete, flag, follow, like, undo, update
+    from app.activitypub.handlers import announce, block, create, delete, flag, follow, like, move, undo, update
 
     handler_map = {
         "Create": create.handle_create,
@@ -287,6 +309,7 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
         "Update": update.handle_update,
         "Flag": flag.handle_flag,
         "Block": block.handle_block,
+        "Move": move.handle_move,
     }
 
     handler = handler_map.get(activity_type)

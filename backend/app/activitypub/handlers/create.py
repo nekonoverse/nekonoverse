@@ -23,7 +23,7 @@ async def handle_create(db: AsyncSession, activity: dict):
         return
 
     obj_type = obj.get("type")
-    if obj_type == "Note":
+    if obj_type in ("Note", "Question"):
         await handle_create_note(db, activity, obj)
     else:
         logger.info("Unhandled Create object type: %s", obj_type)
@@ -115,6 +115,36 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                 from app.services.emoji_service import upsert_remote_emoji
                 await upsert_remote_emoji(db, shortcode=emoji_name, domain=actor.domain, url=emoji_url)
 
+    # Parse poll data (Question type)
+    is_poll = note_data.get("type") == "Question"
+    poll_options = None
+    poll_multiple = False
+    poll_expires_at = None
+
+    if is_poll:
+        one_of = note_data.get("oneOf")
+        any_of = note_data.get("anyOf")
+        choices = any_of or one_of or []
+        poll_multiple = any_of is not None
+        poll_options = []
+        for choice in choices:
+            if isinstance(choice, dict):
+                title = choice.get("name", "")
+                replies = choice.get("replies", {})
+                votes = replies.get("totalItems", 0) if isinstance(replies, dict) else 0
+                poll_options.append({"title": title, "votes_count": votes})
+
+        end_time = note_data.get("endTime")
+        if end_time:
+            from datetime import datetime
+            try:
+                poll_expires_at = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
+    # Parse _misskey_talk
+    is_talk = bool(note_data.get("_misskey_talk", False))
+
     note = Note(
         ap_id=ap_id,
         actor_id=actor.id,
@@ -131,6 +161,11 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         quote_ap_id=quote_ap_id,
         mentions=mentions_list,
         local=False,
+        is_poll=is_poll,
+        poll_options=poll_options,
+        poll_multiple=poll_multiple,
+        poll_expires_at=poll_expires_at,
+        is_talk=is_talk,
     )
 
     published = note_data.get("published")

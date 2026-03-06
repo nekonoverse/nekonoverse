@@ -25,7 +25,7 @@ async def handle_update(db: AsyncSession, activity: dict):
 
     if obj_type in ("Person", "Service", "Application", "Group", "Organization"):
         await _update_actor(db, actor_ap_id, obj)
-    elif obj_type == "Note":
+    elif obj_type in ("Note", "Question"):
         await _update_note(db, actor_ap_id, obj)
     else:
         logger.info("Unhandled Update object type: %s", obj_type)
@@ -69,6 +69,23 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
     note.sensitive = data.get("sensitive", note.sensitive)
     note.spoiler_text = data.get("summary", note.spoiler_text)
     note.updated_at = datetime.now(timezone.utc)
+
+    # Update poll data if Question type
+    if data.get("type") == "Question" and note.is_poll:
+        one_of = data.get("oneOf")
+        any_of = data.get("anyOf")
+        choices = any_of or one_of or []
+        if choices:
+            poll_options = []
+            for choice in choices:
+                if isinstance(choice, dict):
+                    title = choice.get("name", "")
+                    replies = choice.get("replies", {})
+                    votes = replies.get("totalItems", 0) if isinstance(replies, dict) else 0
+                    poll_options.append({"title": title, "votes_count": votes})
+            note.poll_options = poll_options
+            from sqlalchemy.orm.attributes import flag_modified
+            flag_modified(note, "poll_options")
 
     await db.commit()
     logger.info("Updated remote note %s", ap_id)

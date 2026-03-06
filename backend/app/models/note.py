@@ -47,6 +47,11 @@ class Note(Base):
     renotes_count: Mapped[int] = mapped_column(Integer, default=0)
     mentions: Mapped[list | None] = mapped_column(JSONB, default=list, nullable=True)
     local: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
+    is_poll: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    poll_options: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    poll_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    poll_multiple: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_talk: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     actor = relationship("Actor", back_populates="notes")
     reactions = relationship("Reaction", back_populates="note")

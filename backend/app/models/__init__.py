@@ -9,6 +9,8 @@ from app.models.moderation_log import ModerationLog
 from app.models.note import Note
 from app.models.note_attachment import NoteAttachment
 from app.models.notification import Notification
+from app.models.pinned_note import PinnedNote
+from app.models.poll_vote import PollVote
 from app.models.oauth import OAuthApplication, OAuthAuthorizationCode, OAuthToken
 from app.models.passkey import PasskeyCredential
 from app.models.reaction import Reaction
@@ -30,6 +32,8 @@ __all__ = [
     "Note",
     "NoteAttachment",
     "Notification",
+    "PinnedNote",
+    "PollVote",
     "OAuthApplication",
     "OAuthAuthorizationCode",
     "OAuthToken",

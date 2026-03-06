@@ -9,7 +9,7 @@ from sqlalchemy.orm import selectinload
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.note import Note
 from app.models.user import User
-from app.schemas.note import NoteActorResponse, NoteCreateRequest, NoteMediaAttachment, NoteResponse, ReactionSummary
+from app.schemas.note import NoteActorResponse, NoteCreateRequest, NoteMediaAttachment, NoteResponse, PollResponse, PollOptionResponse, ReactionSummary
 from app.services.note_service import create_note, get_note_by_id, get_reaction_summary
 
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
@@ -99,6 +99,14 @@ async def create_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    poll_options = None
+    poll_expires_in = None
+    poll_multiple = False
+    if body.poll:
+        poll_options = body.poll.options
+        poll_expires_in = body.poll.expires_in
+        poll_multiple = body.poll.multiple
+
     note = await create_note(
         db=db,
         user=user,
@@ -109,6 +117,9 @@ async def create_status(
         in_reply_to_id=body.in_reply_to_id,
         media_ids=body.media_ids or None,
         quote_id=body.quote_id,
+        poll_options=poll_options,
+        poll_expires_in=poll_expires_in,
+        poll_multiple=poll_multiple,
     )
     return note_to_response(note)
 
@@ -349,6 +360,79 @@ async def unbookmark_status(
         await db.commit()
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    return {"ok": True}
+
+
+@router.post("/{note_id}/pin")
+async def pin_status(
+    note_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.pinned_note_service import pin_note
+
+    try:
+        await pin_note(db, user, note_id)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Deliver Add activity to followers
+    from app.activitypub.renderer import render_add_activity
+    from app.config import settings
+    from app.services.delivery_service import enqueue_delivery
+    from app.services.follow_service import get_follower_inboxes
+
+    actor = user.actor
+    note = await get_note_by_id(db, note_id)
+    activity = render_add_activity(
+        activity_id=f"{actor.ap_id}/add/{note_id}",
+        actor_ap_id=actor.ap_id,
+        object_id=note.ap_id,
+        target=f"{settings.server_url}/users/{actor.username}/featured",
+    )
+    inboxes = await get_follower_inboxes(db, actor.id)
+    for inbox_url in inboxes:
+        await enqueue_delivery(db, actor.id, inbox_url, activity)
+
+    return {"ok": True}
+
+
+@router.post("/{note_id}/unpin")
+async def unpin_status(
+    note_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.pinned_note_service import unpin_note
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await unpin_note(db, user, note_id)
+        await db.commit()
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Deliver Remove activity to followers
+    from app.activitypub.renderer import render_remove_activity
+    from app.config import settings
+    from app.services.delivery_service import enqueue_delivery
+    from app.services.follow_service import get_follower_inboxes
+
+    actor = user.actor
+    activity = render_remove_activity(
+        activity_id=f"{actor.ap_id}/remove/{note_id}",
+        actor_ap_id=actor.ap_id,
+        object_id=note.ap_id,
+        target=f"{settings.server_url}/users/{actor.username}/featured",
+    )
+    inboxes = await get_follower_inboxes(db, actor.id)
+    for inbox_url in inboxes:
+        await enqueue_delivery(db, actor.id, inbox_url, activity)
 
     return {"ok": True}
 

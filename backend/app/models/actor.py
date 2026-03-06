@@ -53,6 +53,9 @@ class Actor(Base):
         ForeignKey("drive_files.id", ondelete="SET NULL", name="fk_actors_header_file_id", use_alter=True),
         nullable=True,
     )
+    featured_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    moved_to_ap_id: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    also_known_as: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
     local_user = relationship("User", back_populates="actor", uselist=False, lazy="selectin")
     notes = relationship("Note", back_populates="actor")

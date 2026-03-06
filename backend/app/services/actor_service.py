@@ -134,6 +134,11 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         if isinstance(image, dict):
             existing.header_url = image.get("url")
         existing.is_cat = data.get("isCat", False)
+        existing.featured_url = data.get("featured")
+        existing.moved_to_ap_id = data.get("movedTo")
+        aka = data.get("alsoKnownAs")
+        if isinstance(aka, list):
+            existing.also_known_as = aka
         await db.commit()
         await db.refresh(existing)
         return existing
@@ -142,6 +147,9 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     avatar_url = icon.get("url") if isinstance(icon, dict) else None
     image = data.get("image")
     header_url = image.get("url") if isinstance(image, dict) else None
+
+    aka = data.get("alsoKnownAs")
+    also_known_as = aka if isinstance(aka, list) else None
 
     actor = Actor(
         ap_id=ap_id,
@@ -162,6 +170,9 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         manually_approves_followers=data.get("manuallyApprovesFollowers", False),
         discoverable=data.get("discoverable", True),
         last_fetched_at=now,
+        featured_url=data.get("featured"),
+        moved_to_ap_id=data.get("movedTo"),
+        also_known_as=also_known_as,
     )
     db.add(actor)
     await db.commit()

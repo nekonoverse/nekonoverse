@@ -28,6 +28,9 @@ async def create_note(
     in_reply_to_id: uuid.UUID | None = None,
     media_ids: list[uuid.UUID] | None = None,
     quote_id: uuid.UUID | None = None,
+    poll_options: list[str] | None = None,
+    poll_expires_in: int | None = None,
+    poll_multiple: bool = False,
 ) -> Note:
     actor = user.actor
     note_id = uuid.uuid4()
@@ -95,6 +98,15 @@ async def create_note(
         quote_id=quote_id,
         quote_ap_id=quote_ap_id,
     )
+
+    # Poll support
+    if poll_options:
+        from datetime import datetime, timedelta, timezone
+        note.is_poll = True
+        note.poll_options = [{"title": opt, "votes_count": 0} for opt in poll_options]
+        note.poll_multiple = poll_multiple
+        if poll_expires_in:
+            note.poll_expires_at = datetime.now(timezone.utc) + timedelta(seconds=poll_expires_in)
     db.add(note)
 
     # Attach media files

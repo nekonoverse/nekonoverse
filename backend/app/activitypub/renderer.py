@@ -18,7 +18,12 @@ AP_CONTEXT = [
         "_misskey_reaction": "misskey:_misskey_reaction",
         "_misskey_content": "misskey:_misskey_content",
         "_misskey_quote": "misskey:_misskey_quote",
+        "_misskey_talk": "misskey:_misskey_talk",
         "quoteUrl": "as:quoteUrl",
+        "votersCount": "toot:votersCount",
+        "featured": {"@id": "toot:featured", "@type": "@id"},
+        "movedTo": {"@id": "as:movedTo", "@type": "@id"},
+        "alsoKnownAs": {"@id": "as:alsoKnownAs", "@type": "@id"},
     },
 ]
 
@@ -59,16 +64,25 @@ def render_actor(actor: Actor) -> dict:
         data["followers"] = actor.followers_url
     if actor.following_url:
         data["following"] = actor.following_url
+    if getattr(actor, "is_local", False):
+        data["featured"] = f"{settings.server_url}/users/{actor.username}/featured"
+    elif getattr(actor, "featured_url", None):
+        data["featured"] = actor.featured_url
+    if getattr(actor, "moved_to_ap_id", None):
+        data["movedTo"] = actor.moved_to_ap_id
+    if getattr(actor, "also_known_as", None):
+        data["alsoKnownAs"] = actor.also_known_as
 
     return data
 
 
 def render_note(note: Note) -> dict:
     actor = note.actor
+    note_type = "Question" if getattr(note, "is_poll", False) else "Note"
     data = {
         "@context": AP_CONTEXT,
         "id": note.ap_id,
-        "type": "Note",
+        "type": note_type,
         "attributedTo": actor.ap_id,
         "content": note.content,
         "published": note.published.isoformat() + "Z",
@@ -133,6 +147,29 @@ def render_note(note: Note) -> dict:
             })
     if tag:
         data["tag"] = tag
+
+    # Poll (Question type)
+    if getattr(note, "is_poll", False) and getattr(note, "poll_options", None):
+        choices_key = "anyOf" if note.poll_multiple else "oneOf"
+        data[choices_key] = [
+            {
+                "type": "Note",
+                "name": opt.get("title", ""),
+                "replies": {
+                    "type": "Collection",
+                    "totalItems": opt.get("votes_count", 0),
+                },
+            }
+            for opt in note.poll_options
+        ]
+        if getattr(note, "poll_expires_at", None):
+            data["endTime"] = note.poll_expires_at.isoformat() + "Z"
+        total_votes = sum(opt.get("votes_count", 0) for opt in note.poll_options)
+        data["votersCount"] = total_votes
+
+    # Misskey talk flag
+    if getattr(note, "is_talk", False):
+        data["_misskey_talk"] = True
 
     return data
 
@@ -273,6 +310,39 @@ def render_flag_activity(
         "actor": actor_ap_id,
         "object": obj,
         "content": content,
+    }
+
+
+def render_move_activity(activity_id: str, actor_ap_id: str, target_ap_id: str) -> dict:
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Move",
+        "actor": actor_ap_id,
+        "object": actor_ap_id,
+        "target": target_ap_id,
+    }
+
+
+def render_add_activity(activity_id: str, actor_ap_id: str, object_id: str, target: str) -> dict:
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Add",
+        "actor": actor_ap_id,
+        "object": object_id,
+        "target": target,
+    }
+
+
+def render_remove_activity(activity_id: str, actor_ap_id: str, object_id: str, target: str) -> dict:
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Remove",
+        "actor": actor_ap_id,
+        "object": object_id,
+        "target": target,
     }
 
 
