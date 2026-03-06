@@ -57,6 +57,12 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     if isinstance(source_data, dict):
         source = source_data.get("content")
 
+    # Misskey fallback: _misskey_content
+    if source is None:
+        misskey_content = note_data.get("_misskey_content")
+        if isinstance(misskey_content, str):
+            source = misskey_content
+
     # Determine visibility
     to_list = note_data.get("to", [])
     cc_list = note_data.get("cc", [])
@@ -79,6 +85,36 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         if reply_note:
             in_reply_to_id = reply_note.id
 
+    # Resolve quote (Misskey-style)
+    quote_ap_id = (
+        note_data.get("_misskey_quote")
+        or note_data.get("quoteUrl")
+        or note_data.get("quoteUri")
+    )
+    quote_id = None
+    if quote_ap_id:
+        quoted_note = await get_note_by_ap_id(db, quote_ap_id)
+        if quoted_note:
+            quote_id = quoted_note.id
+
+    # Extract mentions and custom emoji from tag array
+    tags = note_data.get("tag", [])
+    if isinstance(tags, dict):
+        tags = [tags]
+    mentions_list = []
+    for tag in tags:
+        if isinstance(tag, dict) and tag.get("type") == "Mention":
+            href = tag.get("href", "")
+            name = tag.get("name", "")
+            mentions_list.append({"ap_id": href, "name": name})
+        elif isinstance(tag, dict) and tag.get("type") == "Emoji":
+            icon = tag.get("icon", {})
+            emoji_url = icon.get("url") if isinstance(icon, dict) else None
+            emoji_name = tag.get("name", "").strip(":")
+            if emoji_name and emoji_url and actor.domain:
+                from app.services.emoji_service import upsert_remote_emoji
+                await upsert_remote_emoji(db, shortcode=emoji_name, domain=actor.domain, url=emoji_url)
+
     note = Note(
         ap_id=ap_id,
         actor_id=actor.id,
@@ -91,6 +127,9 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         cc=cc_list,
         in_reply_to_id=in_reply_to_id,
         in_reply_to_ap_id=in_reply_to_ap_id,
+        quote_id=quote_id,
+        quote_ap_id=quote_ap_id,
+        mentions=mentions_list,
         local=False,
     )
 
@@ -104,5 +143,39 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             pass
 
     db.add(note)
+    await db.flush()
+
+    # Process attachments
+    attachments = note_data.get("attachment", [])
+    if isinstance(attachments, dict):
+        attachments = [attachments]
+
+    from app.models.note_attachment import NoteAttachment
+
+    for position, att_data in enumerate(attachments[:4]):
+        if not isinstance(att_data, dict):
+            continue
+        att_type = att_data.get("type", "")
+        if att_type not in ("Document", "Image", "Video", "Audio"):
+            continue
+        att_url = att_data.get("url")
+        if isinstance(att_url, list):
+            att_url = att_url[0].get("href") if att_url and isinstance(att_url[0], dict) else (att_url[0] if att_url else None)
+        if not att_url or not isinstance(att_url, str):
+            continue
+
+        attachment = NoteAttachment(
+            note_id=note.id,
+            position=position,
+            remote_url=att_url,
+            remote_mime_type=att_data.get("mediaType"),
+            remote_name=att_data.get("name"),
+            remote_blurhash=att_data.get("blurhash"),
+            remote_width=att_data.get("width"),
+            remote_height=att_data.get("height"),
+            remote_description=att_data.get("name"),
+        )
+        db.add(attachment)
+
     await db.commit()
     logger.info("Saved remote note %s from %s", ap_id, actor_ap_id)

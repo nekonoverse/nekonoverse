@@ -1,8 +1,10 @@
 from app.models.actor import Actor
+from app.models.custom_emoji import CustomEmoji
 from app.models.delivery import DeliveryJob
 from app.models.drive_file import DriveFile
 from app.models.follow import Follow
 from app.models.note import Note
+from app.models.note_attachment import NoteAttachment
 from app.models.oauth import OAuthApplication, OAuthAuthorizationCode, OAuthToken
 from app.models.passkey import PasskeyCredential
 from app.models.reaction import Reaction
@@ -10,10 +12,12 @@ from app.models.user import User
 
 __all__ = [
     "Actor",
+    "CustomEmoji",
     "DeliveryJob",
     "DriveFile",
     "Follow",
     "Note",
+    "NoteAttachment",
     "OAuthApplication",
     "OAuthAuthorizationCode",
     "OAuthToken",

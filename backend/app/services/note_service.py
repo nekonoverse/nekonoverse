@@ -1,3 +1,4 @@
+import re
 import uuid
 
 from sqlalchemy import func, select
@@ -9,7 +10,12 @@ from app.models.actor import Actor
 from app.models.note import Note
 from app.models.reaction import Reaction
 from app.models.user import User
-from app.utils.sanitize import text_to_html
+from app.utils.sanitize import MENTION_PATTERN, text_to_html
+
+
+def extract_mentions(text: str) -> list[tuple[str, str | None]]:
+    """Extract (username, domain) tuples from text. domain is None for local."""
+    return [(m.group(1), m.group(2)) for m in MENTION_PATTERN.finditer(text)]
 
 
 async def create_note(
@@ -20,6 +26,8 @@ async def create_note(
     sensitive: bool = False,
     spoiler_text: str | None = None,
     in_reply_to_id: uuid.UUID | None = None,
+    media_ids: list[uuid.UUID] | None = None,
+    quote_id: uuid.UUID | None = None,
 ) -> Note:
     actor = user.actor
     note_id = uuid.uuid4()
@@ -40,7 +48,35 @@ async def create_note(
         to_list = [actor.followers_url or ""]
     # direct: to/cc set to mentioned actors only (handled later)
 
+    # Extract mentions and add to cc/to
+    mentions = extract_mentions(content)
+    mention_data = []
+    for username, domain in mentions:
+        from app.services.actor_service import get_actor_by_username
+        mentioned_actor = await get_actor_by_username(db, username, domain)
+        if mentioned_actor:
+            mention_data.append({
+                "ap_id": mentioned_actor.ap_id,
+                "username": mentioned_actor.username,
+                "domain": mentioned_actor.domain,
+            })
+            if visibility == "direct":
+                if mentioned_actor.ap_id not in to_list:
+                    to_list.append(mentioned_actor.ap_id)
+            else:
+                if mentioned_actor.ap_id not in cc_list:
+                    cc_list.append(mentioned_actor.ap_id)
+
     html_content = text_to_html(content)
+
+    # Resolve quote
+    quote_ap_id = None
+    if quote_id:
+        quoted = await get_note_by_id(db, quote_id)
+        if quoted:
+            quote_ap_id = quoted.ap_id
+        else:
+            quote_id = None
 
     note = Note(
         id=note_id,
@@ -55,10 +91,30 @@ async def create_note(
         cc=cc_list,
         local=True,
         in_reply_to_id=in_reply_to_id,
+        mentions=mention_data,
+        quote_id=quote_id,
+        quote_ap_id=quote_ap_id,
     )
     db.add(note)
+
+    # Attach media files
+    if media_ids:
+        from app.models.note_attachment import NoteAttachment
+        from app.services.drive_service import get_drive_file
+        for position, file_id in enumerate(media_ids[:4]):
+            drive_file = await get_drive_file(db, file_id)
+            if drive_file and drive_file.owner_id == user.id:
+                attachment = NoteAttachment(
+                    note_id=note_id,
+                    drive_file_id=drive_file.id,
+                    position=position,
+                )
+                db.add(attachment)
+
     await db.commit()
-    await db.refresh(note)
+
+    # Reload note with all relationships for rendering and response
+    note = await get_note_by_id(db, note_id)
 
     # Deliver to followers (public/unlisted/followers visibility)
     if visibility in ("public", "unlisted", "followers"):
@@ -66,20 +122,29 @@ async def create_note(
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
 
-        # Need to reload actor relationship for rendering
-        await db.refresh(note, ["actor"])
         activity = render_create_activity(note)
         inboxes = await get_follower_inboxes(db, actor.id)
         for inbox_url in inboxes:
             await enqueue_delivery(db, actor.id, inbox_url, activity)
 
-    return note
+    # Re-query after delivery commits to get fresh state
+    return await get_note_by_id(db, note_id)
+
+
+def _note_load_options():
+    """Standard eager-loading options for Note queries."""
+    return [
+        selectinload(Note.actor),
+        selectinload(Note.attachments),
+        selectinload(Note.quoted_note).selectinload(Note.actor),
+        selectinload(Note.quoted_note).selectinload(Note.attachments),
+    ]
 
 
 async def get_note_by_id(db: AsyncSession, note_id: uuid.UUID) -> Note | None:
     result = await db.execute(
         select(Note)
-        .options(selectinload(Note.actor))
+        .options(*_note_load_options())
         .where(Note.id == note_id, Note.deleted_at.is_(None))
     )
     return result.scalar_one_or_none()
@@ -88,7 +153,7 @@ async def get_note_by_id(db: AsyncSession, note_id: uuid.UUID) -> Note | None:
 async def get_note_by_ap_id(db: AsyncSession, ap_id: str) -> Note | None:
     result = await db.execute(
         select(Note)
-        .options(selectinload(Note.actor))
+        .options(*_note_load_options())
         .where(Note.ap_id == ap_id, Note.deleted_at.is_(None))
     )
     return result.scalar_one_or_none()
@@ -102,7 +167,7 @@ async def get_public_timeline(
 ) -> list[Note]:
     query = (
         select(Note)
-        .options(selectinload(Note.actor))
+        .options(*_note_load_options())
         .where(Note.visibility == "public", Note.deleted_at.is_(None))
     )
     if local_only:
@@ -139,7 +204,7 @@ async def get_home_timeline(
 
     query = (
         select(Note)
-        .options(selectinload(Note.actor))
+        .options(*_note_load_options())
         .where(
             Note.actor_id.in_(following_ids),
             Note.deleted_at.is_(None),

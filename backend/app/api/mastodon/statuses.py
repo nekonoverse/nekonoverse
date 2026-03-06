@@ -9,10 +9,44 @@ from sqlalchemy.orm import selectinload
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.note import Note
 from app.models.user import User
-from app.schemas.note import NoteActorResponse, NoteCreateRequest, NoteResponse, ReactionSummary
+from app.schemas.note import NoteActorResponse, NoteCreateRequest, NoteMediaAttachment, NoteResponse, ReactionSummary
 from app.services.note_service import create_note, get_note_by_id, get_reaction_summary
 
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
+
+
+def _attachment_to_media(att) -> NoteMediaAttachment:
+    """Convert a NoteAttachment to NoteMediaAttachment for API response."""
+    if att.drive_file:
+        from app.services.drive_service import file_to_url
+        url = file_to_url(att.drive_file)
+        mime = att.drive_file.mime_type or ""
+        meta = None
+        if att.drive_file.width and att.drive_file.height:
+            meta = {"original": {"width": att.drive_file.width, "height": att.drive_file.height}}
+        return NoteMediaAttachment(
+            id=str(att.id),
+            type="image" if mime.startswith("image/") else "unknown",
+            url=url,
+            preview_url=url,
+            description=att.drive_file.description,
+            blurhash=att.drive_file.blurhash,
+            meta=meta,
+        )
+    # Remote attachment
+    mime = att.remote_mime_type or ""
+    meta = None
+    if att.remote_width and att.remote_height:
+        meta = {"original": {"width": att.remote_width, "height": att.remote_height}}
+    return NoteMediaAttachment(
+        id=str(att.id),
+        type="image" if mime.startswith("image/") else "unknown",
+        url=att.remote_url or "",
+        preview_url=att.remote_url or "",
+        description=att.remote_description,
+        blurhash=att.remote_blurhash,
+        meta=meta,
+    )
 
 
 def note_to_response(note, reactions: list[dict] | None = None, reblog_note=None) -> NoteResponse:
@@ -20,6 +54,18 @@ def note_to_response(note, reactions: list[dict] | None = None, reblog_note=None
     reblog = None
     if reblog_note:
         reblog = note_to_response(reblog_note)
+
+    # Build media attachments
+    media_attachments = []
+    for att in (note.attachments or []):
+        if att.drive_file or att.remote_url:
+            media_attachments.append(_attachment_to_media(att))
+
+    # Build quote
+    quote = None
+    if hasattr(note, 'quoted_note') and note.quoted_note:
+        quote = note_to_response(note.quoted_note)
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -42,6 +88,8 @@ def note_to_response(note, reactions: list[dict] | None = None, reblog_note=None
         ),
         reactions=[ReactionSummary(**r) for r in (reactions or [])],
         reblog=reblog,
+        media_attachments=media_attachments,
+        quote=quote,
     )
 
 
@@ -59,6 +107,8 @@ async def create_status(
         sensitive=body.sensitive,
         spoiler_text=body.spoiler_text,
         in_reply_to_id=body.in_reply_to_id,
+        media_ids=body.media_ids or None,
+        quote_id=body.quote_id,
     )
     return note_to_response(note)
 
@@ -167,7 +217,7 @@ async def reblog_status(
     db.add(reblog_note)
     original.renotes_count = original.renotes_count + 1
     await db.commit()
-    await db.refresh(reblog_note, ["actor"])
+    await db.refresh(reblog_note, ["actor", "attachments"])
 
     # Deliver Announce to followers
     from app.activitypub.renderer import render_announce_activity
@@ -186,6 +236,9 @@ async def reblog_status(
     for inbox_url in inboxes:
         await enqueue_delivery(db, actor.id, inbox_url, activity)
 
+    # Re-refresh after delivery commits expired the session
+    await db.refresh(reblog_note, ["actor", "attachments"])
+    await db.refresh(original, ["actor", "attachments"])
     return note_to_response(reblog_note, reblog_note=original)
 
 

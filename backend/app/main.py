@@ -1,7 +1,10 @@
 from contextlib import asynccontextmanager
 
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.dependencies import get_db
 
 from app.activitypub.nodeinfo import router as nodeinfo_router
 from app.activitypub.routes import router as ap_router
@@ -75,6 +78,23 @@ async def instance_info():
     if thumbnail_url:
         resp["thumbnail"] = {"url": thumbnail_url}
     return resp
+
+
+@app.get("/api/v1/custom_emojis")
+async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
+    from app.services.emoji_service import list_local_emojis
+
+    emojis = await list_local_emojis(db)
+    return [
+        {
+            "shortcode": e.shortcode,
+            "url": e.url,
+            "static_url": e.static_url or e.url,
+            "visible_in_picker": e.visible_in_picker,
+            "category": e.category,
+        }
+        for e in emojis
+    ]
 
 
 @app.get("/api/v1/health")

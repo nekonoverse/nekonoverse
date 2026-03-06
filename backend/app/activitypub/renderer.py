@@ -16,6 +16,9 @@ AP_CONTEXT = [
         "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
         "isCat": "misskey:isCat",
         "_misskey_reaction": "misskey:_misskey_reaction",
+        "_misskey_content": "misskey:_misskey_content",
+        "_misskey_quote": "misskey:_misskey_quote",
+        "quoteUrl": "as:quoteUrl",
     },
 ]
 
@@ -76,12 +79,60 @@ def render_note(note: Note) -> dict:
 
     if note.source:
         data["source"] = {"content": note.source, "mediaType": "text/plain"}
+        data["_misskey_content"] = note.source
     if note.sensitive:
         data["sensitive"] = True
     if note.spoiler_text:
         data["summary"] = note.spoiler_text
     if note.in_reply_to_ap_id:
         data["inReplyTo"] = note.in_reply_to_ap_id
+
+    # Quote renote
+    if hasattr(note, 'quote_ap_id') and note.quote_ap_id:
+        data["_misskey_quote"] = note.quote_ap_id
+        data["quoteUrl"] = note.quote_ap_id
+
+    # Attachments
+    if hasattr(note, 'attachments') and note.attachments:
+        attachment_list = []
+        for att in note.attachments:
+            if att.drive_file:
+                from app.services.drive_service import file_to_url
+                url = file_to_url(att.drive_file)
+                doc = {
+                    "type": "Document",
+                    "mediaType": att.drive_file.mime_type,
+                    "url": url,
+                    "name": att.drive_file.description or att.drive_file.filename,
+                }
+                if att.drive_file.width and att.drive_file.height:
+                    doc["width"] = att.drive_file.width
+                    doc["height"] = att.drive_file.height
+                if att.drive_file.blurhash:
+                    doc["blurhash"] = att.drive_file.blurhash
+                attachment_list.append(doc)
+            elif att.remote_url:
+                attachment_list.append({
+                    "type": "Document",
+                    "mediaType": att.remote_mime_type or "application/octet-stream",
+                    "url": att.remote_url,
+                    "name": att.remote_description or att.remote_name or "",
+                })
+        if attachment_list:
+            data["attachment"] = attachment_list
+
+    # Tags (mentions)
+    tag = []
+    if hasattr(note, 'mentions') and note.mentions:
+        for m in note.mentions:
+            name = f"@{m['username']}@{m['domain']}" if m.get("domain") else f"@{m['username']}"
+            tag.append({
+                "type": "Mention",
+                "href": m["ap_id"],
+                "name": name,
+            })
+    if tag:
+        data["tag"] = tag
 
     return data
 

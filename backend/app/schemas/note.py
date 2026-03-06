@@ -10,6 +10,8 @@ class NoteCreateRequest(BaseModel):
     sensitive: bool = False
     spoiler_text: str | None = None
     in_reply_to_id: uuid.UUID | None = None
+    media_ids: list[uuid.UUID] = Field(default_factory=list, max_length=4)
+    quote_id: uuid.UUID | None = None
 
 
 class NoteActorResponse(BaseModel):
@@ -29,6 +31,16 @@ class ReactionSummary(BaseModel):
     me: bool = False
 
 
+class NoteMediaAttachment(BaseModel):
+    id: str
+    type: str
+    url: str
+    preview_url: str
+    description: str | None = None
+    blurhash: str | None = None
+    meta: dict | None = None
+
+
 class NoteResponse(BaseModel):
     id: uuid.UUID
     ap_id: str
@@ -44,5 +56,7 @@ class NoteResponse(BaseModel):
     actor: NoteActorResponse
     reactions: list[ReactionSummary] = []
     reblog: "NoteResponse | None" = None
+    media_attachments: list[NoteMediaAttachment] = []
+    quote: "NoteResponse | None" = None
 
     model_config = {"from_attributes": True}

@@ -26,6 +26,10 @@ class Note(Base):
         UUID(as_uuid=True), ForeignKey("notes.id"), nullable=True, index=True
     )
     renote_of_ap_id: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    quote_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notes.id"), nullable=True, index=True
+    )
+    quote_ap_id: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str | None] = mapped_column(Text, nullable=True)
     visibility: Mapped[str] = mapped_column(String(20), default="public", nullable=False)
@@ -41,10 +45,18 @@ class Note(Base):
     replies_count: Mapped[int] = mapped_column(Integer, default=0)
     reactions_count: Mapped[int] = mapped_column(Integer, default=0)
     renotes_count: Mapped[int] = mapped_column(Integer, default=0)
+    mentions: Mapped[list | None] = mapped_column(JSONB, default=list, nullable=True)
     local: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False, index=True)
 
     actor = relationship("Actor", back_populates="notes")
     reactions = relationship("Reaction", back_populates="note")
+    attachments = relationship(
+        "NoteAttachment", back_populates="note",
+        order_by="NoteAttachment.position", lazy="selectin",
+    )
+    quoted_note = relationship(
+        "Note", foreign_keys=[quote_id], remote_side="Note.id", lazy="noload",
+    )
 
     __table_args__ = (
         Index("ix_notes_actor_published", "actor_id", "published"),
