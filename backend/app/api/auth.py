@@ -3,6 +3,7 @@ import uuid
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.user import (
@@ -170,6 +171,23 @@ async def update_credentials(
         user.actor.header_file_id = drive_file.id
         await db.commit()
         await db.refresh(user)
+
+    # Federate profile update to followers
+    if display_name is not None or avatar or header:
+        from app.activitypub.renderer import render_actor, render_update_activity
+        from app.services.delivery_service import enqueue_delivery
+        from app.services.follow_service import get_follower_inboxes
+
+        actor = user.actor
+        actor_data = render_actor(actor)
+        update_activity = render_update_activity(
+            activity_id=f"{actor.ap_id}#updates/{uuid.uuid4().hex}",
+            actor_ap_id=actor.ap_id,
+            object_data=actor_data,
+        )
+        inboxes = await get_follower_inboxes(db, actor.id)
+        for inbox_url in inboxes:
+            await enqueue_delivery(db, actor.id, inbox_url, update_activity)
 
     return _user_response(user)
 

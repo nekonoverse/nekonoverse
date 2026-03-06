@@ -1,0 +1,74 @@
+"""Handle Update activities (Person profile updates, Note edits)."""
+
+import logging
+from datetime import datetime, timezone
+
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.services.actor_service import get_actor_by_ap_id, upsert_remote_actor
+from app.services.note_service import get_note_by_ap_id
+from app.utils.sanitize import sanitize_html
+
+logger = logging.getLogger(__name__)
+
+
+async def handle_update(db: AsyncSession, activity: dict):
+    actor_ap_id = activity.get("actor")
+    if not actor_ap_id:
+        return
+
+    obj = activity.get("object")
+    if not isinstance(obj, dict):
+        return
+
+    obj_type = obj.get("type")
+
+    if obj_type in ("Person", "Service", "Application", "Group", "Organization"):
+        await _update_actor(db, actor_ap_id, obj)
+    elif obj_type == "Note":
+        await _update_note(db, actor_ap_id, obj)
+    else:
+        logger.info("Unhandled Update object type: %s", obj_type)
+
+
+async def _update_actor(db: AsyncSession, actor_ap_id: str, data: dict):
+    # Verify the actor updating is the same actor being updated
+    obj_id = data.get("id")
+    if obj_id != actor_ap_id:
+        logger.warning("Update actor mismatch: actor=%s object.id=%s", actor_ap_id, obj_id)
+        return
+
+    await upsert_remote_actor(db, data)
+    logger.info("Updated remote actor %s", actor_ap_id)
+
+
+async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
+    ap_id = data.get("id")
+    if not ap_id:
+        return
+
+    note = await get_note_by_ap_id(db, ap_id)
+    if not note:
+        logger.info("Update for unknown note %s, skipping", ap_id)
+        return
+
+    # Verify ownership
+    actor = await get_actor_by_ap_id(db, actor_ap_id)
+    if not actor or note.actor_id != actor.id:
+        logger.warning("Update note denied: actor %s does not own note %s", actor_ap_id, ap_id)
+        return
+
+    content = data.get("content")
+    if content:
+        note.content = sanitize_html(content)
+
+    source_data = data.get("source")
+    if isinstance(source_data, dict):
+        note.source = source_data.get("content")
+
+    note.sensitive = data.get("sensitive", note.sensitive)
+    note.spoiler_text = data.get("summary", note.spoiler_text)
+    note.updated_at = datetime.now(timezone.utc)
+
+    await db.commit()
+    logger.info("Updated remote note %s", ap_id)

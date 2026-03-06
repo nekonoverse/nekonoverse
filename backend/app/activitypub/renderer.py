@@ -154,6 +154,36 @@ def render_delete_activity(activity_id: str, actor_ap_id: str, object_id: str) -
     }
 
 
+def render_announce_activity(
+    activity_id: str,
+    actor_ap_id: str,
+    note_ap_id: str,
+    to: list[str],
+    cc: list[str],
+    published: str,
+) -> dict:
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Announce",
+        "actor": actor_ap_id,
+        "object": note_ap_id,
+        "to": to,
+        "cc": cc,
+        "published": published,
+    }
+
+
+def render_update_activity(activity_id: str, actor_ap_id: str, object_data: dict) -> dict:
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Update",
+        "actor": actor_ap_id,
+        "object": object_data,
+    }
+
+
 def render_ordered_collection(collection_id: str, total_items: int, first_page: str) -> dict:
     return {
         "@context": "https://www.w3.org/ns/activitystreams",

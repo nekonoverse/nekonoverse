@@ -94,3 +94,37 @@ async def test_public_timeline_includes_reactions(authed_client, mock_valkey):
         if note["id"] == note_id:
             assert len(note["reactions"]) >= 1
             break
+
+
+async def test_home_timeline_shows_own_notes(authed_client, mock_valkey):
+    """Home timeline should include the user's own notes."""
+    await authed_client.post("/api/v1/statuses", json={
+        "content": "My own note", "visibility": "public"
+    })
+    resp = await authed_client.get("/api/v1/timelines/home")
+    assert resp.status_code == 200
+    contents = [n["content"] for n in resp.json()]
+    assert any("My own note" in c for c in contents)
+
+
+async def test_home_timeline_shows_followed_user(
+    authed_client, test_user_b, db, mock_valkey
+):
+    """Home timeline should include notes from followed users."""
+    # Follow test_user_b
+    await authed_client.post(f"/api/v1/accounts/{test_user_b.actor_id}/follow")
+
+    # Create a note for test_user_b
+    from sqlalchemy import select
+    from app.models.actor import Actor
+    result = await db.execute(select(Actor).where(Actor.id == test_user_b.actor_id))
+    actor_b = result.scalar_one()
+
+    from tests.conftest import make_note
+    await make_note(db, actor_b, content="Followed user note")
+    await db.commit()
+
+    resp = await authed_client.get("/api/v1/timelines/home")
+    assert resp.status_code == 200
+    contents = [n["content"] for n in resp.json()]
+    assert any("Followed user note" in c for c in contents)

@@ -122,8 +122,36 @@ async def get_home_timeline(
     limit: int = 20,
     max_id: uuid.UUID | None = None,
 ) -> list[Note]:
-    # For now, home timeline = public timeline (follow-based filtering added in Phase 4)
-    return await get_public_timeline(db, limit=limit, max_id=max_id, local_only=False)
+    from app.models.follow import Follow
+
+    actor_id = user.actor_id
+
+    # Get IDs of actors this user follows
+    following_result = await db.execute(
+        select(Follow.following_id).where(
+            Follow.follower_id == actor_id,
+            Follow.accepted.is_(True),
+        )
+    )
+    following_ids = [row[0] for row in following_result.all()]
+    # Include self
+    following_ids.append(actor_id)
+
+    query = (
+        select(Note)
+        .options(selectinload(Note.actor))
+        .where(
+            Note.actor_id.in_(following_ids),
+            Note.deleted_at.is_(None),
+            Note.visibility.in_(["public", "unlisted", "followers"]),
+        )
+    )
+    if max_id:
+        sub = select(Note.published).where(Note.id == max_id).scalar_subquery()
+        query = query.where(Note.published < sub)
+    query = query.order_by(Note.published.desc()).limit(limit)
+    result = await db.execute(query)
+    return list(result.scalars().all())
 
 
 async def get_reaction_summary(

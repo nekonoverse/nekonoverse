@@ -22,6 +22,10 @@ class Note(Base):
         UUID(as_uuid=True), ForeignKey("notes.id"), nullable=True, index=True
     )
     in_reply_to_ap_id: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    renote_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        UUID(as_uuid=True), ForeignKey("notes.id"), nullable=True, index=True
+    )
+    renote_of_ap_id: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     content: Mapped[str] = mapped_column(Text, nullable=False)
     source: Mapped[str | None] = mapped_column(Text, nullable=True)
     visibility: Mapped[str] = mapped_column(String(20), default="public", nullable=False)

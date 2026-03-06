@@ -43,5 +43,6 @@ class NoteResponse(BaseModel):
     renotes_count: int
     actor: NoteActorResponse
     reactions: list[ReactionSummary] = []
+    reblog: "NoteResponse | None" = None
 
     model_config = {"from_attributes": True}

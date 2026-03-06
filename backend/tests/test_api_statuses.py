@@ -151,3 +151,85 @@ async def test_react_duplicate(authed_client, mock_valkey):
     await authed_client.post(f"/api/v1/statuses/{note_id}/react/😀")
     resp = await authed_client.post(f"/api/v1/statuses/{note_id}/react/😀")
     assert resp.status_code == 422
+
+
+# --- Reblog/Unreblog tests ---
+
+
+async def test_reblog(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Reblog me", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["reblog"] is not None
+    assert data["reblog"]["id"] == note_id
+
+
+async def test_reblog_duplicate(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Dup reblog", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 422
+
+
+async def test_reblog_not_found(authed_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await authed_client.post(f"/api/v1/statuses/{fake_id}/reblog")
+    assert resp.status_code == 404
+
+
+async def test_reblog_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.post("/api/v1/statuses/fake-id/reblog")
+    assert resp.status_code == 401
+
+
+async def test_unreblog(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unreblog me", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/unreblog")
+    assert resp.status_code == 200
+
+
+async def test_unreblog_not_reblogged(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Not reblogged", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/unreblog")
+    assert resp.status_code == 422
+
+
+# --- Delete tests ---
+
+
+async def test_delete_status(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Delete me", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.delete(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 204
+
+    # Verify it's gone
+    get_resp = await authed_client.get(f"/api/v1/statuses/{note_id}")
+    assert get_resp.status_code == 404
+
+
+async def test_delete_not_found(authed_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await authed_client.delete(f"/api/v1/statuses/{fake_id}")
+    assert resp.status_code == 404
+
+
+async def test_delete_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.delete("/api/v1/statuses/fake-id")
+    assert resp.status_code == 401

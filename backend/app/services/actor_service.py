@@ -169,6 +169,50 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     return actor
 
 
+async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Actor | None:
+    """Resolve a remote actor via WebFinger, then fetch their AP profile."""
+    # Check if we already have this actor cached
+    existing = await get_actor_by_username(db, username, domain)
+    if existing:
+        return existing
+
+    webfinger_url = f"https://{domain}/.well-known/webfinger?resource=acct:{username}@{domain}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(webfinger_url, follow_redirects=True)
+        if resp.status_code != 200:
+            logger.warning("WebFinger failed for %s@%s: HTTP %s", username, domain, resp.status_code)
+            return None
+
+        data = resp.json()
+    except Exception:
+        logger.exception("Error resolving WebFinger for %s@%s", username, domain)
+        return None
+
+    # Find the self link with AP content type
+    links = data.get("links", [])
+    ap_id = None
+    for link in links:
+        rel = link.get("rel", "")
+        link_type = link.get("type", "")
+        if rel == "self" and link_type in AP_CONTENT_TYPES:
+            ap_id = link.get("href")
+            break
+
+    if not ap_id:
+        # Try application/activity+json explicitly
+        for link in links:
+            if link.get("rel") == "self" and "activity+json" in link.get("type", ""):
+                ap_id = link.get("href")
+                break
+
+    if not ap_id:
+        logger.warning("No AP self link in WebFinger for %s@%s", username, domain)
+        return None
+
+    return await fetch_remote_actor(db, ap_id)
+
+
 async def get_actor_public_key(db: AsyncSession, key_id: str) -> tuple[Actor | None, str]:
     """Get actor and public key from a key ID (e.g. https://example.com/users/alice#main-key)."""
     actor_ap_id = key_id.split("#")[0]
