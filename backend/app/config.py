@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     s3_secret_access_key: str = "changeme-s3"
     s3_bucket: str = "nekonoverse"
     s3_region: str = "us-east-1"
+    skip_ssl_verify: bool = False
 
     @property
     def server_url(self) -> str:

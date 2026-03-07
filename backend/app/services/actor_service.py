@@ -62,7 +62,9 @@ async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
         )
         headers.update(sig_headers)
 
-    async with httpx.AsyncClient(timeout=10.0) as client:
+    from app.config import settings
+
+    async with httpx.AsyncClient(timeout=10.0, verify=not settings.skip_ssl_verify) as client:
         return await client.get(url, headers=headers, follow_redirects=True)
 
 
@@ -189,7 +191,7 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
 
     webfinger_url = f"https://{domain}/.well-known/webfinger?resource=acct:{username}@{domain}"
     try:
-        async with httpx.AsyncClient(timeout=10.0) as client:
+        async with httpx.AsyncClient(timeout=10.0, verify=not settings.skip_ssl_verify) as client:
             resp = await client.get(webfinger_url, follow_redirects=True)
         if resp.status_code != 200:
             logger.warning("WebFinger failed for %s@%s: HTTP %s", username, domain, resp.status_code)

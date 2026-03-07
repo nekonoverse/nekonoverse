@@ -1,4 +1,4 @@
-url: http://misskey/
+url: https://misskey/
 port: 3000
 
 db:
@@ -25,3 +25,9 @@ redisForTimelines:
   port: 6379
 
 id: aidx
+
+allowedPrivateNetworks:
+  - 127.0.0.0/8
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16

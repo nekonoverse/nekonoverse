@@ -1,15 +1,21 @@
 """Fixtures and helpers for Misskey cross-platform federation tests."""
 
 import os
+import ssl
 import time
 
 import httpx
 import pytest
 
-NEKO_URL = os.environ.get("NEKO_URL", "http://nekonoverse")
-MISSKEY_URL = os.environ.get("MISSKEY_URL", "http://misskey")
+NEKO_URL = os.environ.get("NEKO_URL", "https://nekonoverse")
+MISSKEY_URL = os.environ.get("MISSKEY_URL", "https://misskey")
 NEKO_DOMAIN = os.environ.get("NEKO_DOMAIN", "nekonoverse")
 MISSKEY_DOMAIN = os.environ.get("MISSKEY_DOMAIN", "misskey")
+
+# Accept self-signed certs in test environment
+SSL_CONTEXT = ssl.create_default_context()
+SSL_CONTEXT.check_hostname = False
+SSL_CONTEXT.verify_mode = ssl.CERT_NONE
 
 
 def wait_for_health(url: str, path: str, timeout: int = 120, method: str = "GET"):
@@ -18,12 +24,12 @@ def wait_for_health(url: str, path: str, timeout: int = 120, method: str = "GET"
     while time.time() < deadline:
         try:
             if method == "POST":
-                resp = httpx.post(f"{url}{path}", json={}, timeout=5)
+                resp = httpx.post(f"{url}{path}", json={}, timeout=5, verify=False)
             else:
-                resp = httpx.get(f"{url}{path}", timeout=5)
+                resp = httpx.get(f"{url}{path}", timeout=5, verify=False)
             if resp.status_code == 200:
                 return
-        except httpx.ConnectError:
+        except Exception:
             pass
         time.sleep(2)
     raise TimeoutError(f"{url} did not become healthy within {timeout}s")
@@ -53,7 +59,7 @@ class NekoClient:
     def __init__(self, base_url: str, domain: str):
         self.base_url = base_url
         self.domain = domain
-        self.http = httpx.Client(base_url=base_url, timeout=15)
+        self.http = httpx.Client(base_url=base_url, timeout=15, verify=False)
 
     def health(self) -> dict:
         return self.http.get("/api/v1/health").json()
@@ -138,7 +144,7 @@ class MisskeyClient:
     def __init__(self, base_url: str, domain: str):
         self.base_url = base_url
         self.domain = domain
-        self.http = httpx.Client(base_url=base_url, timeout=15)
+        self.http = httpx.Client(base_url=base_url, timeout=15, verify=False)
         self.token: str | None = None
 
     def health(self) -> bool:

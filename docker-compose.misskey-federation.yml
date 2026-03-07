@@ -1,4 +1,13 @@
 services:
+  # ── Certificate Generator ──────────────────────────────────
+  certs:
+    image: alpine:3.21
+    command: >
+      sh -c "apk add --no-cache openssl >/dev/null 2>&1 && /gen-certs.sh"
+    volumes:
+      - certs:/certs
+      - ./tests/misskey-federation/gen-certs.sh:/gen-certs.sh:ro
+
   # ── Nekonoverse Instance ───────────────────────────────────
   postgres-neko:
     image: postgres:17-alpine
@@ -33,8 +42,10 @@ services:
       VALKEY_URL: valkey://valkey-neko:6379/0
       DOMAIN: nekonoverse
       SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
       DEBUG: "true"
       REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
     depends_on:
       postgres-neko:
         condition: service_healthy
@@ -56,8 +67,10 @@ services:
       VALKEY_URL: valkey://valkey-neko:6379/0
       DOMAIN: nekonoverse
       SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
       DEBUG: "true"
       REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
     depends_on:
       app-neko:
         condition: service_healthy
@@ -66,16 +79,14 @@ services:
 
   nginx-neko:
     image: nginx:alpine
-    environment:
-      BACKEND_HOST: app-neko
     volumes:
-      - ./tests/federation/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
-    entrypoint: /bin/sh
-    command: >
-      -c "envsubst '$$BACKEND_HOST' < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+      - ./tests/misskey-federation/nginx-neko-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
     depends_on:
       app-neko:
         condition: service_healthy
+      certs:
+        condition: service_completed_successfully
     networks:
       misskey-fed:
         aliases:
@@ -108,6 +119,8 @@ services:
 
   misskey-app:
     image: misskey/misskey:2025.2.1
+    environment:
+      NODE_TLS_REJECT_UNAUTHORIZED: "0"
     depends_on:
       postgres-mk:
         condition: service_healthy
@@ -121,9 +134,11 @@ services:
   nginx-mk:
     image: nginx:alpine
     volumes:
-      - ./tests/misskey-federation/nginx-misskey.conf:/etc/nginx/nginx.conf:ro
+      - ./tests/misskey-federation/nginx-misskey-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
     depends_on:
       - misskey-app
+      - certs
     networks:
       misskey-fed:
         aliases:
@@ -134,8 +149,8 @@ services:
     profiles: ["test"]
     build: ./tests/misskey-federation
     environment:
-      NEKO_URL: http://nekonoverse
-      MISSKEY_URL: http://misskey
+      NEKO_URL: https://nekonoverse
+      MISSKEY_URL: https://misskey
       NEKO_DOMAIN: nekonoverse
       MISSKEY_DOMAIN: misskey
     depends_on:
@@ -147,6 +162,9 @@ services:
         condition: service_started
     networks:
       - misskey-fed
+
+volumes:
+  certs:
 
 networks:
   misskey-fed:

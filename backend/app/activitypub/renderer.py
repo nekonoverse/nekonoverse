@@ -1,8 +1,15 @@
 """Render Python objects to ActivityPub JSON-LD."""
 
+from datetime import datetime
+
 from app.config import settings
 from app.models.actor import Actor
 from app.models.note import Note
+
+
+def _iso_z(dt: datetime) -> str:
+    """Format datetime as ISO 8601 with Z suffix (no +00:00)."""
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 AP_CONTEXT = [
     "https://www.w3.org/ns/activitystreams",
@@ -40,7 +47,7 @@ def render_actor(actor: Actor) -> dict:
         "inbox": actor.inbox_url,
         "outbox": actor.outbox_url,
         "url": f"{settings.server_url}/@{actor.username}",
-        "published": actor.created_at.isoformat() + "Z" if actor.created_at else None,
+        "published": _iso_z(actor.created_at) if actor.created_at else None,
         "manuallyApprovesFollowers": actor.manually_approves_followers,
         "discoverable": actor.discoverable,
         "publicKey": {
@@ -85,7 +92,7 @@ def render_note(note: Note) -> dict:
         "type": note_type,
         "attributedTo": actor.ap_id,
         "content": note.content,
-        "published": note.published.isoformat() + "Z",
+        "published": _iso_z(note.published),
         "to": note.to,
         "cc": note.cc,
         "url": f"{settings.server_url}/notes/{note.id}",
@@ -163,7 +170,7 @@ def render_note(note: Note) -> dict:
             for opt in note.poll_options
         ]
         if getattr(note, "poll_expires_at", None):
-            data["endTime"] = note.poll_expires_at.isoformat() + "Z"
+            data["endTime"] = _iso_z(note.poll_expires_at)
         total_votes = sum(opt.get("votes_count", 0) for opt in note.poll_options)
         data["votersCount"] = total_votes
 
@@ -183,7 +190,7 @@ def render_create_activity(note: Note) -> dict:
         "object": render_note(note),
         "to": note.to,
         "cc": note.cc,
-        "published": note.published.isoformat() + "Z",
+        "published": _iso_z(note.published),
     }
 
 
