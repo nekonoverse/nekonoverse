@@ -41,25 +41,41 @@ AP_PUBLIC = "https://www.w3.org/ns/activitystreams#Public"
 
 
 def render_actor(actor: Actor) -> dict:
+    # For local actors, always derive URLs from server_url to ensure correct scheme
+    if actor.domain is None:
+        actor_url = f"{settings.server_url}/users/{actor.username}"
+        inbox = f"{actor_url}/inbox"
+        outbox = f"{actor_url}/outbox"
+        followers = f"{actor_url}/followers"
+        following = f"{actor_url}/following"
+        shared_inbox = f"{settings.server_url}/inbox"
+    else:
+        actor_url = actor.ap_id
+        inbox = actor.inbox_url
+        outbox = actor.outbox_url
+        followers = actor.followers_url
+        following = actor.following_url
+        shared_inbox = actor.shared_inbox_url
+
     data = {
         "@context": AP_CONTEXT,
-        "id": actor.ap_id,
+        "id": actor_url,
         "type": actor.type,
         "preferredUsername": actor.username,
         "name": actor.display_name or actor.username,
-        "inbox": actor.inbox_url,
-        "outbox": actor.outbox_url,
-        "url": f"{settings.server_url}/@{actor.username}",
+        "inbox": inbox,
+        "outbox": outbox,
+        "url": f"{settings.server_url}/@{actor.username}" if actor.domain is None else actor.ap_id,
         "published": _iso_z(actor.created_at) if actor.created_at else None,
         "manuallyApprovesFollowers": actor.manually_approves_followers,
         "discoverable": actor.discoverable,
         "publicKey": {
-            "id": f"{actor.ap_id}#main-key",
-            "owner": actor.ap_id,
+            "id": f"{actor_url}#main-key",
+            "owner": actor_url,
             "publicKeyPem": actor.public_key_pem,
         },
         "endpoints": {
-            "sharedInbox": actor.shared_inbox_url or f"{settings.server_url}/inbox",
+            "sharedInbox": shared_inbox or f"{settings.server_url}/inbox",
         },
         "isCat": actor.is_cat,
     }
@@ -70,10 +86,10 @@ def render_actor(actor: Actor) -> dict:
         data["icon"] = {"type": "Image", "url": actor.avatar_url}
     if actor.header_url:
         data["image"] = {"type": "Image", "url": actor.header_url}
-    if actor.followers_url:
-        data["followers"] = actor.followers_url
-    if actor.following_url:
-        data["following"] = actor.following_url
+    if followers:
+        data["followers"] = followers
+    if following:
+        data["following"] = following
     if getattr(actor, "is_local", False):
         data["featured"] = f"{settings.server_url}/users/{actor.username}/featured"
     elif getattr(actor, "featured_url", None):

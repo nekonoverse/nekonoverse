@@ -30,21 +30,20 @@ async def webfinger(
     if not actor:
         raise HTTPException(status_code=404, detail="User not found")
 
+    actor_url = f"{settings.server_url}/users/{actor.username}"
+    profile_url = f"{settings.server_url}/@{actor.username}"
+
     return Response(
         content='{"subject":"'
         + resource
         + '","aliases":["'
-        + actor.ap_id
+        + actor_url
         + '","'
-        + settings.server_url
-        + "/@"
-        + actor.username
+        + profile_url
         + '"],"links":[{"rel":"self","type":"application/activity+json","href":"'
-        + actor.ap_id
+        + actor_url
         + '"},{"rel":"http://webfinger.net/rel/profile-page","type":"text/html","href":"'
-        + settings.server_url
-        + "/@"
-        + actor.username
+        + profile_url
         + '"}]}',
         media_type="application/jrd+json",
     )
