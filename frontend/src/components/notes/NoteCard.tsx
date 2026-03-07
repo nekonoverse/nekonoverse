@@ -1,18 +1,23 @@
-import { Show } from "solid-js";
+import { Show, For, createSignal, onCleanup } from "solid-js";
 import type { Note } from "../../api/statuses";
+import { reblogNote, unreblogNote } from "../../api/statuses";
+import { followAccount, unfollowAccount, blockAccount, muteAccount } from "../../api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
 import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
+import { useI18n } from "../../i18n";
 
 interface Props {
   note: Note;
   onReactionUpdate?: () => void;
+  onQuote?: (note: Note) => void;
 }
 
 function formatTime(iso: string): string {
   const d = new Date(iso);
-  return d.toLocaleString();
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function actorHandle(actor: Note["actor"]): string {
@@ -25,41 +30,251 @@ function profileUrl(actor: Note["actor"]): string {
     : `/@${actor.username}`;
 }
 
+function QuoteEmbed(props: { note: Note }) {
+  return (
+    <div class="note-quote-embed">
+      <div class="note-quote-header">
+        <img
+          class="note-quote-avatar"
+          src={props.note.actor.avatar_url || "/default-avatar.svg"}
+          alt=""
+        />
+        <a href={profileUrl(props.note.actor)} class="note-quote-name">
+          <strong>{props.note.actor.display_name || props.note.actor.username}</strong>
+          <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
+        </a>
+      </div>
+      <div class="note-quote-content" innerHTML={props.note.content} />
+      <Show when={props.note.media_attachments?.length > 0}>
+        <div class="note-quote-media">
+          <For each={props.note.media_attachments.slice(0, 2)}>
+            {(media) => (
+              <img src={media.preview_url || media.url} alt={media.description || ""} />
+            )}
+          </For>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
 export default function NoteCard(props: Props) {
+  const { t } = useI18n();
+  const [followed, setFollowed] = createSignal(false);
+  const [loading, setLoading] = createSignal(false);
+  const [moreOpen, setMoreOpen] = createSignal(false);
+  const [boosted, setBoosted] = createSignal(false);
+  const [boostLoading, setBoostLoading] = createSignal(false);
+  const [boostCount, setBoostCount] = createSignal(0);
+
+  // If this is a reblog, the displayed note is the inner one
+  const isReblog = () => !!props.note.reblog;
+  const displayNote = () => props.note.reblog || props.note;
+
+  // Initialize boost count from displayNote
+  const initBoostCount = () => displayNote().renotes_count;
+  if (boostCount() === 0) setBoostCount(initBoostCount());
+
+  const isOwnNote = () => {
+    const user = currentUser();
+    const note = displayNote();
+    return user && user.username === note.actor.username && !note.actor.domain;
+  };
+
+  const handleFollow = async (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setLoading(true);
+    try {
+      if (followed()) {
+        await unfollowAccount(displayNote().actor.id);
+        setFollowed(false);
+      } else {
+        await followAccount(displayNote().actor.id);
+        setFollowed(true);
+      }
+    } catch {}
+    setLoading(false);
+  };
+
+  // Close more menu on outside click
+  const handleDocClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest(".note-more-menu")) {
+      setMoreOpen(false);
+    }
+  };
+
+  if (typeof document !== "undefined") {
+    document.addEventListener("click", handleDocClick);
+    onCleanup(() => document.removeEventListener("click", handleDocClick));
+  }
+
+  const handleBlock = async () => {
+    setMoreOpen(false);
+    if (!confirm(t("block.confirmBlock"))) return;
+    try {
+      await blockAccount(displayNote().actor.id);
+    } catch {}
+  };
+
+  const handleMute = async () => {
+    setMoreOpen(false);
+    if (!confirm(t("block.confirmMute"))) return;
+    try {
+      await muteAccount(displayNote().actor.id);
+    } catch {}
+  };
+
+  const handleBoost = async () => {
+    if (boostLoading()) return;
+    setBoostLoading(true);
+    try {
+      if (boosted()) {
+        await unreblogNote(displayNote().id);
+        setBoosted(false);
+        setBoostCount((c) => Math.max(0, c - 1));
+      } else {
+        await reblogNote(displayNote().id);
+        setBoosted(true);
+        setBoostCount((c) => c + 1);
+      }
+    } catch {}
+    setBoostLoading(false);
+  };
+
+  const handleQuote = () => {
+    props.onQuote?.(displayNote());
+  };
+
+  const note = displayNote;
+
   return (
     <div class="note-card">
-      <a href={profileUrl(props.note.actor)} class="note-avatar-link">
+      <Show when={isReblog()}>
+        <div class="note-reblog-indicator">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="17 1 21 5 17 9" />
+            <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+            <polyline points="7 23 3 19 7 15" />
+            <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+          </svg>
+          <a href={profileUrl(props.note.actor)}>
+            {props.note.actor.display_name || props.note.actor.username}
+          </a>
+          {" "}{t("boost.boosted")}
+        </div>
+      </Show>
+      <a href={profileUrl(note().actor)} class="note-avatar-link">
         <img
           class="note-avatar"
-          src={props.note.actor.avatar_url || "/default-avatar.svg"}
+          src={note().actor.avatar_url || "/default-avatar.svg"}
           alt=""
         />
       </a>
       <div class="note-body">
         <div class="note-header">
           <div class="note-header-text">
-            <UserHoverCard actorId={props.note.actor.id}>
-              <a href={profileUrl(props.note.actor)} class="note-display-name-link">
+            <UserHoverCard actorId={note().actor.id}>
+              <a href={profileUrl(note().actor)} class="note-display-name-link">
                 <strong class="note-display-name">
-                  {props.note.actor.display_name || props.note.actor.username}
+                  {note().actor.display_name || note().actor.username}
                 </strong>
               </a>
             </UserHoverCard>
-            <span class="note-handle">{actorHandle(props.note.actor)}</span>
+            <span class="note-handle">{actorHandle(note().actor)}</span>
+            <Show when={currentUser() && !isOwnNote()}>
+              <button
+                class={`note-follow-btn${followed() ? " following" : ""}`}
+                onClick={handleFollow}
+                disabled={loading()}
+              >
+                {followed() ? "\u2713" : "+"}
+              </button>
+            </Show>
           </div>
-          <span class="note-time">{formatTime(props.note.published)}</span>
+          <div class="note-header-right">
+            <span class="note-time">{formatTime(note().published)}</span>
+            <Show when={currentUser() && !isOwnNote()}>
+              <div class="note-more-menu">
+                <button
+                  class="note-more-btn"
+                  onClick={(e) => { e.stopPropagation(); setMoreOpen(!moreOpen()); }}
+                >
+                  ···
+                </button>
+                <Show when={moreOpen()}>
+                  <div class="note-more-dropdown">
+                    <button class="note-more-item" onClick={handleMute}>
+                      {t("block.mute")} {actorHandle(note().actor)}
+                    </button>
+                    <button class="note-more-item note-more-danger" onClick={handleBlock}>
+                      {t("block.block")} {actorHandle(note().actor)}
+                    </button>
+                  </div>
+                </Show>
+              </div>
+            </Show>
+          </div>
         </div>
-        <div class="note-content" innerHTML={props.note.content} />
+        <div class="note-content" innerHTML={note().content} />
+        <Show when={note().quote}>
+          <QuoteEmbed note={note().quote!} />
+        </Show>
+        <Show when={note().media_attachments?.length > 0}>
+          <div class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}>
+            <For each={note().media_attachments}>
+              {(media) => (
+                <a href={media.url} target="_blank" rel="noopener" class="note-media-item">
+                  <img
+                    src={media.preview_url || media.url}
+                    alt={media.description || ""}
+                    loading="lazy"
+                  />
+                </a>
+              )}
+            </For>
+          </div>
+        </Show>
         <Show when={currentUser()}>
+          <div class="note-actions">
+            <button
+              class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}`}
+              onClick={handleBoost}
+              disabled={boostLoading()}
+              title={t(boosted() ? "boost.unboost" : "boost.boost")}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="17 1 21 5 17 9" />
+                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                <polyline points="7 23 3 19 7 15" />
+                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+              </svg>
+              <Show when={boostCount() > 0}>
+                <span class="note-action-count">{boostCount()}</span>
+              </Show>
+            </button>
+            <button
+              class="note-action-btn note-quote-btn"
+              onClick={handleQuote}
+              title={t("boost.quote")}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+                <path d="M8 9h8" />
+                <path d="M8 13h4" />
+              </svg>
+            </button>
+          </div>
           <ReactionBar
-            noteId={props.note.id}
-            reactions={props.note.reactions}
+            noteId={note().id}
+            reactions={note().reactions}
             onUpdate={props.onReactionUpdate}
           />
         </Show>
-        <Show when={!currentUser() && props.note.reactions.length > 0}>
+        <Show when={!currentUser() && note().reactions.length > 0}>
           <div class="note-reactions">
-            {props.note.reactions.map((r) => (
+            {note().reactions.map((r) => (
               <span class="reaction-badge">
                 <Emoji emoji={r.emoji} /> {r.count}
               </span>
