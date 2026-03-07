@@ -60,6 +60,7 @@ docker compose -f docker-compose.dev.yml exec app python -m app.cli create-admin
 |---------|------|
 | `docker-compose.dev.yml.example` | 開発用テンプレート（ホットリロード、ソースマウント、ポート直接公開） |
 | `docker-compose.yml.example` | 本番用テンプレート（nginx リバースプロキシ、TLS、ワーカー 4 プロセス） |
+| `docker-compose.cloudflared.yml.example` | Cloudflare Tunnel 用テンプレート（nginx + cloudflared、TLS 不要） |
 | `docker-compose.federation.yml` | 連合 E2E テスト用 |
 
 開発時は `.example` をコピーして使います。`docker-compose.yml` と `docker-compose.dev.yml` は `.gitignore` 対象です。
