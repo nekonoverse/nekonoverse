@@ -7,11 +7,14 @@ import {
   getDomainBlocks, createDomainBlock, removeDomainBlock,
   getReports, resolveReport, rejectReport,
   getModerationLog, uploadServerIcon, markNoteSensitive,
+  getAdminEmojis, addEmoji, deleteEmoji, importEmojis, getEmojiExportUrl,
+  getServerFiles, uploadServerFile, deleteServerFile,
   type AdminStats, type ServerSettings, type AdminUser,
   type DomainBlock, type Report, type ModerationLogEntry,
+  type AdminEmoji, type ServerFile,
 } from "../api/admin";
 
-type Tab = "overview" | "settings" | "users" | "domains" | "reports" | "log";
+type Tab = "overview" | "settings" | "users" | "domains" | "reports" | "log" | "emoji" | "files";
 
 export default function Admin() {
   const { t } = useI18n();
@@ -36,6 +39,10 @@ export default function Admin() {
             { key: "domains" as Tab, label: t("admin.tabDomains") },
             { key: "reports" as Tab, label: t("admin.tabReports") },
             { key: "log" as Tab, label: t("admin.tabLog") },
+            ...(isAdmin() ? [
+              { key: "emoji" as Tab, label: t("admin.tabEmoji") },
+              { key: "files" as Tab, label: t("admin.tabFiles") },
+            ] : []),
           ]).map((tab) => (
             <button
               class={`settings-tab${activeTab() === tab.key ? " settings-tab-active" : ""}`}
@@ -52,6 +59,8 @@ export default function Admin() {
         <Show when={activeTab() === "domains"}><DomainsTab /></Show>
         <Show when={activeTab() === "reports"}><ReportsTab /></Show>
         <Show when={activeTab() === "log"}><LogTab /></Show>
+        <Show when={activeTab() === "emoji"}><EmojiTab /></Show>
+        <Show when={activeTab() === "files"}><ServerFilesTab /></Show>
       </Show>
     </div>
   );
@@ -488,6 +497,262 @@ function LogTab() {
                   <span class="admin-log-action">{e.action}</span>
                   <span class="admin-log-target">{e.target_type}:{e.target_id}</span>
                   <Show when={e.reason}><span class="admin-log-reason">({e.reason})</span></Show>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
+function EmojiTab() {
+  const { t } = useI18n();
+  const [emojis, setEmojis] = createSignal<AdminEmoji[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [showForm, setShowForm] = createSignal(false);
+  const [importing, setImporting] = createSignal(false);
+  const [importMsg, setImportMsg] = createSignal("");
+  const [shortcode, setShortcode] = createSignal("");
+  const [category, setCategory] = createSignal("");
+  const [aliases, setAliases] = createSignal("");
+  const [license, setLicense] = createSignal("");
+  const [author, setAuthor] = createSignal("");
+  const [description, setDescription] = createSignal("");
+  const [copyPermission, setCopyPermission] = createSignal("");
+  const [isSensitive, setIsSensitive] = createSignal(false);
+  const [localOnly, setLocalOnly] = createSignal(false);
+  const [adding, setAdding] = createSignal(false);
+  let fileInput!: HTMLInputElement;
+  let importInput!: HTMLInputElement;
+
+  const load = async () => {
+    try { setEmojis(await getAdminEmojis()); } catch {}
+    setLoading(false);
+  };
+
+  onMount(load);
+
+  const handleAdd = async () => {
+    const file = fileInput.files?.[0];
+    if (!file || !shortcode().trim()) return;
+    setAdding(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("shortcode", shortcode().trim());
+    if (category()) fd.append("category", category());
+    if (aliases()) fd.append("aliases", JSON.stringify(aliases().split(",").map(a => a.trim()).filter(Boolean)));
+    if (license()) fd.append("license", license());
+    if (author()) fd.append("author", author());
+    if (description()) fd.append("description", description());
+    if (copyPermission()) fd.append("copy_permission", copyPermission());
+    fd.append("is_sensitive", String(isSensitive()));
+    fd.append("local_only", String(localOnly()));
+    try {
+      await addEmoji(fd);
+      setShortcode(""); setCategory(""); setAliases(""); setLicense("");
+      setAuthor(""); setDescription(""); setCopyPermission("");
+      setIsSensitive(false); setLocalOnly(false);
+      fileInput.value = "";
+      setShowForm(false);
+      await load();
+    } catch {}
+    setAdding(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm(t("admin.confirmDeleteEmoji"))) return;
+    try { await deleteEmoji(id); await load(); } catch {}
+  };
+
+  const handleImport = async (e: Event) => {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    setImporting(true);
+    setImportMsg("");
+    try {
+      const res = await importEmojis(file);
+      setImportMsg(t("admin.importResult").replace("{imported}", String(res.imported)).replace("{skipped}", String(res.skipped)));
+      await load();
+    } catch { setImportMsg("Import failed"); }
+    setImporting(false);
+    (e.currentTarget as HTMLInputElement).value = "";
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.tabEmoji")}</h3>
+      <div class="admin-emoji-actions">
+        <button class="btn btn-small" onClick={() => setShowForm(!showForm())}>{t("admin.emojiAdd")}</button>
+        <button class="btn btn-small" onClick={() => importInput.click()} disabled={importing()}>
+          {importing() ? t("common.loading") : t("admin.emojiImport")}
+        </button>
+        <a class="btn btn-small" href={getEmojiExportUrl()} download>{t("admin.emojiExport")}</a>
+        <input ref={importInput} type="file" accept=".zip" style="display:none" onChange={handleImport} />
+      </div>
+      <Show when={importMsg()}><p class="settings-success">{importMsg()}</p></Show>
+
+      <Show when={showForm()}>
+        <div class="admin-emoji-form">
+          <div class="settings-form-group">
+            <label>{t("admin.emojiFile")}</label>
+            <input ref={fileInput} type="file" accept="image/*" />
+          </div>
+          <div class="settings-form-group">
+            <label>{t("admin.emojiShortcode")}</label>
+            <input type="text" value={shortcode()} onInput={(e) => setShortcode(e.currentTarget.value)} placeholder="neko_smile" />
+          </div>
+          <div class="admin-emoji-form-row">
+            <div class="settings-form-group">
+              <label>{t("admin.emojiCategory")}</label>
+              <input type="text" value={category()} onInput={(e) => setCategory(e.currentTarget.value)} />
+            </div>
+            <div class="settings-form-group">
+              <label>{t("admin.emojiAliases")}</label>
+              <input type="text" value={aliases()} onInput={(e) => setAliases(e.currentTarget.value)} />
+            </div>
+          </div>
+          <div class="admin-emoji-form-row">
+            <div class="settings-form-group">
+              <label>{t("admin.emojiLicense")}</label>
+              <input type="text" value={license()} onInput={(e) => setLicense(e.currentTarget.value)} />
+            </div>
+            <div class="settings-form-group">
+              <label>{t("admin.emojiAuthor")}</label>
+              <input type="text" value={author()} onInput={(e) => setAuthor(e.currentTarget.value)} />
+            </div>
+          </div>
+          <div class="settings-form-group">
+            <label>{t("admin.emojiDescription")}</label>
+            <input type="text" value={description()} onInput={(e) => setDescription(e.currentTarget.value)} />
+          </div>
+          <div class="settings-form-group">
+            <label>{t("admin.emojiCopyPermission")}</label>
+            <select value={copyPermission()} onChange={(e) => setCopyPermission(e.currentTarget.value)}>
+              <option value="">--</option>
+              <option value="allow">allow</option>
+              <option value="deny">deny</option>
+              <option value="conditional">conditional</option>
+            </select>
+          </div>
+          <div class="admin-emoji-form-row">
+            <label class="toggle-label">
+              <input type="checkbox" checked={isSensitive()} onChange={(e) => setIsSensitive(e.currentTarget.checked)} />
+              {t("admin.emojiSensitive")}
+            </label>
+            <label class="toggle-label">
+              <input type="checkbox" checked={localOnly()} onChange={(e) => setLocalOnly(e.currentTarget.checked)} />
+              {t("admin.emojiLocalOnly")}
+            </label>
+          </div>
+          <button class="btn btn-small" onClick={handleAdd} disabled={adding() || !shortcode().trim()}>
+            {adding() ? t("common.loading") : t("admin.emojiAdd")}
+          </button>
+        </div>
+      </Show>
+
+      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+        <Show when={emojis().length > 0} fallback={<p class="empty">{t("admin.noEmoji")}</p>}>
+          <div class="admin-emoji-list">
+            <For each={emojis()}>
+              {(e) => (
+                <div class="admin-emoji-item">
+                  <img src={e.url} alt={e.shortcode} class="admin-emoji-img" loading="lazy" />
+                  <div class="admin-emoji-info">
+                    <strong>:{e.shortcode}:</strong>
+                    <Show when={e.category}><span class="admin-emoji-cat">{e.category}</span></Show>
+                    <Show when={e.license}><span class="admin-emoji-meta">{e.license}</span></Show>
+                    <Show when={e.author}><span class="admin-emoji-meta">{e.author}</span></Show>
+                  </div>
+                  <button class="btn btn-small btn-danger" onClick={() => handleDelete(e.id)}>
+                    {t("admin.remove")}
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
+function ServerFilesTab() {
+  const { t } = useI18n();
+  const [files, setFiles] = createSignal<ServerFile[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [uploading, setUploading] = createSignal(false);
+  const [copied, setCopied] = createSignal<string | null>(null);
+  let fileInput!: HTMLInputElement;
+
+  const load = async () => {
+    try { setFiles(await getServerFiles()); } catch {}
+    setLoading(false);
+  };
+
+  onMount(load);
+
+  const handleUpload = async (e: Event) => {
+    const file = (e.currentTarget as HTMLInputElement).files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      await uploadServerFile(file);
+      await load();
+    } catch {}
+    setUploading(false);
+    (e.currentTarget as HTMLInputElement).value = "";
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm(t("admin.confirmDeleteFile"))) return;
+    try { await deleteServerFile(id); await load(); } catch {}
+  };
+
+  const copyUrl = (url: string) => {
+    navigator.clipboard.writeText(url);
+    setCopied(url);
+    setTimeout(() => setCopied(null), 2000);
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.tabFiles")}</h3>
+      <div class="admin-emoji-actions">
+        <button class="btn btn-small" onClick={() => fileInput.click()} disabled={uploading()}>
+          {uploading() ? t("common.loading") : t("admin.uploadFile")}
+        </button>
+        <input ref={fileInput} type="file" style="display:none" onChange={handleUpload} />
+      </div>
+
+      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+        <Show when={files().length > 0} fallback={<p class="empty">{t("admin.noFiles")}</p>}>
+          <div class="admin-file-list">
+            <For each={files()}>
+              {(f) => (
+                <div class="admin-file-item">
+                  <Show when={f.mime_type.startsWith("image/")}>
+                    <img src={f.url} alt={f.filename} class="admin-file-thumb" loading="lazy" />
+                  </Show>
+                  <div class="admin-file-info">
+                    <strong>{f.filename}</strong>
+                    <span class="admin-file-meta">{formatSize(f.size_bytes)}</span>
+                  </div>
+                  <div class="admin-file-actions">
+                    <button class="btn btn-small" onClick={() => copyUrl(f.url)}>
+                      {copied() === f.url ? t("admin.copied") : t("admin.copyUrl")}
+                    </button>
+                    <button class="btn btn-small btn-danger" onClick={() => handleDelete(f.id)}>
+                      {t("admin.remove")}
+                    </button>
+                  </div>
                 </div>
               )}
             </For>

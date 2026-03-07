@@ -129,5 +129,21 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
                     domain = urlparse(actor_ap_id).hostname
                 if domain:
                     from app.services.emoji_service import upsert_remote_emoji
-                    await upsert_remote_emoji(db, shortcode, domain, url)
+                    # Extract extended fields (Misskey + CherryPick)
+                    static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
+                    _ml = tag.get("_misskey_license")
+                    license_text = tag.get("license") or ((_ml.get("freeText") if isinstance(_ml, dict) else None))
+                    await upsert_remote_emoji(
+                        db, shortcode, domain, url,
+                        static_url=static_url,
+                        aliases=tag.get("keywords"),
+                        license=license_text,
+                        is_sensitive=bool(tag.get("isSensitive", False)),
+                        author=tag.get("author") or tag.get("creator"),
+                        description=tag.get("description"),
+                        copy_permission=tag.get("copyPermission"),
+                        usage_info=tag.get("usageInfo"),
+                        is_based_on=tag.get("isBasedOn"),
+                        category=tag.get("category"),
+                    )
             break

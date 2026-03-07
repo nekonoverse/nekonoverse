@@ -2378,6 +2378,131 @@ a:hover {
   font-style: italic;
 }
 
+/* Admin Emoji */
+.admin-emoji-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.admin-emoji-actions a.btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.admin-emoji-form {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  margin-bottom: 16px;
+}
+
+.admin-emoji-form-row {
+  display: flex;
+  gap: 12px;
+}
+
+.admin-emoji-form-row .settings-form-group {
+  flex: 1;
+}
+
+.admin-emoji-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-emoji-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.admin-emoji-img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.admin-emoji-info {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.admin-emoji-cat {
+  background: var(--bg-primary);
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 0.8em;
+  color: var(--text-secondary);
+}
+
+.admin-emoji-meta {
+  font-size: 0.8em;
+  color: var(--text-secondary);
+}
+
+/* Admin Server Files */
+.admin-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-file-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.admin-file-thumb {
+  width: 48px;
+  height: 48px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex-shrink: 0;
+}
+
+.admin-file-info {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.admin-file-info strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.admin-file-meta {
+  font-size: 0.8em;
+  color: var(--text-secondary);
+}
+
+.admin-file-actions {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
 .settings-form-group textarea {
   width: 100%;
   padding: 10px 12px;

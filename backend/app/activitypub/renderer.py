@@ -26,6 +26,7 @@ AP_CONTEXT = [
         "_misskey_content": "misskey:_misskey_content",
         "_misskey_quote": "misskey:_misskey_quote",
         "_misskey_talk": "misskey:_misskey_talk",
+        "_misskey_license": "misskey:_misskey_license",
         "quoteUrl": "as:quoteUrl",
         "votersCount": "toot:votersCount",
         "featured": {"@id": "toot:featured", "@type": "@id"},
@@ -142,7 +143,7 @@ def render_note(note: Note) -> dict:
         if attachment_list:
             data["attachment"] = attachment_list
 
-    # Tags (mentions)
+    # Tags (mentions + emoji)
     tag = []
     if hasattr(note, 'mentions') and note.mentions:
         for m in note.mentions:
@@ -152,6 +153,47 @@ def render_note(note: Note) -> dict:
                 "href": m["ap_id"],
                 "name": name,
             })
+
+    # Custom emoji tags
+    if hasattr(note, '_emoji_tags') and note._emoji_tags:
+        for e in note._emoji_tags:
+            # Guess media type from URL extension
+            url = e["url"]
+            ext = url.rsplit(".", 1)[-1].lower() if "." in url else "png"
+            media_type = {
+                "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                "gif": "image/gif", "webp": "image/webp", "avif": "image/avif",
+                "svg": "image/svg+xml",
+            }.get(ext, "image/png")
+
+            emoji_tag: dict = {
+                "type": "Emoji",
+                "name": f":{e['shortcode']}:",
+                "icon": {"type": "Image", "mediaType": media_type, "url": url},
+            }
+            # Misskey-compatible license
+            if e.get("license"):
+                emoji_tag["_misskey_license"] = {"freeText": e["license"]}
+                emoji_tag["license"] = e["license"]
+            # CherryPick / extended fields
+            if e.get("aliases"):
+                emoji_tag["keywords"] = e["aliases"]
+            if e.get("is_sensitive"):
+                emoji_tag["isSensitive"] = True
+            if e.get("author"):
+                emoji_tag["author"] = e["author"]
+            if e.get("description"):
+                emoji_tag["description"] = e["description"]
+            if e.get("copy_permission"):
+                emoji_tag["copyPermission"] = e["copy_permission"]
+            if e.get("usage_info"):
+                emoji_tag["usageInfo"] = e["usage_info"]
+            if e.get("is_based_on"):
+                emoji_tag["isBasedOn"] = e["is_based_on"]
+            if e.get("category"):
+                emoji_tag["category"] = e["category"]
+            tag.append(emoji_tag)
+
     if tag:
         data["tag"] = tag
 

@@ -12,6 +12,8 @@ from app.models.reaction import Reaction
 from app.models.user import User
 from app.utils.sanitize import MENTION_PATTERN, text_to_html
 
+_EMOJI_SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
+
 
 def extract_mentions(text: str) -> list[tuple[str, str | None]]:
     """Extract (username, domain) tuples from text. domain is None for local."""
@@ -127,6 +129,30 @@ async def create_note(
 
     # Reload note with all relationships for rendering and response
     note = await get_note_by_id(db, note_id)
+
+    # Extract custom emoji shortcodes for AP federation tags
+    shortcodes = set(_EMOJI_SHORTCODE_RE.findall(content))
+    if shortcodes:
+        from app.services.emoji_service import get_custom_emoji
+        emoji_tags = []
+        for sc in shortcodes:
+            emoji = await get_custom_emoji(db, sc, None)
+            if emoji and not emoji.local_only:
+                emoji_tags.append({
+                    "shortcode": emoji.shortcode,
+                    "url": emoji.url,
+                    "aliases": emoji.aliases,
+                    "license": emoji.license,
+                    "is_sensitive": emoji.is_sensitive,
+                    "author": emoji.author,
+                    "description": emoji.description,
+                    "copy_permission": emoji.copy_permission,
+                    "usage_info": emoji.usage_info,
+                    "is_based_on": emoji.is_based_on,
+                    "category": emoji.category,
+                })
+        if emoji_tags:
+            note._emoji_tags = emoji_tags
 
     # Deliver to followers (public/unlisted/followers visibility)
     if visibility in ("public", "unlisted", "followers"):

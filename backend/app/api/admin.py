@@ -553,6 +553,176 @@ async def delete_emoji_endpoint(
     return {"ok": True}
 
 
+@router.get("/emoji/export")
+async def export_emojis(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import io
+    import json as json_mod
+    import zipfile
+    from datetime import datetime, timezone
+
+    from fastapi.responses import StreamingResponse
+
+    from app.config import settings as app_settings
+    from app.services.emoji_service import list_all_local_emojis
+    from app.storage import get_file_stream
+
+    emojis = await list_all_local_emojis(db)
+
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        meta_emojis = []
+        for e in emojis:
+            ext = e.url.rsplit(".", 1)[-1] if "." in e.url else "png"
+            filename = f"{e.shortcode}.{ext}"
+
+            # Read image from S3 via drive file s3_key
+            image_data = None
+            if e.drive_file_id:
+                from app.services.drive_service import get_drive_file
+                df = await get_drive_file(db, e.drive_file_id)
+                if df:
+                    try:
+                        aiter, _ct, _sz = await get_file_stream(df.s3_key)
+                        chunks = []
+                        async for chunk in aiter:
+                            chunks.append(chunk)
+                        image_data = b"".join(chunks)
+                    except Exception:
+                        pass
+
+            if image_data:
+                zf.writestr(filename, image_data)
+            else:
+                continue
+
+            meta_emojis.append({
+                "downloaded": True,
+                "fileName": filename,
+                "emoji": {
+                    "name": e.shortcode,
+                    "category": e.category,
+                    "aliases": e.aliases or [],
+                    "license": e.license,
+                    "isSensitive": e.is_sensitive,
+                    "localOnly": e.local_only,
+                    "author": e.author,
+                    "description": e.description,
+                    "copyPermission": e.copy_permission,
+                    "usageInfo": e.usage_info,
+                    "isBasedOn": e.is_based_on,
+                },
+            })
+
+        meta = {
+            "metaVersion": 2,
+            "host": app_settings.domain,
+            "exportedAt": datetime.now(timezone.utc).isoformat(),
+            "emojis": meta_emojis,
+        }
+        zf.writestr("meta.json", json_mod.dumps(meta, ensure_ascii=False, indent=2))
+
+    buf.seek(0)
+    return StreamingResponse(
+        buf,
+        media_type="application/zip",
+        headers={"Content-Disposition": f"attachment; filename=emojis-{app_settings.domain}.zip"},
+    )
+
+
+@router.post("/emoji/import")
+async def import_emojis(
+    file: UploadFile = File(...),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import io
+    import json as json_mod
+    import zipfile
+
+    from app.services.drive_service import file_to_url, upload_drive_file
+    from app.services.emoji_service import create_local_emoji, get_custom_emoji
+
+    data = await file.read()
+    buf = io.BytesIO(data)
+
+    if not zipfile.is_zipfile(buf):
+        raise HTTPException(status_code=422, detail="Invalid ZIP file")
+
+    buf.seek(0)
+    results: dict = {"imported": 0, "skipped": 0, "errors": []}
+
+    with zipfile.ZipFile(buf, "r") as zf:
+        if "meta.json" not in zf.namelist():
+            raise HTTPException(status_code=422, detail="meta.json not found in ZIP")
+
+        meta = json_mod.loads(zf.read("meta.json"))
+        import_host = meta.get("host")
+
+        for entry in meta.get("emojis", []):
+            if not entry.get("downloaded", False):
+                results["skipped"] += 1
+                continue
+
+            emoji_data = entry.get("emoji", {})
+            shortcode = emoji_data.get("name")
+            filename = entry.get("fileName")
+
+            if not shortcode or not filename:
+                results["errors"].append("Missing name or fileName")
+                continue
+
+            existing = await get_custom_emoji(db, shortcode, None)
+            if existing:
+                results["skipped"] += 1
+                continue
+
+            try:
+                image_data = zf.read(filename)
+            except KeyError:
+                results["errors"].append(f"File {filename} not found in ZIP")
+                continue
+
+            ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
+            mime_map = {
+                "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
+                "gif": "image/gif", "webp": "image/webp", "avif": "image/avif",
+            }
+            mime_type = mime_map.get(ext, "image/png")
+
+            try:
+                drive_file = await upload_drive_file(
+                    db=db, owner=None, data=image_data,
+                    filename=f"emoji_{shortcode}",
+                    mime_type=mime_type, server_file=True,
+                )
+                url = file_to_url(drive_file)
+
+                await create_local_emoji(
+                    db, shortcode=shortcode, url=url,
+                    drive_file_id=drive_file.id,
+                    category=emoji_data.get("category"),
+                    aliases=emoji_data.get("aliases"),
+                    license=emoji_data.get("license"),
+                    is_sensitive=emoji_data.get("isSensitive", False),
+                    local_only=emoji_data.get("localOnly", False),
+                    author=emoji_data.get("author"),
+                    description=emoji_data.get("description"),
+                    copy_permission=emoji_data.get("copyPermission"),
+                    usage_info=emoji_data.get("usageInfo"),
+                    is_based_on=emoji_data.get("isBasedOn"),
+                    import_from=import_host,
+                )
+                results["imported"] += 1
+            except Exception as e:
+                results["errors"].append(f"{shortcode}: {str(e)}")
+
+    await db.commit()
+    return results
+
+
 # --- Server Files ---
 
 

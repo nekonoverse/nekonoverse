@@ -157,3 +157,79 @@ export async function uploadServerIcon(file: File): Promise<{ ok: boolean; url: 
 export async function markNoteSensitive(noteId: string): Promise<void> {
   await apiRequest(`/api/v1/admin/notes/${noteId}/sensitive`, { method: "POST" });
 }
+
+// Custom Emoji
+export interface AdminEmoji {
+  id: string;
+  shortcode: string;
+  url: string;
+  static_url: string | null;
+  visible_in_picker: boolean;
+  category: string | null;
+  aliases: string[] | null;
+  license: string | null;
+  is_sensitive: boolean;
+  local_only: boolean;
+  author: string | null;
+  description: string | null;
+  copy_permission: string | null;
+  usage_info: string | null;
+  is_based_on: string | null;
+  import_from: string | null;
+  created_at: string;
+}
+
+export async function getAdminEmojis(): Promise<AdminEmoji[]> {
+  return apiRequest<AdminEmoji[]>("/api/v1/admin/emoji/list");
+}
+
+export async function addEmoji(formData: FormData): Promise<AdminEmoji> {
+  return apiRequest<AdminEmoji>("/api/v1/admin/emoji/add", {
+    method: "POST",
+    formData,
+  });
+}
+
+export async function deleteEmoji(emojiId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/emoji/${emojiId}`, { method: "DELETE" });
+}
+
+export async function importEmojis(file: File): Promise<{ imported: number; skipped: number; errors: string[] }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest("/api/v1/admin/emoji/import", {
+    method: "POST",
+    formData,
+  });
+}
+
+export function getEmojiExportUrl(): string {
+  return "/api/v1/admin/emoji/export";
+}
+
+// Server Files
+export interface ServerFile {
+  id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  url: string;
+  created_at: string;
+}
+
+export async function getServerFiles(): Promise<ServerFile[]> {
+  return apiRequest<ServerFile[]>("/api/v1/admin/server-files");
+}
+
+export async function uploadServerFile(file: File): Promise<ServerFile> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest<ServerFile>("/api/v1/admin/server-files", {
+    method: "POST",
+    formData,
+  });
+}
+
+export async function deleteServerFile(fileId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/server-files/${fileId}`, { method: "DELETE" });
+}
