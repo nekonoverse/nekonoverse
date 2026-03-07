@@ -1,5 +1,3 @@
-const API_BASE = import.meta.env.VITE_API_URL ?? "";
-
 interface RequestOptions {
   method?: string;
   body?: unknown;
@@ -25,7 +23,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     config.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${API_BASE}${path}`, config);
+  const response = await fetch(path, config);
 
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: "Unknown error" }));
