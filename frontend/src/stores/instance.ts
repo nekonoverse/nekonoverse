@@ -38,11 +38,31 @@ function updateDynamicIcons(iconUrl: string) {
   if (apple) apple.href = iconUrl;
 }
 
+const VERSION_KEY = "nekonoverse_version";
+
 export async function fetchInstance() {
   setInstanceLoading(true);
   try {
     const info = await apiRequest<InstanceInfo>("/api/v1/instance");
     setInstance(info);
+
+    // Force reload when server version changes (deploy)
+    const stored = localStorage.getItem(VERSION_KEY);
+    if (stored && stored !== info.version) {
+      localStorage.setItem(VERSION_KEY, info.version);
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      location.reload();
+      return;
+    }
+    localStorage.setItem(VERSION_KEY, info.version);
+
     if (info.thumbnail?.url) {
       updateDynamicIcons(info.thumbnail.url);
     }
