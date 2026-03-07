@@ -9,6 +9,7 @@ export interface CurrentUser {
   avatar_url: string | null;
   header_url: string | null;
   summary: string | null;
+  role: string;
 }
 
 const [currentUser, setCurrentUser] = createSignal<CurrentUser | null>(null);
