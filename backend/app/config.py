@@ -16,9 +16,12 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     skip_ssl_verify: bool = False
 
+    use_https: bool = True
+
     @property
     def server_url(self) -> str:
-        return f"https://{self.domain}"
+        scheme = "https" if self.use_https else "http"
+        return f"{scheme}://{self.domain}"
 
     @property
     def media_url(self) -> str:
