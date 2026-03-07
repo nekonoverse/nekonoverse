@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [
     solidPlugin(),
     VitePWA({
-      registerType: "prompt",
+      registerType: "autoUpdate",
       includeAssets: [
         "default-avatar.svg",
         "apple-touch-icon.svg",
