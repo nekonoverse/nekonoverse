@@ -55,7 +55,7 @@ class TestWebFinger:
         assert result["subject"] == f"acct:alice@{INSTANCE_A_DOMAIN}"
         links = {link["rel"]: link for link in result["links"]}
         assert "self" in links
-        assert links["self"]["href"] == f"http://{INSTANCE_A_DOMAIN}/users/alice"
+        assert links["self"]["href"] == f"https://{INSTANCE_A_DOMAIN}/users/alice"
 
     def test_cross_instance_webfinger(self, instance_b: InstanceClient, bob):
         """instance-b can resolve alice@instance-a via WebFinger."""
@@ -78,14 +78,14 @@ class TestActor:
         actor = instance_a.get_actor_ap("alice")
         assert actor["type"] == "Person"
         assert actor["preferredUsername"] == "alice"
-        assert actor["id"] == f"http://{INSTANCE_A_DOMAIN}/users/alice"
+        assert actor["id"] == f"https://{INSTANCE_A_DOMAIN}/users/alice"
         assert "publicKey" in actor
         assert actor["publicKey"]["publicKeyPem"].startswith("-----BEGIN PUBLIC KEY-----")
 
     def test_actor_inbox_outbox(self, instance_a: InstanceClient, alice):
         actor = instance_a.get_actor_ap("alice")
-        assert actor["inbox"] == f"http://{INSTANCE_A_DOMAIN}/users/alice/inbox"
-        assert actor["outbox"] == f"http://{INSTANCE_A_DOMAIN}/users/alice/outbox"
+        assert actor["inbox"] == f"https://{INSTANCE_A_DOMAIN}/users/alice/inbox"
+        assert actor["outbox"] == f"https://{INSTANCE_A_DOMAIN}/users/alice/outbox"
 
     def test_cross_instance_actor_fetch(self, alice):
         """Fetch alice's actor JSON from instance-b's perspective."""
@@ -229,7 +229,7 @@ class TestFollow:
 
         # For now, let's verify the AP endpoints work and test follow
         # via a different mechanism in the next test.
-        assert bob_ap_id == f"http://{INSTANCE_B_DOMAIN}/users/bob"
+        assert bob_ap_id == f"https://{INSTANCE_B_DOMAIN}/users/bob"
 
 
 class TestFederation:
@@ -248,7 +248,7 @@ class TestFederation:
         """
         # Verify bob's actor is fetchable from instance-a's network
         resp = httpx.get(
-            f"http://{INSTANCE_B_DOMAIN}/users/bob",
+            f"https://{INSTANCE_B_DOMAIN}/users/bob",
             headers={"Accept": "application/activity+json"},
             timeout=10,
         )
@@ -258,7 +258,7 @@ class TestFederation:
 
         # Verify alice's actor is fetchable from instance-b's network
         resp = httpx.get(
-            f"http://{INSTANCE_A_DOMAIN}/users/alice",
+            f"https://{INSTANCE_A_DOMAIN}/users/alice",
             headers={"Accept": "application/activity+json"},
             timeout=10,
         )
@@ -356,7 +356,7 @@ class TestFederation:
         assert resp.status_code == 200
         ap_note = resp.json()
         assert ap_note["type"] == "Note"
-        assert ap_note["attributedTo"] == f"http://{INSTANCE_A_DOMAIN}/users/alice"
+        assert ap_note["attributedTo"] == f"https://{INSTANCE_A_DOMAIN}/users/alice"
 
     def test_09_cross_instance_note_fetch(self, instance_b: InstanceClient, bob):
         """bob's notes on instance-b are accessible from instance-a's network."""
@@ -372,7 +372,7 @@ class TestFederation:
         assert resp.status_code == 200
         data = resp.json()
         assert data["type"] == "Note"
-        assert data["attributedTo"] == f"http://{INSTANCE_B_DOMAIN}/users/bob"
+        assert data["attributedTo"] == f"https://{INSTANCE_B_DOMAIN}/users/bob"
 
     def test_10_emoji_reaction_local(self, instance_a: InstanceClient, alice):
         """Emoji reaction works locally."""
@@ -409,8 +409,8 @@ class TestFederation:
         """Actor's public key is properly formatted for HTTP Signatures."""
         actor = instance_a.get_actor_ap("alice")
         pk = actor["publicKey"]
-        assert pk["id"] == f"http://{INSTANCE_A_DOMAIN}/users/alice#main-key"
-        assert pk["owner"] == f"http://{INSTANCE_A_DOMAIN}/users/alice"
+        assert pk["id"] == f"https://{INSTANCE_A_DOMAIN}/users/alice#main-key"
+        assert pk["owner"] == f"https://{INSTANCE_A_DOMAIN}/users/alice"
         assert "-----BEGIN PUBLIC KEY-----" in pk["publicKeyPem"]
         assert "-----END PUBLIC KEY-----" in pk["publicKeyPem"]
 
@@ -418,7 +418,7 @@ class TestFederation:
         """Actor JSON includes shared inbox endpoint."""
         actor = instance_a.get_actor_ap("alice")
         endpoints = actor.get("endpoints", {})
-        assert endpoints.get("sharedInbox") == f"http://{INSTANCE_A_DOMAIN}/inbox"
+        assert endpoints.get("sharedInbox") == f"https://{INSTANCE_A_DOMAIN}/inbox"
 
     def test_15_webfinger_self_link_matches_actor(self, instance_a: InstanceClient, alice):
         """WebFinger self link matches the actor endpoint."""
