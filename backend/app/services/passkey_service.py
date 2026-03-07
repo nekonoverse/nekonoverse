@@ -73,12 +73,8 @@ async def verify_registration_response(
 
     await valkey.delete(f"webauthn:reg:{session_id}")
 
-    from webauthn.helpers.structs import RegistrationCredential
-
-    credential = RegistrationCredential.parse_raw(json.dumps(credential_json))
-
     verification = webauthn.verify_registration_response(
-        credential=credential,
+        credential=credential_json,
         expected_challenge=expected_challenge,
         expected_rp_id=settings.domain,
         expected_origin=settings.frontend_url,
@@ -133,10 +129,7 @@ async def verify_authentication_response(
     expected_challenge = base64url_to_bytes(stored_challenge)
     await valkey.delete(f"webauthn:auth:{challenge_id}")
 
-    from webauthn.helpers.structs import AuthenticationCredential
-
-    credential = AuthenticationCredential.parse_raw(json.dumps(credential_json))
-    credential_id_bytes = base64url_to_bytes(credential.raw_id)
+    credential_id_bytes = base64url_to_bytes(credential_json["rawId"])
 
     result = await db.execute(
         select(PasskeyCredential).where(PasskeyCredential.credential_id == credential_id_bytes)
@@ -146,7 +139,7 @@ async def verify_authentication_response(
         raise ValueError("Credential not found")
 
     verification = webauthn.verify_authentication_response(
-        credential=credential,
+        credential=credential_json,
         expected_challenge=expected_challenge,
         expected_rp_id=settings.domain,
         expected_origin=settings.frontend_url,
