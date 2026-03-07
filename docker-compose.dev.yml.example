@@ -53,6 +53,7 @@ services:
       STORAGE_ROOT: /data
     volumes:
       - nekono3s_data:/data:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     depends_on:
       nekono3s:
         condition: service_healthy
@@ -134,3 +135,4 @@ volumes:
   postgresql_data:
   valkey_data:
   nekono3s_data:
+  s3proxy_sock:

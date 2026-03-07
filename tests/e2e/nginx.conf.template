@@ -12,7 +12,7 @@ http {
     }
 
     upstream s3proxy-deliverer {
-        server s3proxy-deliverer:80;
+        server unix:/var/run/s3proxy-deliverer/uvicorn.sock;
     }
 
     server {

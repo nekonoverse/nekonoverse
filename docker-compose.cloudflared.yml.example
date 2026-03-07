@@ -49,6 +49,7 @@ services:
       STORAGE_ROOT: /data
     volumes:
       - ./volumes/nekono3s:/data:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     depends_on:
       nekono3s:
         condition: service_healthy
@@ -128,10 +129,14 @@ services:
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer:ro
     depends_on:
-      - app
-      - frontend
-      - s3proxy-deliverer
+      app:
+        condition: service_started
+      frontend:
+        condition: service_started
+      s3proxy-deliverer:
+        condition: service_started
 
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -141,3 +146,6 @@ services:
       TUNNEL_TRANSPORT_PROTOCOL: http2
     depends_on:
       - nginx
+
+volumes:
+  s3proxy_sock:

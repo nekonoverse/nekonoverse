@@ -45,6 +45,8 @@ services:
       STORAGE_ROOT: /data
     volumes_from:
       - nekono3s:ro
+    volumes:
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     depends_on:
       nekono3s:
         condition: service_healthy
@@ -126,6 +128,7 @@ services:
     image: nginx:alpine
     volumes:
       - ./tests/e2e/nginx.conf.template:/etc/nginx/nginx.conf:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer:ro
     ports:
       - "3080:80"
     depends_on:
@@ -133,8 +136,13 @@ services:
         condition: service_healthy
       frontend:
         condition: service_started
+      s3proxy-deliverer:
+        condition: service_started
     networks:
       - e2e
+
+volumes:
+  s3proxy_sock:
 
 networks:
   e2e:

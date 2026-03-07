@@ -49,6 +49,7 @@ services:
       STORAGE_ROOT: /data
     volumes:
       - nekono3s_data:/data:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     depends_on:
       nekono3s:
         condition: service_healthy
@@ -113,14 +114,17 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer:ro
     ports:
       - "80:80"
       - "443:443"
     depends_on:
       - app
       - frontend
+      - s3proxy-deliverer
 
 volumes:
   postgresql_data:
   valkey_data:
   nekono3s_data:
+  s3proxy_sock:
