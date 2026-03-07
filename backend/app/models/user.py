@@ -39,6 +39,7 @@ class User(Base):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    drive_files = relationship("DriveFile", back_populates="owner")
 
     @property
     def is_admin(self) -> bool:

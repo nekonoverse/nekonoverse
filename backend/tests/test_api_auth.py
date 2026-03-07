@@ -1,4 +1,5 @@
-from unittest.mock import AsyncMock
+from io import BytesIO
+from unittest.mock import AsyncMock, patch
 
 
 async def test_register_success(app_client, mock_valkey):
@@ -72,3 +73,95 @@ async def test_register_returns_role(app_client, mock_valkey):
     })
     assert resp.status_code == 201
     assert resp.json()["role"] == "user"
+
+
+# ── Case-insensitive username ──
+
+
+async def test_register_normalizes_username(app_client, mock_valkey):
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "CamelCase", "email": "camel@example.com", "password": "password1234"
+    })
+    assert resp.status_code == 201
+    assert resp.json()["username"] == "camelcase"
+
+
+async def test_login_case_insensitive(app_client, test_user, mock_valkey):
+    resp = await app_client.post("/api/v1/auth/login", json={
+        "username": "TestUser", "password": "password1234"
+    })
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+# ── Update display name ──
+
+
+async def test_update_display_name(authed_client, test_user):
+    resp = await authed_client.patch(
+        "/api/v1/accounts/update_credentials",
+        data={"display_name": "New Name"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["display_name"] == "New Name"
+
+
+async def test_update_display_name_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.patch(
+        "/api/v1/accounts/update_credentials",
+        data={"display_name": "New Name"},
+    )
+    assert resp.status_code == 401
+
+
+# ── Change password ──
+
+
+async def test_change_password_success(authed_client, test_user):
+    resp = await authed_client.post("/api/v1/auth/change_password", json={
+        "current_password": "password1234", "new_password": "newpassword5678"
+    })
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+async def test_change_password_wrong_current(authed_client, test_user):
+    resp = await authed_client.post("/api/v1/auth/change_password", json={
+        "current_password": "wrongpassword", "new_password": "newpassword5678"
+    })
+    assert resp.status_code == 422
+
+
+async def test_change_password_too_short(authed_client, test_user):
+    resp = await authed_client.post("/api/v1/auth/change_password", json={
+        "current_password": "password1234", "new_password": "short"
+    })
+    assert resp.status_code == 422
+
+
+async def test_change_password_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.post("/api/v1/auth/change_password", json={
+        "current_password": "password1234", "new_password": "newpassword5678"
+    })
+    assert resp.status_code == 401
+
+
+# ── Avatar upload ──
+
+PNG_1x1 = (
+    b"\x89PNG\r\n\x1a\n"
+    b"\x00\x00\x00\rIHDR"
+    b"\x00\x00\x00\x01\x00\x00\x00\x01"
+    b"\x08\x02\x00\x00\x00\x90wS\xde"
+)
+
+
+@patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
+async def test_update_avatar(mock_s3, authed_client, test_user):
+    mock_s3.return_value = "etag"
+    resp = await authed_client.patch(
+        "/api/v1/accounts/update_credentials",
+        files={"avatar": ("avatar.png", BytesIO(PNG_1x1), "image/png")},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["avatar_url"] is not None

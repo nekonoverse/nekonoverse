@@ -115,6 +115,52 @@ def test_render_undo_activity():
     assert data["object"] == inner
 
 
+def test_render_note_emoji_tags():
+    """Note with _emoji_tags should render Emoji tags in AP output."""
+    note = _make_note()
+    note._emoji_tags = [
+        {
+            "shortcode": "neko_smile",
+            "url": "http://localhost/emoji/neko_smile.png",
+            "aliases": ["neko", "smile"],
+            "license": "CC-BY-4.0",
+            "is_sensitive": False,
+            "author": "neko_artist",
+            "description": "A smiling neko",
+            "copy_permission": "allow",
+            "usage_info": None,
+            "is_based_on": None,
+            "category": "neko",
+        },
+    ]
+    data = render_note(note)
+    assert "tag" in data
+    emoji_tags = [t for t in data["tag"] if t.get("type") == "Emoji"]
+    assert len(emoji_tags) == 1
+    et = emoji_tags[0]
+    assert et["name"] == ":neko_smile:"
+    assert et["icon"]["url"] == "http://localhost/emoji/neko_smile.png"
+    assert et["icon"]["mediaType"] == "image/png"
+    assert et["_misskey_license"] == {"freeText": "CC-BY-4.0"}
+    assert et["license"] == "CC-BY-4.0"
+    assert et["keywords"] == ["neko", "smile"]
+    assert et["author"] == "neko_artist"
+    assert et["description"] == "A smiling neko"
+    assert et["copyPermission"] == "allow"
+    assert et["category"] == "neko"
+    assert "isSensitive" not in et  # False -> omitted
+    assert "usageInfo" not in et  # None -> omitted
+    assert "isBasedOn" not in et  # None -> omitted
+
+
+def test_render_note_emoji_tags_empty():
+    """Note without _emoji_tags should not have Emoji tags."""
+    note = _make_note()
+    data = render_note(note)
+    # No mentions and no emoji -> no tag key
+    assert "tag" not in data
+
+
 def test_render_ordered_collection():
     data = render_ordered_collection("col-id", 42, "page-1")
     assert data["type"] == "OrderedCollection"

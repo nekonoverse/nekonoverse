@@ -7,14 +7,14 @@ from app.config import settings
 from app.models.note import Note
 from app.models.reaction import Reaction
 from app.models.user import User
-from app.utils.emoji import is_single_emoji
+from app.utils.emoji import is_custom_emoji_shortcode, is_single_emoji
 
 
 async def add_reaction(
     db: AsyncSession, user: User, note: Note, emoji: str
 ) -> Reaction:
     """Add a reaction to a note."""
-    if not is_single_emoji(emoji):
+    if not is_single_emoji(emoji) and not is_custom_emoji_shortcode(emoji):
         raise ValueError("Invalid emoji")
 
     actor = user.actor

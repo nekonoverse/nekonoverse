@@ -18,6 +18,7 @@ async def create_user(
     display_name: str | None = None,
     role: str = "user",
 ) -> User:
+    username = username.lower()
     # Check if username or email already exists
     existing_actor = await db.execute(
         select(Actor).where(Actor.username == username, Actor.domain.is_(None))
@@ -69,7 +70,7 @@ async def create_user(
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
     result = await db.execute(
-        select(Actor).where(Actor.username == username, Actor.domain.is_(None))
+        select(Actor).where(Actor.username == username.lower(), Actor.domain.is_(None))
     )
     actor = result.scalar_one_or_none()
     if actor is None or actor.local_user is None:
@@ -77,6 +78,41 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
     user = actor.local_user
     if not _bcrypt.checkpw(password.encode(), user.password_hash.encode()):
         return None
+    return user
+
+
+async def reset_password(db: AsyncSession, username: str, new_password: str) -> User:
+    result = await db.execute(
+        select(Actor).where(Actor.username == username.lower(), Actor.domain.is_(None))
+    )
+    actor = result.scalar_one_or_none()
+    if actor is None or actor.local_user is None:
+        raise ValueError(f"User not found: {username}")
+    user = actor.local_user
+    user.password_hash = _bcrypt.hashpw(new_password.encode(), _bcrypt.gensalt()).decode()
+    await db.commit()
+    await db.refresh(user)
+    return user
+
+
+async def update_display_name(
+    db: AsyncSession, user: User, display_name: str | None
+) -> User:
+    user.actor.display_name = display_name
+    await db.commit()
+    await db.refresh(user)
+    await db.refresh(user.actor)
+    return user
+
+
+async def change_password(
+    db: AsyncSession, user: User, current_password: str, new_password: str
+) -> User:
+    if not _bcrypt.checkpw(current_password.encode(), user.password_hash.encode()):
+        raise ValueError("Current password is incorrect")
+    user.password_hash = _bcrypt.hashpw(new_password.encode(), _bcrypt.gensalt()).decode()
+    await db.commit()
+    await db.refresh(user)
     return user
 
 

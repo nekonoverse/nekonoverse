@@ -9,15 +9,43 @@ URL_PATTERN = re.compile(r"(https?://[^\s<]+)")
 MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?")
 
 
+def _replace_mention(match: re.Match) -> str:
+    """Replace a mention match with an HTML link."""
+    username = match.group(1)
+    domain = match.group(2)
+
+    if domain:
+        href = f"https://{domain}/@{username}"
+    else:
+        from app.config import settings
+        href = f"{settings.server_url}/@{username}"
+
+    return (
+        f'<span class="h-card">'
+        f'<a href="{href}" class="u-url mention">@<span>{username}</span></a>'
+        f'</span>'
+    )
+
+
 def text_to_html(text: str) -> str:
-    """Convert plain text to simple HTML with auto-linking and line breaks."""
+    """Convert plain text to simple HTML with auto-linking, mentions, and line breaks."""
     escaped = bleach.clean(text)
 
-    # Auto-link URLs
+    # Auto-link URLs first (before mention parsing)
     escaped = URL_PATTERN.sub(
         r'<a href="\1" rel="nofollow noopener noreferrer" target="_blank">\1</a>',
         escaped,
     )
+
+    # Parse mentions (skip inside existing <a> tags)
+    parts = re.split(r'(<a[^>]*>.*?</a>)', escaped)
+    result = []
+    for part in parts:
+        if part.startswith('<a'):
+            result.append(part)
+        else:
+            result.append(MENTION_PATTERN.sub(_replace_mention, part))
+    escaped = ''.join(result)
 
     # Line breaks
     escaped = escaped.replace("\n", "<br>")

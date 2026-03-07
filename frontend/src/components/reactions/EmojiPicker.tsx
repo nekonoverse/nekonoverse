@@ -1,4 +1,5 @@
-import { createSignal } from "solid-js";
+import { onMount, onCleanup } from "solid-js";
+import Emoji from "../Emoji";
 
 const EMOJI_LIST = [
   "\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F60D}", "\u{1F62E}",
@@ -10,21 +11,37 @@ const EMOJI_LIST = [
 interface Props {
   onSelect: (emoji: string) => void;
   onClose: () => void;
+  usedEmojis?: string[];
 }
 
 export default function EmojiPicker(props: Props) {
+  let ref: HTMLDivElement | undefined;
+
+  const isUsed = (emoji: string) => props.usedEmojis?.includes(emoji) ?? false;
+
+  onMount(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (ref && !ref.contains(e.target as Node)) {
+        props.onClose();
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    onCleanup(() => document.removeEventListener("mousedown", handleClick));
+  });
+
   return (
-    <div class="emoji-picker">
+    <div class="emoji-picker" ref={ref}>
       <div class="emoji-grid">
         {EMOJI_LIST.map((emoji) => (
           <button
-            class="emoji-btn"
+            class={`emoji-btn${isUsed(emoji) ? " emoji-used" : ""}`}
+            disabled={isUsed(emoji)}
             onClick={() => {
               props.onSelect(emoji);
               props.onClose();
             }}
           >
-            {emoji}
+            <Emoji emoji={emoji} />
           </button>
         ))}
       </div>

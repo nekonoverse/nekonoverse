@@ -63,7 +63,9 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
     )
     headers["Content-Type"] = AP_CONTENT_TYPE
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    from app.config import settings
+
+    async with httpx.AsyncClient(timeout=30.0, verify=not settings.skip_ssl_verify) as client:
         resp = await client.post(job.target_inbox_url, content=body, headers=headers)
         return resp.status_code in (200, 202, 204)
 

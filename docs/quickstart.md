@@ -49,6 +49,10 @@ docker compose -f docker-compose.dev.yml exec app python -m app.cli create-admin
 | `DEBUG` | デバッグモード (`true` で HTTP、`false` で HTTPS) | `true` |
 | `REGISTRATION_OPEN` | ユーザー登録を開放するか | `false` |
 | `FRONTEND_URL` | フロントエンドの URL（パスキー検証で使用） | `http://localhost:3000` |
+| `S3_ENDPOINT_URL` | S3 互換ストレージの URL | `http://nekono3s:9000` |
+| `S3_ACCESS_KEY_ID` | S3 アクセスキー | `minioadmin` |
+| `S3_SECRET_ACCESS_KEY` | S3 シークレットキー | `minioadmin` |
+| `S3_BUCKET` | S3 バケット名 | `nekonoverse` |
 
 ## Docker Compose 構成
 
@@ -104,7 +108,7 @@ docker compose up -d
 docker compose -f docker-compose.dev.yml exec app python -m pytest tests/ -v
 ```
 
-251 テスト (31 テストファイル) — API エンドポイント（パスキー含む）、サービス層、ActivityPub ハンドラー、WebFinger、NodeInfo、配信ワーカー、HTTP Signature、認証ミドルウェア、CLI、設定、ユーティリティをカバー。
+262 テスト (31 テストファイル) — API エンドポイント（パスキー含む）、サービス層、ActivityPub ハンドラー、WebFinger、NodeInfo、配信ワーカー、HTTP Signature、認証ミドルウェア、CLI、設定、ユーティリティをカバー。
 
 ### 連合 E2E テスト
 

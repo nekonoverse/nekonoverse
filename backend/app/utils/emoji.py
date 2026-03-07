@@ -1,6 +1,8 @@
 import re
 import unicodedata
 
+CUSTOM_EMOJI_PATTERN = re.compile(r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$")
+
 # Match a single emoji character (including compound emoji with ZWJ)
 # This covers most Unicode emoji: Emoji_Presentation, skin tone modifiers, ZWJ sequences
 _EMOJI_PATTERN = re.compile(
@@ -98,3 +100,8 @@ def is_single_emoji(text: str) -> bool:
             return False
 
     return len(text) > 0 and _is_single_emoji_sequence(text)
+
+
+def is_custom_emoji_shortcode(text: str) -> bool:
+    """Check if text is a custom emoji shortcode like :blobcat: or :emoji@domain:"""
+    return bool(CUSTOM_EMOJI_PATTERN.match(text.strip()))

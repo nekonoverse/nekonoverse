@@ -4,27 +4,47 @@ from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, patch
 
 import pytest
+import sqlalchemy as sa
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 
-# Override settings BEFORE importing any app modules
+# Override settings BEFORE importing any app modules.
+# Force test database — never use production DB even if DATABASE_URL is set.
+_prod_url = os.environ.get("DATABASE_URL", "")
+if _prod_url and "nekonoverse_test" not in _prod_url:
+    # Rewrite to use test database
+    os.environ["DATABASE_URL"] = _prod_url.rsplit("/", 1)[0] + "/nekonoverse_test"
 os.environ.setdefault("DATABASE_URL", "postgresql+asyncpg://nekonoverse:changeme@localhost:5432/nekonoverse_test")
 os.environ.setdefault("VALKEY_URL", "valkey://localhost:6379/1")
-os.environ.setdefault("DOMAIN", "localhost")
+os.environ["DOMAIN"] = "localhost"
+os.environ["FRONTEND_URL"] = "http://localhost:3000"
 os.environ.setdefault("SECRET_KEY", "test-secret-key")
 os.environ.setdefault("DEBUG", "true")
 os.environ.setdefault("REGISTRATION_OPEN", "true")
 
 # Import all models so relationships resolve
 import app.models.actor  # noqa: F401
+import app.models.bookmark  # noqa: F401
+import app.models.custom_emoji  # noqa: F401
 import app.models.delivery  # noqa: F401
+import app.models.domain_block  # noqa: F401
+import app.models.drive_file  # noqa: F401
 import app.models.follow  # noqa: F401
+import app.models.moderation_log  # noqa: F401
 import app.models.note  # noqa: F401
+import app.models.note_attachment  # noqa: F401
+import app.models.notification  # noqa: F401
 import app.models.oauth  # noqa: F401
+import app.models.pinned_note  # noqa: F401
+import app.models.poll_vote  # noqa: F401
 import app.models.passkey  # noqa: F401
 import app.models.reaction  # noqa: F401
+import app.models.report  # noqa: F401
+import app.models.server_setting  # noqa: F401
 import app.models.user  # noqa: F401
+import app.models.user_block  # noqa: F401
+import app.models.user_mute  # noqa: F401
 from app.models.base import Base
 
 
@@ -35,10 +55,13 @@ TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 async def db_engine():
     engine = create_async_engine(TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
+        await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
+        await conn.execute(sa.text("CREATE SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
     yield engine
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+        await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
+        await conn.execute(sa.text("CREATE SCHEMA public"))
     await engine.dispose()
 
 

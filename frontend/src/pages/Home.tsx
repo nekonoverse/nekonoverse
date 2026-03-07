@@ -1,20 +1,27 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, createEffect, onMount, Show, For } from "solid-js";
+import { useSearchParams } from "@solidjs/router";
 import { currentUser, authLoading, fetchCurrentUser } from "../stores/auth";
 import { fetchInstance, registrationOpen } from "../stores/instance";
-import { getPublicTimeline, type Note } from "../api/statuses";
+import { getPublicTimeline, getHomeTimeline, getNote, type Note } from "../api/statuses";
 import { useI18n } from "../i18n";
 import NoteComposer from "../components/notes/NoteComposer";
 import NoteCard from "../components/notes/NoteCard";
 
 export default function Home() {
   const { t } = useI18n();
+  const [searchParams] = useSearchParams();
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [timelineLoading, setTimelineLoading] = createSignal(true);
+  const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
+
+  const isHomeTL = () => searchParams.tl === "home" && !!currentUser();
 
   const loadTimeline = async () => {
     setTimelineLoading(true);
     try {
-      const data = await getPublicTimeline({ local: true });
+      const data = isHomeTL()
+        ? await getHomeTimeline()
+        : await getPublicTimeline({ local: true });
       setNotes(data);
     } catch {
       // ignore
@@ -28,13 +35,29 @@ export default function Home() {
     await loadTimeline();
   });
 
+  // Reload when switching between public/home
+  createEffect(() => {
+    const _ = searchParams.tl;
+    if (!authLoading()) {
+      loadTimeline();
+    }
+  });
+
   const handleNewNote = (note: Note) => {
     setNotes((prev) => [note, ...prev]);
   };
 
+  const refreshNote = async (noteId: string) => {
+    try {
+      const updated = await getNote(noteId);
+      setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
+    } catch {
+      // ignore
+    }
+  };
+
   return (
     <div class="page-container">
-      <h1>{t("app.title")}</h1>
       <Show when={!authLoading()} fallback={<p>{t("common.loading")}</p>}>
         <Show
           when={currentUser()}
@@ -50,19 +73,15 @@ export default function Home() {
             </div>
           }
         >
-          <div class="home-user-bar">
-            <span>{currentUser()!.display_name || currentUser()!.username}</span>
-            <a href="/settings" class="btn btn-secondary btn-small">{t("settings.title")}</a>
-          </div>
-          <NoteComposer onPost={handleNewNote} />
+          <NoteComposer onPost={handleNewNote} quoteNote={quoteTarget()} onClearQuote={() => setQuoteTarget(null)} />
         </Show>
       </Show>
 
       <div class="timeline">
-        <h2>{t("timeline.public")}</h2>
+        <h2>{isHomeTL() ? t("timeline.home") : t("timeline.public")}</h2>
         <Show when={!timelineLoading()} fallback={<p>{t("timeline.loading")}</p>}>
           <Show when={notes().length > 0} fallback={<p class="empty">{t("timeline.empty")}</p>}>
-            <For each={notes()}>{(note) => <NoteCard note={note} />}</For>
+            <For each={notes()}>{(note) => <NoteCard note={note} onReactionUpdate={() => refreshNote(note.id)} onQuote={(n) => { setQuoteTarget(n); window.scrollTo({ top: 0, behavior: "smooth" }); }} onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))} />}</For>
           </Show>
         </Show>
       </div>

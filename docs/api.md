@@ -8,6 +8,8 @@
 | `POST` | `/api/v1/auth/login` | ログイン |
 | `POST` | `/api/v1/auth/logout` | ログアウト |
 | `GET` | `/api/v1/accounts/verify_credentials` | 現在のユーザー情報 |
+| `PATCH` | `/api/v1/accounts/update_credentials` | プロフィール更新 (表示名・アバター) |
+| `POST` | `/api/v1/auth/change_password` | パスワード変更 |
 
 ## パスキー (WebAuthn)
 
@@ -58,6 +60,23 @@
 | `GET` | `/.well-known/webfinger` | WebFinger |
 | `GET` | `/.well-known/nodeinfo` | NodeInfo ディスカバリ |
 | `GET` | `/nodeinfo/2.0` | NodeInfo 2.0 |
+
+## メディア / ドライブ
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/v1/media` | メディアアップロード (multipart) |
+| `POST` | `/api/v2/media` | メディアアップロード v2 |
+| `GET` | `/api/v1/media/{id}` | メディア情報取得 |
+| `DELETE` | `/api/v1/media/{id}` | メディア削除 |
+| `GET` | `/api/v1/drive/files` | ドライブファイル一覧 |
+| `GET` | `/media/{key}` | メディアファイル配信 |
+
+## 管理者
+
+| メソッド | パス | 説明 |
+|---------|------|------|
+| `POST` | `/api/v1/admin/server-icon` | サーバーアイコン設定 (管理者のみ) |
 
 ## インスタンス情報
 

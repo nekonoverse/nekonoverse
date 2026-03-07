@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_validator
 
 
 class UserRegisterRequest(BaseModel):
@@ -10,10 +10,30 @@ class UserRegisterRequest(BaseModel):
     password: str = Field(min_length=8, max_length=128)
     display_name: str | None = None
 
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, v: str) -> str:
+        return v.lower()
+
 
 class UserLoginRequest(BaseModel):
     username: str
+
+    @field_validator("username")
+    @classmethod
+    def normalize_username(cls, v: str) -> str:
+        return v.lower()
+
     password: str
+
+
+class UpdateProfileRequest(BaseModel):
+    display_name: str | None = Field(None, max_length=255)
+
+
+class ChangePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str = Field(min_length=8, max_length=128)
 
 
 class UserResponse(BaseModel):

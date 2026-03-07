@@ -138,6 +138,87 @@ async def test_handle_create_with_source(db, mock_valkey):
     assert note.source == "With source"
 
 
+async def test_handle_create_emoji_tag_extended_fields(db, mock_valkey):
+    """Create Note with Emoji tag containing CherryPick/Misskey extended fields."""
+    from app.activitypub.handlers.create import handle_create
+    from app.services.emoji_service import get_custom_emoji
+    remote = await make_remote_actor(db, username="cpuser", domain="cp.example")
+    activity = {
+        "type": "Create",
+        "actor": remote.ap_id,
+        "object": {
+            "type": "Note",
+            "id": "http://cp.example/notes/emoji1",
+            "attributedTo": remote.ap_id,
+            "content": "<p>:cherry_blossom: nice</p>",
+            "published": "2025-06-01T00:00:00Z",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [],
+            "tag": [
+                {
+                    "type": "Emoji",
+                    "name": ":cherry_blossom:",
+                    "icon": {"type": "Image", "url": "https://cp.example/emoji/cherry.png"},
+                    "_misskey_license": {"freeText": "CC-BY-4.0"},
+                    "keywords": ["sakura", "flower"],
+                    "author": "hanami",
+                    "copyPermission": "allow",
+                    "isSensitive": False,
+                    "category": "nature",
+                    "description": "A cherry blossom",
+                    "usageInfo": "Credit appreciated",
+                    "isBasedOn": "https://original.example/cherry",
+                },
+            ],
+        },
+    }
+    await handle_create(db, activity)
+
+    emoji = await get_custom_emoji(db, "cherry_blossom", "cp.example")
+    assert emoji is not None
+    assert emoji.url == "https://cp.example/emoji/cherry.png"
+    assert emoji.license == "CC-BY-4.0"
+    assert emoji.aliases == ["sakura", "flower"]
+    assert emoji.author == "hanami"
+    assert emoji.copy_permission == "allow"
+    assert emoji.category == "nature"
+    assert emoji.description == "A cherry blossom"
+    assert emoji.usage_info == "Credit appreciated"
+    assert emoji.is_based_on == "https://original.example/cherry"
+
+
+async def test_handle_create_emoji_tag_misskey_license_fallback(db, mock_valkey):
+    """_misskey_license.freeText should be used when top-level license is absent."""
+    from app.activitypub.handlers.create import handle_create
+    from app.services.emoji_service import get_custom_emoji
+    remote = await make_remote_actor(db, username="mkuser", domain="mk.example")
+    activity = {
+        "type": "Create",
+        "actor": remote.ap_id,
+        "object": {
+            "type": "Note",
+            "id": "http://mk.example/notes/emoji2",
+            "attributedTo": remote.ap_id,
+            "content": "<p>:mk_emoji:</p>",
+            "published": "2025-06-01T00:00:00Z",
+            "to": [], "cc": [],
+            "tag": [
+                {
+                    "type": "Emoji",
+                    "name": ":mk_emoji:",
+                    "icon": {"type": "Image", "url": "https://mk.example/emoji/mk.png"},
+                    "_misskey_license": {"freeText": "Misskey License Text"},
+                },
+            ],
+        },
+    }
+    await handle_create(db, activity)
+
+    emoji = await get_custom_emoji(db, "mk_emoji", "mk.example")
+    assert emoji is not None
+    assert emoji.license == "Misskey License Text"
+
+
 async def test_handle_create_sanitizes_content(db, mock_valkey):
     from app.activitypub.handlers.create import handle_create
     from app.services.note_service import get_note_by_ap_id

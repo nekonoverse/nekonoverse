@@ -1,11 +1,24 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, Response
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db
-from app.schemas.user import UserLoginRequest, UserRegisterRequest, UserResponse
-from app.services.user_service import authenticate_user, create_user, get_user_by_id
+from app.config import settings
+from app.dependencies import get_current_user, get_db
+from app.models.user import User
+from app.schemas.user import (
+    ChangePasswordRequest,
+    UserLoginRequest,
+    UserRegisterRequest,
+    UserResponse,
+)
+from app.services.user_service import (
+    authenticate_user,
+    change_password,
+    create_user,
+    get_user_by_id,
+    update_display_name,
+)
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
@@ -34,17 +47,7 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    actor = user.actor
-    return UserResponse(
-        id=user.id,
-        username=actor.username,
-        display_name=actor.display_name,
-        avatar_url=actor.avatar_url,
-        header_url=actor.header_url,
-        summary=actor.summary,
-        role=user.role,
-        created_at=user.created_at,
-    )
+    return _user_response(user)
 
 
 @router.post("/auth/login")
@@ -102,14 +105,101 @@ async def verify_credentials(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    return _user_response(user)
+
+
+DEFAULT_AVATAR_PATH = "/default-avatar.svg"
+
+
+def _user_response(user: User) -> UserResponse:
     actor = user.actor
     return UserResponse(
         id=user.id,
         username=actor.username,
         display_name=actor.display_name,
-        avatar_url=actor.avatar_url,
+        avatar_url=actor.avatar_url or DEFAULT_AVATAR_PATH,
         header_url=actor.header_url,
         summary=actor.summary,
         role=user.role,
         created_at=user.created_at,
     )
+
+
+@router.patch("/accounts/update_credentials", response_model=UserResponse)
+async def update_credentials(
+    display_name: str | None = Form(None),
+    avatar: UploadFile | None = File(None),
+    header: UploadFile | None = File(None),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    if display_name is not None:
+        user = await update_display_name(db, user, display_name or None)
+
+    if avatar:
+        from app.services.drive_service import file_to_url, upload_drive_file
+
+        data = await avatar.read()
+        try:
+            drive_file = await upload_drive_file(
+                db=db, owner=user, data=data,
+                filename=avatar.filename or "avatar",
+                mime_type=avatar.content_type or "image/png",
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        user.actor.avatar_url = file_to_url(drive_file)
+        user.actor.avatar_file_id = drive_file.id
+        await db.commit()
+        await db.refresh(user)
+
+    if header:
+        from app.services.drive_service import file_to_url, upload_drive_file
+
+        data = await header.read()
+        try:
+            drive_file = await upload_drive_file(
+                db=db, owner=user, data=data,
+                filename=header.filename or "header",
+                mime_type=header.content_type or "image/png",
+            )
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        user.actor.header_url = file_to_url(drive_file)
+        user.actor.header_file_id = drive_file.id
+        await db.commit()
+        await db.refresh(user)
+
+    # Federate profile update to followers
+    if display_name is not None or avatar or header:
+        from app.activitypub.renderer import render_actor, render_update_activity
+        from app.services.delivery_service import enqueue_delivery
+        from app.services.follow_service import get_follower_inboxes
+
+        actor = user.actor
+        actor_data = render_actor(actor)
+        update_activity = render_update_activity(
+            activity_id=f"{actor.ap_id}#updates/{uuid.uuid4().hex}",
+            actor_ap_id=actor.ap_id,
+            object_data=actor_data,
+        )
+        inboxes = await get_follower_inboxes(db, actor.id)
+        for inbox_url in inboxes:
+            await enqueue_delivery(db, actor.id, inbox_url, update_activity)
+
+    return _user_response(user)
+
+
+@router.post("/auth/change_password")
+async def change_password_endpoint(
+    body: ChangePasswordRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        await change_password(db, user, body.current_password, body.new_password)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return {"ok": True}

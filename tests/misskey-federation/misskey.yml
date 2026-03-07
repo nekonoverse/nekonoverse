@@ -1,0 +1,33 @@
+url: https://misskey/
+port: 3000
+
+db:
+  host: postgres-mk
+  port: 5432
+  db: misskey
+  user: misskey
+  pass: testpass
+
+redis:
+  host: redis-mk
+  port: 6379
+
+redisForPubsub:
+  host: redis-mk
+  port: 6379
+
+redisForJobQueue:
+  host: redis-mk
+  port: 6379
+
+redisForTimelines:
+  host: redis-mk
+  port: 6379
+
+id: aidx
+
+allowedPrivateNetworks:
+  - 127.0.0.0/8
+  - 10.0.0.0/8
+  - 172.16.0.0/12
+  - 192.168.0.0/16
