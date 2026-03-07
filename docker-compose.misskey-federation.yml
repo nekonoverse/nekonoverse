@@ -1,0 +1,153 @@
+services:
+  # ── Nekonoverse Instance ───────────────────────────────────
+  postgres-neko:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - misskey-fed
+
+  valkey-neko:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - misskey-fed
+
+  app-neko:
+    build: ./backend
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+    depends_on:
+      postgres-neko:
+        condition: service_healthy
+      valkey-neko:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - misskey-fed
+
+  worker-neko:
+    build: ./backend
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+    depends_on:
+      app-neko:
+        condition: service_healthy
+    networks:
+      - misskey-fed
+
+  nginx-neko:
+    image: nginx:alpine
+    environment:
+      BACKEND_HOST: app-neko
+    volumes:
+      - ./tests/federation/nginx.conf.template:/etc/nginx/templates/nginx.conf.template:ro
+    entrypoint: /bin/sh
+    command: >
+      -c "envsubst '$$BACKEND_HOST' < /etc/nginx/templates/nginx.conf.template > /etc/nginx/nginx.conf && nginx -g 'daemon off;'"
+    depends_on:
+      app-neko:
+        condition: service_healthy
+    networks:
+      misskey-fed:
+        aliases:
+          - nekonoverse
+
+  # ── Misskey Instance ───────────────────────────────────────
+  postgres-mk:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: misskey
+      POSTGRES_USER: misskey
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U misskey
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - misskey-fed
+
+  redis-mk:
+    image: redis:7-alpine
+    healthcheck:
+      test: redis-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - misskey-fed
+
+  misskey-app:
+    image: misskey/misskey:2025.2.1
+    depends_on:
+      postgres-mk:
+        condition: service_healthy
+      redis-mk:
+        condition: service_healthy
+    volumes:
+      - ./tests/misskey-federation/misskey.yml:/misskey/.config/default.yml:ro
+    networks:
+      - misskey-fed
+
+  nginx-mk:
+    image: nginx:alpine
+    volumes:
+      - ./tests/misskey-federation/nginx-misskey.conf:/etc/nginx/nginx.conf:ro
+    depends_on:
+      - misskey-app
+    networks:
+      misskey-fed:
+        aliases:
+          - misskey
+
+  # ── Test Runner ────────────────────────────────────────────
+  test-runner:
+    profiles: ["test"]
+    build: ./tests/misskey-federation
+    environment:
+      NEKO_URL: http://nekonoverse
+      MISSKEY_URL: http://misskey
+      NEKO_DOMAIN: nekonoverse
+      MISSKEY_DOMAIN: misskey
+    depends_on:
+      nginx-neko:
+        condition: service_started
+      nginx-mk:
+        condition: service_started
+      worker-neko:
+        condition: service_started
+    networks:
+      - misskey-fed
+
+networks:
+  misskey-fed:
+    driver: bridge
