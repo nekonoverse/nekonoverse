@@ -25,6 +25,23 @@ export interface MediaAttachment {
   meta: { original?: { width: number; height: number } } | null;
 }
 
+export interface PollOption {
+  title: string;
+  votes_count: number;
+}
+
+export interface Poll {
+  id: string;
+  expires_at: string | null;
+  expired: boolean;
+  multiple: boolean;
+  votes_count: number;
+  voters_count: number;
+  options: PollOption[];
+  voted: boolean;
+  own_votes: number[];
+}
+
 export interface Note {
   id: string;
   ap_id: string;
@@ -42,6 +59,8 @@ export interface Note {
   media_attachments: MediaAttachment[];
   reblog: Note | null;
   quote: Note | null;
+  poll: Poll | null;
+  pinned: boolean;
 }
 
 export async function uploadMedia(file: File, description?: string): Promise<MediaAttachment> {
@@ -112,5 +131,44 @@ export async function reactToNote(noteId: string, emoji: string): Promise<void> 
 export async function unreactToNote(noteId: string, emoji: string): Promise<void> {
   await apiRequest(`/api/v1/statuses/${noteId}/unreact/${encodeURIComponent(emoji)}`, {
     method: "POST",
+  });
+}
+
+export async function deleteNote(noteId: string): Promise<void> {
+  await apiRequest(`/api/v1/statuses/${noteId}`, { method: "DELETE" });
+}
+
+export async function bookmarkNote(noteId: string): Promise<void> {
+  await apiRequest(`/api/v1/statuses/${noteId}/bookmark`, { method: "POST" });
+}
+
+export async function unbookmarkNote(noteId: string): Promise<void> {
+  await apiRequest(`/api/v1/statuses/${noteId}/unbookmark`, { method: "POST" });
+}
+
+export async function getBookmarks(params?: { max_id?: string; limit?: number }): Promise<Note[]> {
+  const query = new URLSearchParams();
+  if (params?.max_id) query.set("max_id", params.max_id);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return apiRequest<Note[]>(`/api/v1/bookmarks${qs ? `?${qs}` : ""}`);
+}
+
+export async function pinNote(noteId: string): Promise<void> {
+  await apiRequest(`/api/v1/statuses/${noteId}/pin`, { method: "POST" });
+}
+
+export async function unpinNote(noteId: string): Promise<void> {
+  await apiRequest(`/api/v1/statuses/${noteId}/unpin`, { method: "POST" });
+}
+
+export async function getPoll(noteId: string): Promise<Poll> {
+  return apiRequest<Poll>(`/api/v1/polls/${noteId}`);
+}
+
+export async function votePoll(noteId: string, choices: number[]): Promise<Poll> {
+  return apiRequest<Poll>(`/api/v1/polls/${noteId}/votes`, {
+    method: "POST",
+    body: { choices },
   });
 }

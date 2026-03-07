@@ -141,3 +141,18 @@ export async function rejectReport(reportId: string): Promise<void> {
 export async function getModerationLog(limit = 50): Promise<ModerationLogEntry[]> {
   return apiRequest<ModerationLogEntry[]>(`/api/v1/admin/log?limit=${limit}`);
 }
+
+// Server Icon
+export async function uploadServerIcon(file: File): Promise<{ ok: boolean; url: string }> {
+  const formData = new FormData();
+  formData.append("file", file);
+  return apiRequest<{ ok: boolean; url: string }>("/api/v1/admin/server-icon", {
+    method: "POST",
+    formData,
+  });
+}
+
+// Sensitive marking
+export async function markNoteSensitive(noteId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/notes/${noteId}/sensitive`, { method: "POST" });
+}

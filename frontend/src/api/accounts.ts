@@ -68,3 +68,16 @@ export async function getBlockedAccounts(): Promise<Account[]> {
 export async function getMutedAccounts(): Promise<Account[]> {
   return apiRequest<Account[]>("/api/v1/mutes");
 }
+
+export async function searchAccounts(q: string, resolve = false): Promise<Account[]> {
+  const query = new URLSearchParams({ q });
+  if (resolve) query.set("resolve", "true");
+  return apiRequest<Account[]>(`/api/v1/accounts/search?${query.toString()}`);
+}
+
+export async function moveAccount(targetApId: string): Promise<void> {
+  await apiRequest("/api/v1/accounts/move", {
+    method: "POST",
+    body: { target_ap_id: targetApId },
+  });
+}
