@@ -1,0 +1,128 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - e2e
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - e2e
+
+  nekono3s:
+    image: ghcr.io/nananek/nekono3s:latest
+    environment:
+      S3_ACCESS_KEY_ID: nekonoverse
+      S3_SECRET_ACCESS_KEY: changeme-s3
+      S3_STORAGE_PATH: /data
+      S3_REGION: us-east-1
+    healthcheck:
+      test: python -c "import socket; s=socket.create_connection(('localhost',8080),2); s.close()"
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - e2e
+
+  app:
+    build: ./backend
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.cli create-admin --username admin --email admin@test.local --password testpassword123 || true &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres:5432/nekonoverse
+      VALKEY_URL: valkey://valkey:6379/0
+      DOMAIN: localhost
+      SECRET_KEY: e2e-test-secret-key
+      FRONTEND_URL: http://localhost:3080
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      S3_ENDPOINT_URL: http://nekono3s:8080
+      S3_ACCESS_KEY_ID: nekonoverse
+      S3_SECRET_ACCESS_KEY: changeme-s3
+      S3_BUCKET: nekonoverse
+      S3_REGION: us-east-1
+    depends_on:
+      postgres:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      nekono3s:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - e2e
+
+  worker:
+    build: ./backend
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres:5432/nekonoverse
+      VALKEY_URL: valkey://valkey:6379/0
+      DOMAIN: localhost
+      SECRET_KEY: e2e-test-secret-key
+      DEBUG: "true"
+      S3_ENDPOINT_URL: http://nekono3s:8080
+      S3_ACCESS_KEY_ID: nekonoverse
+      S3_SECRET_ACCESS_KEY: changeme-s3
+      S3_BUCKET: nekonoverse
+      S3_REGION: us-east-1
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - e2e
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      target: dev
+    command: npx --yes vite dev --host 0.0.0.0 --port 3000
+    environment:
+      VITE_API_URL: ""
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
+    depends_on:
+      app:
+        condition: service_healthy
+    networks:
+      - e2e
+
+  nginx:
+    image: nginx:alpine
+    volumes:
+      - ./tests/e2e/nginx.conf.template:/etc/nginx/nginx.conf:ro
+    ports:
+      - "3080:80"
+    depends_on:
+      app:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks:
+      - e2e
+
+networks:
+  e2e:
+    driver: bridge

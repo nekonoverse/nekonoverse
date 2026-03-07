@@ -1,7 +1,8 @@
 import { Router, Route } from "@solidjs/router";
-import { lazy, type ParentProps } from "solid-js";
+import { lazy, onMount, type ParentProps } from "solid-js";
 import { I18nProvider } from "./i18n";
 import { initTheme } from "./stores/theme";
+import { fetchCurrentUser } from "./stores/auth";
 import Navbar from "./components/layout/Navbar";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";
 
@@ -19,6 +20,10 @@ const Search = lazy(() => import("./pages/Search"));
 const Profile = lazy(() => import("./pages/Profile"));
 
 function Layout(props: ParentProps) {
+  onMount(() => {
+    fetchCurrentUser();
+  });
+
   return (
     <>
       <Navbar />

@@ -39,6 +39,10 @@ Thumbs.db
 htmlcov/
 .coverage
 
+# Playwright
+tests/e2e/test-results/
+tests/e2e/playwright-report/
+
 volumes/
 
 # MkDocs

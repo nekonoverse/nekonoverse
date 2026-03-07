@@ -103,6 +103,43 @@ async def test_handle_emoji_react(db, test_user, mock_valkey):
     assert r.emoji == "🎉"
 
 
+async def test_handle_like_custom_emoji_extended_fields(db, test_user, mock_valkey):
+    """Like with custom emoji tag containing CherryPick extended fields."""
+    from app.activitypub.handlers.like import handle_like
+    note = await make_note(db, test_user.actor)
+    remote = await make_remote_actor(db, username="cplike", domain="cplike.example")
+    activity = {
+        "type": "Like",
+        "id": "http://cplike.example/activities/like-ext",
+        "actor": remote.ap_id,
+        "object": note.ap_id,
+        "content": ":ext_heart:",
+        "_misskey_reaction": ":ext_heart:",
+        "tag": [
+            {
+                "type": "Emoji",
+                "name": ":ext_heart:",
+                "icon": {"type": "Image", "url": "https://cplike.example/emoji/heart.png"},
+                "license": "CC0",
+                "keywords": ["love", "heart"],
+                "author": "like_artist",
+                "copyPermission": "allow",
+                "category": "emotions",
+            },
+        ],
+    }
+    await handle_like(db, activity)
+
+    from app.services.emoji_service import get_custom_emoji
+    cached = await get_custom_emoji(db, "ext_heart", "cplike.example")
+    assert cached is not None
+    assert cached.license == "CC0"
+    assert cached.aliases == ["love", "heart"]
+    assert cached.author == "like_artist"
+    assert cached.copy_permission == "allow"
+    assert cached.category == "emotions"
+
+
 async def test_handle_like_increments_count(db, test_user, mock_valkey):
     from app.activitypub.handlers.like import handle_like
     note = await make_note(db, test_user.actor)
