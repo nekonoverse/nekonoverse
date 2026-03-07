@@ -86,3 +86,40 @@ class ModerationLogResponse(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class AdminEmojiResponse(BaseModel):
+    id: uuid.UUID
+    shortcode: str
+    url: str
+    static_url: str | None = None
+    visible_in_picker: bool = True
+    category: str | None = None
+    aliases: list[str] | None = None
+    license: str | None = None
+    is_sensitive: bool = False
+    local_only: bool = False
+    author: str | None = None
+    description: str | None = None
+    copy_permission: str | None = None
+    usage_info: str | None = None
+    is_based_on: str | None = None
+    import_from: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class AdminEmojiUpdate(BaseModel):
+    shortcode: str | None = Field(None, max_length=100, pattern=r"^[a-zA-Z0-9_]+$")
+    category: str | None = Field(None, max_length=100)
+    visible_in_picker: bool | None = None
+    aliases: list[str] | None = None
+    license: str | None = Field(None, max_length=1024)
+    is_sensitive: bool | None = None
+    local_only: bool | None = None
+    author: str | None = Field(None, max_length=128)
+    description: str | None = Field(None, max_length=512)
+    copy_permission: str | None = Field(None, pattern=r"^(allow|deny|conditional)$")
+    usage_info: str | None = Field(None, max_length=512)
+    is_based_on: str | None = Field(None, max_length=1024)

@@ -2,7 +2,7 @@
 
 import uuid
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -13,6 +13,8 @@ from app.models.moderation_log import ModerationLog
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.admin import (
+    AdminEmojiResponse,
+    AdminEmojiUpdate,
     AdminStatsResponse,
     AdminUserResponse,
     DomainBlockRequest,
@@ -446,6 +448,186 @@ async def get_moderation_log(
         )
         for e in entries
     ]
+
+
+# --- Custom Emoji Management ---
+
+
+@router.get("/emoji/list", response_model=list[AdminEmojiResponse])
+async def list_emojis(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.emoji_service import list_all_local_emojis
+    emojis = await list_all_local_emojis(db)
+    return [AdminEmojiResponse.model_validate(e) for e in emojis]
+
+
+@router.post("/emoji/add", response_model=AdminEmojiResponse)
+async def add_emoji(
+    file: UploadFile = File(...),
+    shortcode: str = Form(...),
+    category: str | None = Form(None),
+    aliases: str | None = Form(None),
+    license: str | None = Form(None),
+    is_sensitive: bool = Form(False),
+    local_only: bool = Form(False),
+    author: str | None = Form(None),
+    description: str | None = Form(None),
+    copy_permission: str | None = Form(None),
+    usage_info: str | None = Form(None),
+    is_based_on: str | None = Form(None),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import json as json_mod
+    from app.services.drive_service import file_to_url, upload_drive_file
+    from app.services.emoji_service import create_local_emoji, get_custom_emoji
+
+    existing = await get_custom_emoji(db, shortcode, None)
+    if existing:
+        raise HTTPException(status_code=409, detail="Shortcode already exists")
+
+    data = await file.read()
+    try:
+        drive_file = await upload_drive_file(
+            db=db, owner=None, data=data,
+            filename=f"emoji_{shortcode}",
+            mime_type=file.content_type or "image/png",
+            server_file=True,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    url = file_to_url(drive_file)
+    parsed_aliases = json_mod.loads(aliases) if aliases else None
+
+    emoji = await create_local_emoji(
+        db, shortcode=shortcode, url=url, drive_file_id=drive_file.id,
+        category=category, aliases=parsed_aliases, license=license,
+        is_sensitive=is_sensitive, local_only=local_only,
+        author=author, description=description,
+        copy_permission=copy_permission, usage_info=usage_info,
+        is_based_on=is_based_on,
+    )
+    await db.commit()
+    return AdminEmojiResponse.model_validate(emoji)
+
+
+@router.patch("/emoji/{emoji_id}", response_model=AdminEmojiResponse)
+async def update_emoji_endpoint(
+    emoji_id: uuid.UUID,
+    body: AdminEmojiUpdate,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.emoji_service import update_emoji
+    updates = body.model_dump(exclude_unset=True)
+    emoji = await update_emoji(db, emoji_id, updates)
+    if not emoji:
+        raise HTTPException(status_code=404, detail="Emoji not found")
+    await db.commit()
+    return AdminEmojiResponse.model_validate(emoji)
+
+
+@router.delete("/emoji/{emoji_id}")
+async def delete_emoji_endpoint(
+    emoji_id: uuid.UUID,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.emoji_service import get_emoji_by_id, delete_emoji
+
+    emoji = await get_emoji_by_id(db, emoji_id)
+    if not emoji:
+        raise HTTPException(status_code=404, detail="Emoji not found")
+
+    if emoji.drive_file_id:
+        from app.services.drive_service import delete_drive_file, get_drive_file
+        df = await get_drive_file(db, emoji.drive_file_id)
+        if df:
+            await delete_drive_file(db, df)
+
+    await delete_emoji(db, emoji_id)
+    await db.commit()
+    return {"ok": True}
+
+
+# --- Server Files ---
+
+
+@router.get("/server-files")
+async def list_server_files(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.drive_file import DriveFile
+    from app.services.drive_service import file_to_url
+
+    result = await db.execute(
+        select(DriveFile)
+        .where(DriveFile.server_file.is_(True))
+        .order_by(DriveFile.created_at.desc())
+    )
+    files = result.scalars().all()
+    return [
+        {
+            "id": str(f.id),
+            "filename": f.filename,
+            "mime_type": f.mime_type,
+            "size_bytes": f.size_bytes,
+            "url": file_to_url(f),
+            "created_at": f.created_at.isoformat(),
+        }
+        for f in files
+    ]
+
+
+@router.post("/server-files")
+async def upload_server_file(
+    file: UploadFile = File(...),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.drive_service import file_to_url, upload_drive_file
+
+    data = await file.read()
+    try:
+        drive_file = await upload_drive_file(
+            db=db, owner=None, data=data,
+            filename=file.filename or "server-file",
+            mime_type=file.content_type or "application/octet-stream",
+            server_file=True,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    await db.commit()
+    return {
+        "id": str(drive_file.id),
+        "filename": drive_file.filename,
+        "mime_type": drive_file.mime_type,
+        "size_bytes": drive_file.size_bytes,
+        "url": file_to_url(drive_file),
+        "created_at": drive_file.created_at.isoformat(),
+    }
+
+
+@router.delete("/server-files/{file_id}")
+async def delete_server_file_endpoint(
+    file_id: uuid.UUID,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.drive_service import delete_drive_file, get_drive_file
+
+    drive_file = await get_drive_file(db, file_id)
+    if not drive_file or not drive_file.server_file:
+        raise HTTPException(status_code=404, detail="Server file not found")
+
+    await delete_drive_file(db, drive_file)
+    await db.commit()
+    return {"ok": True}
 
 
 # --- Helpers ---
