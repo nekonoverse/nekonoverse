@@ -7,6 +7,7 @@ from app.config import settings
 from app.models.actor import Actor
 from app.models.follow import Follow
 from app.models.user import User
+from app.services.actor_service import actor_uri
 from app.services.delivery_service import enqueue_delivery
 
 
@@ -47,7 +48,7 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
     if not target_actor.is_local:
         from app.activitypub.renderer import render_follow_activity
 
-        activity = render_follow_activity(ap_id, actor.ap_id, target_actor.ap_id)
+        activity = render_follow_activity(ap_id, actor_uri(actor), target_actor.ap_id)
         await enqueue_delivery(db, actor.id, target_actor.inbox_url, activity)
 
     return follow
@@ -76,11 +77,11 @@ async def unfollow_actor(db: AsyncSession, user: User, target_actor: Actor):
 
         follow_activity = render_follow_activity(
             follow.ap_id or f"{settings.server_url}/activities/{uuid.uuid4()}",
-            actor.ap_id,
+            actor_uri(actor),
             target_actor.ap_id,
         )
         undo_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
-        undo_activity = render_undo_activity(undo_id, actor.ap_id, follow_activity)
+        undo_activity = render_undo_activity(undo_id, actor_uri(actor), follow_activity)
         await enqueue_delivery(db, actor.id, target_actor.inbox_url, undo_activity)
 
 

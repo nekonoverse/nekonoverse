@@ -51,8 +51,14 @@ async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Act
 
 async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:
     """Deliver an activity to a remote inbox."""
+    from app.config import settings as app_settings
+
     body = json.dumps(job.payload).encode("utf-8")
-    key_id = f"{actor.ap_id}#main-key"
+    # Use dynamic URL for local actor to ensure correct scheme
+    if actor.domain is None:
+        key_id = f"{app_settings.server_url}/users/{actor.username}#main-key"
+    else:
+        key_id = f"{actor.ap_id}#main-key"
 
     headers = sign_request(
         private_key_pem=private_key_pem,

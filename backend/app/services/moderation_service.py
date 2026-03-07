@@ -54,10 +54,13 @@ async def suspend_actor(
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
 
+        from app.services.actor_service import actor_uri
+
+        actor_url = actor_uri(actor)
         delete_activity = render_delete_activity(
-            activity_id=f"{actor.ap_id}#delete",
-            actor_ap_id=actor.ap_id,
-            object_id=actor.ap_id,
+            activity_id=f"{actor_url}#delete",
+            actor_ap_id=actor_url,
+            object_id=actor_url,
         )
         inboxes = await get_follower_inboxes(db, actor.id)
         for inbox_url in inboxes:
@@ -102,9 +105,11 @@ async def admin_delete_note(
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
 
+        from app.services.actor_service import actor_uri
+
         delete_activity = render_delete_activity(
             activity_id=f"{note.ap_id}/delete",
-            actor_ap_id=note.actor.ap_id,
+            actor_ap_id=actor_uri(note.actor),
             object_id=note.ap_id,
         )
         inboxes = await get_follower_inboxes(db, note.actor_id)

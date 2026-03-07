@@ -12,13 +12,38 @@ from app.models.actor import Actor
 
 logger = logging.getLogger(__name__)
 
+
+def actor_uri(actor: Actor) -> str:
+    """Return the canonical ActivityPub URI for an actor.
+
+    For local actors, derives from settings.server_url to ensure correct
+    scheme.  For remote actors, returns the stored ap_id.
+    """
+    if actor.domain is None:
+        return f"{settings.server_url}/users/{actor.username}"
+    return actor.ap_id
+
 AP_ACCEPT = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
 AP_CONTENT_TYPES = {"application/activity+json", "application/ld+json"}
 
 
 async def get_actor_by_ap_id(db: AsyncSession, ap_id: str) -> Actor | None:
     result = await db.execute(select(Actor).where(Actor.ap_id == ap_id))
-    return result.scalar_one_or_none()
+    actor = result.scalar_one_or_none()
+    if actor:
+        return actor
+
+    # Fallback: if ap_id looks like a local actor URL, try lookup by username.
+    # This handles http/https scheme mismatch in stored ap_id.
+    from urllib.parse import urlparse
+
+    parsed = urlparse(ap_id)
+    if parsed.hostname == settings.domain and parsed.path.startswith("/users/"):
+        username = parsed.path.split("/users/", 1)[1].rstrip("/")
+        if username:
+            return await get_actor_by_username(db, username, domain=None)
+
+    return None
 
 
 async def get_actor_by_username(
@@ -41,7 +66,9 @@ async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
     user = result.scalar_one_or_none()
     if not user or not user.actor:
         return None
-    key_id = f"{user.actor.ap_id}#main-key"
+    # Use dynamic URL for local actor to ensure correct scheme
+    actor_url = f"{settings.server_url}/users/{user.actor.username}"
+    key_id = f"{actor_url}#main-key"
     return key_id, user.private_key_pem
 
 

@@ -5,6 +5,7 @@ from datetime import datetime
 from app.config import settings
 from app.models.actor import Actor
 from app.models.note import Note
+from app.services.actor_service import actor_uri
 
 
 def _iso_z(dt: datetime) -> str:
@@ -120,7 +121,7 @@ def render_note(note: Note) -> dict:
         "@context": AP_CONTEXT,
         "id": note.ap_id,
         "type": note_type,
-        "attributedTo": actor.ap_id,
+        "attributedTo": actor_uri(actor),
         "content": note.content,
         "published": _iso_z(note.published),
         "to": note.to,
@@ -257,7 +258,7 @@ def render_create_activity(note: Note) -> dict:
         "@context": AP_CONTEXT,
         "id": f"{note.ap_id}/activity",
         "type": "Create",
-        "actor": note.actor.ap_id,
+        "actor": actor_uri(note.actor),
         "object": render_note(note),
         "to": note.to,
         "cc": note.cc,

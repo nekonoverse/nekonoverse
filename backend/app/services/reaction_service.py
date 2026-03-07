@@ -7,6 +7,7 @@ from app.config import settings
 from app.models.note import Note
 from app.models.reaction import Reaction
 from app.models.user import User
+from app.services.actor_service import actor_uri
 from app.utils.emoji import is_custom_emoji_shortcode, is_single_emoji
 
 
@@ -49,7 +50,7 @@ async def add_reaction(
         from app.activitypub.renderer import render_like_activity
         from app.services.delivery_service import enqueue_delivery
 
-        activity = render_like_activity(ap_id, actor.ap_id, note.ap_id, emoji)
+        activity = render_like_activity(ap_id, actor_uri(actor), note.ap_id, emoji)
 
         # Attach emoji tag for custom emoji so remote server can display it
         if is_custom_emoji_shortcode(emoji):
@@ -103,8 +104,8 @@ async def remove_reaction(
         from app.services.delivery_service import enqueue_delivery
 
         like_activity = render_like_activity(
-            reaction_ap_id, actor.ap_id, note.ap_id, emoji
+            reaction_ap_id, actor_uri(actor), note.ap_id, emoji
         )
         undo_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
-        undo_activity = render_undo_activity(undo_id, actor.ap_id, like_activity)
+        undo_activity = render_undo_activity(undo_id, actor_uri(actor), like_activity)
         await enqueue_delivery(db, actor.id, note.actor.inbox_url, undo_activity)

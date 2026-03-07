@@ -9,6 +9,7 @@ from app.models.actor import Actor
 from app.models.follow import Follow
 from app.models.user import User
 from app.models.user_block import UserBlock
+from app.services.actor_service import actor_uri
 
 
 async def block_actor(db: AsyncSession, user: User, target_actor: Actor) -> UserBlock:
@@ -51,7 +52,7 @@ async def block_actor(db: AsyncSession, user: User, target_actor: Actor) -> User
         from app.services.delivery_service import enqueue_delivery
 
         activity_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
-        activity = render_block_activity(activity_id, actor.ap_id, target_actor.ap_id)
+        activity = render_block_activity(activity_id, actor_uri(actor), target_actor.ap_id)
         await enqueue_delivery(db, actor.id, target_actor.inbox_url, activity)
 
     return block
@@ -81,10 +82,10 @@ async def unblock_actor(db: AsyncSession, user: User, target_actor: Actor) -> No
 
         block_activity = render_block_activity(
             f"{settings.server_url}/activities/{uuid.uuid4()}",
-            actor.ap_id, target_actor.ap_id,
+            actor_uri(actor), target_actor.ap_id,
         )
         undo_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
-        undo_activity = render_undo_activity(undo_id, actor.ap_id, block_activity)
+        undo_activity = render_undo_activity(undo_id, actor_uri(actor), block_activity)
         await enqueue_delivery(db, actor.id, target_actor.inbox_url, undo_activity)
 
 

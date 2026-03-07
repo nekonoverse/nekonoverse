@@ -59,7 +59,9 @@ async def handle_follow(db: AsyncSession, activity: dict):
         from app.services.delivery_service import enqueue_delivery
 
         accept_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
-        accept = render_accept_activity(accept_id, target.ap_id, activity)
+        # Use dynamic URL for local actor to ensure correct scheme
+        actor_ap_id = f"{settings.server_url}/users/{target.username}"
+        accept = render_accept_activity(accept_id, actor_ap_id, activity)
 
         await enqueue_delivery(db, target.id, follower.inbox_url, accept)
         logger.info("Auto-accepted follow from %s to %s", actor_ap_id, target_ap_id)

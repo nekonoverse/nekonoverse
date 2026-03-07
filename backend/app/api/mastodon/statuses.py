@@ -10,6 +10,7 @@ from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.note import NoteActorResponse, NoteCreateRequest, NoteMediaAttachment, NoteResponse, PollResponse, PollOptionResponse, ReactionSummary
+from app.services.actor_service import actor_uri
 from app.services.note_service import create_note, get_note_by_id, get_reaction_summary
 
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
@@ -255,7 +256,7 @@ async def reblog_status(
 
     activity = render_announce_activity(
         activity_id=ap_id,
-        actor_ap_id=actor.ap_id,
+        actor_ap_id=actor_uri(actor),
         note_ap_id=original.ap_id,
         to=to_list,
         cc=cc_list,
@@ -307,14 +308,14 @@ async def unreblog_status(
 
     announce_activity = render_announce_activity(
         activity_id=reblog_note.ap_id,
-        actor_ap_id=actor.ap_id,
+        actor_ap_id=actor_uri(actor),
         note_ap_id=original.ap_id,
         to=reblog_note.to,
         cc=reblog_note.cc,
         published=reblog_note.published.isoformat() + "Z",
     )
     undo_id = f"{reblog_note.ap_id}/undo"
-    undo_activity = render_undo_activity(undo_id, actor.ap_id, announce_activity)
+    undo_activity = render_undo_activity(undo_id, actor_uri(actor), announce_activity)
     inboxes = await get_follower_inboxes(db, actor.id)
     for inbox_url in inboxes:
         await enqueue_delivery(db, actor.id, inbox_url, undo_activity)
@@ -387,8 +388,8 @@ async def pin_status(
     actor = user.actor
     note = await get_note_by_id(db, note_id)
     activity = render_add_activity(
-        activity_id=f"{actor.ap_id}/add/{note_id}",
-        actor_ap_id=actor.ap_id,
+        activity_id=f"{actor_uri(actor)}/add/{note_id}",
+        actor_ap_id=actor_uri(actor),
         object_id=note.ap_id,
         target=f"{settings.server_url}/users/{actor.username}/featured",
     )
@@ -425,8 +426,8 @@ async def unpin_status(
 
     actor = user.actor
     activity = render_remove_activity(
-        activity_id=f"{actor.ap_id}/remove/{note_id}",
-        actor_ap_id=actor.ap_id,
+        activity_id=f"{actor_uri(actor)}/remove/{note_id}",
+        actor_ap_id=actor_uri(actor),
         object_id=note.ap_id,
         target=f"{settings.server_url}/users/{actor.username}/featured",
     )
@@ -461,7 +462,7 @@ async def delete_status(
     actor = user.actor
     delete_activity = render_delete_activity(
         activity_id=f"{note.ap_id}/delete",
-        actor_ap_id=actor.ap_id,
+        actor_ap_id=actor_uri(actor),
         object_id=note.ap_id,
     )
     inboxes = await get_follower_inboxes(db, actor.id)

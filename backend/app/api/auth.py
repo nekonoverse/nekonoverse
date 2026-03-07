@@ -246,11 +246,14 @@ async def update_credentials(
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
 
+        from app.services.actor_service import actor_uri
+
         actor = user.actor
+        actor_url = actor_uri(actor)
         actor_data = render_actor(actor)
         update_activity = render_update_activity(
-            activity_id=f"{actor.ap_id}#updates/{uuid.uuid4().hex}",
-            actor_ap_id=actor.ap_id,
+            activity_id=f"{actor_url}#updates/{uuid.uuid4().hex}",
+            actor_ap_id=actor_url,
             object_data=actor_data,
         )
         inboxes = await get_follower_inboxes(db, actor.id)

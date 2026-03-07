@@ -89,8 +89,11 @@ async def initiate_move(
     if not target_actor:
         raise ValueError("Target actor not found")
 
+    from app.services.actor_service import actor_uri
+
     also_known = target_actor.also_known_as or []
-    if actor.ap_id not in also_known:
+    actor_url = actor_uri(actor)
+    if actor_url not in also_known:
         raise ValueError("Target actor's alsoKnownAs must include your AP ID")
 
     # Set movedTo on self
@@ -103,8 +106,8 @@ async def initiate_move(
     from app.services.follow_service import get_follower_inboxes
 
     activity = render_move_activity(
-        activity_id=f"{actor.ap_id}/move/{target_actor.id}",
-        actor_ap_id=actor.ap_id,
+        activity_id=f"{actor_url}/move/{target_actor.id}",
+        actor_ap_id=actor_url,
         target_ap_id=target_ap_id,
     )
     inboxes = await get_follower_inboxes(db, actor.id)

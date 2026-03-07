@@ -58,20 +58,21 @@ async def create_note(
     mentions = extract_mentions(content)
     mention_data = []
     for username, domain in mentions:
-        from app.services.actor_service import get_actor_by_username
+        from app.services.actor_service import actor_uri, get_actor_by_username
         mentioned_actor = await get_actor_by_username(db, username, domain)
         if mentioned_actor:
+            mentioned_uri = actor_uri(mentioned_actor)
             mention_data.append({
-                "ap_id": mentioned_actor.ap_id,
+                "ap_id": mentioned_uri,
                 "username": mentioned_actor.username,
                 "domain": mentioned_actor.domain,
             })
             if visibility == "direct":
-                if mentioned_actor.ap_id not in to_list:
-                    to_list.append(mentioned_actor.ap_id)
+                if mentioned_uri not in to_list:
+                    to_list.append(mentioned_uri)
             else:
-                if mentioned_actor.ap_id not in cc_list:
-                    cc_list.append(mentioned_actor.ap_id)
+                if mentioned_uri not in cc_list:
+                    cc_list.append(mentioned_uri)
 
     html_content = text_to_html(content)
 
