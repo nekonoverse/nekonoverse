@@ -33,6 +33,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_STORAGE_PATH: /data
       S3_REGION: us-east-1
+      S3_XATTR_JCLOUDS_COMPAT: "true"
     volumes:
       - nekono3s_data:/data
     healthcheck:
@@ -40,6 +41,17 @@ services:
       interval: 10s
       timeout: 5s
       retries: 3
+
+  s3proxy-deliverer:
+    image: ghcr.io/nananek/s3proxy-deliverer:latest
+    restart: unless-stopped
+    environment:
+      STORAGE_ROOT: /data
+    volumes:
+      - nekono3s_data:/data:ro
+    depends_on:
+      nekono3s:
+        condition: service_healthy
 
   app:
     image: ghcr.io/nananek/nekonoverse-backend:latest
