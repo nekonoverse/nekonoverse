@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show, For } from "solid-js";
 import { useParams } from "@solidjs/router";
-import { lookupAccount, getAccountStatuses, type Account } from "../api/accounts";
+import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
 import { updateDisplayName, updateAvatar, updateHeader } from "../api/settings";
 import type { Note } from "../api/statuses";
 import { getNote } from "../api/statuses";
@@ -15,6 +15,15 @@ export default function Profile() {
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
+
+  // Follow state
+  const [isFollowing, setIsFollowing] = createSignal(false);
+  const [followLoading, setFollowLoading] = createSignal(false);
+
+  // Block/mute state
+  const [isBlocking, setIsBlocking] = createSignal(false);
+  const [isMuting, setIsMuting] = createSignal(false);
+  const [blockMuteLoading, setBlockMuteLoading] = createSignal(false);
 
   // Inline edit state
   const [editing, setEditing] = createSignal(false);
@@ -33,6 +42,15 @@ export default function Profile() {
       setAccount(acc);
       const statuses = await getAccountStatuses(acc.id);
       setNotes(statuses);
+      // Load relationship if logged in and not own profile
+      if (currentUser() && currentUser()!.username !== acc.username) {
+        try {
+          const rel = await getRelationship(acc.id);
+          setIsFollowing(rel.following);
+          setIsBlocking(rel.blocking);
+          setIsMuting(rel.muting);
+        } catch {}
+      }
     } catch (e: any) {
       setError(e.message || "Not found");
     } finally {
@@ -103,6 +121,34 @@ export default function Profile() {
     } finally {
       setUploadingHeader(false);
       input.value = "";
+    }
+  };
+
+  const handleBlock = async () => {
+    const acc = account()!;
+    if (isBlocking()) {
+      setBlockMuteLoading(true);
+      try { await unblockAccount(acc.id); setIsBlocking(false); } catch {}
+      setBlockMuteLoading(false);
+    } else {
+      if (!confirm(t("block.confirmBlock"))) return;
+      setBlockMuteLoading(true);
+      try { await blockAccount(acc.id); setIsBlocking(true); } catch {}
+      setBlockMuteLoading(false);
+    }
+  };
+
+  const handleMute = async () => {
+    const acc = account()!;
+    if (isMuting()) {
+      setBlockMuteLoading(true);
+      try { await unmuteAccount(acc.id); setIsMuting(false); } catch {}
+      setBlockMuteLoading(false);
+    } else {
+      if (!confirm(t("block.confirmMute"))) return;
+      setBlockMuteLoading(true);
+      try { await muteAccount(acc.id); setIsMuting(true); } catch {}
+      setBlockMuteLoading(false);
     }
   };
 
@@ -231,6 +277,41 @@ export default function Profile() {
                           {t("profile.edit")}
                         </button>
                       </Show>
+                    </Show>
+                    <Show when={!isOwn() && currentUser()}>
+                      <button
+                        class={`btn btn-small${isFollowing() ? " btn-following" : ""}`}
+                        disabled={followLoading()}
+                        onClick={async () => {
+                          setFollowLoading(true);
+                          try {
+                            if (isFollowing()) {
+                              await unfollowAccount(acc.id);
+                              setIsFollowing(false);
+                            } else {
+                              await followAccount(acc.id);
+                              setIsFollowing(true);
+                            }
+                          } catch {}
+                          setFollowLoading(false);
+                        }}
+                      >
+                        {isFollowing() ? t("profile.following") : t("profile.follow")}
+                      </button>
+                      <button
+                        class={`btn btn-small${isMuting() ? " btn-muted" : ""}`}
+                        disabled={blockMuteLoading()}
+                        onClick={handleMute}
+                      >
+                        {isMuting() ? t("block.unmute") : t("block.mute")}
+                      </button>
+                      <button
+                        class={`btn btn-small btn-danger${isBlocking() ? " btn-blocked" : ""}`}
+                        disabled={blockMuteLoading()}
+                        onClick={handleBlock}
+                      >
+                        {isBlocking() ? t("block.unblock") : t("block.block")}
+                      </button>
                     </Show>
                   </div>
                   <span class="profile-handle">@{acc.acct}</span>

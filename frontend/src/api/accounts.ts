@@ -24,3 +24,47 @@ export async function lookupAccount(acct: string): Promise<Account> {
 export async function getAccountStatuses(id: string, limit = 20): Promise<Note[]> {
   return apiRequest<Note[]>(`/api/v1/accounts/${id}/statuses?limit=${limit}`);
 }
+
+export interface Relationship {
+  id: string;
+  following: boolean;
+  followed_by: boolean;
+  blocking: boolean;
+  muting: boolean;
+}
+
+export async function getRelationship(id: string): Promise<Relationship> {
+  return apiRequest<Relationship>(`/api/v1/accounts/${id}/relationship`);
+}
+
+export async function followAccount(id: string): Promise<void> {
+  await apiRequest(`/api/v1/accounts/${id}/follow`, { method: "POST" });
+}
+
+export async function unfollowAccount(id: string): Promise<void> {
+  await apiRequest(`/api/v1/accounts/${id}/unfollow`, { method: "POST" });
+}
+
+export async function blockAccount(id: string): Promise<void> {
+  await apiRequest(`/api/v1/accounts/${id}/block`, { method: "POST" });
+}
+
+export async function unblockAccount(id: string): Promise<void> {
+  await apiRequest(`/api/v1/accounts/${id}/unblock`, { method: "POST" });
+}
+
+export async function muteAccount(id: string): Promise<void> {
+  await apiRequest(`/api/v1/accounts/${id}/mute`, { method: "POST" });
+}
+
+export async function unmuteAccount(id: string): Promise<void> {
+  await apiRequest(`/api/v1/accounts/${id}/unmute`, { method: "POST" });
+}
+
+export async function getBlockedAccounts(): Promise<Account[]> {
+  return apiRequest<Account[]>("/api/v1/blocks");
+}
+
+export async function getMutedAccounts(): Promise<Account[]> {
+  return apiRequest<Account[]>("/api/v1/mutes");
+}

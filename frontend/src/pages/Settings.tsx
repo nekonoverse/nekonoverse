@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, onMount, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { currentUser, authLoading, fetchCurrentUser, logout } from "../stores/auth";
 import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
@@ -9,9 +9,10 @@ import {
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "../i18n";
 import { changePassword } from "../api/settings";
+import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, type Account } from "../api/accounts";
 import PasskeyManager from "../components/PasskeyManager";
 
-type Tab = "posting" | "appearance" | "security";
+type Tab = "posting" | "appearance" | "security" | "blocks" | "mutes";
 
 export default function Settings() {
   const { t } = useI18n();
@@ -36,6 +37,8 @@ export default function Settings() {
           { key: "posting" as Tab, label: t("settings.tabPosting") },
           { key: "appearance" as Tab, label: t("settings.tabAppearance") },
           { key: "security" as Tab, label: t("settings.tabSecurity") },
+          { key: "blocks" as Tab, label: t("settings.tabBlocks") },
+          { key: "mutes" as Tab, label: t("settings.tabMutes") },
         ]).map((tab) => (
           <button
             class={`settings-tab${activeTab() === tab.key ? " settings-tab-active" : ""}`}
@@ -54,6 +57,12 @@ export default function Settings() {
       </Show>
       <Show when={activeTab() === "security"}>
         <SecurityTab onLogout={handleLogout} />
+      </Show>
+      <Show when={activeTab() === "blocks"}>
+        <BlocksTab />
+      </Show>
+      <Show when={activeTab() === "mutes"}>
+        <MutesTab />
       </Show>
     </div>
   );
@@ -242,6 +251,106 @@ function SecurityTab(props: { onLogout: () => void }) {
         <button class="btn-danger-full" onClick={props.onLogout}>
           {t("settings.logout")}
         </button>
+      </div>
+    </AuthGuard>
+  );
+}
+
+function BlocksTab() {
+  const { t } = useI18n();
+  const [accounts, setAccounts] = createSignal<Account[]>([]);
+  const [loading, setLoading] = createSignal(true);
+
+  onMount(async () => {
+    try {
+      setAccounts(await getBlockedAccounts());
+    } catch {}
+    setLoading(false);
+  });
+
+  const handleUnblock = async (id: string) => {
+    try {
+      await unblockAccount(id);
+      setAccounts((prev) => prev.filter((a) => a.id !== id));
+    } catch {}
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("block.blockedUsers")}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={accounts().length > 0} fallback={<p class="empty">{t("block.noBlocked")}</p>}>
+            <div class="blockmute-list">
+              <For each={accounts()}>
+                {(acc) => (
+                  <div class="blockmute-item">
+                    <a href={`/@${acc.acct}`} class="blockmute-user">
+                      <img class="blockmute-avatar" src={acc.avatar || "/default-avatar.svg"} alt="" />
+                      <div>
+                        <strong>{acc.display_name || acc.username}</strong>
+                        <span class="blockmute-handle">@{acc.acct}</span>
+                      </div>
+                    </a>
+                    <button class="btn btn-small" onClick={() => handleUnblock(acc.id)}>
+                      {t("block.unblock")}
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
+      </div>
+    </AuthGuard>
+  );
+}
+
+function MutesTab() {
+  const { t } = useI18n();
+  const [accounts, setAccounts] = createSignal<Account[]>([]);
+  const [loading, setLoading] = createSignal(true);
+
+  onMount(async () => {
+    try {
+      setAccounts(await getMutedAccounts());
+    } catch {}
+    setLoading(false);
+  });
+
+  const handleUnmute = async (id: string) => {
+    try {
+      await unmuteAccount(id);
+      setAccounts((prev) => prev.filter((a) => a.id !== id));
+    } catch {}
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("block.mutedUsers")}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={accounts().length > 0} fallback={<p class="empty">{t("block.noMuted")}</p>}>
+            <div class="blockmute-list">
+              <For each={accounts()}>
+                {(acc) => (
+                  <div class="blockmute-item">
+                    <a href={`/@${acc.acct}`} class="blockmute-user">
+                      <img class="blockmute-avatar" src={acc.avatar || "/default-avatar.svg"} alt="" />
+                      <div>
+                        <strong>{acc.display_name || acc.username}</strong>
+                        <span class="blockmute-handle">@{acc.acct}</span>
+                      </div>
+                    </a>
+                    <button class="btn btn-small" onClick={() => handleUnmute(acc.id)}>
+                      {t("block.unmute")}
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
       </div>
     </AuthGuard>
   );

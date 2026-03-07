@@ -289,6 +289,51 @@ async def get_account(actor_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return _actor_to_account(actor)
 
 
+@router.get("/{actor_id}/relationship")
+async def get_relationship(
+    actor_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Check follow/block/mute status with another actor."""
+    from app.services.block_service import is_blocking
+    from app.services.mute_service import is_muting
+
+    following = False
+    followed_by = False
+    blocking = False
+    muting = False
+
+    result = await db.execute(
+        select(Follow).where(
+            Follow.follower_id == user.actor_id,
+            Follow.following_id == actor_id,
+            Follow.accepted.is_(True),
+        )
+    )
+    following = result.scalar_one_or_none() is not None
+
+    result2 = await db.execute(
+        select(Follow).where(
+            Follow.follower_id == actor_id,
+            Follow.following_id == user.actor_id,
+            Follow.accepted.is_(True),
+        )
+    )
+    followed_by = result2.scalar_one_or_none() is not None
+
+    blocking = await is_blocking(db, user.actor_id, actor_id)
+    muting = await is_muting(db, user.actor_id, actor_id)
+
+    return {
+        "id": str(actor_id),
+        "following": following,
+        "followed_by": followed_by,
+        "blocking": blocking,
+        "muting": muting,
+    }
+
+
 class MoveRequest(BaseModel):
     target_ap_id: str
 
