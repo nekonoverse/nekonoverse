@@ -9,10 +9,10 @@ import {
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "../i18n";
 import { changePassword } from "../api/settings";
-import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, type Account } from "../api/accounts";
+import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "../api/accounts";
 import PasskeyManager from "../components/PasskeyManager";
 
-type Tab = "posting" | "appearance" | "security" | "blocks" | "mutes";
+type Tab = "posting" | "appearance" | "security" | "blocks" | "mutes" | "migration";
 
 export default function Settings() {
   const { t } = useI18n();
@@ -39,6 +39,7 @@ export default function Settings() {
           { key: "security" as Tab, label: t("settings.tabSecurity") },
           { key: "blocks" as Tab, label: t("settings.tabBlocks") },
           { key: "mutes" as Tab, label: t("settings.tabMutes") },
+          { key: "migration" as Tab, label: t("settings.tabMigration") },
         ]).map((tab) => (
           <button
             class={`settings-tab${activeTab() === tab.key ? " settings-tab-active" : ""}`}
@@ -63,6 +64,9 @@ export default function Settings() {
       </Show>
       <Show when={activeTab() === "mutes"}>
         <MutesTab />
+      </Show>
+      <Show when={activeTab() === "migration"}>
+        <MigrationTab />
       </Show>
     </div>
   );
@@ -329,6 +333,7 @@ function MutesTab() {
     <AuthGuard>
       <div class="settings-section">
         <h3>{t("block.mutedUsers")}</h3>
+
         <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
           <Show when={accounts().length > 0} fallback={<p class="empty">{t("block.noMuted")}</p>}>
             <div class="blockmute-list">
@@ -351,6 +356,58 @@ function MutesTab() {
             </div>
           </Show>
         </Show>
+      </div>
+    </AuthGuard>
+  );
+}
+
+function MigrationTab() {
+  const { t } = useI18n();
+  const [targetApId, setTargetApId] = createSignal("");
+  const [migrating, setMigrating] = createSignal(false);
+  const [msg, setMsg] = createSignal("");
+  const [error, setError] = createSignal("");
+
+  const handleMove = async () => {
+    if (!targetApId().trim()) return;
+    if (!confirm(t("migration.confirm"))) return;
+    setMigrating(true);
+    setMsg("");
+    setError("");
+    try {
+      await moveAccount(targetApId());
+      setMsg(t("migration.success"));
+      setTargetApId("");
+    } catch (e: any) {
+      setError(e.message || t("migration.failed"));
+    } finally {
+      setMigrating(false);
+    }
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("migration.title")}</h3>
+        <p class="settings-desc">{t("migration.description")}</p>
+        <Show when={msg()}><p class="settings-success">{msg()}</p></Show>
+        <Show when={error()}><p class="error">{error()}</p></Show>
+        <div class="settings-form-group">
+          <label>{t("migration.targetLabel")}</label>
+          <input
+            type="text"
+            value={targetApId()}
+            onInput={(e) => setTargetApId(e.currentTarget.value)}
+            placeholder={t("migration.targetPlaceholder")}
+          />
+        </div>
+        <button
+          class="btn btn-small btn-danger"
+          onClick={handleMove}
+          disabled={migrating() || !targetApId().trim()}
+        >
+          {migrating() ? t("common.loading") : t("migration.move")}
+        </button>
       </div>
     </AuthGuard>
   );
