@@ -111,6 +111,7 @@ function ServerSettingsTab() {
       setDesc(s.server_description || "");
       setTos(s.tos_url || "");
       setRegOpen(s.registration_open);
+      if (s.server_icon_url) setIconUrl(s.server_icon_url);
     } catch {}
   });
 

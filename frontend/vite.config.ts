@@ -11,34 +11,7 @@ export default defineConfig({
         "default-avatar.svg",
         "apple-touch-icon.svg",
       ],
-      manifest: {
-        name: "Nekonoverse",
-        short_name: "Nekonoverse",
-        description: "A cozy Fediverse social network",
-        theme_color: "#f5e6f0",
-        background_color: "#f5e6f0",
-        display: "standalone",
-        scope: "/",
-        start_url: "/",
-        icons: [
-          {
-            src: "pwa-192x192.svg",
-            sizes: "192x192",
-            type: "image/svg+xml",
-          },
-          {
-            src: "pwa-512x512.svg",
-            sizes: "512x512",
-            type: "image/svg+xml",
-          },
-          {
-            src: "pwa-512x512.svg",
-            sizes: "512x512",
-            type: "image/svg+xml",
-            purpose: "maskable",
-          },
-        ],
-      },
+      manifest: false,
       workbox: {
         globPatterns: ["**/*.{js,css,html,svg,woff,woff2}"],
         runtimeCaching: [
@@ -79,6 +52,10 @@ export default defineConfig({
         changeOrigin: true,
       },
       "/nodeinfo": {
+        target: "http://localhost:8000",
+        changeOrigin: true,
+      },
+      "/manifest.webmanifest": {
         target: "http://localhost:8000",
         changeOrigin: true,
       },

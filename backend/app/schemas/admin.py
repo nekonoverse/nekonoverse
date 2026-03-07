@@ -9,6 +9,7 @@ class ServerSettingsResponse(BaseModel):
     server_description: str | None = None
     tos_url: str | None = None
     registration_open: bool = True
+    server_icon_url: str | None = None
 
 
 class ServerSettingsUpdate(BaseModel):

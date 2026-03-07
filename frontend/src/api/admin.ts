@@ -11,6 +11,7 @@ export interface ServerSettings {
   server_description: string | null;
   tos_url: string | null;
   registration_open: boolean;
+  server_icon_url: string | null;
 }
 
 export interface AdminUser {

@@ -60,20 +60,15 @@ app.add_middleware(
 
 @app.get("/api/v1/instance")
 async def instance_info(db: AsyncSession = Depends(get_db)):
-    thumbnail_url = None
-    try:
-        from app.valkey_client import valkey
-        icon_url = await valkey.get("server:icon_url")
-        if icon_url:
-            thumbnail_url = icon_url
-    except Exception:
-        pass
+    from app.services.server_settings_service import get_setting
 
-    # Load server settings
+    thumbnail_url = None
     title = "Nekonoverse"
     description = "A cat-friendly ActivityPub server"
     try:
-        from app.services.server_settings_service import get_setting
+        icon_url = await get_setting(db, "server_icon_url")
+        if icon_url:
+            thumbnail_url = icon_url
         name = await get_setting(db, "server_name")
         if name:
             title = name
@@ -97,6 +92,43 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     return resp
 
 
+@app.get("/manifest.webmanifest")
+async def manifest(db: AsyncSession = Depends(get_db)):
+    from fastapi.responses import JSONResponse
+    from app.services.server_settings_service import get_setting
+
+    name = await get_setting(db, "server_name") or "Nekonoverse"
+    icon_url = await get_setting(db, "server_icon_url")
+
+    if icon_url:
+        icons = [
+            {"src": icon_url, "sizes": "192x192", "type": "image/png"},
+            {"src": icon_url, "sizes": "512x512", "type": "image/png"},
+            {"src": icon_url, "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ]
+    else:
+        icons = [
+            {"src": "/pwa-192x192.svg", "sizes": "192x192", "type": "image/svg+xml"},
+            {"src": "/pwa-512x512.svg", "sizes": "512x512", "type": "image/svg+xml"},
+            {"src": "/pwa-512x512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable"},
+        ]
+
+    return JSONResponse(
+        content={
+            "name": name,
+            "short_name": name,
+            "description": "A cozy Fediverse social network",
+            "theme_color": "#f5e6f0",
+            "background_color": "#f5e6f0",
+            "display": "standalone",
+            "scope": "/",
+            "start_url": "/",
+            "icons": icons,
+        },
+        media_type="application/manifest+json",
+    )
+
+
 @app.get("/api/v1/custom_emojis")
 async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
     from app.services.emoji_service import list_local_emojis
@@ -109,6 +141,9 @@ async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
             "static_url": e.static_url or e.url,
             "visible_in_picker": e.visible_in_picker,
             "category": e.category,
+            "aliases": e.aliases or [],
+            "license": e.license,
+            "is_sensitive": e.is_sensitive,
         }
         for e in emojis
     ]

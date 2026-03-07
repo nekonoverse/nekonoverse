@@ -52,8 +52,9 @@ async def upload_server_icon(
 
     url = file_to_url(drive_file)
 
-    from app.valkey_client import valkey
-    await valkey.set("server:icon_url", url)
+    from app.services.server_settings_service import set_setting
+    await set_setting(db, "server_icon_url", url)
+    await db.commit()
 
     return {"ok": True, "url": url}
 
@@ -74,6 +75,7 @@ async def get_server_settings(
         server_description=settings.get("server_description"),
         tos_url=settings.get("tos_url"),
         registration_open=settings.get("registration_open", "true") == "true",
+        server_icon_url=settings.get("server_icon_url"),
     )
 
 
@@ -103,6 +105,7 @@ async def update_server_settings(
         server_description=settings.get("server_description"),
         tos_url=settings.get("tos_url"),
         registration_open=settings.get("registration_open", "true") == "true",
+        server_icon_url=settings.get("server_icon_url"),
     )
 
 
