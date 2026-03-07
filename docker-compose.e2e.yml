@@ -128,7 +128,7 @@ services:
     image: nginx:alpine
     volumes:
       - ./tests/e2e/nginx.conf.template:/etc/nginx/nginx.conf:ro
-      - s3proxy_sock:/var/run/s3proxy-deliverer:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     ports:
       - "3080:80"
     depends_on:

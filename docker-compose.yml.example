@@ -114,7 +114,7 @@ services:
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
       - /etc/letsencrypt:/etc/letsencrypt:ro
-      - s3proxy_sock:/var/run/s3proxy-deliverer:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     ports:
       - "80:80"
       - "443:443"

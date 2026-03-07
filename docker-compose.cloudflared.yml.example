@@ -129,7 +129,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - s3proxy_sock:/var/run/s3proxy-deliverer:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     depends_on:
       app:
         condition: service_started
