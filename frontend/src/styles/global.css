@@ -950,6 +950,153 @@ a:hover {
   overflow: hidden;
 }
 
+/* Poll */
+.note-poll {
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px;
+  background: var(--bg-primary);
+}
+.poll-option {
+  position: relative;
+  padding: 8px 12px;
+  margin-bottom: 6px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow: hidden;
+  transition: border-color 0.15s;
+}
+.poll-option:hover:not(.poll-voted) {
+  border-color: var(--accent);
+}
+.poll-option.poll-selected {
+  border-color: var(--accent);
+}
+.poll-option.poll-voted {
+  cursor: default;
+}
+.poll-option.poll-own {
+  border-color: var(--accent);
+}
+.poll-check {
+  font-size: 1.1em;
+  flex-shrink: 0;
+}
+.poll-option-text {
+  flex: 1;
+  z-index: 1;
+}
+.poll-pct {
+  font-weight: 600;
+  font-size: 0.85em;
+  z-index: 1;
+  min-width: 36px;
+  text-align: right;
+}
+.poll-bar {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: rgba(233, 69, 96, 0.15);
+  border-radius: 6px;
+  transition: width 0.3s;
+}
+.poll-footer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-top: 8px;
+}
+.poll-info {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+/* Bookmark button */
+.note-bookmark-btn.bookmarked {
+  color: var(--accent);
+}
+
+/* Pin indicator */
+.note-pin-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82em;
+  color: var(--text-secondary);
+  padding: 0 0 6px 52px;
+}
+.note-pin-indicator svg {
+  flex-shrink: 0;
+}
+
+/* Search page */
+.search-form {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+}
+.search-input {
+  flex: 1;
+}
+.search-results {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.search-result-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  text-decoration: none;
+  color: var(--text-primary);
+  transition: border-color 0.15s;
+}
+.search-result-item:hover {
+  border-color: var(--accent);
+}
+.search-result-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  object-fit: cover;
+}
+.search-result-info {
+  display: flex;
+  flex-direction: column;
+}
+.search-result-handle {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+
+/* Settings description */
+.settings-desc {
+  color: var(--text-secondary);
+  font-size: 0.9em;
+  margin-bottom: 12px;
+}
+
+/* Admin server icon preview */
+.admin-server-icon-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: var(--radius);
+  object-fit: cover;
+  margin-bottom: 8px;
+  display: block;
+}
+
 .error {
   background: rgba(233, 69, 96, 0.15);
   color: var(--accent);
