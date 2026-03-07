@@ -6,7 +6,7 @@ import {
   getAdminUsers, changeUserRole, suspendUser, unsuspendUser, silenceUser, unsilenceUser,
   getDomainBlocks, createDomainBlock, removeDomainBlock,
   getReports, resolveReport, rejectReport,
-  getModerationLog,
+  getModerationLog, uploadServerIcon, markNoteSensitive,
   type AdminStats, type ServerSettings, type AdminUser,
   type DomainBlock, type Report, type ModerationLogEntry,
 } from "../api/admin";
@@ -99,6 +99,9 @@ function ServerSettingsTab() {
   const [desc, setDesc] = createSignal("");
   const [tos, setTos] = createSignal("");
   const [regOpen, setRegOpen] = createSignal(true);
+  const [iconUrl, setIconUrl] = createSignal("");
+  const [uploadingIcon, setUploadingIcon] = createSignal(false);
+  let iconInput!: HTMLInputElement;
 
   onMount(async () => {
     try {
@@ -152,7 +155,75 @@ function ServerSettingsTab() {
           {saving() ? t("profile.saving") : t("settings.save")}
         </button>
       </div>
+
+      <div class="settings-section">
+        <h3>{t("admin.serverIcon")}</h3>
+        <Show when={iconUrl()}>
+          <img src={iconUrl()} alt="Server icon" class="admin-server-icon-preview" />
+        </Show>
+        <button
+          class="btn btn-small"
+          onClick={() => iconInput.click()}
+          disabled={uploadingIcon()}
+        >
+          {uploadingIcon() ? t("common.loading") : t("admin.uploadIcon")}
+        </button>
+        <input
+          ref={iconInput}
+          type="file"
+          accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+          style="display: none"
+          onChange={async (e) => {
+            const file = (e.currentTarget as HTMLInputElement).files?.[0];
+            if (!file) return;
+            setUploadingIcon(true);
+            try {
+              const res = await uploadServerIcon(file);
+              setIconUrl(res.url);
+            } catch {}
+            setUploadingIcon(false);
+            (e.currentTarget as HTMLInputElement).value = "";
+          }}
+        />
+      </div>
     </Show>
+  );
+}
+
+function SensitiveMarker() {
+  const { t } = useI18n();
+  const [noteId, setNoteId] = createSignal("");
+  const [marking, setMarking] = createSignal(false);
+  const [marked, setMarked] = createSignal(false);
+
+  const handleMark = async () => {
+    if (!noteId().trim()) return;
+    setMarking(true);
+    setMarked(false);
+    try {
+      await markNoteSensitive(noteId());
+      setMarked(true);
+      setNoteId("");
+    } catch {}
+    setMarking(false);
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.markSensitive")}</h3>
+      <Show when={marked()}><p class="settings-success">{t("admin.markedSensitive")}</p></Show>
+      <div class="admin-domain-form">
+        <input
+          type="text"
+          placeholder={t("admin.noteIdPlaceholder")}
+          value={noteId()}
+          onInput={(e) => setNoteId(e.currentTarget.value)}
+        />
+        <button class="btn btn-small" onClick={handleMark} disabled={marking() || !noteId().trim()}>
+          {t("admin.markSensitive")}
+        </button>
+      </div>
+    </div>
   );
 }
 
@@ -194,58 +265,61 @@ function UsersTab() {
   };
 
   return (
-    <div class="settings-section">
-      <h3>{t("admin.tabUsers")}</h3>
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
-        <div class="admin-user-list">
-          <For each={users()}>
-            {(u) => (
-              <div class={`admin-user-item${u.suspended ? " suspended" : ""}${u.silenced ? " silenced" : ""}`}>
-                <div class="admin-user-info">
-                  <strong>{u.display_name || u.username}</strong>
-                  <span class="admin-user-handle">@{u.username}</span>
-                  <span class={`admin-role-badge role-${u.role}`}>{u.role}</span>
-                  <Show when={u.suspended}><span class="admin-status-badge suspended">{t("admin.suspended")}</span></Show>
-                  <Show when={u.silenced}><span class="admin-status-badge silenced">{t("admin.silenced")}</span></Show>
+    <>
+      <div class="settings-section">
+        <h3>{t("admin.tabUsers")}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <div class="admin-user-list">
+            <For each={users()}>
+              {(u) => (
+                <div class={`admin-user-item${u.suspended ? " suspended" : ""}${u.silenced ? " silenced" : ""}`}>
+                  <div class="admin-user-info">
+                    <strong>{u.display_name || u.username}</strong>
+                    <span class="admin-user-handle">@{u.username}</span>
+                    <span class={`admin-role-badge role-${u.role}`}>{u.role}</span>
+                    <Show when={u.suspended}><span class="admin-status-badge suspended">{t("admin.suspended")}</span></Show>
+                    <Show when={u.silenced}><span class="admin-status-badge silenced">{t("admin.silenced")}</span></Show>
+                  </div>
+                  <div class="admin-user-actions">
+                    <Show when={isAdmin()}>
+                      <select
+                        value={u.role}
+                        onChange={(e) => handleRoleChange(u.id, e.currentTarget.value)}
+                      >
+                        <option value="user">user</option>
+                        <option value="moderator">moderator</option>
+                        <option value="admin">admin</option>
+                      </select>
+                    </Show>
+                    <Show when={!u.suspended}>
+                      <button class="btn btn-small btn-danger" onClick={() => handleSuspend(u.id)}>
+                        {t("admin.suspend")}
+                      </button>
+                    </Show>
+                    <Show when={u.suspended}>
+                      <button class="btn btn-small" onClick={() => handleUnsuspend(u.id)}>
+                        {t("admin.unsuspend")}
+                      </button>
+                    </Show>
+                    <Show when={!u.silenced}>
+                      <button class="btn btn-small" onClick={() => handleSilence(u.id)}>
+                        {t("admin.silence")}
+                      </button>
+                    </Show>
+                    <Show when={u.silenced}>
+                      <button class="btn btn-small" onClick={() => handleUnsilence(u.id)}>
+                        {t("admin.unsilence")}
+                      </button>
+                    </Show>
+                  </div>
                 </div>
-                <div class="admin-user-actions">
-                  <Show when={isAdmin()}>
-                    <select
-                      value={u.role}
-                      onChange={(e) => handleRoleChange(u.id, e.currentTarget.value)}
-                    >
-                      <option value="user">user</option>
-                      <option value="moderator">moderator</option>
-                      <option value="admin">admin</option>
-                    </select>
-                  </Show>
-                  <Show when={!u.suspended}>
-                    <button class="btn btn-small btn-danger" onClick={() => handleSuspend(u.id)}>
-                      {t("admin.suspend")}
-                    </button>
-                  </Show>
-                  <Show when={u.suspended}>
-                    <button class="btn btn-small" onClick={() => handleUnsuspend(u.id)}>
-                      {t("admin.unsuspend")}
-                    </button>
-                  </Show>
-                  <Show when={!u.silenced}>
-                    <button class="btn btn-small" onClick={() => handleSilence(u.id)}>
-                      {t("admin.silence")}
-                    </button>
-                  </Show>
-                  <Show when={u.silenced}>
-                    <button class="btn btn-small" onClick={() => handleUnsilence(u.id)}>
-                      {t("admin.unsilence")}
-                    </button>
-                  </Show>
-                </div>
-              </div>
-            )}
-          </For>
-        </div>
-      </Show>
-    </div>
+              )}
+            </For>
+          </div>
+        </Show>
+      </div>
+      <SensitiveMarker />
+    </>
   );
 }
 
