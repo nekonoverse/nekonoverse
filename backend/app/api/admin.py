@@ -15,6 +15,7 @@ from app.models.user import User
 from app.schemas.admin import (
     AdminEmojiResponse,
     AdminEmojiUpdate,
+    AdminRemoteEmojiResponse,
     AdminStatsResponse,
     AdminUserResponse,
     DomainBlockRequest,
@@ -461,6 +462,44 @@ async def list_emojis(
     from app.services.emoji_service import list_all_local_emojis
     emojis = await list_all_local_emojis(db)
     return [AdminEmojiResponse.model_validate(e) for e in emojis]
+
+
+@router.get("/emoji/remote", response_model=list[AdminRemoteEmojiResponse])
+async def list_remote_emojis_endpoint(
+    domain: str | None = Query(None),
+    search: str | None = Query(None),
+    limit: int = Query(100, le=200),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.emoji_service import list_remote_emojis
+    emojis = await list_remote_emojis(db, domain=domain, search=search, limit=limit, offset=offset)
+    return [AdminRemoteEmojiResponse.model_validate(e) for e in emojis]
+
+
+@router.get("/emoji/remote/domains")
+async def list_remote_emoji_domains_endpoint(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.emoji_service import list_remote_emoji_domains
+    return await list_remote_emoji_domains(db)
+
+
+@router.post("/emoji/import-remote/{emoji_id}", response_model=AdminEmojiResponse)
+async def import_remote_emoji(
+    emoji_id: uuid.UUID,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.emoji_service import import_remote_emoji_to_local
+    try:
+        emoji = await import_remote_emoji_to_local(db, emoji_id)
+        await db.commit()
+        return AdminEmojiResponse.model_validate(emoji)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 @router.post("/emoji/add", response_model=AdminEmojiResponse)

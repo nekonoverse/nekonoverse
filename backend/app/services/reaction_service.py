@@ -50,6 +50,25 @@ async def add_reaction(
         from app.services.delivery_service import enqueue_delivery
 
         activity = render_like_activity(ap_id, actor.ap_id, note.ap_id, emoji)
+
+        # Attach emoji tag for custom emoji so remote server can display it
+        if is_custom_emoji_shortcode(emoji):
+            import re
+            sc_match = re.match(r"^:([a-zA-Z0-9_]+):", emoji)
+            if sc_match:
+                from app.services.emoji_service import get_custom_emoji
+                local_emoji = await get_custom_emoji(db, sc_match.group(1), None)
+                if local_emoji:
+                    activity["tag"] = [{
+                        "type": "Emoji",
+                        "name": f":{local_emoji.shortcode}:",
+                        "icon": {
+                            "type": "Image",
+                            "mediaType": "image/png",
+                            "url": local_emoji.url,
+                        },
+                    }]
+
         await enqueue_delivery(db, actor.id, note.actor.inbox_url, activity)
 
     return reaction

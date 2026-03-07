@@ -8,10 +8,11 @@ import {
   getReports, resolveReport, rejectReport,
   getModerationLog, uploadServerIcon, markNoteSensitive,
   getAdminEmojis, addEmoji, deleteEmoji, importEmojis, getEmojiExportUrl,
+  getRemoteEmojis, getRemoteEmojiDomains, importRemoteEmoji,
   getServerFiles, uploadServerFile, deleteServerFile,
   type AdminStats, type ServerSettings, type AdminUser,
   type DomainBlock, type Report, type ModerationLogEntry,
-  type AdminEmoji, type ServerFile,
+  type AdminEmoji, type RemoteEmoji, type ServerFile,
 } from "../api/admin";
 
 type Tab = "overview" | "settings" | "users" | "domains" | "reports" | "log" | "emoji" | "files";
@@ -514,6 +515,15 @@ function EmojiTab() {
   const [showForm, setShowForm] = createSignal(false);
   const [importing, setImporting] = createSignal(false);
   const [importMsg, setImportMsg] = createSignal("");
+
+  // Remote emoji state
+  const [remoteEmojis, setRemoteEmojis] = createSignal<RemoteEmoji[]>([]);
+  const [remoteDomains, setRemoteDomains] = createSignal<string[]>([]);
+  const [remoteLoading, setRemoteLoading] = createSignal(false);
+  const [remoteDomain, setRemoteDomain] = createSignal("");
+  const [remoteSearch, setRemoteSearch] = createSignal("");
+  const [remoteMsg, setRemoteMsg] = createSignal("");
+  const [importingId, setImportingId] = createSignal("");
   const [shortcode, setShortcode] = createSignal("");
   const [category, setCategory] = createSignal("");
   const [aliases, setAliases] = createSignal("");
@@ -564,6 +574,33 @@ function EmojiTab() {
   const handleDelete = async (id: string) => {
     if (!confirm(t("admin.confirmDeleteEmoji"))) return;
     try { await deleteEmoji(id); await load(); } catch {}
+  };
+
+  const loadRemote = async () => {
+    setRemoteLoading(true);
+    try {
+      const [ems, doms] = await Promise.all([
+        getRemoteEmojis(remoteDomain() || undefined, remoteSearch() || undefined),
+        getRemoteEmojiDomains(),
+      ]);
+      setRemoteEmojis(ems);
+      setRemoteDomains(doms);
+    } catch {}
+    setRemoteLoading(false);
+  };
+
+  const handleImportRemote = async (id: string) => {
+    setImportingId(id);
+    setRemoteMsg("");
+    try {
+      await importRemoteEmoji(id);
+      setRemoteMsg(t("admin.importSuccess"));
+      await load();
+      await loadRemote();
+    } catch (e: any) {
+      setRemoteMsg(e.message || t("admin.importFailed"));
+    }
+    setImportingId("");
   };
 
   const handleImport = async (e: Event) => {
@@ -673,6 +710,58 @@ function EmojiTab() {
             </For>
           </div>
         </Show>
+      </Show>
+
+      <h3>{t("admin.remoteEmoji")}</h3>
+      <div class="admin-remote-emoji-actions">
+        <select
+          value={remoteDomain()}
+          onChange={(e) => { setRemoteDomain(e.currentTarget.value); }}
+        >
+          <option value="">{t("admin.allDomains")}</option>
+          <For each={remoteDomains()}>
+            {(d) => <option value={d}>{d}</option>}
+          </For>
+        </select>
+        <input
+          type="text"
+          value={remoteSearch()}
+          onInput={(e) => setRemoteSearch(e.currentTarget.value)}
+          placeholder={t("admin.searchEmoji")}
+        />
+        <button class="btn btn-small" onClick={loadRemote} disabled={remoteLoading()}>
+          {remoteLoading() ? t("common.loading") : t("admin.search")}
+        </button>
+      </div>
+      <Show when={remoteMsg()}><p class="settings-success">{remoteMsg()}</p></Show>
+
+      <Show when={remoteEmojis().length > 0}>
+        <div class="admin-emoji-list">
+          <For each={remoteEmojis()}>
+            {(e) => (
+              <div class="admin-emoji-item">
+                <img src={e.url} alt={e.shortcode} class="admin-emoji-img" loading="lazy" />
+                <div class="admin-emoji-info">
+                  <strong>:{e.shortcode}:</strong>
+                  <span class="admin-emoji-meta">@{e.domain}</span>
+                  <Show when={e.copy_permission === "deny"}>
+                    <span class="admin-emoji-meta" style="color: var(--accent)">{t("admin.copyDenied")}</span>
+                  </Show>
+                </div>
+                <button
+                  class="btn btn-small"
+                  onClick={() => handleImportRemote(e.id)}
+                  disabled={importingId() === e.id || e.copy_permission === "deny"}
+                >
+                  {importingId() === e.id ? t("common.loading") : t("admin.importEmoji")}
+                </button>
+              </div>
+            )}
+          </For>
+        </div>
+      </Show>
+      <Show when={!remoteLoading() && remoteEmojis().length === 0 && remoteDomains().length > 0}>
+        <p class="empty">{t("admin.noRemoteEmoji")}</p>
       </Show>
     </div>
   );

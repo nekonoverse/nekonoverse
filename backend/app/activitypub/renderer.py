@@ -21,6 +21,8 @@ AP_CONTEXT = [
         "value": "schema:value",
         "discoverable": "toot:discoverable",
         "manuallyApprovesFollowers": "as:manuallyApprovesFollowers",
+        "vcard": "http://www.w3.org/2006/vcard/ns#",
+        "PropertyValue": "schema:PropertyValue",
         "isCat": "misskey:isCat",
         "_misskey_reaction": "misskey:_misskey_reaction",
         "_misskey_content": "misskey:_misskey_content",
@@ -76,6 +78,17 @@ def render_actor(actor: Actor) -> dict:
         data["featured"] = f"{settings.server_url}/users/{actor.username}/featured"
     elif getattr(actor, "featured_url", None):
         data["featured"] = actor.featured_url
+    if actor.fields:
+        data["attachment"] = [
+            {
+                "type": "PropertyValue",
+                "name": field.get("name", ""),
+                "value": field.get("value", ""),
+            }
+            for field in actor.fields
+        ]
+    if getattr(actor, "birthday", None):
+        data["vcard:bday"] = actor.birthday.isoformat()
     if getattr(actor, "moved_to_ap_id", None):
         data["movedTo"] = actor.moved_to_ap_id
     if getattr(actor, "also_known_as", None):

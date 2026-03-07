@@ -128,6 +128,13 @@ def _actor_to_account(actor: Actor) -> dict:
         "header": actor.header_url or "",
         "url": actor.ap_id,
         "created_at": actor.created_at.isoformat() if actor.created_at else None,
+        "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
+        "locked": actor.manually_approves_followers,
+        "discoverable": actor.discoverable,
+        "fields": [
+            {"name": f.get("name", ""), "value": f.get("value", ""), "verified_at": None}
+            for f in (actor.fields or [])
+        ],
     }
 
 

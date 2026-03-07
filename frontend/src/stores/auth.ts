@@ -2,6 +2,11 @@ import { createSignal } from "solid-js";
 import { apiRequest } from "../api/client";
 import { authenticateWithPasskey as _authenticateWithPasskey } from "../api/passkey";
 
+export interface ProfileField {
+  name: string;
+  value: string;
+}
+
 export interface CurrentUser {
   id: string;
   username: string;
@@ -9,6 +14,12 @@ export interface CurrentUser {
   avatar_url: string | null;
   header_url: string | null;
   summary: string | null;
+  fields: ProfileField[];
+  birthday: string | null;
+  is_cat: boolean;
+  is_bot: boolean;
+  locked: boolean;
+  discoverable: boolean;
   role: string;
 }
 

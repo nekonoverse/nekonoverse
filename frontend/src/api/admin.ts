@@ -207,6 +207,39 @@ export function getEmojiExportUrl(): string {
   return "/api/v1/admin/emoji/export";
 }
 
+// Remote Emoji
+export interface RemoteEmoji {
+  id: string;
+  shortcode: string;
+  domain: string | null;
+  url: string;
+  static_url: string | null;
+  category: string | null;
+  aliases: string[] | null;
+  license: string | null;
+  is_sensitive: boolean;
+  author: string | null;
+  description: string | null;
+  copy_permission: string | null;
+  created_at: string;
+}
+
+export async function getRemoteEmojis(domain?: string, search?: string): Promise<RemoteEmoji[]> {
+  const params = new URLSearchParams();
+  if (domain) params.set("domain", domain);
+  if (search) params.set("search", search);
+  params.set("limit", "200");
+  return apiRequest<RemoteEmoji[]>(`/api/v1/admin/emoji/remote?${params}`);
+}
+
+export async function getRemoteEmojiDomains(): Promise<string[]> {
+  return apiRequest<string[]>("/api/v1/admin/emoji/remote/domains");
+}
+
+export async function importRemoteEmoji(emojiId: string): Promise<AdminEmoji> {
+  return apiRequest<AdminEmoji>(`/api/v1/admin/emoji/import-remote/${emojiId}`, { method: "POST" });
+}
+
 // Server Files
 export interface ServerFile {
   id: string;

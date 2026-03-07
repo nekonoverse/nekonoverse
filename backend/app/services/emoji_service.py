@@ -146,3 +146,85 @@ async def list_all_local_emojis(db: AsyncSession) -> list[CustomEmoji]:
         ).order_by(CustomEmoji.category, CustomEmoji.shortcode)
     )
     return list(result.scalars().all())
+
+
+async def list_remote_emojis(
+    db: AsyncSession,
+    domain: str | None = None,
+    search: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> list[CustomEmoji]:
+    """List remote (cached) emoji, optionally filtered by domain/shortcode."""
+    query = select(CustomEmoji).where(CustomEmoji.domain.isnot(None))
+    if domain:
+        query = query.where(CustomEmoji.domain == domain)
+    if search:
+        query = query.where(CustomEmoji.shortcode.ilike(f"%{search}%"))
+    query = query.order_by(CustomEmoji.domain, CustomEmoji.shortcode).limit(limit).offset(offset)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+async def list_remote_emoji_domains(db: AsyncSession) -> list[str]:
+    """Get distinct domains from cached remote emoji."""
+    result = await db.execute(
+        select(CustomEmoji.domain)
+        .where(CustomEmoji.domain.isnot(None))
+        .distinct()
+        .order_by(CustomEmoji.domain)
+    )
+    return [row[0] for row in result.all()]
+
+
+async def import_remote_emoji_to_local(
+    db: AsyncSession, emoji_id: uuid.UUID
+) -> CustomEmoji:
+    """Download a remote emoji image and create a local copy."""
+    remote = await get_emoji_by_id(db, emoji_id)
+    if not remote or remote.domain is None:
+        raise ValueError("Remote emoji not found")
+
+    if remote.copy_permission == "deny":
+        raise ValueError("Import denied by author (copy_permission=deny)")
+
+    existing = await get_custom_emoji(db, remote.shortcode, None)
+    if existing:
+        raise ValueError(f"Local emoji :{remote.shortcode}: already exists")
+
+    # Download image from remote URL
+    import httpx
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+        resp = await client.get(remote.url)
+        resp.raise_for_status()
+
+    mime_type = resp.headers.get("content-type", "image/png").split(";")[0].strip()
+    data = resp.content
+
+    from app.services.drive_service import ALLOWED_IMAGE_TYPES
+    if mime_type not in ALLOWED_IMAGE_TYPES:
+        raise ValueError(f"Unsupported image type: {mime_type}")
+
+    from app.services.drive_service import file_to_url, upload_drive_file
+    drive_file = await upload_drive_file(
+        db=db, owner=None, data=data,
+        filename=f"emoji_{remote.shortcode}",
+        mime_type=mime_type, server_file=True,
+    )
+    url = file_to_url(drive_file)
+
+    local = await create_local_emoji(
+        db, shortcode=remote.shortcode, url=url,
+        drive_file_id=drive_file.id,
+        category=remote.category,
+        aliases=remote.aliases,
+        license=remote.license,
+        is_sensitive=remote.is_sensitive,
+        author=remote.author,
+        description=remote.description,
+        copy_permission=remote.copy_permission,
+        usage_info=remote.usage_info,
+        is_based_on=remote.is_based_on,
+        import_from=remote.domain,
+    )
+    return local

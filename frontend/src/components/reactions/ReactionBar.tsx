@@ -34,7 +34,7 @@ export default function ReactionBar(props: Props) {
           class={`reaction-badge ${r.me ? "reaction-me" : ""}`}
           onClick={() => handleReaction(r.emoji)}
         >
-          <Emoji emoji={r.emoji} /> {r.count}
+          <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
         </button>
       ))}
       <button class="reaction-add-btn" onClick={() => setShowPicker(!showPicker())}>

@@ -11,6 +11,10 @@ export interface Account {
   header: string;
   url: string;
   created_at?: string;
+  bot?: boolean;
+  locked?: boolean;
+  discoverable?: boolean;
+  fields?: { name: string; value: string; verified_at: string | null }[];
 }
 
 export async function getAccount(id: string): Promise<Account> {

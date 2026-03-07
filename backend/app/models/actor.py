@@ -1,7 +1,8 @@
+import datetime as dt
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -32,6 +33,8 @@ class Actor(Base):
     manually_approves_followers: Mapped[bool] = mapped_column(Boolean, default=False)
     discoverable: Mapped[bool] = mapped_column(Boolean, default=True)
     fields: Mapped[list | None] = mapped_column(JSONB, default=list)
+    birthday: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
+    is_bot: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

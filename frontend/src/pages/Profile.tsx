@@ -1,7 +1,7 @@
 import { createSignal, onMount, Show, For } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
-import { updateDisplayName, updateAvatar, updateHeader } from "../api/settings";
+import { updateAvatar, updateHeader, updateProfile } from "../api/settings";
 import type { Note } from "../api/statuses";
 import { getNote } from "../api/statuses";
 import NoteCard from "../components/notes/NoteCard";
@@ -28,6 +28,13 @@ export default function Profile() {
   // Inline edit state
   const [editing, setEditing] = createSignal(false);
   const [editName, setEditName] = createSignal("");
+  const [editBio, setEditBio] = createSignal("");
+  const [editBirthday, setEditBirthday] = createSignal("");
+  const [editFields, setEditFields] = createSignal<{ name: string; value: string }[]>([]);
+  const [editIsCat, setEditIsCat] = createSignal(false);
+  const [editIsBot, setEditIsBot] = createSignal(false);
+  const [editLocked, setEditLocked] = createSignal(false);
+  const [editDiscoverable, setEditDiscoverable] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
   const [uploadingAvatar, setUploadingAvatar] = createSignal(false);
   const [uploadingHeader, setUploadingHeader] = createSignal(false);
@@ -67,7 +74,15 @@ export default function Profile() {
 
   const startEditing = () => {
     const acc = account()!;
+    const user = currentUser();
     setEditName(acc.display_name || "");
+    setEditBio(user?.summary || "");
+    setEditBirthday(user?.birthday || "");
+    setEditFields(user?.fields?.length ? [...user.fields] : []);
+    setEditIsCat(user?.is_cat || false);
+    setEditIsBot(user?.is_bot || false);
+    setEditLocked(user?.locked || false);
+    setEditDiscoverable(user?.discoverable ?? true);
     setEditing(true);
   };
 
@@ -82,10 +97,33 @@ export default function Profile() {
     setAccount(acc);
   };
 
+  const addField = () => {
+    if (editFields().length < 4) {
+      setEditFields([...editFields(), { name: "", value: "" }]);
+    }
+  };
+
+  const removeField = (index: number) => {
+    setEditFields(editFields().filter((_, i) => i !== index));
+  };
+
+  const updateFieldValue = (index: number, key: "name" | "value", val: string) => {
+    setEditFields(editFields().map((f, i) => (i === index ? { ...f, [key]: val } : f)));
+  };
+
   const handleSave = async () => {
     setSaving(true);
     try {
-      await updateDisplayName(editName() || null);
+      await updateProfile({
+        display_name: editName(),
+        summary: editBio(),
+        fields_attributes: JSON.stringify(editFields()),
+        birthday: editBirthday(),
+        is_cat: editIsCat(),
+        is_bot: editIsBot(),
+        locked: editLocked(),
+        discoverable: editDiscoverable(),
+      });
       await refreshAccount();
       setEditing(false);
     } catch {
@@ -315,8 +353,92 @@ export default function Profile() {
                     </Show>
                   </div>
                   <span class="profile-handle">@{acc.acct}</span>
-                  <Show when={acc.note}>
-                    <p class="profile-bio" innerHTML={acc.note} />
+
+                  <Show when={editing()}>
+                    <div class="profile-edit-section">
+                      <label class="profile-edit-label">{t("settings.bio")}</label>
+                      <textarea
+                        class="profile-edit-textarea"
+                        rows={3}
+                        value={editBio()}
+                        onInput={(e) => setEditBio(e.currentTarget.value)}
+                        placeholder={t("settings.bioPlaceholder")}
+                      />
+
+                      <label class="profile-edit-label">{t("settings.birthday")}</label>
+                      <input
+                        class="profile-edit-input"
+                        type="date"
+                        value={editBirthday()}
+                        onInput={(e) => setEditBirthday(e.currentTarget.value)}
+                      />
+
+                      <label class="profile-edit-label">{t("settings.fields")}</label>
+                      <For each={editFields()}>
+                        {(field, i) => (
+                          <div class="profile-edit-field-row">
+                            <input
+                              class="profile-edit-field-input"
+                              type="text"
+                              value={field.name}
+                              onInput={(e) => updateFieldValue(i(), "name", e.currentTarget.value)}
+                              placeholder={t("settings.fieldLabel")}
+                            />
+                            <input
+                              class="profile-edit-field-input"
+                              type="text"
+                              value={field.value}
+                              onInput={(e) => updateFieldValue(i(), "value", e.currentTarget.value)}
+                              placeholder={t("settings.fieldContent")}
+                            />
+                            <button class="btn btn-small btn-danger" onClick={() => removeField(i())}>
+                              {t("settings.removeField")}
+                            </button>
+                          </div>
+                        )}
+                      </For>
+                      <Show when={editFields().length < 4}>
+                        <button class="btn btn-small" onClick={addField}>
+                          {t("settings.addField")}
+                        </button>
+                      </Show>
+
+                      <div class="profile-edit-checkboxes">
+                        <label class="profile-edit-checkbox">
+                          <input type="checkbox" checked={editIsCat()} onChange={(e) => setEditIsCat(e.currentTarget.checked)} />
+                          {t("settings.isCat")}
+                        </label>
+                        <label class="profile-edit-checkbox">
+                          <input type="checkbox" checked={editIsBot()} onChange={(e) => setEditIsBot(e.currentTarget.checked)} />
+                          {t("settings.isBot")}
+                        </label>
+                        <label class="profile-edit-checkbox">
+                          <input type="checkbox" checked={editLocked()} onChange={(e) => setEditLocked(e.currentTarget.checked)} />
+                          {t("settings.locked")}
+                        </label>
+                        <label class="profile-edit-checkbox">
+                          <input type="checkbox" checked={editDiscoverable()} onChange={(e) => setEditDiscoverable(e.currentTarget.checked)} />
+                          {t("settings.discoverable")}
+                        </label>
+                      </div>
+                    </div>
+                  </Show>
+                  <Show when={!editing()}>
+                    <Show when={acc.note}>
+                      <p class="profile-bio" innerHTML={acc.note} />
+                    </Show>
+                    <Show when={acc.fields && acc.fields.length > 0}>
+                      <dl class="profile-fields">
+                        <For each={acc.fields!}>
+                          {(field) => (
+                            <>
+                              <dt class="profile-field-label">{field.name}</dt>
+                              <dd class="profile-field-value" innerHTML={field.value} />
+                            </>
+                          )}
+                        </For>
+                      </dl>
+                    </Show>
                   </Show>
                   <Show when={acc.created_at}>
                     <span class="profile-joined">

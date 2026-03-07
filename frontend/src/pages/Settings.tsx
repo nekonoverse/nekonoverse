@@ -17,7 +17,7 @@ type Tab = "posting" | "appearance" | "security" | "blocks" | "mutes" | "migrati
 export default function Settings() {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = createSignal<Tab>("appearance");
+  const [activeTab, setActiveTab] = createSignal<Tab>("posting");
 
   onMount(async () => {
     await fetchCurrentUser();

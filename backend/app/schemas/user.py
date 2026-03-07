@@ -1,3 +1,4 @@
+import datetime as dt
 import uuid
 from datetime import datetime
 
@@ -43,6 +44,12 @@ class UserResponse(BaseModel):
     avatar_url: str | None
     header_url: str | None
     summary: str | None
+    fields: list[dict] = []
+    birthday: dt.date | None = None
+    is_cat: bool = False
+    is_bot: bool = False
+    locked: bool = False
+    discoverable: bool = True
     role: str = "user"
     created_at: datetime
 

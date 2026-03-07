@@ -30,6 +30,30 @@ export async function updateHeader(file: File): Promise<CurrentUser> {
   });
 }
 
+export interface UpdateProfileParams {
+  display_name?: string;
+  summary?: string;
+  fields_attributes?: string;
+  birthday?: string;
+  is_cat?: boolean;
+  is_bot?: boolean;
+  locked?: boolean;
+  discoverable?: boolean;
+}
+
+export async function updateProfile(params: UpdateProfileParams): Promise<CurrentUser> {
+  const formData = new FormData();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined) {
+      formData.append(key, String(value));
+    }
+  }
+  return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
+    method: "PATCH",
+    formData,
+  });
+}
+
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await apiRequest("/api/v1/auth/change_password", {
     method: "POST",

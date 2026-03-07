@@ -1,9 +1,11 @@
 import { createSignal, Show, For } from "solid-js";
+import { useNavigate } from "@solidjs/router";
 import { searchAccounts, type Account } from "../api/accounts";
 import { useI18n } from "../i18n";
 
 export default function Search() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [query, setQuery] = createSignal("");
   const [results, setResults] = createSignal<Account[]>([]);
   const [searched, setSearched] = createSignal(false);
@@ -11,10 +13,16 @@ export default function Search() {
 
   const handleSearch = async (e?: Event) => {
     e?.preventDefault();
-    if (!query().trim()) return;
+    const q = query().trim().replace(/^@/, "");
+    if (!q) return;
     setLoading(true);
     try {
-      const data = await searchAccounts(query(), true);
+      const data = await searchAccounts(q, true);
+      // Auto-navigate if lookup-style query (user@domain) resolves to exactly 1 result
+      if (q.includes("@") && data.length === 1) {
+        navigate(`/@${data[0].acct}`);
+        return;
+      }
       setResults(data);
       setSearched(true);
     } catch {}

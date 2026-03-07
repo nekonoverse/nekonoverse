@@ -36,6 +36,7 @@ class ReactionSummary(BaseModel):
     emoji: str
     count: int
     me: bool = False
+    emoji_url: str | None = None
 
 
 class NoteMediaAttachment(BaseModel):

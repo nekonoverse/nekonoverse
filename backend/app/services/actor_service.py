@@ -119,7 +119,32 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     existing = await get_actor_by_ap_id(db, ap_id)
     now = datetime.now(timezone.utc)
 
+    # Parse profile fields from PropertyValue attachments
+    attachments = data.get("attachment", [])
+    fields = None
+    if isinstance(attachments, list):
+        fields = [
+            {"name": att.get("name", ""), "value": att.get("value", "")}
+            for att in attachments
+            if isinstance(att, dict) and att.get("type") == "PropertyValue"
+        ]
+
+    # Parse birthday from vcard:bday
+    parsed_birthday = None
+    bday = data.get("vcard:bday")
+    if bday:
+        from datetime import date
+        try:
+            parsed_birthday = date.fromisoformat(bday)
+        except (ValueError, TypeError):
+            pass
+
+    # Detect bot from actor type
+    actor_type = data.get("type", "Person")
+    is_bot = actor_type == "Service"
+
     if existing:
+        existing.type = actor_type
         existing.display_name = data.get("name", username)
         existing.summary = data.get("summary")
         existing.inbox_url = data.get("inbox", existing.inbox_url)
@@ -136,6 +161,12 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         if isinstance(image, dict):
             existing.header_url = image.get("url")
         existing.is_cat = data.get("isCat", False)
+        existing.is_bot = is_bot
+        existing.manually_approves_followers = data.get("manuallyApprovesFollowers", existing.manually_approves_followers)
+        existing.discoverable = data.get("discoverable", existing.discoverable)
+        if fields is not None:
+            existing.fields = fields
+        existing.birthday = parsed_birthday
         existing.featured_url = data.get("featured")
         existing.moved_to_ap_id = data.get("movedTo")
         aka = data.get("alsoKnownAs")
@@ -155,7 +186,7 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
 
     actor = Actor(
         ap_id=ap_id,
-        type=data.get("type", "Person"),
+        type=actor_type,
         username=username,
         domain=domain,
         display_name=data.get("name", username),
@@ -169,8 +200,11 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         following_url=data.get("following"),
         public_key_pem=public_key_pem,
         is_cat=data.get("isCat", False),
+        is_bot=is_bot,
         manually_approves_followers=data.get("manuallyApprovesFollowers", False),
         discoverable=data.get("discoverable", True),
+        fields=fields or [],
+        birthday=parsed_birthday,
         last_fetched_at=now,
         featured_url=data.get("featured"),
         moved_to_ap_id=data.get("movedTo"),

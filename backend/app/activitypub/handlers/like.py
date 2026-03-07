@@ -57,6 +57,16 @@ async def handle_emoji_react(db: AsyncSession, activity: dict):
     await _save_reaction(db, activity, actor_ap_id, note_ap_id, emoji)
 
 
+async def _normalize_emoji_to_local(db: AsyncSession, emoji: str) -> str:
+    """If a remote custom emoji has a local equivalent, use the local version."""
+    m = _CUSTOM_EMOJI_RE.match(emoji)
+    if not m or not m.group(2):
+        return emoji
+    from app.services.emoji_service import get_custom_emoji
+    local = await get_custom_emoji(db, m.group(1), None)
+    return f":{m.group(1)}:" if local else emoji
+
+
 async def _save_reaction(
     db: AsyncSession,
     activity: dict,
@@ -64,6 +74,9 @@ async def _save_reaction(
     note_ap_id: str,
     emoji: str,
 ):
+    # Normalize remote emoji to local version if available
+    emoji = await _normalize_emoji_to_local(db, emoji)
+
     # Resolve actor
     actor = await get_actor_by_ap_id(db, actor_ap_id)
     if not actor:

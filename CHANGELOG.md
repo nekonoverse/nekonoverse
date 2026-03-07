@@ -1,3 +1,25 @@
+## [v0.4.0](https://github.com/nananek/nekonoverse/releases/tag/v0.4.0) — 2026-03-08
+
+### 追加
+
+- **プロフィール設定** — 自己紹介・誕生日・プロフィール補足情報(fields)・猫モード・Bot フラグ・フォロー承認制・ディスカバリー掲載をプロフィールページからインライン編集可能に
+- **リモート絵文字インポート** — 管理画面から連合でキャッシュされた他サーバーの絵文字を閲覧・ローカルにインポート (`/api/v1/admin/emoji/remote`, `/api/v1/admin/emoji/import-remote/{id}`)
+- **ローカル絵文字フォールバック** — リアクション受信時、自サーバーに同じショートコードの絵文字がある場合はローカル版を使用
+- **カスタム絵文字表示** — リアクションでカスタム絵文字を画像として表示 (`emoji_url` フィールド追加)
+- **送信リアクションに絵文字タグ付与** — Like activity にカスタム絵文字の `tag` を含めて連合先が画像を取得できるように
+- **ユーザー照会** — 検索ページで `user@example.com` 形式のリモートユーザーを WebFinger 解決、1件ヒット時は自動遷移
+
+### 変更
+
+- DB マイグレーション 012: `actors` テーブルに `birthday` (Date) と `is_bot` (Boolean) を追加
+- `update_credentials` API を拡張: `summary`, `fields_attributes`, `birthday`, `is_cat`, `is_bot`, `locked`, `discoverable` パラメータ追加
+- ActivityPub `render_actor` に `attachment` (PropertyValue) と `vcard:bday` を追加
+- `upsert_remote_actor` でリモートアクターの `fields`, `birthday`, `is_bot`, `manually_approves_followers`, `discoverable` を更新に対応
+- Settings ページからプロフィールタブを削除 (インライン編集に統合)
+- 検索プレースホルダーを `user@example.com` 形式を示すように変更
+
+---
+
 ## [v0.3.0](https://github.com/nananek/nekonoverse/releases/tag/v0.3.0) — 2026-03-07
 
 ### 変更

@@ -110,6 +110,24 @@ class AdminEmojiResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class AdminRemoteEmojiResponse(BaseModel):
+    id: uuid.UUID
+    shortcode: str
+    domain: str | None = None
+    url: str
+    static_url: str | None = None
+    category: str | None = None
+    aliases: list[str] | None = None
+    license: str | None = None
+    is_sensitive: bool = False
+    author: str | None = None
+    description: str | None = None
+    copy_permission: str | None = None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class AdminEmojiUpdate(BaseModel):
     shortcode: str | None = Field(None, max_length=100, pattern=r"^[a-zA-Z0-9_]+$")
     category: str | None = Field(None, max_length=100)

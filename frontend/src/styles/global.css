@@ -1161,6 +1161,16 @@ a:hover {
   display: inline-block;
 }
 
+.custom-emoji {
+  height: 1.2em;
+  vertical-align: -0.2em;
+  display: inline-block;
+}
+
+.reaction-badge .custom-emoji {
+  height: 1.4em;
+}
+
 .emoji-btn .twemoji {
   height: 1.4em;
   width: 1.4em;
@@ -1943,6 +1953,77 @@ a:hover {
   flex-shrink: 0;
 }
 
+.profile-edit-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.profile-edit-label {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  font-weight: 600;
+}
+
+.profile-edit-textarea {
+  width: 100%;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-family: inherit;
+  font-size: 0.95em;
+  resize: vertical;
+}
+
+.profile-edit-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.profile-edit-field-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.profile-edit-field-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.9em;
+}
+
+.profile-edit-field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.profile-edit-checkboxes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.profile-edit-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.profile-edit-checkbox input[type="checkbox"] {
+  accent-color: var(--accent);
+}
+
 /* PWA Update Banner */
 .pwa-update-banner {
   position: fixed;
@@ -2392,6 +2473,24 @@ a:hover {
   align-items: center;
 }
 
+.admin-remote-emoji-actions {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+.admin-remote-emoji-actions select,
+.admin-remote-emoji-actions input[type="text"] {
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.9em;
+}
+
 .admin-emoji-form {
   background: var(--bg-secondary);
   border: 1px solid var(--border);
@@ -2713,4 +2812,91 @@ a:hover {
 .drive-picker-count {
   font-size: 0.85em;
   color: var(--text-secondary);
+}
+
+/* Profile settings */
+.settings-textarea {
+  min-height: 80px;
+}
+
+.settings-field-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+  align-items: center;
+}
+
+.settings-field-input {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.9em;
+}
+
+.settings-field-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.settings-hint {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.settings-avatar-preview {
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  object-fit: cover;
+  margin-bottom: 8px;
+  display: block;
+}
+
+.settings-header-preview {
+  width: 100%;
+  max-height: 120px;
+  object-fit: cover;
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  display: block;
+}
+
+/* Profile fields on profile page */
+.profile-fields {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 0;
+  margin: 12px 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+}
+
+.profile-field-label {
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  font-weight: 600;
+  font-size: 0.9em;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+}
+
+.profile-field-value {
+  padding: 8px 12px;
+  margin: 0;
+  font-size: 0.9em;
+  border-bottom: 1px solid var(--border);
+  word-break: break-word;
+}
+
+.profile-field-value a {
+  color: var(--accent);
+}
+
+.profile-fields > :nth-last-child(-n+2) {
+  border-bottom: none;
 }

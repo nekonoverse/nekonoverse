@@ -427,7 +427,7 @@ export default function NoteCard(props: Props) {
           <div class="note-reactions">
             {note().reactions.map((r) => (
               <span class="reaction-badge">
-                <Emoji emoji={r.emoji} /> {r.count}
+                <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
               </span>
             ))}
           </div>

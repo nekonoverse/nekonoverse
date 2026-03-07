@@ -120,6 +120,12 @@ def _user_response(user: User) -> UserResponse:
         avatar_url=actor.avatar_url or DEFAULT_AVATAR_PATH,
         header_url=actor.header_url,
         summary=actor.summary,
+        fields=actor.fields or [],
+        birthday=actor.birthday,
+        is_cat=actor.is_cat,
+        is_bot=actor.is_bot,
+        locked=actor.manually_approves_followers,
+        discoverable=actor.discoverable,
         role=user.role,
         created_at=user.created_at,
     )
@@ -128,13 +134,74 @@ def _user_response(user: User) -> UserResponse:
 @router.patch("/accounts/update_credentials", response_model=UserResponse)
 async def update_credentials(
     display_name: str | None = Form(None),
+    summary: str | None = Form(None),
+    fields_attributes: str | None = Form(None),
+    birthday: str | None = Form(None),
+    is_cat: bool | None = Form(None),
+    is_bot: bool | None = Form(None),
+    locked: bool | None = Form(None),
+    discoverable: bool | None = Form(None),
     avatar: UploadFile | None = File(None),
     header: UploadFile | None = File(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    changed = False
+
     if display_name is not None:
         user = await update_display_name(db, user, display_name or None)
+        changed = True
+
+    if summary is not None:
+        user.actor.summary = summary or None
+        changed = True
+
+    if fields_attributes is not None:
+        import json as _json
+        try:
+            fields_list = _json.loads(fields_attributes)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="Invalid fields JSON")
+        if not isinstance(fields_list, list) or len(fields_list) > 4:
+            raise HTTPException(status_code=422, detail="Maximum 4 fields allowed")
+        validated = []
+        for f in fields_list:
+            if not isinstance(f, dict):
+                continue
+            name = str(f.get("name", ""))[:255]
+            value = str(f.get("value", ""))[:2048]
+            if name or value:
+                validated.append({"name": name, "value": value})
+        user.actor.fields = validated
+        changed = True
+
+    if birthday is not None:
+        if birthday == "":
+            user.actor.birthday = None
+        else:
+            import datetime as _dt
+            try:
+                user.actor.birthday = _dt.date.fromisoformat(birthday)
+            except ValueError:
+                raise HTTPException(status_code=422, detail="Invalid date format")
+        changed = True
+
+    if is_cat is not None:
+        user.actor.is_cat = is_cat
+        changed = True
+
+    if is_bot is not None:
+        user.actor.is_bot = is_bot
+        user.actor.type = "Service" if is_bot else "Person"
+        changed = True
+
+    if locked is not None:
+        user.actor.manually_approves_followers = locked
+        changed = True
+
+    if discoverable is not None:
+        user.actor.discoverable = discoverable
+        changed = True
 
     if avatar:
         from app.services.drive_service import file_to_url, upload_drive_file
@@ -151,8 +218,7 @@ async def update_credentials(
 
         user.actor.avatar_url = file_to_url(drive_file)
         user.actor.avatar_file_id = drive_file.id
-        await db.commit()
-        await db.refresh(user)
+        changed = True
 
     if header:
         from app.services.drive_service import file_to_url, upload_drive_file
@@ -169,11 +235,13 @@ async def update_credentials(
 
         user.actor.header_url = file_to_url(drive_file)
         user.actor.header_file_id = drive_file.id
+        changed = True
+
+    if changed:
         await db.commit()
         await db.refresh(user)
 
-    # Federate profile update to followers
-    if display_name is not None or avatar or header:
+        # Federate profile update to followers
         from app.activitypub.renderer import render_actor, render_update_activity
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes

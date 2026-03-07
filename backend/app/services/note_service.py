@@ -13,6 +13,7 @@ from app.models.user import User
 from app.utils.sanitize import MENTION_PATTERN, text_to_html
 
 _EMOJI_SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
+_CUSTOM_EMOJI_REACTION_RE = re.compile(r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$")
 
 
 def extract_mentions(text: str) -> list[tuple[str, str | None]]:
@@ -326,5 +327,20 @@ async def get_reaction_summary(
                 )
             )
             me = me_result.scalar_one_or_none() is not None
-        summaries.append({"emoji": emoji, "count": count, "me": me})
+
+        # Resolve custom emoji URL (prefer local version)
+        emoji_url = None
+        m = _CUSTOM_EMOJI_REACTION_RE.match(emoji)
+        if m:
+            from app.services.emoji_service import get_custom_emoji
+            shortcode, domain = m.group(1), m.group(2)
+            local = await get_custom_emoji(db, shortcode, None)
+            if local:
+                emoji_url = local.url
+            elif domain:
+                remote = await get_custom_emoji(db, shortcode, domain)
+                if remote:
+                    emoji_url = remote.url
+
+        summaries.append({"emoji": emoji, "count": count, "me": me, "emoji_url": emoji_url})
     return summaries

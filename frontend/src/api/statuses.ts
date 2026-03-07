@@ -13,6 +13,7 @@ export interface ReactionSummary {
   emoji: string;
   count: number;
   me: boolean;
+  emoji_url: string | null;
 }
 
 export interface MediaAttachment {
