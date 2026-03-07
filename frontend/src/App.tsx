@@ -11,6 +11,9 @@ const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login"));
 const Register = lazy(() => import("./pages/Register"));
 const Settings = lazy(() => import("./pages/Settings"));
+const Notifications = lazy(() => import("./pages/Notifications"));
+const Admin = lazy(() => import("./pages/Admin"));
+const Drive = lazy(() => import("./pages/Drive"));
 const Profile = lazy(() => import("./pages/Profile"));
 
 function Layout(props: ParentProps) {
@@ -31,6 +34,9 @@ export default function App() {
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
         <Route path="/settings" component={Settings} />
+        <Route path="/notifications" component={Notifications} />
+        <Route path="/admin" component={Admin} />
+        <Route path="/drive" component={Drive} />
         <Route path="/:acct" component={Profile} />
       </Router>
     </I18nProvider>
