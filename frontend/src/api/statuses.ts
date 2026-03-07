@@ -15,6 +15,16 @@ export interface ReactionSummary {
   me: boolean;
 }
 
+export interface MediaAttachment {
+  id: string;
+  type: string;
+  url: string;
+  preview_url: string;
+  description: string | null;
+  blurhash: string | null;
+  meta: { original?: { width: number; height: number } } | null;
+}
+
 export interface Note {
   id: string;
   ap_id: string;
@@ -29,12 +39,39 @@ export interface Note {
   renotes_count: number;
   actor: NoteActor;
   reactions: ReactionSummary[];
+  media_attachments: MediaAttachment[];
+  reblog: Note | null;
+  quote: Note | null;
 }
 
-export async function createNote(content: string, visibility = "public"): Promise<Note> {
+export async function uploadMedia(file: File, description?: string): Promise<MediaAttachment> {
+  const formData = new FormData();
+  formData.append("file", file);
+  if (description) formData.append("description", description);
+  return apiRequest<MediaAttachment>("/api/v1/media", {
+    method: "POST",
+    formData,
+  });
+}
+
+export async function createNote(content: string, visibility = "public", mediaIds?: string[], quoteId?: string): Promise<Note> {
+  const body: Record<string, unknown> = { content, visibility, media_ids: mediaIds || [] };
+  if (quoteId) body.quote_id = quoteId;
   return apiRequest<Note>("/api/v1/statuses", {
     method: "POST",
-    body: { content, visibility },
+    body,
+  });
+}
+
+export async function reblogNote(noteId: string): Promise<Note> {
+  return apiRequest<Note>(`/api/v1/statuses/${noteId}/reblog`, {
+    method: "POST",
+  });
+}
+
+export async function unreblogNote(noteId: string): Promise<{ ok: boolean }> {
+  return apiRequest<{ ok: boolean }>(`/api/v1/statuses/${noteId}/unreblog`, {
+    method: "POST",
   });
 }
 
