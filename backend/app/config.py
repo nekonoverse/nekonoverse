@@ -18,9 +18,7 @@ class Settings(BaseSettings):
 
     @property
     def server_url(self) -> str:
-        # Derive scheme from frontend_url (which reflects the actual public URL)
-        scheme = "https" if self.frontend_url.startswith("https") else "http"
-        return f"{scheme}://{self.domain}"
+        return f"https://{self.domain}"
 
     @property
     def media_url(self) -> str:
