@@ -1,6 +1,6 @@
 import { Show, For, createSignal, onCleanup } from "solid-js";
-import type { Note } from "../../api/statuses";
-import { reblogNote, unreblogNote } from "../../api/statuses";
+import type { Note, Poll } from "../../api/statuses";
+import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll } from "../../api/statuses";
 import { followAccount, unfollowAccount, blockAccount, muteAccount } from "../../api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
@@ -12,6 +12,7 @@ interface Props {
   note: Note;
   onReactionUpdate?: () => void;
   onQuote?: (note: Note) => void;
+  onDelete?: (noteId: string) => void;
 }
 
 function formatTime(iso: string): string {
@@ -58,6 +59,86 @@ function QuoteEmbed(props: { note: Note }) {
   );
 }
 
+function PollDisplay(props: { poll: Poll; noteId: string }) {
+  const { t } = useI18n();
+  const [poll, setPoll] = createSignal(props.poll);
+  const [selected, setSelected] = createSignal<number[]>([]);
+  const [voting, setVoting] = createSignal(false);
+
+  const hasVoted = () => poll().voted;
+  const totalVotes = () => poll().votes_count || 1;
+
+  const toggleChoice = (idx: number) => {
+    if (hasVoted() || poll().expired) return;
+    if (poll().multiple) {
+      setSelected((prev) =>
+        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+      );
+    } else {
+      setSelected([idx]);
+    }
+  };
+
+  const handleVote = async () => {
+    if (selected().length === 0 || voting()) return;
+    setVoting(true);
+    try {
+      const updated = await votePoll(props.noteId, selected());
+      setPoll(updated);
+    } catch {}
+    setVoting(false);
+  };
+
+  return (
+    <div class="note-poll">
+      <For each={poll().options}>
+        {(opt, idx) => {
+          const pct = () => totalVotes() > 0 ? Math.round((opt.votes_count / totalVotes()) * 100) : 0;
+          const isOwn = () => poll().own_votes?.includes(idx());
+          return (
+            <div
+              class={`poll-option${hasVoted() || poll().expired ? " poll-voted" : ""}${selected().includes(idx()) ? " poll-selected" : ""}${isOwn() ? " poll-own" : ""}`}
+              onClick={() => toggleChoice(idx())}
+            >
+              <Show when={!hasVoted() && !poll().expired}>
+                <span class="poll-check">
+                  {poll().multiple
+                    ? (selected().includes(idx()) ? "\u2611" : "\u2610")
+                    : (selected().includes(idx()) ? "\u25C9" : "\u25CB")
+                  }
+                </span>
+              </Show>
+              <span class="poll-option-text">{opt.title}</span>
+              <Show when={hasVoted() || poll().expired}>
+                <span class="poll-pct">{pct()}%</span>
+                <div class="poll-bar" style={{ width: `${pct()}%` }} />
+              </Show>
+            </div>
+          );
+        }}
+      </For>
+      <div class="poll-footer">
+        <Show when={!hasVoted() && !poll().expired}>
+          <button
+            class="btn btn-small"
+            onClick={handleVote}
+            disabled={voting() || selected().length === 0}
+          >
+            {t("poll.vote")}
+          </button>
+        </Show>
+        <span class="poll-info">
+          {poll().votes_count} {t("poll.votes")}
+          <Show when={poll().expires_at}>
+            {" · "}
+            {poll().expired ? t("poll.expired") : t("poll.expiresAt") + " " + formatTime(poll().expires_at!)}
+          </Show>
+        </span>
+      </div>
+    </div>
+  );
+}
+
 export default function NoteCard(props: Props) {
   const { t } = useI18n();
   const [followed, setFollowed] = createSignal(false);
@@ -66,6 +147,8 @@ export default function NoteCard(props: Props) {
   const [boosted, setBoosted] = createSignal(false);
   const [boostLoading, setBoostLoading] = createSignal(false);
   const [boostCount, setBoostCount] = createSignal(0);
+  const [bookmarked, setBookmarked] = createSignal(false);
+  const [pinned, setPinned] = createSignal(false);
 
   // If this is a reblog, the displayed note is the inner one
   const isReblog = () => !!props.note.reblog;
@@ -74,6 +157,9 @@ export default function NoteCard(props: Props) {
   // Initialize boost count from displayNote
   const initBoostCount = () => displayNote().renotes_count;
   if (boostCount() === 0) setBoostCount(initBoostCount());
+
+  // Initialize pinned state
+  if (displayNote().pinned) setPinned(true);
 
   const isOwnNote = () => {
     const user = currentUser();
@@ -126,6 +212,40 @@ export default function NoteCard(props: Props) {
     } catch {}
   };
 
+  const handleDelete = async () => {
+    setMoreOpen(false);
+    if (!confirm(t("note.confirmDelete"))) return;
+    try {
+      await deleteNote(displayNote().id);
+      props.onDelete?.(displayNote().id);
+    } catch {}
+  };
+
+  const handlePin = async () => {
+    setMoreOpen(false);
+    try {
+      if (pinned()) {
+        await unpinNote(displayNote().id);
+        setPinned(false);
+      } else {
+        await pinNote(displayNote().id);
+        setPinned(true);
+      }
+    } catch {}
+  };
+
+  const handleBookmark = async () => {
+    try {
+      if (bookmarked()) {
+        await unbookmarkNote(displayNote().id);
+        setBookmarked(false);
+      } else {
+        await bookmarkNote(displayNote().id);
+        setBookmarked(true);
+      }
+    } catch {}
+  };
+
   const handleBoost = async () => {
     if (boostLoading()) return;
     setBoostLoading(true);
@@ -150,7 +270,16 @@ export default function NoteCard(props: Props) {
   const note = displayNote;
 
   return (
-    <div class="note-card">
+    <div class={`note-card${pinned() ? " note-pinned" : ""}`}>
+      <Show when={pinned() && !isReblog()}>
+        <div class="note-pin-indicator">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 17v5" />
+            <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76z" />
+          </svg>
+          {t("note.pinned")}
+        </div>
+      </Show>
       <Show when={isReblog()}>
         <div class="note-reblog-indicator">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -195,7 +324,7 @@ export default function NoteCard(props: Props) {
           </div>
           <div class="note-header-right">
             <span class="note-time">{formatTime(note().published)}</span>
-            <Show when={currentUser() && !isOwnNote()}>
+            <Show when={currentUser()}>
               <div class="note-more-menu">
                 <button
                   class="note-more-btn"
@@ -205,12 +334,22 @@ export default function NoteCard(props: Props) {
                 </button>
                 <Show when={moreOpen()}>
                   <div class="note-more-dropdown">
-                    <button class="note-more-item" onClick={handleMute}>
-                      {t("block.mute")} {actorHandle(note().actor)}
-                    </button>
-                    <button class="note-more-item note-more-danger" onClick={handleBlock}>
-                      {t("block.block")} {actorHandle(note().actor)}
-                    </button>
+                    <Show when={isOwnNote()}>
+                      <button class="note-more-item" onClick={handlePin}>
+                        {pinned() ? t("note.unpin") : t("note.pin")}
+                      </button>
+                      <button class="note-more-item note-more-danger" onClick={handleDelete}>
+                        {t("note.delete")}
+                      </button>
+                    </Show>
+                    <Show when={!isOwnNote()}>
+                      <button class="note-more-item" onClick={handleMute}>
+                        {t("block.mute")} {actorHandle(note().actor)}
+                      </button>
+                      <button class="note-more-item note-more-danger" onClick={handleBlock}>
+                        {t("block.block")} {actorHandle(note().actor)}
+                      </button>
+                    </Show>
                   </div>
                 </Show>
               </div>
@@ -218,6 +357,9 @@ export default function NoteCard(props: Props) {
           </div>
         </div>
         <div class="note-content" innerHTML={note().content} />
+        <Show when={note().poll}>
+          <PollDisplay poll={note().poll!} noteId={note().id} />
+        </Show>
         <Show when={note().quote}>
           <QuoteEmbed note={note().quote!} />
         </Show>
@@ -263,6 +405,15 @@ export default function NoteCard(props: Props) {
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 <path d="M8 9h8" />
                 <path d="M8 13h4" />
+              </svg>
+            </button>
+            <button
+              class={`note-action-btn note-bookmark-btn${bookmarked() ? " bookmarked" : ""}`}
+              onClick={handleBookmark}
+              title={t(bookmarked() ? "bookmark.remove" : "bookmark.add")}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill={bookmarked() ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </button>
           </div>

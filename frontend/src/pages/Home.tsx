@@ -81,7 +81,7 @@ export default function Home() {
         <h2>{isHomeTL() ? t("timeline.home") : t("timeline.public")}</h2>
         <Show when={!timelineLoading()} fallback={<p>{t("timeline.loading")}</p>}>
           <Show when={notes().length > 0} fallback={<p class="empty">{t("timeline.empty")}</p>}>
-            <For each={notes()}>{(note) => <NoteCard note={note} onReactionUpdate={() => refreshNote(note.id)} onQuote={(n) => { setQuoteTarget(n); window.scrollTo({ top: 0, behavior: "smooth" }); }} />}</For>
+            <For each={notes()}>{(note) => <NoteCard note={note} onReactionUpdate={() => refreshNote(note.id)} onQuote={(n) => { setQuoteTarget(n); window.scrollTo({ top: 0, behavior: "smooth" }); }} onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))} />}</For>
           </Show>
         </Show>
       </div>

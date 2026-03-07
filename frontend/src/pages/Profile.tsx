@@ -325,6 +325,20 @@ export default function Profile() {
                   </Show>
                 </div>
 
+                <Show when={notes().filter((n) => n.pinned).length > 0}>
+                  <div class="profile-posts">
+                    <h3>{t("note.pinnedPosts")}</h3>
+                    <For each={notes().filter((n) => n.pinned)}>
+                      {(note) => (
+                        <NoteCard
+                          note={note}
+                          onReactionUpdate={() => refreshNote(note.id)}
+                          onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
+                        />
+                      )}
+                    </For>
+                  </div>
+                </Show>
                 <div class="profile-posts">
                   <h3>{t("profile.posts")}</h3>
                   <Show
@@ -336,6 +350,7 @@ export default function Profile() {
                         <NoteCard
                           note={note}
                           onReactionUpdate={() => refreshNote(note.id)}
+                          onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
                         />
                       )}
                     </For>
