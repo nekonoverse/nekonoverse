@@ -10,7 +10,7 @@ services:
 
   # ── Nekonoverse Instance ───────────────────────────────────
   postgres-neko:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: nekonoverse
       POSTGRES_USER: nekonoverse
@@ -94,7 +94,7 @@ services:
 
   # ── Misskey Instance ───────────────────────────────────────
   postgres-mk:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     environment:
       POSTGRES_DB: misskey
       POSTGRES_USER: misskey

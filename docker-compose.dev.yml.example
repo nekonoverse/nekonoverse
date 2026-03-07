@@ -1,13 +1,13 @@
 services:
   postgresql:
-    image: postgres:17-alpine
+    image: postgres:18-alpine
     restart: unless-stopped
     environment:
       POSTGRES_DB: nekonoverse
       POSTGRES_USER: nekonoverse
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
-      - postgresql_data:/var/lib/postgresql/data
+      - postgresql_data:/var/lib/postgresql
     ports:
       - "5432:5432"
     healthcheck:

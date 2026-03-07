@@ -24,7 +24,7 @@
 |---------|------|
 | バックエンド | Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic |
 | フロントエンド | SolidJS, Vite, TypeScript, @solid-primitives/i18n |
-| データベース | PostgreSQL 17 |
+| データベース | PostgreSQL 18 |
 | キャッシュ/セッション | Valkey 8 |
 | インフラ | Docker Compose, GitHub Actions |
 
