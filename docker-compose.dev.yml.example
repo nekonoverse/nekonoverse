@@ -41,7 +41,7 @@ services:
     volumes:
       - nekono3s_data:/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/')"]
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('localhost',8080),2); s.close()"]
       interval: 10s
       timeout: 5s
       retries: 3
