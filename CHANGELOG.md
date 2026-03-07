@@ -1,4 +1,17 @@
-## Unreleased
+## [v0.3.0](https://github.com/nananek/nekonoverse/releases/tag/v0.3.0) — 2026-03-07
+
+### 変更
+
+- **メディア配信を s3proxy-deliverer 経由に変更** — バックエンドの `serve_media` エンドポイントを廃止し、nginx から s3proxy-deliverer に直接プロキシすることでバックエンドの負荷を削減
+- nekono3s に `S3_XATTR_JCLOUDS_COMPAT=true` を追加（s3proxy-deliverer が xattr メタデータを読むために必要）
+
+### 追加
+
+- **デプロイガイド** — Docker を使わない構成、Cloudflared (Cloudflare Tunnel) を使う構成のドキュメントを追加
+
+---
+
+## [v0.2.0](https://github.com/nananek/nekonoverse/releases/tag/v0.2.0) — 2026-03-07
 
 ### 追加
 

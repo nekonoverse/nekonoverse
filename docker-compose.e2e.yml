@@ -30,11 +30,24 @@ services:
       S3_SECRET_ACCESS_KEY: changeme-s3
       S3_STORAGE_PATH: /data
       S3_REGION: us-east-1
+      S3_XATTR_JCLOUDS_COMPAT: "true"
     healthcheck:
       test: python -c "import socket; s=socket.create_connection(('localhost',8080),2); s.close()"
       interval: 5s
       timeout: 3s
       retries: 5
+    networks:
+      - e2e
+
+  s3proxy-deliverer:
+    image: ghcr.io/nananek/s3proxy-deliverer:latest
+    environment:
+      STORAGE_ROOT: /data
+    volumes_from:
+      - nekono3s:ro
+    depends_on:
+      nekono3s:
+        condition: service_healthy
     networks:
       - e2e
 

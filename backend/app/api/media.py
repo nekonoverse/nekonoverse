@@ -3,7 +3,6 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
-from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
@@ -17,7 +16,6 @@ from app.services.drive_service import (
     list_user_files,
     upload_drive_file,
 )
-from app.storage import get_file_stream
 
 router = APIRouter(tags=["media"])
 
@@ -116,21 +114,3 @@ async def list_drive_files(
 ):
     files = await list_user_files(db, user, limit=min(limit, 100), offset=offset)
     return [_to_drive_response(f) for f in files]
-
-
-@router.get("/media/{key:path}")
-async def serve_media(key: str):
-    """Serve media files by proxying from S3 with SigV4 auth."""
-    try:
-        stream, content_type, size = await get_file_stream(key)
-    except Exception:
-        raise HTTPException(status_code=404, detail="File not found")
-
-    headers = {
-        "Cache-Control": "public, max-age=86400, immutable",
-        "Content-Type": content_type,
-    }
-    if size:
-        headers["Content-Length"] = str(size)
-
-    return StreamingResponse(stream, media_type=content_type, headers=headers)

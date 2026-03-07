@@ -58,10 +58,20 @@ Authorization Code + PKCE フローに対応。サードパーティアプリか
 
 ## メディアストレージ
 
-S3 互換ストレージを使用し、手動 SigV4 署名でファイルの読み書きを行う（boto3 不要）。
+S3 互換ストレージ (nekono3s) を使用し、手動 SigV4 署名でファイルの読み書きを行う（boto3 不要）。
 
-- **アップロード**: `POST /api/v1/media` → S3 に保存 → DriveFile レコード作成
-- **配信**: `GET /media/{key}` → バックエンドが SigV4 署名付きで S3 から取得しストリーミング配信（Cache-Control 付き）
+- **アップロード**: `POST /api/v1/media` → バックエンドが SigV4 署名付きで S3 に保存 → DriveFile レコード作成
+- **配信**: `GET /media/{key}` → nginx が s3proxy-deliverer にプロキシ → ファイルシステムから直接配信（バックエンドを経由しない）
 - **ドライブ**: ユーザーごとのファイル管理。`server_file=true` でサーバー所有ファイル（アイコン等）
 - **制限**: 画像のみ (JPEG, PNG, GIF, WebP, AVIF)、最大 10MB
 - **画像情報**: 純 Python で PNG/JPEG/GIF/WebP のサイズを抽出（Pillow 不要）
+
+### メディア配信フロー
+
+```
+Client → nginx (or Cloudflared) → s3proxy-deliverer → ファイルシステム (nekono3sと共有)
+```
+
+- **s3proxy-deliverer** は nekono3s と同じストレージボリュームを読み取り専用で共有し、xattr メタデータ（Content-Type 等）を読んで認証なしでファイルを配信する
+- nekono3s 側で `S3_XATTR_JCLOUDS_COMPAT=true` を設定し、jclouds 形式の xattr (`user.user.content-type`) を書き込む
+- nginx は `/media/{key}` を `/nekonoverse/{key}` にリライトして s3proxy-deliverer に転送する
