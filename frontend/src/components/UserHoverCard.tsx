@@ -43,7 +43,15 @@ export default function UserHoverCard(props: Props) {
     } catch {}
   };
 
-  // --- Desktop: mouse hover handlers (unchanged) ---
+  // --- Click handler: show card on click (both desktop and mobile) ---
+  const handleClick = (e: MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setVisible(true);
+    if (!account()) fetchAccount();
+  };
+
+  // --- Desktop: mouse hover handlers ---
   const handleMouseEnter = () => {
     if (isTouchDevice()) return;
     clearTimeout(hideTimer);
@@ -175,6 +183,7 @@ export default function UserHoverCard(props: Props) {
     <span
       class="hover-card-wrapper"
       ref={(el) => { wrapperEl = el; }}
+      onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onTouchStart={handleTouchStart}
@@ -203,15 +212,19 @@ export default function UserHoverCard(props: Props) {
               return (
                 <>
                   <div class="hover-card-header">
-                    <img
-                      class="hover-card-avatar"
-                      src={acc.avatar || "/default-avatar.svg"}
-                      alt=""
-                    />
+                    <a href={`/@${acc.acct}`} class="hover-card-avatar-link">
+                      <img
+                        class="hover-card-avatar"
+                        src={acc.avatar || "/default-avatar.svg"}
+                        alt=""
+                      />
+                    </a>
                     <div class="hover-card-names">
-                      <strong class="hover-card-display-name">
-                        {acc.display_name || acc.username}
-                      </strong>
+                      <a href={`/@${acc.acct}`} class="hover-card-name-link">
+                        <strong class="hover-card-display-name">
+                          {acc.display_name || acc.username}
+                        </strong>
+                      </a>
                       <span class="hover-card-handle">@{acc.acct}</span>
                     </div>
                   </div>
