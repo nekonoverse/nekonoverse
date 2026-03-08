@@ -1,6 +1,6 @@
-import { createSignal, createEffect, onMount, onCleanup, Show, For, createMemo } from "solid-js";
+import { createSignal, createEffect, on, onCleanup, Show, For, untrack } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
-import { currentUser, authLoading, fetchCurrentUser } from "../stores/auth";
+import { currentUser, authLoading } from "../stores/auth";
 import { fetchInstance, registrationOpen } from "../stores/instance";
 import { getPublicTimeline, getHomeTimeline, getNote, type Note } from "../api/statuses";
 import { onUpdate, onReaction } from "../stores/streaming";
@@ -12,29 +12,33 @@ export default function Home() {
   const { t } = useI18n();
   const [searchParams] = useSearchParams();
   const [notes, setNotes] = createSignal<Note[]>([]);
-  const [timelineLoading, setTimelineLoading] = createSignal(true);
+  const [initialLoading, setInitialLoading] = createSignal(true);
   const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
   const [newNoteIds, setNewNoteIds] = createSignal<Set<string>>(new Set());
 
   const isHomeTL = () => searchParams.tl === "home" && !!currentUser();
 
   const loadTimeline = async () => {
-    setTimelineLoading(true);
     try {
-      const data = isHomeTL()
+      const data = untrack(isHomeTL)
         ? await getHomeTimeline()
         : await getPublicTimeline();
       setNotes(data);
     } catch {
       // ignore
     } finally {
-      setTimelineLoading(false);
+      setInitialLoading(false);
     }
   };
 
-  onMount(async () => {
-    await Promise.all([fetchCurrentUser(), fetchInstance()]);
-    await loadTimeline();
+  // Initial load: wait for auth to settle (App.tsx Layout handles fetchCurrentUser)
+  let loaded = false;
+  createEffect(() => {
+    if (!authLoading() && !loaded) {
+      loaded = true;
+      fetchInstance();
+      loadTimeline();
+    }
   });
 
   // Subscribe to real-time timeline updates from global stream
@@ -62,13 +66,12 @@ export default function Home() {
 
   onCleanup(() => { unsub(); unsubReaction(); });
 
-  // Reload when switching between public/home
-  createEffect(() => {
-    const _ = searchParams.tl;
-    if (!authLoading()) {
-      loadTimeline();
-    }
-  });
+  // Reload only when tl search param changes (explicit dependency)
+  createEffect(on(
+    () => searchParams.tl,
+    () => { if (loaded) loadTimeline(); },
+    { defer: true }
+  ));
 
   const handleNewNote = (note: Note) => {
     setNotes((prev) => [note, ...prev]);
@@ -106,7 +109,7 @@ export default function Home() {
 
       <div class="timeline">
         <h2>{isHomeTL() ? t("timeline.home") : t("timeline.public")}</h2>
-        <Show when={!timelineLoading()} fallback={<p>{t("timeline.loading")}</p>}>
+        <Show when={!initialLoading()} fallback={<p>{t("timeline.loading")}</p>}>
           <Show when={notes().length > 0} fallback={<p class="empty">{t("timeline.empty")}</p>}>
             <For each={notes()}>{(note) => <div class={newNoteIds().has(note.id) ? "note-slide-in" : ""}><NoteCard note={note} onReactionUpdate={() => refreshNote(note.id)} onQuote={(n) => { setQuoteTarget(n); window.scrollTo({ top: 0, behavior: "smooth" }); }} onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))} /></div>}</For>
           </Show>
