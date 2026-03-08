@@ -428,6 +428,98 @@ async def test_moderation_log_forbidden_regular_user(db, app_client, mock_valkey
     assert resp.status_code == 403
 
 
+# ── Role Hierarchy ──────────────────────────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_moderator_cannot_suspend_admin(db, app_client, mock_valkey):
+    admin = await make_admin_user(db)
+    mod = await make_moderator_user(db)
+    client = authed_client_for(app_client, mock_valkey, mod)
+
+    resp = await client.post(f"/api/v1/admin/users/{admin.id}/suspend")
+    assert resp.status_code == 403
+    assert "staff" in resp.json()["detail"].lower()
+
+
+@pytest.mark.anyio
+async def test_moderator_cannot_silence_admin(db, app_client, mock_valkey):
+    admin = await make_admin_user(db)
+    mod = await make_moderator_user(db)
+    client = authed_client_for(app_client, mock_valkey, mod)
+
+    resp = await client.post(f"/api/v1/admin/users/{admin.id}/silence")
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_moderator_cannot_suspend_moderator(db, app_client, mock_valkey):
+    mod1 = await make_moderator_user(db)
+
+    from app.services.user_service import create_user
+    mod2 = await create_user(db, "moduser2", "mod2@example.com", "password1234",
+                             display_name="Mod2")
+    mod2.role = "moderator"
+    await db.flush()
+
+    client = authed_client_for(app_client, mock_valkey, mod1)
+    resp = await client.post(f"/api/v1/admin/users/{mod2.id}/suspend")
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_admin_can_suspend_moderator(db, app_client, mock_valkey):
+    admin = await make_admin_user(db)
+    mod = await make_moderator_user(db)
+    client = authed_client_for(app_client, mock_valkey, admin)
+
+    resp = await client.post(f"/api/v1/admin/users/{mod.id}/suspend")
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_moderator_cannot_delete_admin_note(db, app_client, mock_valkey):
+    admin = await make_admin_user(db)
+    mod = await make_moderator_user(db)
+
+    note = await make_note(db, admin.actor, content="admin post")
+    client = authed_client_for(app_client, mock_valkey, mod)
+
+    resp = await client.request("DELETE", f"/api/v1/admin/notes/{note.id}")
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_moderator_cannot_force_sensitive_admin_note(db, app_client, mock_valkey):
+    admin = await make_admin_user(db)
+    mod = await make_moderator_user(db)
+
+    note = await make_note(db, admin.actor, content="admin post")
+    client = authed_client_for(app_client, mock_valkey, mod)
+
+    resp = await client.post(f"/api/v1/admin/notes/{note.id}/sensitive")
+    assert resp.status_code == 403
+
+
+@pytest.mark.anyio
+async def test_moderator_can_suspend_regular_user(db, app_client, mock_valkey, test_user):
+    mod = await make_moderator_user(db)
+    client = authed_client_for(app_client, mock_valkey, mod)
+
+    resp = await client.post(f"/api/v1/admin/users/{test_user.id}/suspend")
+    assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_moderator_can_delete_regular_user_note(db, app_client, mock_valkey, test_user):
+    mod = await make_moderator_user(db)
+    note = await make_note(db, test_user.actor, content="regular post")
+    client = authed_client_for(app_client, mock_valkey, mod)
+
+    resp = await client.request("DELETE", f"/api/v1/admin/notes/{note.id}")
+    assert resp.status_code == 200
+
+
 # ── Unauthenticated access ──────────────────────────────────────────────────
 
 
