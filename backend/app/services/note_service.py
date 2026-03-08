@@ -454,6 +454,7 @@ async def get_reaction_summary(
         emoji_url = None
         m = _CUSTOM_EMOJI_REACTION_RE.match(emoji)
         if m:
+            from app.models.custom_emoji import CustomEmoji
             from app.services.emoji_service import get_custom_emoji
             shortcode, domain = m.group(1), m.group(2)
             local = await get_custom_emoji(db, shortcode, None)
@@ -461,6 +462,18 @@ async def get_reaction_summary(
                 emoji_url = local.url
             elif domain:
                 remote = await get_custom_emoji(db, shortcode, domain)
+                if remote:
+                    emoji_url = remote.url
+            else:
+                # No domain in reaction string (e.g. Misskey sends ":blobcat:"
+                # without domain) — search any remote emoji with this shortcode
+                result2 = await db.execute(
+                    select(CustomEmoji).where(
+                        CustomEmoji.shortcode == shortcode,
+                        CustomEmoji.domain.isnot(None),
+                    ).limit(1)
+                )
+                remote = result2.scalar_one_or_none()
                 if remote:
                     emoji_url = remote.url
 
