@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { currentUser, authLoading, fetchCurrentUser, logout } from "../stores/auth";
+import { currentUser, authLoading, logout } from "../stores/auth";
 import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
@@ -19,9 +19,7 @@ export default function Settings() {
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = createSignal<Tab>("posting");
 
-  onMount(async () => {
-    await fetchCurrentUser();
-  });
+  // Auth is handled by App.tsx Layout
 
   const handleLogout = async () => {
     await logout();
