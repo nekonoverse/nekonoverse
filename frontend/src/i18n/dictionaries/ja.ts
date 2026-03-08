@@ -105,6 +105,7 @@ export const ja = {
   "profile.follow": "フォロー",
   "profile.unfollow": "フォロー解除",
   "profile.following": "フォロー中",
+  "profile.requested": "承認待ち",
   "profile.confirmUnfollow": "フォローを解除しますか？",
   "profile.followers": "フォロワー",
   "profile.followingList": "フォロー中",
