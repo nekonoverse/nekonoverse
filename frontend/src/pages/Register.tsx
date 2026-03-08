@@ -1,7 +1,7 @@
 import { onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { currentUser } from "../stores/auth";
-import { fetchInstance, registrationOpen, instanceLoading } from "../stores/instance";
+import { fetchInstance, registrationMode, inviteRequired, instanceLoading } from "../stores/instance";
 import { useI18n } from "../i18n";
 import RegisterForm from "../components/auth/RegisterForm";
 
@@ -21,7 +21,7 @@ export default function Register() {
     <div class="page-container">
       <Show when={!instanceLoading()} fallback={<p>{t("common.loading")}</p>}>
         <Show
-          when={registrationOpen()}
+          when={registrationMode() !== "closed"}
           fallback={
             <div class="auth-form">
               <h2>{t("auth.registrationClosed")}</h2>
@@ -32,7 +32,7 @@ export default function Register() {
             </div>
           }
         >
-          <RegisterForm />
+          <RegisterForm inviteRequired={inviteRequired()} />
         </Show>
       </Show>
     </div>

@@ -19,6 +19,7 @@ from app.api.mastodon.streaming import router as streaming_router
 from app.api.mastodon.timelines import router as timelines_router
 from app.api.oauth import router as oauth_router
 from app.api.admin import router as admin_router
+from app.api.invites import router as invites_router
 from app.api.media import router as media_router
 from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.passkey import router as passkey_router
@@ -68,6 +69,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     title = "Nekonoverse"
     description = "A cat-friendly ActivityPub server"
     registration_open = settings.registration_open
+    registration_mode = "open"
     try:
         icon_url = await get_setting(db, "server_icon_url")
         if icon_url:
@@ -78,9 +80,15 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         desc = await get_setting(db, "server_description")
         if desc:
             description = desc
-        reg = await get_setting(db, "registration_open")
-        if reg is not None:
-            registration_open = reg == "true"
+        mode = await get_setting(db, "registration_mode")
+        if mode is not None:
+            registration_mode = mode
+            registration_open = mode != "closed"
+        else:
+            reg = await get_setting(db, "registration_open")
+            if reg is not None:
+                registration_open = reg == "true"
+            registration_mode = "open" if registration_open else "closed"
     except Exception:
         pass
 
@@ -92,6 +100,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "urls": {},
         "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
         "registrations": registration_open,
+        "registration_mode": registration_mode,
     }
     if thumbnail_url:
         resp["thumbnail"] = {"url": thumbnail_url}
@@ -174,6 +183,7 @@ app.include_router(passkey_router)
 app.include_router(media_proxy_router)
 app.include_router(media_router)
 app.include_router(admin_router)
+app.include_router(invites_router)
 app.include_router(webfinger_router)
 app.include_router(nodeinfo_router)
 app.include_router(ap_router)
