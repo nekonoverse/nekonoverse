@@ -1,3 +1,13 @@
+## [v0.5.3](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.5.3) — 2026-03-08
+
+### 修正
+
+- **リモートメンションのローカル照会** — リモートユーザーのメンションクリック時に外部URLへ遷移する代わりに、ローカルの `/@user@domain` プロフィールページに遷移し WebFinger 照会を行うように変更
+- **プロフィールナビゲーションバグ修正** — プロフィールページ遷移時の不具合を修正
+- **CLAUDE.md のtypo修正** — `nkonoverse` → `nekonoverse`
+
+---
+
 ## [v0.5.2](https://github.com/nananek/nekonoverse/releases/tag/v0.5.2) — 2026-03-08
 
 ### 追加
