@@ -1,3 +1,25 @@
+## [v0.5.4](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.5.4) — 2026-03-08
+
+### 追加
+
+- **リモートカスタム絵文字のノート内表示** — リモートサーバーのカスタム絵文字をノート内で画像表示。ドメイン別の絵文字解決により、同一ショートコードでもリモート側の絵文字を優先表示し、ローカルにフォールバック
+- **カスタム絵文字テスト** — sanitize、バッチ絵文字検索、note_to_response 絵文字解決のユニットテスト (14 テスト)
+
+### 変更
+
+- `sanitize_html()` で絵文字 `<img alt=":shortcode:">` をサニタイズ前に `:shortcode:` テキストに変換し保持
+- `note_to_response()` を async 化、`emojis` フィールドで絵文字URLを返却 (Mastodon API 互換)
+- フロントエンド `emojify()` ユーティリティ追加: DOM 内の `:shortcode:` を `<img>` に置換
+
+### 修正
+
+- **リモートメンションのローカル照会** — リモートユーザーのメンションクリック時に外部URLへ遷移する代わりに、ローカルの `/@user@domain` プロフィールページに遷移し WebFinger 照会を行うように変更
+- **NoteCard メンションのルーター連携** — `innerHTML` で挿入されたメンションリンクが SolidJS Router をバイパスする問題を修正
+- **プロフィールナビゲーションバグ修正** — プロフィールページ遷移時の不具合を修正
+- **CLAUDE.md のtypo修正** — `nkonoverse` → `nekonoverse`
+
+---
+
 ## [v0.5.2](https://github.com/nananek/nekonoverse/releases/tag/v0.5.2) — 2026-03-08
 
 ### 追加

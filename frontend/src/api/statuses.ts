@@ -43,6 +43,12 @@ export interface Poll {
   own_votes: number[];
 }
 
+export interface CustomEmoji {
+  shortcode: string;
+  url: string;
+  static_url: string;
+}
+
 export interface Note {
   id: string;
   ap_id: string;
@@ -62,6 +68,7 @@ export interface Note {
   quote: Note | null;
   poll: Poll | null;
   pinned: boolean;
+  emojis: CustomEmoji[];
 }
 
 export async function uploadMedia(file: File, description?: string): Promise<MediaAttachment> {

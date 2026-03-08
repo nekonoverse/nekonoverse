@@ -18,6 +18,23 @@ async def get_custom_emoji(
     return result.scalar_one_or_none()
 
 
+async def get_emojis_by_shortcodes(
+    db: AsyncSession,
+    shortcodes: set[str],
+    domain: str | None = None,
+) -> list[CustomEmoji]:
+    """Fetch multiple emoji by shortcode for a given domain (or local if None)."""
+    if not shortcodes:
+        return []
+    result = await db.execute(
+        select(CustomEmoji).where(
+            CustomEmoji.shortcode.in_(shortcodes),
+            CustomEmoji.domain == domain,
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def get_emoji_by_id(db: AsyncSession, emoji_id: uuid.UUID) -> CustomEmoji | None:
     result = await db.execute(
         select(CustomEmoji).where(CustomEmoji.id == emoji_id)
