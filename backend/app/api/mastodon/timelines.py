@@ -13,6 +13,15 @@ from .statuses import note_to_response
 router = APIRouter(prefix="/api/v1/timelines", tags=["timelines"])
 
 
+def _deduplicate_timeline(responses: list[NoteResponse]) -> list[NoteResponse]:
+    """Remove standalone notes that already appear as a reblog in the same timeline."""
+    reblogged_ids: set[uuid.UUID] = set()
+    for r in responses:
+        if r.reblog:
+            reblogged_ids.add(r.reblog.id)
+    return [r for r in responses if r.reblog or r.id not in reblogged_ids]
+
+
 @router.get("/public", response_model=list[NoteResponse])
 async def public_timeline(
     local: bool = Query(False),
@@ -22,12 +31,14 @@ async def public_timeline(
     db: AsyncSession = Depends(get_db),
 ):
     actor_id = user.actor_id if user else None
-    notes = await get_public_timeline(db, limit=limit, max_id=max_id, local_only=local, current_actor_id=actor_id)
+    notes = await get_public_timeline(
+        db, limit=limit, max_id=max_id, local_only=local, current_actor_id=actor_id
+    )
     result = []
     for n in notes:
         reactions = await get_reaction_summary(db, n.id, actor_id)
         result.append(await note_to_response(n, reactions, db=db))
-    return result
+    return _deduplicate_timeline(result)
 
 
 @router.get("/home", response_model=list[NoteResponse])
@@ -42,4 +53,4 @@ async def home_timeline(
     for n in notes:
         reactions = await get_reaction_summary(db, n.id, user.actor_id)
         result.append(await note_to_response(n, reactions, db=db))
-    return result
+    return _deduplicate_timeline(result)
