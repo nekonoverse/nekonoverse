@@ -298,6 +298,160 @@ async def test_upsert_remote_emoji_extended_fields(db, mock_valkey):
     assert found.is_based_on == "https://original.example/emoji"
 
 
+# --- get_emojis_by_shortcodes ---
+
+
+async def test_get_emojis_by_shortcodes_basic(db, mock_valkey):
+    from app.services.emoji_service import create_local_emoji, get_emojis_by_shortcodes
+    await create_local_emoji(db, "batch_a", "http://localhost/emoji/a.png")
+    await create_local_emoji(db, "batch_b", "http://localhost/emoji/b.png")
+    await db.flush()
+
+    result = await get_emojis_by_shortcodes(db, {"batch_a", "batch_b"})
+    shortcodes = {e.shortcode for e in result}
+    assert shortcodes == {"batch_a", "batch_b"}
+
+
+async def test_get_emojis_by_shortcodes_empty(db, mock_valkey):
+    from app.services.emoji_service import get_emojis_by_shortcodes
+    result = await get_emojis_by_shortcodes(db, set())
+    assert result == []
+
+
+async def test_get_emojis_by_shortcodes_partial(db, mock_valkey):
+    """Only existing shortcodes are returned, missing ones are silently ignored."""
+    from app.services.emoji_service import create_local_emoji, get_emojis_by_shortcodes
+    await create_local_emoji(db, "exists_one", "http://localhost/emoji/e.png")
+    await db.flush()
+
+    result = await get_emojis_by_shortcodes(db, {"exists_one", "nonexistent"})
+    assert len(result) == 1
+    assert result[0].shortcode == "exists_one"
+
+
+async def test_get_emojis_by_shortcodes_domain_filter(db, mock_valkey):
+    """Shortcodes are filtered by domain."""
+    from app.services.emoji_service import create_local_emoji, get_emojis_by_shortcodes, upsert_remote_emoji
+    await create_local_emoji(db, "same_code", "http://localhost/emoji/local.png")
+    await upsert_remote_emoji(db, "same_code", "remote.example", "https://remote.example/emoji/remote.png")
+    await db.flush()
+
+    local = await get_emojis_by_shortcodes(db, {"same_code"}, None)
+    assert len(local) == 1
+    assert local[0].url == "http://localhost/emoji/local.png"
+
+    remote = await get_emojis_by_shortcodes(db, {"same_code"}, "remote.example")
+    assert len(remote) == 1
+    assert remote[0].url == "https://remote.example/emoji/remote.png"
+
+
+# --- note_to_response: emojis field ---
+
+
+async def test_note_response_includes_emojis(db, mock_valkey):
+    """note_to_response populates emojis field for notes with custom emoji shortcodes."""
+    from app.api.mastodon.statuses import note_to_response
+    from app.services.emoji_service import create_local_emoji
+    from app.services.user_service import create_user
+    from tests.conftest import make_note
+
+    await create_local_emoji(db, "testcat", "http://localhost/emoji/testcat.png")
+    user = await create_user(db, "emoji_note_user", "enu@test.com", "password1234")
+    note = await make_note(db, user.actor, content="Hello :testcat: world")
+    await db.commit()
+    await db.refresh(note, ["actor", "attachments"])
+
+    resp = await note_to_response(note, db=db)
+    assert len(resp.emojis) == 1
+    assert resp.emojis[0].shortcode == "testcat"
+    assert resp.emojis[0].url is not None
+
+
+async def test_note_response_emojis_empty_when_no_match(db, mock_valkey):
+    """Notes without custom emoji shortcodes have empty emojis list."""
+    from app.api.mastodon.statuses import note_to_response
+    from app.services.user_service import create_user
+    from tests.conftest import make_note
+
+    user = await create_user(db, "no_emoji_user", "neu@test.com", "password1234")
+    note = await make_note(db, user.actor, content="No emojis here")
+    await db.commit()
+    await db.refresh(note, ["actor", "attachments"])
+
+    resp = await note_to_response(note, db=db)
+    assert resp.emojis == []
+
+
+async def test_note_response_remote_emoji_preferred(db, mock_valkey):
+    """For remote notes, remote domain emoji is preferred over local."""
+    from app.api.mastodon.statuses import note_to_response
+    from app.models.note import Note
+    from app.services.emoji_service import create_local_emoji, upsert_remote_emoji
+    from tests.conftest import make_remote_actor
+
+    await create_local_emoji(db, "sharedcat", "http://localhost/emoji/local_shared.png")
+    await upsert_remote_emoji(
+        db, "sharedcat", "other.example", "https://other.example/emoji/remote_shared.png",
+    )
+
+    remote_actor = await make_remote_actor(db, username="emoji_poster", domain="other.example")
+
+    import uuid
+    note_id = uuid.uuid4()
+    note = Note(
+        id=note_id,
+        ap_id=f"http://other.example/notes/{note_id}",
+        actor_id=remote_actor.id,
+        content="<p>Look :sharedcat: cute</p>",
+        source="Look :sharedcat: cute",
+        visibility="public",
+        to=["https://www.w3.org/ns/activitystreams#Public"],
+        cc=[],
+        local=False,
+    )
+    db.add(note)
+    await db.flush()
+    await db.refresh(note, ["actor", "attachments"])
+
+    resp = await note_to_response(note, db=db)
+    assert len(resp.emojis) == 1
+    assert resp.emojis[0].shortcode == "sharedcat"
+    # Should use the remote emoji URL, not local
+    assert "remote_shared" in resp.emojis[0].url or "other.example" in resp.emojis[0].url
+
+
+async def test_note_response_remote_fallback_to_local(db, mock_valkey):
+    """For remote notes, if remote emoji not found, fall back to local."""
+    from app.api.mastodon.statuses import note_to_response
+    from app.models.note import Note
+    from app.services.emoji_service import create_local_emoji
+    from tests.conftest import make_remote_actor
+
+    await create_local_emoji(db, "localonly", "http://localhost/emoji/localonly.png")
+    remote_actor = await make_remote_actor(db, username="fb_poster", domain="fb.example")
+
+    import uuid
+    note_id = uuid.uuid4()
+    note = Note(
+        id=note_id,
+        ap_id=f"http://fb.example/notes/{note_id}",
+        actor_id=remote_actor.id,
+        content="<p>Check :localonly:</p>",
+        source="Check :localonly:",
+        visibility="public",
+        to=["https://www.w3.org/ns/activitystreams#Public"],
+        cc=[],
+        local=False,
+    )
+    db.add(note)
+    await db.flush()
+    await db.refresh(note, ["actor", "attachments"])
+
+    resp = await note_to_response(note, db=db)
+    assert len(resp.emojis) == 1
+    assert resp.emojis[0].shortcode == "localonly"
+
+
 async def test_handle_emoji_react(db, mock_valkey):
     """EmojiReact activity saves the reaction with the emoji."""
     from app.activitypub.handlers.like import handle_emoji_react

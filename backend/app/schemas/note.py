@@ -39,6 +39,12 @@ class ReactionSummary(BaseModel):
     emoji_url: str | None = None
 
 
+class CustomEmojiInfo(BaseModel):
+    shortcode: str
+    url: str
+    static_url: str
+
+
 class NoteMediaAttachment(BaseModel):
     id: str
     type: str
@@ -85,5 +91,6 @@ class NoteResponse(BaseModel):
     quote: "NoteResponse | None" = None
     poll: PollResponse | None = None
     pinned: bool = False
+    emojis: list[CustomEmojiInfo] = []
 
     model_config = {"from_attributes": True}

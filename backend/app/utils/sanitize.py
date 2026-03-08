@@ -7,6 +7,10 @@ ALLOWED_ATTRIBUTES = {"a": ["href", "rel", "class"], "span": ["class"]}
 
 URL_PATTERN = re.compile(r"(https?://[^\s<]+)")
 MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?")
+EMOJI_IMG_RE = re.compile(
+    r'<img\b[^>]*\balt="(:[a-zA-Z0-9_]+:)"[^>]*/?>',
+    re.IGNORECASE,
+)
 
 
 def _replace_mention(match: re.Match) -> str:
@@ -58,4 +62,5 @@ def text_to_html(text: str) -> str:
 
 def sanitize_html(html: str) -> str:
     """Sanitize HTML from remote sources."""
+    html = EMOJI_IMG_RE.sub(r"\1", html)
     return bleach.clean(html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES, strip=True)

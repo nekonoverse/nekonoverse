@@ -1,3 +1,4 @@
+import re
 import uuid
 from datetime import datetime, timezone
 
@@ -9,10 +10,21 @@ from sqlalchemy.orm import selectinload
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.note import Note
 from app.models.user import User
-from app.schemas.note import NoteActorResponse, NoteCreateRequest, NoteMediaAttachment, NoteResponse, PollResponse, PollOptionResponse, ReactionSummary
+from app.schemas.note import (
+    CustomEmojiInfo,
+    NoteActorResponse,
+    NoteCreateRequest,
+    NoteMediaAttachment,
+    NoteResponse,
+    PollResponse,
+    PollOptionResponse,
+    ReactionSummary,
+)
 from app.services.actor_service import actor_uri
 from app.services.note_service import check_note_visible, create_note, get_note_by_id, get_reaction_summary
 from app.utils.media_proxy import media_proxy_url
+
+_SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
 
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
 
@@ -52,11 +64,13 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
     )
 
 
-def note_to_response(note, reactions: list[dict] | None = None, reblog_note=None) -> NoteResponse:
+async def note_to_response(
+    note, reactions: list[dict] | None = None, reblog_note=None, db=None,
+) -> NoteResponse:
     actor = note.actor
     reblog = None
     if reblog_note:
-        reblog = note_to_response(reblog_note)
+        reblog = await note_to_response(reblog_note, db=db)
 
     # Build media attachments
     media_attachments = []
@@ -67,7 +81,29 @@ def note_to_response(note, reactions: list[dict] | None = None, reblog_note=None
     # Build quote
     quote = None
     if hasattr(note, 'quoted_note') and note.quoted_note:
-        quote = note_to_response(note.quoted_note)
+        quote = await note_to_response(note.quoted_note, db=db)
+
+    # Resolve custom emoji from content
+    emojis: list[CustomEmojiInfo] = []
+    if db and note.content:
+        shortcodes = set(_SHORTCODE_RE.findall(note.content))
+        if shortcodes:
+            from app.services.emoji_service import get_emojis_by_shortcodes
+
+            domain = actor.domain
+            emoji_list = await get_emojis_by_shortcodes(db, shortcodes, domain)
+            if domain is not None:
+                found = {e.shortcode for e in emoji_list}
+                missing = shortcodes - found
+                if missing:
+                    local_emojis = await get_emojis_by_shortcodes(db, missing, None)
+                    emoji_list.extend(local_emojis)
+            for emoji in emoji_list:
+                url = media_proxy_url(emoji.url)
+                static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+                emojis.append(CustomEmojiInfo(
+                    shortcode=emoji.shortcode, url=url, static_url=static,
+                ))
 
     return NoteResponse(
         id=note.id,
@@ -93,6 +129,7 @@ def note_to_response(note, reactions: list[dict] | None = None, reblog_note=None
         reblog=reblog,
         media_attachments=media_attachments,
         quote=quote,
+        emojis=emojis,
     )
 
 
@@ -124,7 +161,7 @@ async def create_status(
         poll_expires_in=poll_expires_in,
         poll_multiple=poll_multiple,
     )
-    return note_to_response(note)
+    return await note_to_response(note, db=db)
 
 
 @router.get("/{note_id}", response_model=NoteResponse)
@@ -142,7 +179,7 @@ async def get_status(
         raise HTTPException(status_code=404, detail="Note not found")
 
     reactions = await get_reaction_summary(db, note.id, actor_id)
-    return note_to_response(note, reactions)
+    return await note_to_response(note, reactions, db=db)
 
 
 @router.post("/{note_id}/react/{emoji}")
@@ -315,7 +352,7 @@ async def reblog_status(
     # Re-refresh after delivery commits expired the session
     await db.refresh(reblog_note, ["actor", "attachments"])
     await db.refresh(original, ["actor", "attachments"])
-    return note_to_response(reblog_note, reblog_note=original)
+    return await note_to_response(reblog_note, reblog_note=original, db=db)
 
 
 @router.post("/{note_id}/unreblog", status_code=200)

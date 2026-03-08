@@ -278,7 +278,7 @@ async def get_account_statuses(
 
     from datetime import datetime, timezone
 
-    from app.schemas.note import NoteActorResponse, NoteResponse, ReactionSummary
+    from app.api.mastodon.statuses import note_to_response
     from app.services.note_service import get_reaction_summary
 
     query = (
@@ -308,31 +308,7 @@ async def get_account_statuses(
     response = []
     for note in notes:
         reactions = await get_reaction_summary(db, note.id, None)
-        a = note.actor
-        response.append(
-            NoteResponse(
-                id=note.id,
-                ap_id=note.ap_id,
-                content=note.content,
-                source=note.source,
-                visibility=note.visibility,
-                sensitive=note.sensitive,
-                spoiler_text=note.spoiler_text,
-                published=note.published,
-                replies_count=note.replies_count,
-                reactions_count=note.reactions_count,
-                renotes_count=note.renotes_count,
-                actor=NoteActorResponse(
-                    id=a.id,
-                    username=a.username,
-                    display_name=a.display_name,
-                    avatar_url=media_proxy_url(a.avatar_url) or "/default-avatar.svg",
-                    ap_id=a.ap_id,
-                    domain=a.domain,
-                ),
-                reactions=[ReactionSummary(**r) for r in (reactions or [])],
-            )
-        )
+        response.append(await note_to_response(note, reactions, db=db))
     return response
 
 

@@ -14,7 +14,7 @@ from app.utils.media_proxy import media_proxy_url
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
 
-def _notification_to_response(notif) -> NotificationResponse:
+async def _notification_to_response(notif, db=None) -> NotificationResponse:
     account = None
     if notif.sender:
         account = NoteActorResponse(
@@ -29,7 +29,7 @@ def _notification_to_response(notif) -> NotificationResponse:
     status = None
     if notif.note:
         from app.api.mastodon.statuses import note_to_response
-        status = note_to_response(notif.note)
+        status = await note_to_response(notif.note, db=db)
 
     return NotificationResponse(
         id=notif.id,
@@ -52,7 +52,10 @@ async def get_notifications(
     from app.services.notification_service import get_notifications as _get
 
     notifications = await _get(db, user.actor_id, limit=limit, max_id=max_id)
-    return [_notification_to_response(n) for n in notifications]
+    result = []
+    for n in notifications:
+        result.append(await _notification_to_response(n, db=db))
+    return result
 
 
 @router.post("/{notification_id}/dismiss")
