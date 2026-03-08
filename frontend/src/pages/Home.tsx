@@ -3,7 +3,7 @@ import { useSearchParams } from "@solidjs/router";
 import { currentUser, authLoading, fetchCurrentUser } from "../stores/auth";
 import { fetchInstance, registrationOpen } from "../stores/instance";
 import { getPublicTimeline, getHomeTimeline, getNote, type Note } from "../api/statuses";
-import { onUpdate } from "../stores/streaming";
+import { onUpdate, onReaction } from "../stores/streaming";
 import { useI18n } from "../i18n";
 import NoteComposer from "../components/notes/NoteComposer";
 import NoteCard from "../components/notes/NoteCard";
@@ -52,7 +52,15 @@ export default function Home() {
     } catch { /* ignore */ }
   });
 
-  onCleanup(unsub);
+  const unsubReaction = onReaction(async (data) => {
+    const { id } = data as { id: string };
+    if (!id) return;
+    if (notes().some((n) => n.id === id || n.reblog?.id === id)) {
+      await refreshNote(id);
+    }
+  });
+
+  onCleanup(() => { unsub(); unsubReaction(); });
 
   // Reload when switching between public/home
   createEffect(() => {

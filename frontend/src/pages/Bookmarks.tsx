@@ -1,6 +1,7 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { getBookmarks, getNote, type Note } from "../api/statuses";
 import { currentUser, authLoading, fetchCurrentUser } from "../stores/auth";
+import { onReaction } from "../stores/streaming";
 import NoteCard from "../components/notes/NoteCard";
 import { useI18n } from "../i18n";
 
@@ -42,6 +43,15 @@ export default function Bookmarks() {
       setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
     } catch {}
   };
+
+  const unsubReaction = onReaction(async (data) => {
+    const { id } = data as { id: string };
+    if (!id) return;
+    if (notes().some((n) => n.id === id || n.reblog?.id === id)) {
+      await refreshNote(id);
+    }
+  });
+  onCleanup(() => unsubReaction());
 
   return (
     <div class="page-container">

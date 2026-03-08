@@ -124,6 +124,9 @@ async def _save_reaction(
 
     await db.commit()
 
+    from app.services.reaction_service import _publish_reaction_event
+    await _publish_reaction_event(db, note)
+
     logger.info("Saved reaction %s from %s on %s", emoji, actor_ap_id, note_ap_id)
 
 
