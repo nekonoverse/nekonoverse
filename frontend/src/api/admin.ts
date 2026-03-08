@@ -240,6 +240,13 @@ export async function importRemoteEmoji(emojiId: string): Promise<AdminEmoji> {
   return apiRequest<AdminEmoji>(`/api/v1/admin/emoji/import-remote/${emojiId}`, { method: "POST" });
 }
 
+export async function importRemoteEmojiByShortcode(shortcode: string, domain: string): Promise<AdminEmoji> {
+  return apiRequest<AdminEmoji>("/api/v1/admin/emoji/import-by-shortcode", {
+    method: "POST",
+    body: { shortcode, domain },
+  });
+}
+
 // Server Files
 export interface ServerFile {
   id: string;

@@ -555,6 +555,93 @@ async def test_reaction_summary_with_domain_in_emoji(db, mock_valkey):
     assert "domcat" in summary[0]["emoji_url"]
 
 
+# --- import-by-shortcode endpoint ---
+
+
+async def test_import_by_shortcode_finds_remote(db, app_client, mock_valkey):
+    """Admin endpoint finds the remote emoji and imports it successfully."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.models.custom_emoji import CustomEmoji
+    from app.services.emoji_service import upsert_remote_emoji
+    from app.services.user_service import create_user
+
+    admin = await create_user(db, "imp_admin", "impadm@test.com", "password1234")
+    admin.role = "admin"
+    await db.flush()
+
+    await upsert_remote_emoji(
+        db, "importme", "remote.example",
+        "https://remote.example/emoji/importme.png",
+    )
+    await db.commit()
+
+    mock_valkey.get = AsyncMock(return_value=str(admin.id))
+    app_client.cookies.set("nekonoverse_session", "test-session-id")
+
+    async def fake_import(db_session, emoji_id):
+        local = CustomEmoji(
+            shortcode="importme",
+            domain=None,
+            url="https://local.example/emoji/importme.png",
+        )
+        db_session.add(local)
+        await db_session.flush()
+        return local
+
+    with patch(
+        "app.services.emoji_service.import_remote_emoji_to_local",
+        side_effect=fake_import,
+    ):
+        resp = await app_client.post(
+            "/api/v1/admin/emoji/import-by-shortcode",
+            json={"shortcode": "importme", "domain": "remote.example"},
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["shortcode"] == "importme"
+
+
+async def test_import_by_shortcode_not_found(db, app_client, mock_valkey):
+    """Returns 404 when remote emoji not found."""
+    from unittest.mock import AsyncMock
+
+    from app.services.user_service import create_user
+
+    admin = await create_user(db, "imp_admin2", "impadm2@test.com", "password1234")
+    admin.role = "admin"
+    await db.flush()
+    await db.commit()
+
+    mock_valkey.get = AsyncMock(return_value=str(admin.id))
+    app_client.cookies.set("nekonoverse_session", "test-session-id")
+
+    resp = await app_client.post(
+        "/api/v1/admin/emoji/import-by-shortcode",
+        json={"shortcode": "nonexistent", "domain": "nowhere.example"},
+    )
+    assert resp.status_code == 404
+
+
+async def test_import_by_shortcode_non_admin_forbidden(db, app_client, mock_valkey):
+    """Non-admin users get 403."""
+    from unittest.mock import AsyncMock
+
+    from app.services.user_service import create_user
+
+    user = await create_user(db, "imp_user", "impusr@test.com", "password1234")
+    await db.commit()
+
+    mock_valkey.get = AsyncMock(return_value=str(user.id))
+    app_client.cookies.set("nekonoverse_session", "test-session-id")
+
+    resp = await app_client.post(
+        "/api/v1/admin/emoji/import-by-shortcode",
+        json={"shortcode": "test", "domain": "test.example"},
+    )
+    assert resp.status_code == 403
+
+
 async def test_handle_emoji_react(db, mock_valkey):
     """EmojiReact activity saves the reaction with the emoji."""
     from app.activitypub.handlers.like import handle_emoji_react
