@@ -7,6 +7,7 @@
 def test_mention_local_user():
     """@username is rendered as a mention link."""
     from app.utils.sanitize import text_to_html
+
     html = text_to_html("Hello @alice")
     assert 'class="u-url mention"' in html
     assert "@<span>alice</span>" in html
@@ -16,15 +17,17 @@ def test_mention_local_user():
 def test_mention_remote_user():
     """@user@domain is rendered as a remote mention link."""
     from app.utils.sanitize import text_to_html
+
     html = text_to_html("Hello @bob@remote.example")
     assert 'class="u-url mention"' in html
-    assert "@<span>bob</span>" in html
+    assert "@<span>bob@remote.example</span>" in html
     assert 'href="https://remote.example/@bob"' in html
 
 
 def test_mention_inside_url_not_replaced():
     """@ signs inside URLs should not be treated as mentions."""
     from app.utils.sanitize import text_to_html
+
     html = text_to_html("See https://example.com/@user/status/123")
     # The URL should be auto-linked, not turned into a mention
     assert 'class="u-url mention"' not in html or "example.com/@user" in html
@@ -33,6 +36,7 @@ def test_mention_inside_url_not_replaced():
 def test_multiple_mentions():
     """Multiple mentions in the same text."""
     from app.utils.sanitize import text_to_html
+
     html = text_to_html("@alice @bob@remote.example hello!")
     assert html.count("u-url mention") == 2
 
@@ -40,6 +44,7 @@ def test_multiple_mentions():
 def test_text_with_line_breaks():
     """Line breaks are converted to <br>."""
     from app.utils.sanitize import text_to_html
+
     html = text_to_html("Line 1\nLine 2")
     assert "<br>" in html
 
@@ -49,18 +54,21 @@ def test_text_with_line_breaks():
 
 def test_extract_mentions_local():
     from app.services.note_service import extract_mentions
+
     mentions = extract_mentions("Hello @alice")
     assert ("alice", None) in mentions
 
 
 def test_extract_mentions_remote():
     from app.services.note_service import extract_mentions
+
     mentions = extract_mentions("cc @bob@remote.example")
     assert ("bob", "remote.example") in mentions
 
 
 def test_extract_mentions_mixed():
     from app.services.note_service import extract_mentions
+
     mentions = extract_mentions("@alice @bob@remote.example text")
     assert len(mentions) == 2
     assert ("alice", None) in mentions
@@ -69,6 +77,7 @@ def test_extract_mentions_mixed():
 
 def test_extract_mentions_none():
     from app.services.note_service import extract_mentions
+
     mentions = extract_mentions("No mentions here")
     assert len(mentions) == 0
 
@@ -109,6 +118,7 @@ async def test_handle_create_with_mentions(db, mock_valkey):
     await handle_create(db, activity)
 
     from app.services.note_service import get_note_by_ap_id
+
     note = await get_note_by_ap_id(db, note_ap_id)
     assert note is not None
     assert note.mentions is not None
@@ -135,6 +145,7 @@ async def test_render_note_with_mentions(db, mock_valkey):
     await db.flush()
 
     from app.services.note_service import get_note_by_id
+
     note = await get_note_by_id(db, note.id)
 
     rendered = render_note(note)

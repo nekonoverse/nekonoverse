@@ -8,6 +8,7 @@ import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "../../i18n";
 import { twemojify } from "../../utils/twemojify";
+import { mentionify } from "../../utils/mentionify";
 
 interface Props {
   note: Note;
@@ -46,7 +47,7 @@ function QuoteEmbed(props: { note: Note }) {
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
       </div>
-      <div class="note-quote-content" ref={(el) => { el.innerHTML = props.note.content; twemojify(el); }} />
+      <div class="note-quote-content" ref={(el) => { el.innerHTML = props.note.content; mentionify(el); twemojify(el); }} />
       <Show when={props.note.media_attachments?.length > 0}>
         <div class="note-quote-media">
           <For each={props.note.media_attachments.slice(0, 2)}>
@@ -330,7 +331,7 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <div class="note-content" ref={(el) => { el.innerHTML = note().content; twemojify(el); }} />
+        <div class="note-content" ref={(el) => { el.innerHTML = note().content; mentionify(el); twemojify(el); }} />
         <Show when={note().poll}>
           <PollDisplay poll={note().poll!} noteId={note().id} />
         </Show>
