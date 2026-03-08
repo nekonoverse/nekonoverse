@@ -679,6 +679,7 @@ a:hover {
 
 /* Note Card */
 .note-card {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
@@ -687,6 +688,7 @@ a:hover {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   margin-bottom: 8px;
+  overflow: hidden;
 }
 
 .note-avatar {
@@ -849,6 +851,35 @@ a:hover {
 }
 .note-reblog-indicator a:hover {
   color: var(--accent);
+}
+
+.note-reblog-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 80px;
+  height: 80px;
+  pointer-events: none;
+  overflow: hidden;
+}
+.note-reblog-banner::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: -20px;
+  width: 100px;
+  height: 20px;
+  background: #2ecc71;
+  transform: rotate(-45deg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.note-reblog-banner svg {
+  position: absolute;
+  top: 15px;
+  left: 19px;
+  color: #fff;
+  transform: rotate(-45deg);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
 }
 
 .note-actions {
