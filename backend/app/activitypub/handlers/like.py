@@ -112,6 +112,16 @@ async def _save_reaction(
 
     # Update reaction count
     note.reactions_count = note.reactions_count + 1
+    await db.flush()
+
+    # Notify local note author
+    if note.actor and note.actor.is_local:
+        from app.services.notification_service import create_notification
+        await create_notification(
+            db, "reaction", note.actor_id, actor.id, note.id,
+            reaction_emoji=emoji,
+        )
+
     await db.commit()
 
     logger.info("Saved reaction %s from %s on %s", emoji, actor_ap_id, note_ap_id)

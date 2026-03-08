@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
 import { updateAvatar, updateHeader, updateProfile } from "../api/settings";
@@ -24,6 +24,8 @@ export default function Profile() {
   const [isBlocking, setIsBlocking] = createSignal(false);
   const [isMuting, setIsMuting] = createSignal(false);
   const [blockMuteLoading, setBlockMuteLoading] = createSignal(false);
+  const [moreOpen, setMoreOpen] = createSignal(false);
+  const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
 
   // Inline edit state
   const [editing, setEditing] = createSignal(false);
@@ -190,6 +192,18 @@ export default function Profile() {
     }
   };
 
+  // Close dropdown on outside click
+  const handleDocClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest(".profile-more-menu")) {
+      setMoreOpen(false);
+    }
+  };
+  if (typeof document !== "undefined") {
+    document.addEventListener("click", handleDocClick);
+    onCleanup(() => document.removeEventListener("click", handleDocClick));
+  }
+
   const refreshNote = async (noteId: string) => {
     try {
       const updated = await getNote(noteId);
@@ -321,35 +335,46 @@ export default function Profile() {
                         class={`btn btn-small${isFollowing() ? " btn-following" : ""}`}
                         disabled={followLoading()}
                         onClick={async () => {
+                          if (isFollowing()) {
+                            setShowUnfollowModal(true);
+                            return;
+                          }
                           setFollowLoading(true);
                           try {
-                            if (isFollowing()) {
-                              await unfollowAccount(acc.id);
-                              setIsFollowing(false);
-                            } else {
-                              await followAccount(acc.id);
-                              setIsFollowing(true);
-                            }
+                            await followAccount(acc.id);
+                            setIsFollowing(true);
                           } catch {}
                           setFollowLoading(false);
                         }}
                       >
                         {isFollowing() ? t("profile.following") : t("profile.follow")}
                       </button>
-                      <button
-                        class={`btn btn-small${isMuting() ? " btn-muted" : ""}`}
-                        disabled={blockMuteLoading()}
-                        onClick={handleMute}
-                      >
-                        {isMuting() ? t("block.unmute") : t("block.mute")}
-                      </button>
-                      <button
-                        class={`btn btn-small btn-danger${isBlocking() ? " btn-blocked" : ""}`}
-                        disabled={blockMuteLoading()}
-                        onClick={handleBlock}
-                      >
-                        {isBlocking() ? t("block.unblock") : t("block.block")}
-                      </button>
+                      <div class="profile-more-menu">
+                        <button
+                          class="profile-more-btn"
+                          onClick={(e) => { e.stopPropagation(); setMoreOpen(!moreOpen()); }}
+                        >
+                          ···
+                        </button>
+                        <Show when={moreOpen()}>
+                          <div class="profile-more-dropdown">
+                            <button
+                              class={`profile-more-item${isMuting() ? " active" : ""}`}
+                              disabled={blockMuteLoading()}
+                              onClick={() => { setMoreOpen(false); handleMute(); }}
+                            >
+                              {isMuting() ? t("block.unmute") : t("block.mute")}
+                            </button>
+                            <button
+                              class={`profile-more-item profile-more-danger${isBlocking() ? " active" : ""}`}
+                              disabled={blockMuteLoading()}
+                              onClick={() => { setMoreOpen(false); handleBlock(); }}
+                            >
+                              {isBlocking() ? t("block.unblock") : t("block.block")}
+                            </button>
+                          </div>
+                        </Show>
+                      </div>
                     </Show>
                   </div>
                   <span class="profile-handle">@{acc.acct}</span>
@@ -482,6 +507,38 @@ export default function Profile() {
             );
           })()}
         </Show>
+      </Show>
+
+      {/* Unfollow confirmation modal */}
+      <Show when={showUnfollowModal()}>
+        <div class="modal-overlay" onClick={() => setShowUnfollowModal(false)}>
+          <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3>{t("profile.confirmUnfollow")}</h3>
+              <button class="modal-close" onClick={() => setShowUnfollowModal(false)}>✕</button>
+            </div>
+            <div style="padding: 16px; display: flex; gap: 8px; justify-content: flex-end">
+              <button class="btn btn-small" onClick={() => setShowUnfollowModal(false)}>
+                {t("common.cancel")}
+              </button>
+              <button
+                class="btn btn-small btn-danger"
+                disabled={followLoading()}
+                onClick={async () => {
+                  setFollowLoading(true);
+                  try {
+                    await unfollowAccount(account()!.id);
+                    setIsFollowing(false);
+                  } catch {}
+                  setFollowLoading(false);
+                  setShowUnfollowModal(false);
+                }}
+              >
+                {t("profile.unfollow")}
+              </button>
+            </div>
+          </div>
+        </div>
       </Show>
     </div>
   );

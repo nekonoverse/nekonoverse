@@ -85,6 +85,17 @@ async def unfollow_actor(db: AsyncSession, user: User, target_actor: Actor):
         await enqueue_delivery(db, actor.id, target_actor.inbox_url, undo_activity)
 
 
+async def get_follower_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
+    """Get IDs of actors following the given actor (accepted follows only)."""
+    result = await db.execute(
+        select(Follow.follower_id).where(
+            Follow.following_id == actor_id,
+            Follow.accepted.is_(True),
+        )
+    )
+    return list(result.scalars().all())
+
+
 async def get_follower_inboxes(db: AsyncSession, actor_id: uuid.UUID) -> list[str]:
     """Get unique inbox URLs for all followers of an actor (for delivery)."""
     result = await db.execute(

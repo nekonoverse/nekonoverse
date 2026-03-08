@@ -1,8 +1,9 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { getNotifications, dismissNotification, clearNotifications, type Notification } from "../api/notifications";
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
 import { getNote } from "../api/statuses";
+import { createStream, type Stream } from "../api/streaming";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 
@@ -36,7 +37,31 @@ export default function Notifications() {
     }
   };
 
-  onMount(load);
+  let stream: Stream | null = null;
+
+  onMount(() => {
+    load();
+
+    // Start SSE stream for real-time notification updates
+    if (currentUser()) {
+      stream = createStream("/api/v1/streaming/user");
+      stream.on("notification", async () => {
+        try {
+          const fresh = await getNotifications({ limit: 1 });
+          if (fresh.length > 0) {
+            setNotifications((prev) => {
+              if (prev.some((n) => n.id === fresh[0].id)) return prev;
+              return [fresh[0], ...prev];
+            });
+          }
+        } catch { /* ignore */ }
+      });
+    }
+  });
+
+  onCleanup(() => {
+    stream?.close();
+  });
 
   const loadMore = async () => {
     const current = notifications();

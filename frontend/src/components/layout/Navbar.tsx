@@ -1,8 +1,9 @@
-import { Show, For, createSignal, onCleanup } from "solid-js";
+import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation } from "@solidjs/router";
 import { currentUser, logout } from "../../stores/auth";
 import { useI18n } from "../../i18n";
 import { getNotifications, type Notification } from "../../api/notifications";
+import { createStream, type Stream } from "../../api/streaming";
 import Emoji from "../Emoji";
 
 const PREVIEW_COUNT = 5;
@@ -28,7 +29,25 @@ export default function Navbar() {
   const [notifItems, setNotifItems] = createSignal<Notification[]>([]);
   const [notifLoaded, setNotifLoaded] = createSignal(false);
   const [notifHasMore, setNotifHasMore] = createSignal(false);
+  const [unreadCount, setUnreadCount] = createSignal(0);
   let notifTimer: ReturnType<typeof setTimeout> | undefined;
+  let stream: Stream | null = null;
+
+  // SSE connection for real-time notification badge
+  createEffect(() => {
+    if (currentUser()) {
+      stream?.close();
+      stream = createStream("/api/v1/streaming/user");
+      stream.on("notification", () => {
+        setUnreadCount((c) => c + 1);
+        setNotifLoaded(false); // Force re-fetch on next hover
+      });
+    }
+  });
+
+  onCleanup(() => {
+    stream?.close();
+  });
 
   const isActive = (path: string) => location.pathname === path;
 
@@ -181,11 +200,17 @@ export default function Navbar() {
                     href="/notifications"
                     class={`navbar-icon${isActive("/notifications") ? " active" : ""}`}
                     title={t("notifications.title")}
+                    onClick={() => setUnreadCount(0)}
                   >
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                       <path d="M13.73 21a2 2 0 0 1-3.46 0" />
                     </svg>
+                    <Show when={unreadCount() > 0}>
+                      <span class="navbar-notif-badge">
+                        {unreadCount() > 99 ? "99+" : unreadCount()}
+                      </span>
+                    </Show>
                   </a>
                   <Show when={notifOpen()}>
                     <div

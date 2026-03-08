@@ -135,6 +135,16 @@ export async function unreactToNote(noteId: string, emoji: string): Promise<void
   });
 }
 
+export interface ReactionUser {
+  actor: NoteActor;
+  emoji: string;
+}
+
+export async function getReactedBy(noteId: string, emoji?: string): Promise<ReactionUser[]> {
+  const qs = emoji ? `?emoji=${encodeURIComponent(emoji)}` : "";
+  return apiRequest<ReactionUser[]>(`/api/v1/statuses/${noteId}/reacted_by${qs}`);
+}
+
 export async function deleteNote(noteId: string): Promise<void> {
   await apiRequest(`/api/v1/statuses/${noteId}`, { method: "DELETE" });
 }

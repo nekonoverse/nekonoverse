@@ -191,6 +191,47 @@ async def unreact_to_note(
     return {"ok": True}
 
 
+@router.get("/{note_id}/reacted_by")
+async def reacted_by(
+    note_id: uuid.UUID,
+    emoji: str | None = None,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.models.actor import Actor
+    from app.models.reaction import Reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    query = (
+        select(Reaction)
+        .options(selectinload(Reaction.actor))
+        .where(Reaction.note_id == note.id)
+        .order_by(Reaction.created_at.desc())
+    )
+    if emoji:
+        query = query.where(Reaction.emoji == emoji)
+
+    result = await db.execute(query)
+    reactions = result.scalars().all()
+
+    return [
+        {
+            "actor": NoteActorResponse(
+                id=r.actor.id,
+                username=r.actor.username,
+                display_name=r.actor.display_name,
+                avatar_url=r.actor.avatar_url or "/default-avatar.svg",
+                ap_id=r.actor.ap_id,
+                domain=r.actor.domain,
+            ),
+            "emoji": r.emoji,
+        }
+        for r in reactions
+    ]
+
+
 @router.post("/{note_id}/reblog", response_model=NoteResponse, status_code=200)
 async def reblog_status(
     note_id: uuid.UUID,

@@ -1,8 +1,9 @@
-import { createSignal, createEffect, onMount, Show, For } from "solid-js";
+import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
 import { currentUser, authLoading, fetchCurrentUser } from "../stores/auth";
 import { fetchInstance, registrationOpen } from "../stores/instance";
 import { getPublicTimeline, getHomeTimeline, getNote, type Note } from "../api/statuses";
+import { createStream, type Stream } from "../api/streaming";
 import { useI18n } from "../i18n";
 import NoteComposer from "../components/notes/NoteComposer";
 import NoteCard from "../components/notes/NoteCard";
@@ -30,9 +31,32 @@ export default function Home() {
     }
   };
 
+  let stream: Stream | null = null;
+
   onMount(async () => {
     await Promise.all([fetchCurrentUser(), fetchInstance()]);
     await loadTimeline();
+
+    // Start SSE stream for real-time updates
+    const streamPath = currentUser()
+      ? "/api/v1/streaming/user"
+      : "/api/v1/streaming/public";
+    stream = createStream(streamPath);
+    stream.on("update", async (data) => {
+      const { id } = data as { id: string };
+      if (!id) return;
+      try {
+        const note = await getNote(id);
+        setNotes((prev) => {
+          if (prev.some((n) => n.id === id)) return prev;
+          return [note, ...prev];
+        });
+      } catch { /* ignore */ }
+    });
+  });
+
+  onCleanup(() => {
+    stream?.close();
   });
 
   // Reload when switching between public/home

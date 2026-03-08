@@ -16,7 +16,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,woff,woff2}"],
         runtimeCaching: [
           {
-            urlPattern: /^\/api\//,
+            urlPattern: /^\/api\/(?!v1\/streaming)/,
             handler: "NetworkFirst",
             options: {
               cacheName: "api-cache",

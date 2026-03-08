@@ -42,6 +42,23 @@ async def create_notification(
     )
     db.add(notification)
     await db.flush()
+
+    # Publish real-time notification event
+    try:
+        import json
+        from app.valkey_client import valkey
+
+        event = json.dumps({
+            "event": "notification",
+            "payload": {
+                "id": str(notification.id),
+                "type": notification.type,
+            },
+        })
+        await valkey.publish(f"notifications:{recipient_id}", event)
+    except Exception:
+        pass  # Don't fail notification creation if pub/sub fails
+
     return notification
 
 

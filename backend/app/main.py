@@ -15,6 +15,7 @@ from app.api.mastodon.bookmarks import router as bookmarks_router
 from app.api.mastodon.notifications import router as notifications_router
 from app.api.mastodon.polls import router as polls_router
 from app.api.mastodon.statuses import router as statuses_router
+from app.api.mastodon.streaming import router as streaming_router
 from app.api.mastodon.timelines import router as timelines_router
 from app.api.oauth import router as oauth_router
 from app.api.admin import router as admin_router
@@ -162,6 +163,7 @@ app.include_router(bookmarks_router)
 app.include_router(polls_router)
 app.include_router(statuses_router)
 app.include_router(timelines_router)
+app.include_router(streaming_router)
 app.include_router(oauth_router)
 app.include_router(passkey_router)
 app.include_router(media_router)

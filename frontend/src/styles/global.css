@@ -198,6 +198,27 @@ a:hover {
   align-items: center;
 }
 
+.navbar-notif-wrap .navbar-icon {
+  position: relative;
+}
+
+.navbar-notif-badge {
+  position: absolute;
+  top: -4px;
+  right: -6px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.65em;
+  font-weight: 700;
+  min-width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 8px;
+  padding: 0 4px;
+  pointer-events: none;
+}
+
 .navbar-notif-dropdown {
   position: absolute;
   right: 0;
@@ -1135,6 +1156,59 @@ a:hover {
   color: var(--accent);
 }
 
+/* Reaction users modal */
+.reacted-by-list {
+  max-height: 400px;
+  overflow-y: auto;
+}
+
+.reacted-by-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 16px;
+  width: 100%;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  color: var(--text-primary);
+}
+
+.reacted-by-item:hover {
+  background: var(--bg-primary);
+}
+
+.reacted-by-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  flex-shrink: 0;
+}
+
+.reacted-by-names {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.reacted-by-display {
+  font-weight: 600;
+  font-size: 0.9rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reacted-by-handle {
+  color: var(--text-secondary);
+  font-size: 0.8rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Emoji Picker */
 .emoji-picker {
   position: absolute;
@@ -1383,6 +1457,70 @@ a:hover {
   background: var(--text-secondary);
   color: #fff;
   border-color: var(--text-secondary);
+}
+
+/* Profile more dropdown */
+.profile-more-menu {
+  position: relative;
+}
+
+.profile-more-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.profile-more-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.profile-more-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.profile-more-item {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.profile-more-item:hover {
+  background: var(--bg-primary);
+}
+
+.profile-more-item.active {
+  color: var(--accent);
+  font-weight: 600;
+}
+
+.profile-more-danger {
+  color: #e74c3c;
+}
+
+.profile-more-danger.active {
+  color: #e74c3c;
 }
 
 /* Settings block/mute list */
