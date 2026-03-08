@@ -1,0 +1,137 @@
+# Nekonoverse
+
+ActivityPub server with Misskey-compatible emoji reactions and Mastodon-compatible REST API.
+
+## Tech Stack
+
+| Layer | Technology |
+|-------|-----------|
+| Backend | Python 3.12, FastAPI, SQLAlchemy 2 (async), Alembic |
+| Frontend | SolidJS, TypeScript, Vite |
+| Database | PostgreSQL 18 |
+| Cache/Pub-Sub | Valkey (Redis-compatible) |
+| Object Storage | nekono3s (S3-compatible) + s3proxy-deliverer |
+| Reverse Proxy | Nginx |
+| Network | Tailscale, Cloudflare Tunnel (optional) |
+
+## Project Structure
+
+```
+backend/
+  app/
+    main.py              # FastAPI app, router registration
+    config.py            # Pydantic settings (env vars)
+    dependencies.py      # DI: get_db, get_current_user, etc.
+    models/              # SQLAlchemy ORM models
+    schemas/             # Pydantic request/response schemas
+    services/            # Business logic (one service per domain)
+    api/
+      auth.py            # /api/v1/auth/*
+      media.py           # /api/v1/media
+      admin.py           # /api/v1/admin/*
+      mastodon/          # Mastodon-compatible API
+        statuses.py      # /api/v1/statuses/*
+        accounts.py      # /api/v1/accounts/*
+        timelines.py     # /api/v1/timelines/*
+        notifications.py
+        streaming.py     # SSE via Valkey pub/sub
+        media_proxy.py   # HMAC-signed media proxy
+    activitypub/
+      routes.py          # AP inbox/outbox, actor endpoints
+      handlers/          # Activity type handlers (create, like, follow, ...)
+      renderer.py        # Model -> AP JSON-LD
+      http_signature.py  # HTTP Signature sign/verify
+      webfinger.py       # /.well-known/webfinger
+      nodeinfo.py        # /.well-known/nodeinfo
+    utils/               # Helpers (crypto, sanitize, emoji, media_proxy)
+    worker/main.py       # Background delivery worker
+  alembic/versions/      # Sequential migrations (001_*, 002_*, ...)
+  tests/                 # pytest + pytest-asyncio
+frontend/
+  src/
+    api/                 # HTTP client per resource
+    pages/               # Route components (Home, Profile, Login, ...)
+    components/          # Reusable UI (NoteCard, UserHoverCard, ...)
+    stores/              # SolidJS reactive state (auth, theme, notifications)
+    i18n/                # Translations
+    styles/global.css    # Global stylesheet
+```
+
+## Development Commands
+
+All services run in Docker. Never run npm/pip on the host directly.
+
+```bash
+# Start all services
+docker compose up -d
+
+# Backend
+docker compose exec app alembic upgrade head          # Run migrations
+docker compose exec app python -m pytest tests/ -v    # Run tests
+docker compose exec app pip install <package>         # Install Python package
+
+# Frontend
+docker compose exec frontend npm install <package>    # Install npm package
+# node_modules is an anonymous volume inside the container; host copy is stale
+
+# Logs
+docker compose logs -f app
+docker compose logs -f frontend
+```
+
+## Testing
+
+- Backend tests: `docker compose exec app python -m pytest tests/ -v`
+- Test DB is auto-created as `nekonoverse_test` (see `tests/conftest.py`)
+- `asyncio_mode = "auto"` — no `@pytest.mark.asyncio` needed
+- Fixtures: `db`, `app_client`, `authed_client`, `test_user`, `mock_valkey`
+
+## Key Conventions
+
+### Backend
+- **Async everywhere**: All DB/HTTP operations use async/await
+- **Service layer**: Business logic in `services/`, not in route handlers
+- **Auth**: Session cookie (`nekonoverse_session`) → Valkey → User lookup
+- **Media proxy**: Remote media URLs are HMAC-signed and served through `/api/v1/media/proxy` to prevent open redirects
+- **Visibility**: Notes have `public`/`unlisted`/`followers`/`direct` visibility mapped from AP `to`/`cc`
+- **Federation**: HTTP Signatures for auth, JSON-LD for AP payloads
+- **Linting**: ruff (E, F, I rules, line-length 100)
+
+### Frontend
+- **SolidJS**: Use `createSignal`/`createEffect`, not React hooks
+- **Stores**: Global state in `stores/` (auth, theme, notifications, followedUsers)
+- **API calls**: Thin wrappers in `src/api/`, return typed data
+- **i18n**: `@solid-primitives/i18n` — keys in `src/i18n/`
+- **Styling**: Global CSS in `styles/global.css`, class-based
+
+### Database
+- **Migrations**: Alembic, sequential naming (`001_*`, `002_*`, ...)
+- **Models**: SQLAlchemy 2.0 `Mapped[]` type hints
+- **IDs**: UUID primary keys
+
+## Git Workflow
+
+- **`main`**: Stable releases only. Tagged with semver (`v0.5.0`, `v0.5.1`, ...).
+- **`develop`**: Active development branch. Push here for `unstable` Docker images.
+- Merge to main: `git merge --no-ff develop`
+- Tag on main: `git tag v<version>`
+
+### Docker Image Tags (CI)
+- `v*` tag push → `latest` + semver tags (`0.5.1`, `0.5`)
+- `develop` push → `unstable` tag
+
+## Environment Variables
+
+Set in `.env` at project root:
+
+| Variable | Description |
+|----------|------------|
+| `DB_PASSWORD` | PostgreSQL password |
+| `DOMAIN` | Public domain (e.g. `example.com`) |
+| `SECRET_KEY` | HMAC/session signing key |
+| `FRONTEND_URL` | Frontend origin URL |
+| `DEBUG` | Enable debug mode (`true`/`false`) |
+| `S3_ACCESS_KEY_ID` | S3 storage key |
+| `S3_SECRET_ACCESS_KEY` | S3 storage secret |
+| `S3_BUCKET` | S3 bucket name |
+| `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflare tunnel token (optional) |
