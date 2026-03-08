@@ -1,4 +1,4 @@
-import { type Page, type BrowserContext, expect } from "@playwright/test";
+import { type Page, type APIRequestContext, expect } from "@playwright/test";
 
 /**
  * Log in as the pre-created admin user via the login form.
@@ -44,4 +44,36 @@ export function png1x1(): Buffer {
     "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/58BAwAI/AL+hc2rNAAAAABJRU5ErkJggg==",
     "base64",
   );
+}
+
+/**
+ * Create a note via the API. Requires an authenticated page (call loginAsAdmin first).
+ * Returns the created note's JSON response.
+ */
+export async function createNote(page: Page, text: string) {
+  const resp = await page.request.post("/api/v1/statuses", {
+    data: { content: text, visibility: "public" },
+  });
+  expect(resp.status()).toBe(201);
+  return resp.json();
+}
+
+/**
+ * Register a new user via the API.
+ * Returns the created user's JSON response.
+ */
+export async function registerUser(
+  page: Page,
+  username: string,
+  password: string,
+) {
+  const resp = await page.request.post("/api/v1/auth/register", {
+    data: {
+      username,
+      email: `${username}@test.example.com`,
+      password,
+    },
+  });
+  expect(resp.status()).toBe(201);
+  return resp.json();
 }

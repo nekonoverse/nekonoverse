@@ -4,6 +4,9 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   retries: 1,
+  expect: {
+    toHaveScreenshot: { maxDiffPixelRatio: 0.01 },
+  },
   use: {
     baseURL: process.env.E2E_BASE_URL || "http://localhost:3080",
     screenshot: "only-on-failure",
