@@ -342,7 +342,7 @@ async def test_server_file_upload(mock_s3, app_client, db, mock_valkey):
 
 
 @patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
-@patch("app.storage.delete_file", new_callable=AsyncMock)
+@patch("app.services.drive_service.delete_file", new_callable=AsyncMock)
 async def test_server_file_delete(mock_del, mock_s3, app_client, db, mock_valkey):
     await make_admin(db, mock_valkey, app_client)
     mock_s3.return_value = "etag"

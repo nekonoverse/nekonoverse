@@ -46,7 +46,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: backend
-        run: pip install ".[dev]"
+        run: pip install -e ".[dev]"
 
       - name: Run tests
         working-directory: backend
@@ -70,7 +70,9 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: npm install
+        run: |
+          rm -rf node_modules package-lock.json
+          npm install
 
       - name: Build
         working-directory: frontend

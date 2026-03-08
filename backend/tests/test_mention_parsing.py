@@ -6,12 +6,13 @@
 
 def test_mention_local_user():
     """@username is rendered as a mention link."""
+    from app.config import settings
     from app.utils.sanitize import text_to_html
 
     html = text_to_html("Hello @alice")
     assert 'class="u-url mention"' in html
     assert "@<span>alice</span>" in html
-    assert 'href="http://localhost/@alice"' in html
+    assert f'href="{settings.server_url}/@alice"' in html
 
 
 def test_mention_remote_user():

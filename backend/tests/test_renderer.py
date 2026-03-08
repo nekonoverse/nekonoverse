@@ -25,7 +25,9 @@ def _make_actor(**overrides):
         following_url="http://localhost/users/alice/following",
         public_key_pem="PUBLIC_KEY_PEM",
         is_cat=False, manually_approves_followers=False, discoverable=True,
-        summary=None, avatar_url=None, header_url=None,
+        summary=None, avatar_url=None, header_url=None, domain=None,
+        fields=None, require_signin_to_view=False,
+        make_notes_followers_only_before=None, make_notes_hidden_before=None,
         created_at=datetime(2025, 1, 1, tzinfo=timezone.utc),
     )
     defaults.update(overrides)
@@ -56,8 +58,10 @@ def test_render_actor_type_and_username():
 
 
 def test_render_actor_public_key():
+    from app.config import settings
+
     data = render_actor(_make_actor())
-    assert data["publicKey"]["id"] == "http://localhost/users/alice#main-key"
+    assert data["publicKey"]["id"] == f"{settings.server_url}/users/alice#main-key"
     assert data["publicKey"]["publicKeyPem"] == "PUBLIC_KEY_PEM"
 
 
