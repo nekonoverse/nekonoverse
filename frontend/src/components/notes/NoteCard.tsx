@@ -8,6 +8,7 @@ import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "../../i18n";
 import { twemojify } from "../../utils/twemojify";
+import { useNavigate } from "@solidjs/router";
 import { mentionify } from "../../utils/mentionify";
 
 interface Props {
@@ -34,6 +35,7 @@ function profileUrl(actor: Note["actor"]): string {
 }
 
 function QuoteEmbed(props: { note: Note }) {
+  const navigate = useNavigate();
   return (
     <div class="note-quote-embed">
       <div class="note-quote-header">
@@ -47,7 +49,7 @@ function QuoteEmbed(props: { note: Note }) {
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
       </div>
-      <div class="note-quote-content" ref={(el) => { el.innerHTML = props.note.content; mentionify(el); twemojify(el); }} />
+      <div class="note-quote-content" ref={(el) => { el.innerHTML = props.note.content; mentionify(el, navigate); twemojify(el); }} />
       <Show when={props.note.media_attachments?.length > 0}>
         <div class="note-quote-media">
           <For each={props.note.media_attachments.slice(0, 2)}>
@@ -143,6 +145,7 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
 
 export default function NoteCard(props: Props) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = createSignal(false);
   const [boosted, setBoosted] = createSignal(false);
   const [boostLoading, setBoostLoading] = createSignal(false);
@@ -331,7 +334,7 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <div class="note-content" ref={(el) => { el.innerHTML = note().content; mentionify(el); twemojify(el); }} />
+        <div class="note-content" ref={(el) => { el.innerHTML = note().content; mentionify(el, navigate); twemojify(el); }} />
         <Show when={note().poll}>
           <PollDisplay poll={note().poll!} noteId={note().id} />
         </Show>
