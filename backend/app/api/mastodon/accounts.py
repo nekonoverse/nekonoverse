@@ -13,6 +13,7 @@ from app.models.note import Note
 from app.models.user import User
 from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
 from app.services.follow_service import follow_actor, unfollow_actor
+from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
 relationships_router = APIRouter(prefix="/api/v1", tags=["relationships"])
@@ -124,8 +125,8 @@ def _actor_to_account(actor: Actor) -> dict:
         "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
         "display_name": actor.display_name,
         "note": actor.summary or "",
-        "avatar": actor.avatar_url or "/default-avatar.svg",
-        "header": actor.header_url or "",
+        "avatar": media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
+        "header": media_proxy_url(actor.header_url),
         "url": actor.ap_id,
         "created_at": actor.created_at.isoformat() if actor.created_at else None,
         "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
@@ -277,7 +278,7 @@ async def get_account_statuses(
                 id=a.id,
                 username=a.username,
                 display_name=a.display_name,
-                avatar_url=a.avatar_url or "/default-avatar.svg",
+                avatar_url=media_proxy_url(a.avatar_url) or "/default-avatar.svg",
                 ap_id=a.ap_id,
                 domain=a.domain,
             ),

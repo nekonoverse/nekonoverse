@@ -394,5 +394,6 @@ async def get_reaction_summary(
                 if remote:
                     emoji_url = remote.url
 
-        summaries.append({"emoji": emoji, "count": count, "me": me, "emoji_url": emoji_url})
+        from app.utils.media_proxy import media_proxy_url
+        summaries.append({"emoji": emoji, "count": count, "me": me, "emoji_url": media_proxy_url(emoji_url)})
     return summaries

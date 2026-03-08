@@ -12,6 +12,7 @@ from app.models.user import User
 from app.schemas.note import NoteActorResponse, NoteCreateRequest, NoteMediaAttachment, NoteResponse, PollResponse, PollOptionResponse, ReactionSummary
 from app.services.actor_service import actor_uri
 from app.services.note_service import check_note_visible, create_note, get_note_by_id, get_reaction_summary
+from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
 
@@ -39,11 +40,12 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
     meta = None
     if att.remote_width and att.remote_height:
         meta = {"original": {"width": att.remote_width, "height": att.remote_height}}
+    proxied = media_proxy_url(att.remote_url)
     return NoteMediaAttachment(
         id=str(att.id),
         type="image" if mime.startswith("image/") else "unknown",
-        url=att.remote_url or "",
-        preview_url=att.remote_url or "",
+        url=proxied,
+        preview_url=proxied,
         description=att.remote_description,
         blurhash=att.remote_blurhash,
         meta=meta,
@@ -83,7 +85,7 @@ def note_to_response(note, reactions: list[dict] | None = None, reblog_note=None
             id=actor.id,
             username=actor.username,
             display_name=actor.display_name,
-            avatar_url=actor.avatar_url or "/default-avatar.svg",
+            avatar_url=media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
             ap_id=actor.ap_id,
             domain=actor.domain,
         ),
@@ -225,7 +227,7 @@ async def reacted_by(
                 id=r.actor.id,
                 username=r.actor.username,
                 display_name=r.actor.display_name,
-                avatar_url=r.actor.avatar_url or "/default-avatar.svg",
+                avatar_url=media_proxy_url(r.actor.avatar_url) or "/default-avatar.svg",
                 ap_id=r.actor.ap_id,
                 domain=r.actor.domain,
             ),

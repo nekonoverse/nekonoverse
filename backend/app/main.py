@@ -20,6 +20,7 @@ from app.api.mastodon.timelines import router as timelines_router
 from app.api.oauth import router as oauth_router
 from app.api.admin import router as admin_router
 from app.api.media import router as media_router
+from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.passkey import router as passkey_router
 from app.config import settings
 
@@ -83,7 +84,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "uri": settings.domain,
         "title": title,
         "description": description,
-        "version": "0.5.0",
+        "version": "0.5.1",
         "urls": {},
         "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
         "registrations": settings.registration_open,
@@ -166,6 +167,7 @@ app.include_router(timelines_router)
 app.include_router(streaming_router)
 app.include_router(oauth_router)
 app.include_router(passkey_router)
+app.include_router(media_proxy_router)
 app.include_router(media_router)
 app.include_router(admin_router)
 app.include_router(webfinger_router)

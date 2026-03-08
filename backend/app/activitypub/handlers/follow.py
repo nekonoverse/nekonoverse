@@ -53,6 +53,11 @@ async def handle_follow(db: AsyncSession, activity: dict):
         db.add(follow)
         await db.commit()
 
+        # Notify the local target about the new follower
+        from app.services.notification_service import create_notification
+        await create_notification(db, "follow", target.id, follower.id)
+        await db.commit()
+
     # Auto-accept if not manually approving
     if not target.manually_approves_followers:
         from app.activitypub.renderer import render_accept_activity
