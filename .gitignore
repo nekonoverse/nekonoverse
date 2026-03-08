@@ -28,6 +28,9 @@ docker-compose.dev.yml
 postgresql_data/
 valkey_data/
 
+# Temp
+.tmp/
+
 # OS
 .DS_Store
 Thumbs.db

@@ -15,6 +15,8 @@ export interface Account {
   locked?: boolean;
   discoverable?: boolean;
   fields?: { name: string; value: string; verified_at: string | null }[];
+  followers_count?: number;
+  following_count?: number;
 }
 
 export async function getAccount(id: string): Promise<Account> {
@@ -77,6 +79,14 @@ export async function searchAccounts(q: string, resolve = false): Promise<Accoun
   const query = new URLSearchParams({ q });
   if (resolve) query.set("resolve", "true");
   return apiRequest<Account[]>(`/api/v1/accounts/search?${query.toString()}`);
+}
+
+export async function getFollowers(id: string, limit = 40): Promise<Account[]> {
+  return apiRequest<Account[]>(`/api/v1/accounts/${id}/followers?limit=${limit}`);
+}
+
+export async function getFollowing(id: string, limit = 40): Promise<Account[]> {
+  return apiRequest<Account[]>(`/api/v1/accounts/${id}/following?limit=${limit}`);
 }
 
 export async function moveAccount(targetApId: string): Promise<void> {

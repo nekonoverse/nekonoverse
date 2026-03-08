@@ -41,6 +41,7 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
     # Send follow notification to local target
     if target_actor.is_local:
         from app.services.notification_service import create_notification
+
         await create_notification(db, "follow", target_actor.id, actor.id)
         await db.commit()
 
@@ -105,6 +106,47 @@ async def get_following_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.
         )
     )
     return list(result.scalars().all())
+
+
+async def get_followers(db: AsyncSession, actor_id: uuid.UUID, limit: int = 40) -> list[Actor]:
+    """Get actors following the given actor (accepted follows only)."""
+    result = await db.execute(
+        select(Actor)
+        .join(Follow, Follow.follower_id == Actor.id)
+        .where(Follow.following_id == actor_id, Follow.accepted.is_(True))
+        .order_by(Follow.created_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_following(db: AsyncSession, actor_id: uuid.UUID, limit: int = 40) -> list[Actor]:
+    """Get actors the given actor is following (accepted follows only)."""
+    result = await db.execute(
+        select(Actor)
+        .join(Follow, Follow.following_id == Actor.id)
+        .where(Follow.follower_id == actor_id, Follow.accepted.is_(True))
+        .order_by(Follow.created_at.desc())
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
+async def get_follow_counts(db: AsyncSession, actor_id: uuid.UUID) -> tuple[int, int]:
+    """Return (followers_count, following_count) for the given actor."""
+    from sqlalchemy import func
+
+    followers = await db.execute(
+        select(func.count())
+        .select_from(Follow)
+        .where(Follow.following_id == actor_id, Follow.accepted.is_(True))
+    )
+    following = await db.execute(
+        select(func.count())
+        .select_from(Follow)
+        .where(Follow.follower_id == actor_id, Follow.accepted.is_(True))
+    )
+    return followers.scalar() or 0, following.scalar() or 0
 
 
 async def get_follower_inboxes(db: AsyncSession, actor_id: uuid.UUID) -> list[str]:
