@@ -222,6 +222,7 @@ async def suspend_user(
         raise HTTPException(status_code=422, detail="Already suspended")
     if target.id == user.id:
         raise HTTPException(status_code=422, detail="Cannot suspend self")
+    _check_moderation_permission(user, target)
 
     await suspend_actor(db, target.actor, user, body.reason)
     await db.commit()
@@ -239,6 +240,7 @@ async def unsuspend_user(
     target = await _get_user(db, user_id)
     if not target.actor.is_suspended:
         raise HTTPException(status_code=422, detail="Not suspended")
+    _check_moderation_permission(user, target)
 
     await unsuspend_actor(db, target.actor, user)
     await db.commit()
@@ -257,6 +259,7 @@ async def silence_user(
     target = await _get_user(db, user_id)
     if target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Already silenced")
+    _check_moderation_permission(user, target)
 
     await silence_actor(db, target.actor, user, body.reason)
     await db.commit()
@@ -274,6 +277,7 @@ async def unsilence_user(
     target = await _get_user(db, user_id)
     if not target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Not silenced")
+    _check_moderation_permission(user, target)
 
     await unsilence_actor(db, target.actor, user)
     await db.commit()
@@ -416,6 +420,8 @@ async def admin_delete_note(
     note = await get_note_by_id(db, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    if note.actor and note.actor.local_user:
+        _check_moderation_permission(user, note.actor.local_user)
 
     await _delete(db, note, user, body.reason)
     await db.commit()
@@ -434,6 +440,8 @@ async def force_note_sensitive(
     note = await get_note_by_id(db, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    if note.actor and note.actor.local_user:
+        _check_moderation_permission(user, note.actor.local_user)
 
     await force_sensitive(db, note, user)
     await db.commit()
@@ -877,6 +885,17 @@ async def delete_server_file_endpoint(
 
 
 # --- Helpers ---
+
+
+def _check_moderation_permission(actor: User, target: User):
+    """Prevent moderators from taking action against staff members."""
+    if actor.is_admin:
+        return
+    if target.is_staff:
+        raise HTTPException(
+            status_code=403,
+            detail="Moderators cannot take action against staff members",
+        )
 
 
 async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:

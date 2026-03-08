@@ -131,6 +131,16 @@ docker compose logs -f frontend
 2. **重複チェック** — Issue作成前に `gh issue list -R nekonoverse/nekonoverse -l plan` や検索で、同じ内容の既存Planが進行中でないか確認する。進行中の重複があればそちらに合流する。
 3. **作業完了後** — `origin` (fork) に push → `upstream` に PR またはマージ。Plan Issue を閉じる。
 
+### リリース手順
+
+1. **バージョン番号を更新する** — 以下の3箇所を新しいバージョンに揃える:
+   - `backend/pyproject.toml` → `version = "X.Y.Z"`
+   - `frontend/package.json` → `"version": "X.Y.Z"`
+   - `backend/app/activitypub/nodeinfo.py` → `"software": {"name": "nekonoverse", "version": "X.Y.Z"}`
+2. **develop にコミット・push**
+3. **main にマージ**: `git checkout main && git merge --no-ff develop`
+4. **タグを打つ**: `git tag vX.Y.Z && git push origin main --tags`
+
 ### Docker Image Tags (CI)
 - `v*` tag push → `latest` + semver tags (`0.5.1`, `0.5`)
 - `develop` push → `unstable` tag
