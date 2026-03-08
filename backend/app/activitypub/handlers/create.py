@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.note import Note
 from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
-from app.services.note_service import get_note_by_ap_id
+from app.services.note_service import fetch_remote_note, get_note_by_ap_id
 from app.utils.sanitize import sanitize_html
 
 logger = logging.getLogger(__name__)
@@ -94,6 +94,9 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     quote_id = None
     if quote_ap_id:
         quoted_note = await get_note_by_ap_id(db, quote_ap_id)
+        # ローカルに無ければリモートからfetch
+        if not quoted_note:
+            quoted_note = await fetch_remote_note(db, quote_ap_id)
         if quoted_note:
             quote_id = quoted_note.id
 
@@ -234,8 +237,9 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     # Publish to Valkey for real-time SSE streaming
     try:
         import json
-        from app.valkey_client import valkey as valkey_client
+
         from app.services.follow_service import get_follower_ids
+        from app.valkey_client import valkey as valkey_client
 
         event = json.dumps({"event": "update", "payload": {"id": str(note.id)}})
         if visibility in ("public", "unlisted"):
