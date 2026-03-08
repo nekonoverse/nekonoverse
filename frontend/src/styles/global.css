@@ -2075,6 +2075,43 @@ a:hover {
   -webkit-box-orient: vertical;
 }
 
+/* Hover card backdrop (touch devices only) */
+.hover-card-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 299;
+  background: rgba(0, 0, 0, 0.2);
+}
+
+/* Mobile / touch-device responsive hover card */
+@media (hover: none) {
+  .hover-card-wrapper {
+    /* Prevent text selection during long-press */
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+}
+
+@media (max-width: 600px) {
+  .hover-card {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: calc(100vw - 32px);
+    max-width: 300px;
+    margin-top: 0;
+  }
+
+  .hover-card-backdrop {
+    background: rgba(0, 0, 0, 0.4);
+  }
+}
+
 /* Profile Inline Edit */
 .profile-header-editable {
   position: relative;
