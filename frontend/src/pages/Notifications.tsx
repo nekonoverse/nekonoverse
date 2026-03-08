@@ -3,7 +3,7 @@ import { getNotifications, dismissNotification, clearNotifications, type Notific
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
 import { getNote } from "../api/statuses";
-import { onNotification, resetUnread } from "../stores/streaming";
+import { onNotification, onReaction, resetUnread } from "../stores/streaming";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 
@@ -56,7 +56,15 @@ export default function Notifications() {
     resetUnread();
   });
 
-  onCleanup(unsub);
+  const unsubReaction = onReaction(async (data) => {
+    const { id } = data as { id: string };
+    if (!id) return;
+    if (notifications().some((n) => n.status?.id === id)) {
+      await refreshNote(id);
+    }
+  });
+
+  onCleanup(() => { unsub(); unsubReaction(); });
 
   const loadMore = async () => {
     const current = notifications();

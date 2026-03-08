@@ -8,6 +8,7 @@ import NoteCard from "../components/notes/NoteCard";
 import { useI18n } from "../i18n";
 import { currentUser, fetchCurrentUser } from "../stores/auth";
 import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
+import { onReaction } from "../stores/streaming";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -229,6 +230,15 @@ export default function Profile() {
       setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
     } catch {}
   };
+
+  const unsubReaction = onReaction(async (data) => {
+    const { id } = data as { id: string };
+    if (!id) return;
+    if (notes().some((n) => n.id === id || n.reblog?.id === id)) {
+      await refreshNote(id);
+    }
+  });
+  onCleanup(() => unsubReaction());
 
   const formatDate = (iso?: string) => {
     if (!iso) return "";
