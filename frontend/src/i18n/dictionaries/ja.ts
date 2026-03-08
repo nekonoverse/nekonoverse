@@ -282,4 +282,4 @@ export const ja = {
   "admin.confirmRevokeInvite": "この招待コードを取り消しますか？",
 } as const;
 
-export type Dictionary = typeof ja;
+export type Dictionary = Record<keyof typeof ja, string>;

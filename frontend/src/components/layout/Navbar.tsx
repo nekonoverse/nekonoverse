@@ -3,6 +3,7 @@ import { useLocation } from "@solidjs/router";
 import { currentUser, logout } from "../../stores/auth";
 import { connect, disconnect, onNotification, unreadCount, resetUnread } from "../../stores/streaming";
 import { useI18n } from "../../i18n";
+import type { Dictionary } from "../../i18n/dictionaries/ja";
 import { getNotifications, type Notification } from "../../api/notifications";
 import Emoji from "../Emoji";
 
@@ -238,7 +239,7 @@ export default function Navbar() {
                                 <strong>
                                   {notif.account?.display_name || notif.account?.username || "?"}
                                 </strong>{" "}
-                                {t(`notifications.type.${notif.type}`)}
+                                {t(`notifications.type.${notif.type}` as keyof Dictionary)}
                                 <Show when={notif.type === "reaction" && notif.emoji}>
                                   {" "}<Emoji emoji={notif.emoji!} />
                                 </Show>

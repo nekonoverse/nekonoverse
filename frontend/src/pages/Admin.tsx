@@ -646,7 +646,7 @@ function EmojiTab() {
         <button class="btn btn-small" onClick={() => importInput.click()} disabled={importing()}>
           {importing() ? t("common.loading") : t("admin.emojiImport")}
         </button>
-        <a class="btn btn-small" href={getEmojiExportUrl()} download>{t("admin.emojiExport")}</a>
+        <a class="btn btn-small" href={getEmojiExportUrl()} download="">{t("admin.emojiExport")}</a>
         <input ref={importInput} type="file" accept=".zip" style="display:none" onChange={handleImport} />
       </div>
       <Show when={importMsg()}><p class="settings-success">{importMsg()}</p></Show>

@@ -146,7 +146,7 @@ export default function Notifications() {
                           </a>
                         </Show>
                         <span class="notification-type-text">
-                          {t(`notifications.type.${notif.type}`)}
+                          {t(`notifications.type.${notif.type}` as keyof import("../i18n/dictionaries/ja").Dictionary)}
                         </span>
                         <Show when={notif.type === "reaction" && notif.emoji}>
                           <span class="notification-emoji">
