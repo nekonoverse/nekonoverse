@@ -9,6 +9,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.note import NoteActorResponse
 from app.schemas.notification import NotificationResponse
+from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
@@ -20,7 +21,7 @@ def _notification_to_response(notif) -> NotificationResponse:
             id=notif.sender.id,
             username=notif.sender.username,
             display_name=notif.sender.display_name,
-            avatar_url=notif.sender.avatar_url or "/default-avatar.svg",
+            avatar_url=media_proxy_url(notif.sender.avatar_url) or "/default-avatar.svg",
             ap_id=notif.sender.ap_id,
             domain=notif.sender.domain,
         )
