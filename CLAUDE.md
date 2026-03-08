@@ -116,7 +116,7 @@ docker compose logs -f frontend
 | Remote | Repository | Role |
 |--------|-----------|------|
 | `origin` | 各自のフォーク (例: `nananek/nekonoverse`) | 普段の作業はここで行う |
-| `upstream` | `nekonoverse/nkonoverse` | 本体 — 完成したらここにマージ (PR or push) |
+| `upstream` | `nekonoverse/nekonoverse` | 本体 — 完成したらここにマージ (PR or push) |
 
 ### Branches
 
@@ -127,8 +127,8 @@ docker compose logs -f frontend
 
 ### 作業開始前のルール
 
-1. **Plan Issue を作成する** — 作業開始前に `nekonoverse/nkonoverse` にIssueを立てる (`gh issue create -R nekonoverse/nkonoverse`)。タイトルに `[Plan]` プレフィックスを付け、自分にアサインする。
-2. **重複チェック** — Issue作成前に `gh issue list -R nekonoverse/nkonoverse -l plan` や検索で、同じ内容の既存Planが進行中でないか確認する。進行中の重複があればそちらに合流する。
+1. **Plan Issue を作成する** — 作業開始前に `nekonoverse/nekonoverse` にIssueを立てる (`gh issue create -R nekonoverse/nekonoverse`)。タイトルに `[Plan]` プレフィックスを付け、自分にアサインする。
+2. **重複チェック** — Issue作成前に `gh issue list -R nekonoverse/nekonoverse -l plan` や検索で、同じ内容の既存Planが進行中でないか確認する。進行中の重複があればそちらに合流する。
 3. **作業完了後** — `origin` (fork) に push → `upstream` に PR またはマージ。Plan Issue を閉じる。
 
 ### Docker Image Tags (CI)
