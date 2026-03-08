@@ -26,7 +26,7 @@ async def public_timeline(
     result = []
     for n in notes:
         reactions = await get_reaction_summary(db, n.id, actor_id)
-        result.append(note_to_response(n, reactions))
+        result.append(await note_to_response(n, reactions, db=db))
     return result
 
 
@@ -41,5 +41,5 @@ async def home_timeline(
     result = []
     for n in notes:
         reactions = await get_reaction_summary(db, n.id, user.actor_id)
-        result.append(note_to_response(n, reactions))
+        result.append(await note_to_response(n, reactions, db=db))
     return result

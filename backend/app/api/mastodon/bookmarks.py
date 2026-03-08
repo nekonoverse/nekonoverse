@@ -23,4 +23,7 @@ async def get_bookmarks(
     from app.services.bookmark_service import get_bookmarks as _get
 
     notes = await _get(db, user.actor_id, limit=limit, max_id=max_id)
-    return [note_to_response(note) for note in notes]
+    result = []
+    for note in notes:
+        result.append(await note_to_response(note, db=db))
+    return result
