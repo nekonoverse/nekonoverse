@@ -107,6 +107,7 @@ export const en: Dictionary = {
   "profile.follow": "Follow",
   "profile.unfollow": "Unfollow",
   "profile.following": "Following",
+  "profile.requested": "Requested",
   "profile.confirmUnfollow": "Unfollow this user?",
   "profile.followers": "Followers",
   "profile.followingList": "Following",

@@ -19,6 +19,7 @@ export default function Profile() {
 
   // Follow state
   const [isFollowing, setIsFollowing] = createSignal(false);
+  const [isRequested, setIsRequested] = createSignal(false);
   const [followLoading, setFollowLoading] = createSignal(false);
 
   // Block/mute state
@@ -58,6 +59,7 @@ export default function Profile() {
         try {
           const rel = await getRelationship(acc.id);
           setIsFollowing(rel.following);
+          setIsRequested(rel.requested);
           setIsBlocking(rel.blocking);
           setIsMuting(rel.muting);
           if (rel.following) addFollowedId(acc.id);
@@ -337,11 +339,22 @@ export default function Profile() {
                     <Show when={!isOwn() && currentUser()}>
                       <div class="profile-actions-right">
                       <button
-                        class={`btn btn-small${isFollowing() ? " btn-following" : ""}`}
+                        class={`btn btn-small${isFollowing() ? " btn-following" : ""}${isRequested() ? " btn-requested" : ""}`}
                         disabled={followLoading()}
                         onClick={async () => {
                           if (isFollowing()) {
                             setShowUnfollowModal(true);
+                            return;
+                          }
+                          if (isRequested()) {
+                            // フォロー申請を取り消す
+                            setFollowLoading(true);
+                            try {
+                              await unfollowAccount(acc.id);
+                              setIsRequested(false);
+                              removeFollowedId(acc.id);
+                            } catch {}
+                            setFollowLoading(false);
                             return;
                           }
                           setFollowLoading(true);
@@ -349,11 +362,18 @@ export default function Profile() {
                             await followAccount(acc.id);
                             setIsFollowing(true);
                             addFollowedId(acc.id);
-                          } catch {}
+                          } catch {
+                            // フォロー失敗時にrelationshipを再取得して正しい状態に同期
+                            try {
+                              const rel = await getRelationship(acc.id);
+                              setIsFollowing(rel.following);
+                              setIsRequested(rel.requested);
+                            } catch {}
+                          }
                           setFollowLoading(false);
                         }}
                       >
-                        {isFollowing() ? t("profile.following") : t("profile.follow")}
+                        {isFollowing() ? t("profile.following") : isRequested() ? t("profile.requested") : t("profile.follow")}
                       </button>
                       <div class="profile-more-menu">
                         <button

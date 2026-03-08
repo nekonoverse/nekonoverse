@@ -276,11 +276,10 @@ async def get_account_statuses(
     if actor.require_signin_to_view and not user:
         return []
 
+    from datetime import datetime, timezone
+
     from app.schemas.note import NoteActorResponse, NoteResponse, ReactionSummary
     from app.services.note_service import get_reaction_summary
-
-    from datetime import datetime, timezone
-    from sqlalchemy import or_
 
     query = (
         select(Note)
@@ -404,14 +403,20 @@ async def get_relationship(
     blocking = False
     muting = False
 
+    # フォロー状態の確認 (accepted / pending)
+    requested = False
     result = await db.execute(
         select(Follow).where(
             Follow.follower_id == user.actor_id,
             Follow.following_id == actor_id,
-            Follow.accepted.is_(True),
         )
     )
-    following = result.scalar_one_or_none() is not None
+    outgoing_follow = result.scalar_one_or_none()
+    if outgoing_follow:
+        following = outgoing_follow.accepted
+        requested = not outgoing_follow.accepted
+    else:
+        following = False
 
     result2 = await db.execute(
         select(Follow).where(
@@ -431,6 +436,7 @@ async def get_relationship(
         "followed_by": followed_by,
         "blocking": blocking,
         "muting": muting,
+        "requested": requested,
     }
 
 

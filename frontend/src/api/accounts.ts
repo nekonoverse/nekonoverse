@@ -37,6 +37,7 @@ export interface Relationship {
   followed_by: boolean;
   blocking: boolean;
   muting: boolean;
+  requested: boolean;
 }
 
 export async function getRelationship(id: string): Promise<Relationship> {

@@ -107,6 +107,7 @@ export const neko: Dictionary = {
   "profile.follow": "フォローにゃ",
   "profile.unfollow": "フォローやめるにゃ",
   "profile.following": "フォローちゅうにゃ",
+  "profile.requested": "しょうにんまちにゃ",
   "profile.confirmUnfollow": "ふぉろーかいじょするにゃ？",
   "profile.followers": "フォロワーにゃ",
   "profile.followingList": "フォローちゅうにゃ",
