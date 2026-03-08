@@ -362,6 +362,20 @@ async def move_account(
     return {"ok": True}
 
 
+# --- Following IDs (lightweight) ---
+
+
+@relationships_router.get("/following_ids")
+async def list_following_ids(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.follow_service import get_following_ids
+
+    ids = await get_following_ids(db, user.actor_id)
+    return [str(i) for i in ids]
+
+
 # --- Block/Mute lists (different prefix) ---
 
 

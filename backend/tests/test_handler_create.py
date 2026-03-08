@@ -219,6 +219,50 @@ async def test_handle_create_emoji_tag_misskey_license_fallback(db, mock_valkey)
     assert emoji.license == "Misskey License Text"
 
 
+async def test_handle_create_followers_visibility(db, mock_valkey):
+    from app.activitypub.handlers.create import handle_create
+    from app.services.note_service import get_note_by_ap_id
+    remote = await make_remote_actor(db, username="fol", domain="fol.example")
+    activity = {
+        "type": "Create",
+        "actor": remote.ap_id,
+        "object": {
+            "type": "Note",
+            "id": "http://fol.example/notes/fol1",
+            "attributedTo": remote.ap_id,
+            "content": "<p>Followers only</p>",
+            "published": "2025-06-01T00:00:00Z",
+            "to": [f"{remote.ap_id}/followers"],
+            "cc": [],
+        }
+    }
+    await handle_create(db, activity)
+    note = await get_note_by_ap_id(db, "http://fol.example/notes/fol1")
+    assert note.visibility == "followers"
+
+
+async def test_handle_create_direct_visibility(db, mock_valkey):
+    from app.activitypub.handlers.create import handle_create
+    from app.services.note_service import get_note_by_ap_id
+    remote = await make_remote_actor(db, username="dm", domain="dm.example")
+    activity = {
+        "type": "Create",
+        "actor": remote.ap_id,
+        "object": {
+            "type": "Note",
+            "id": "http://dm.example/notes/dm1",
+            "attributedTo": remote.ap_id,
+            "content": "<p>Direct message</p>",
+            "published": "2025-06-01T00:00:00Z",
+            "to": ["http://localhost/users/testuser"],
+            "cc": [],
+        }
+    }
+    await handle_create(db, activity)
+    note = await get_note_by_ap_id(db, "http://dm.example/notes/dm1")
+    assert note.visibility == "direct"
+
+
 async def test_handle_create_sanitizes_content(db, mock_valkey):
     from app.activitypub.handlers.create import handle_create
     from app.services.note_service import get_note_by_ap_id

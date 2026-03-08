@@ -180,7 +180,7 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
     from app.services.note_service import get_note_by_id
 
     note = await get_note_by_id(db, note_id)
-    if not note:
+    if not note or note.visibility not in ("public", "unlisted"):
         raise HTTPException(status_code=404, detail="Note not found")
 
     if not is_ap_request(request):

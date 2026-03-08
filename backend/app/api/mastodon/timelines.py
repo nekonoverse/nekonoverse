@@ -21,8 +21,8 @@ async def public_timeline(
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    notes = await get_public_timeline(db, limit=limit, max_id=max_id, local_only=local)
     actor_id = user.actor_id if user else None
+    notes = await get_public_timeline(db, limit=limit, max_id=max_id, local_only=local, current_actor_id=actor_id)
     result = []
     for n in notes:
         reactions = await get_reaction_summary(db, n.id, actor_id)

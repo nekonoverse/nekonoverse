@@ -233,3 +233,110 @@ async def test_delete_not_found(authed_client, mock_valkey):
 async def test_delete_unauthenticated(app_client, mock_valkey):
     resp = await app_client.delete("/api/v1/statuses/fake-id")
     assert resp.status_code == 401
+
+
+# --- Visibility access control tests ---
+
+
+async def test_get_status_followers_visible_to_author(authed_client, mock_valkey):
+    """Author can always see their own followers-only note."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Followers only", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.get(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 200
+
+
+async def test_get_status_followers_hidden_from_stranger(
+    authed_client, test_user, test_user_b, db, app_client, mock_valkey,
+):
+    """A non-follower should get 404 for a followers-only note."""
+    # User A creates a followers-only note
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Secret followers post", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+
+    # Switch to user B (not a follower of user A)
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.get(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 404
+
+
+async def test_get_status_followers_visible_to_follower(
+    authed_client, test_user, test_user_b, db, app_client, mock_valkey,
+):
+    """A follower should be able to see a followers-only note."""
+    # User A creates a followers-only note
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "For my followers", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+
+    # Make user B follow user A
+    from app.models.follow import Follow
+    follow = Follow(
+        follower_id=test_user_b.actor_id,
+        following_id=test_user.actor_id,
+        accepted=True,
+    )
+    db.add(follow)
+    await db.flush()
+
+    # Switch to user B
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.get(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 200
+
+
+async def test_get_status_direct_visible_to_author(authed_client, mock_valkey):
+    """Author can always see their own direct message."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "DM to nobody", "visibility": "direct"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.get(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 200
+
+
+async def test_get_status_direct_hidden_from_stranger(
+    authed_client, test_user_b, app_client, mock_valkey,
+):
+    """A non-mentioned user should get 404 for a direct message."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Secret DM", "visibility": "direct"
+    })
+    note_id = create_resp.json()["id"]
+
+    # Switch to user B (not mentioned)
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.get(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 404
+
+
+async def test_get_status_followers_hidden_unauthenticated(
+    authed_client, app_client, mock_valkey,
+):
+    """Unauthenticated users cannot see followers-only notes."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Followers only anon", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+
+    # Reset to unauthenticated
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=None)
+    app_client.cookies.clear()
+
+    resp = await app_client.get(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 404

@@ -43,7 +43,7 @@
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: "Noto Sans JP", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-size: var(--font-size-base);
@@ -217,6 +217,14 @@ a:hover {
   border-radius: 8px;
   padding: 0 4px;
   pointer-events: none;
+}
+
+@keyframes note-slide-in {
+  from { opacity: 0; transform: translateY(-20px); max-height: 0; }
+  to { opacity: 1; transform: translateY(0); max-height: 2000px; }
+}
+.note-slide-in {
+  animation: note-slide-in 0.4s ease-out;
 }
 
 .navbar-notif-dropdown {
@@ -1336,41 +1344,33 @@ a:hover {
   border-color: #e74c3c;
 }
 
-/* NoteCard inline follow button */
-.note-follow-btn {
-  background: none;
-  border: 1.5px solid var(--accent);
-  color: var(--accent);
-  font-size: 0.75em;
-  font-weight: 700;
-  padding: 1px 7px;
-  border-radius: 12px;
-  cursor: pointer;
-  margin-left: 6px;
-  line-height: 1.2;
-  vertical-align: middle;
+/* Hover card follow button */
+.hover-card-actions {
+  margin-top: 10px;
 }
-
-.note-follow-btn:hover {
+.hover-card-follow-btn {
+  width: 100%;
+  padding: 6px 0;
+  border: 1.5px solid var(--accent);
+  border-radius: 6px;
   background: var(--accent);
   color: #fff;
+  cursor: pointer;
+  font-size: 0.85em;
+  font-weight: 600;
 }
-
-.note-follow-btn.following {
-  background: var(--bg-secondary);
-  border-color: var(--border);
-  color: var(--text-secondary);
-}
-
-.note-follow-btn.following:hover {
-  background: #e74c3c;
-  border-color: #e74c3c;
-  color: #fff;
-}
-
-.note-follow-btn:disabled {
+.hover-card-follow-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;
+}
+.hover-card-follow-btn.following {
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-color: var(--border);
+}
+.hover-card-follow-btn.following:hover {
+  border-color: #e74c3c;
+  color: #e74c3c;
 }
 
 /* Note more menu (block/mute) */
@@ -1879,7 +1879,15 @@ a:hover {
 .profile-info-header {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  gap: 8px;
+}
+
+.profile-actions-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
 .profile-display-name {

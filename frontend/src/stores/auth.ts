@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { apiRequest } from "../api/client";
 import { authenticateWithPasskey as _authenticateWithPasskey } from "../api/passkey";
+import { fetchFollowedIds } from "./followedUsers";
 
 export interface ProfileField {
   name: string;
@@ -33,6 +34,7 @@ export async function fetchCurrentUser() {
   try {
     const user = await apiRequest<CurrentUser>("/api/v1/accounts/verify_credentials");
     setCurrentUser(user);
+    fetchFollowedIds();
   } catch {
     setCurrentUser(null);
   } finally {
