@@ -134,9 +134,9 @@ docker compose logs -f frontend
 ### リリース手順
 
 1. **バージョン番号を更新する** — 以下の3箇所を新しいバージョンに揃える:
+   - `backend/app/__init__.py` → `__version__ = "X.Y.Z"` (nodeinfoはここから読み取る)
    - `backend/pyproject.toml` → `version = "X.Y.Z"`
    - `frontend/package.json` → `"version": "X.Y.Z"`
-   - `backend/app/activitypub/nodeinfo.py` → `"software": {"name": "nekonoverse", "version": "X.Y.Z"}`
 2. **develop にコミット・push**
 3. **main にマージ**: `git checkout main && git merge --no-ff develop`
 4. **タグを打つ**: `git tag vX.Y.Z && git push origin main --tags`

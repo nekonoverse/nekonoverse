@@ -1,7 +1,10 @@
+from datetime import datetime, timedelta, timezone
+
 from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import __version__
 from app.config import settings
 from app.dependencies import get_db
 from app.models.actor import Actor
@@ -34,6 +37,44 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     )
     post_count = post_count_result.scalar() or 0
 
+    # Active users: local actors who posted at least one note in the period
+    now = datetime.now(timezone.utc)
+    local_actor_ids = select(Actor.id).where(Actor.domain.is_(None))
+
+    active_halfyear_result = await db.execute(
+        select(func.count(func.distinct(Note.actor_id))).where(
+            Note.local.is_(True),
+            Note.actor_id.in_(local_actor_ids),
+            Note.published >= now - timedelta(days=180),
+            Note.deleted_at.is_(None),
+        )
+    )
+    active_halfyear = active_halfyear_result.scalar() or 0
+
+    active_month_result = await db.execute(
+        select(func.count(func.distinct(Note.actor_id))).where(
+            Note.local.is_(True),
+            Note.actor_id.in_(local_actor_ids),
+            Note.published >= now - timedelta(days=30),
+            Note.deleted_at.is_(None),
+        )
+    )
+    active_month = active_month_result.scalar() or 0
+
+    # Registration status from server settings
+    open_registrations = settings.registration_open
+    try:
+        from app.services.server_settings_service import get_setting
+        mode = await get_setting(db, "registration_mode")
+        if mode is not None:
+            open_registrations = mode != "closed"
+        else:
+            reg = await get_setting(db, "registration_open")
+            if reg is not None:
+                open_registrations = reg == "true"
+    except Exception:
+        pass
+
     # Load server settings
     node_name = "Nekonoverse"
     node_description = "A cat-friendly ActivityPub server"
@@ -50,15 +91,15 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
 
     return {
         "version": "2.0",
-        "software": {"name": "nekonoverse", "version": "0.1.0"},
+        "software": {"name": "nekonoverse", "version": __version__},
         "protocols": ["activitypub"],
         "services": {"inbound": [], "outbound": []},
-        "openRegistrations": True,
+        "openRegistrations": open_registrations,
         "usage": {
             "users": {
                 "total": user_count,
-                "activeHalfyear": user_count,
-                "activeMonth": user_count,
+                "activeHalfyear": active_halfyear,
+                "activeMonth": active_month,
             },
             "localPosts": post_count,
         },
