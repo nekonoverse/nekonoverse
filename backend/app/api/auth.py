@@ -32,8 +32,11 @@ def get_session_id(request: Request) -> str | None:
 @router.post("/accounts", response_model=UserResponse, status_code=201)
 async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)):
     from app.config import settings
+    from app.services.server_settings_service import get_setting
 
-    if not settings.registration_open:
+    reg_setting = await get_setting(db, "registration_open")
+    registration_open = (reg_setting == "true") if reg_setting is not None else settings.registration_open
+    if not registration_open:
         raise HTTPException(status_code=403, detail="Registration is closed")
 
     try:

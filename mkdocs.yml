@@ -25,6 +25,7 @@ nav:
   - ホーム: index.md
   - クイックスタート: quickstart.md
   - デプロイガイド: deploy.md
+  - 開発環境: development.md
   - API リファレンス: api.md
   - アーキテクチャ: architecture.md
   - 多言語対応: i18n.md
