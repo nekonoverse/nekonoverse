@@ -88,7 +88,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "uri": settings.domain,
         "title": title,
         "description": description,
-        "version": "0.5.1",
+        "version": "0.5.2",
         "urls": {},
         "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
         "registrations": registration_open,

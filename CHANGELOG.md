@@ -1,3 +1,33 @@
+## [v0.5.2](https://github.com/nananek/nekonoverse/releases/tag/v0.5.2) — 2026-03-08
+
+### 追加
+
+- **Misskey プロフィール公開制限の連合対応** — `_misskey_requireSigninToViewContents`、`_misskey_makeNotesFollowersOnlyBefore`、`_misskey_makeNotesHiddenBefore` を尊重。未ログインユーザーにはプロフィール・ノートを制限表示
+- **フォロワー/フォロー一覧ページ** — プロフィールからフォロワー・フォロー中ユーザーの一覧を表示、フォロー数カウント表示
+- **フォロー申請の「承認待ち」UI** — relationship API に `requested` フィールド追加、フォロー申請中の状態表示と取り消し機能
+- **リモートメンション完全ハンドル表示** — `@user@domain` 形式でリモートユーザーのメンションを正しく表示
+- **メンション配信の修正** — WebFinger 解決によるリモートユーザーへのメンション配信対応
+- **CI テストワークフロー** — バックエンドユニットテスト + フロントエンドビルドチェックを develop/main の push・PR で自動実行
+- **Misskey 連合テスト** — Nekonoverse ↔ Misskey 間の HTTPS 連合テスト (30 テスト)
+- **Block/Move ハンドラテスト** — Block・Move ActivityPub ハンドラのエッジケーステスト (11 テスト)
+
+### 変更
+
+- DB マイグレーション 013: `actors` テーブルに `require_signin_to_view`、`make_notes_followers_only_before`、`make_notes_hidden_before` を追加
+- ActivityPub `render_actor` に Misskey 公開制限フィールドを出力
+- `upsert_remote_actor` で Misskey 公開制限フィールドを取り込み
+- 公開タイムライン・プロフィールノート一覧で日時ベースの公開制限フィルタを適用
+- インスタンスバージョンを 0.5.2 に更新
+
+### 修正
+
+- CI: `pyproject.toml` ベースの依存管理に対応 (`pip install -e ".[dev]"`)
+- CI: rollup ネイティブモジュール欠落を修正 (`npm install` に変更)
+- テスト: SimpleNamespace モックに不足属性を追加、http/https スキーム不一致を修正
+- テスト: S3 delete_file のパッチターゲット修正
+
+---
+
 ## [v0.4.0](https://github.com/nananek/nekonoverse/releases/tag/v0.4.0) — 2026-03-08
 
 ### 追加
