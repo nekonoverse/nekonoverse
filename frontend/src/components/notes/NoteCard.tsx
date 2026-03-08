@@ -295,13 +295,12 @@ export default function NoteCard(props: Props) {
         <div class="note-header">
           <div class="note-header-text">
             <UserHoverCard actorId={note().actor.id}>
-              <a href={profileUrl(note().actor)} class="note-display-name-link">
+              <a href={profileUrl(note().actor)} class="note-display-name-link" onClick={(e) => e.preventDefault()}>
                 <strong class="note-display-name">
                   {note().actor.display_name || note().actor.username}
                 </strong>
               </a>
             </UserHoverCard>
-            <span class="note-handle">{actorHandle(note().actor)}</span>
           </div>
           <div class="note-header-right">
             <span class="note-time">{formatTime(note().published)}</span>

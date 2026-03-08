@@ -2052,6 +2052,16 @@ a:hover {
   min-width: 0;
 }
 
+.hover-card-avatar-link,
+.hover-card-name-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.hover-card-name-link:hover .hover-card-display-name {
+  text-decoration: underline;
+}
+
 .hover-card-display-name {
   display: block;
   font-size: 1em;
