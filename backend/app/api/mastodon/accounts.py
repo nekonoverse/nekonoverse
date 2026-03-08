@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.actor import Actor
 from app.models.follow import Follow
 from app.models.note import Note
@@ -139,6 +139,26 @@ def _actor_to_account(actor: Actor) -> dict:
     }
 
 
+def _actor_to_limited_account(actor: Actor) -> dict:
+    """Return minimal account info for actors with require_signin_to_view."""
+    return {
+        "id": str(actor.id),
+        "username": actor.username,
+        "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
+        "display_name": actor.display_name,
+        "note": "",
+        "avatar": "/default-avatar.svg",
+        "header": "",
+        "url": actor.ap_id,
+        "created_at": actor.created_at.isoformat() if actor.created_at else None,
+        "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
+        "locked": actor.manually_approves_followers,
+        "discoverable": actor.discoverable,
+        "fields": [],
+        "limited": True,
+    }
+
+
 @router.post("/{actor_id}/block")
 async def block_account(
     actor_id: uuid.UUID,
@@ -235,6 +255,7 @@ async def unmute_account(
 async def get_account_statuses(
     actor_id: uuid.UUID,
     limit: int = 20,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Actor).where(Actor.id == actor_id))
@@ -242,10 +263,17 @@ async def get_account_statuses(
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
+    # Respect Misskey require_signin_to_view
+    if actor.require_signin_to_view and not user:
+        return []
+
     from app.schemas.note import NoteActorResponse, NoteResponse, ReactionSummary
     from app.services.note_service import get_reaction_summary
 
-    notes_result = await db.execute(
+    from datetime import datetime, timezone
+    from sqlalchemy import or_
+
+    query = (
         select(Note)
         .options(selectinload(Note.actor))
         .where(
@@ -253,9 +281,20 @@ async def get_account_statuses(
             Note.visibility.in_(["public", "unlisted"]),
             Note.deleted_at.is_(None),
         )
-        .order_by(Note.published.desc())
-        .limit(min(limit, 40))
     )
+
+    # Filter notes hidden before threshold
+    if actor.make_notes_hidden_before:
+        threshold = datetime.fromtimestamp(actor.make_notes_hidden_before / 1000.0, tz=timezone.utc)
+        query = query.where(Note.published > threshold)
+
+    # Filter notes followers-only before threshold (unauthenticated only)
+    if actor.make_notes_followers_only_before and not user:
+        threshold = datetime.fromtimestamp(actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc)
+        query = query.where(Note.published > threshold)
+
+    query = query.order_by(Note.published.desc()).limit(min(limit, 40))
+    notes_result = await db.execute(query)
     notes = notes_result.scalars().all()
 
     response = []
@@ -288,11 +327,18 @@ async def get_account_statuses(
 
 
 @router.get("/{actor_id}")
-async def get_account(actor_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_account(
+    actor_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Actor).where(Actor.id == actor_id))
     actor = result.scalar_one_or_none()
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
+
+    if actor.require_signin_to_view and not user:
+        return _actor_to_limited_account(actor)
 
     return _actor_to_account(actor)
 

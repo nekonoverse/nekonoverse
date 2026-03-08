@@ -190,6 +190,9 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
             existing.header_url = image.get("url")
         existing.is_cat = data.get("isCat", False)
         existing.is_bot = is_bot
+        existing.require_signin_to_view = bool(data.get("_misskey_requireSigninToViewContents", False))
+        existing.make_notes_followers_only_before = data.get("_misskey_makeNotesFollowersOnlyBefore")
+        existing.make_notes_hidden_before = data.get("_misskey_makeNotesHiddenBefore")
         existing.manually_approves_followers = data.get("manuallyApprovesFollowers", existing.manually_approves_followers)
         existing.discoverable = data.get("discoverable", existing.discoverable)
         if fields is not None:
@@ -229,6 +232,9 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         public_key_pem=public_key_pem,
         is_cat=data.get("isCat", False),
         is_bot=is_bot,
+        require_signin_to_view=bool(data.get("_misskey_requireSigninToViewContents", False)),
+        make_notes_followers_only_before=data.get("_misskey_makeNotesFollowersOnlyBefore"),
+        make_notes_hidden_before=data.get("_misskey_makeNotesHiddenBefore"),
         manually_approves_followers=data.get("manuallyApprovesFollowers", False),
         discoverable=data.get("discoverable", True),
         fields=fields or [],

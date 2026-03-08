@@ -30,6 +30,9 @@ AP_CONTEXT = [
         "_misskey_quote": "misskey:_misskey_quote",
         "_misskey_talk": "misskey:_misskey_talk",
         "_misskey_license": "misskey:_misskey_license",
+        "_misskey_requireSigninToViewContents": "misskey:_misskey_requireSigninToViewContents",
+        "_misskey_makeNotesFollowersOnlyBefore": "misskey:_misskey_makeNotesFollowersOnlyBefore",
+        "_misskey_makeNotesHiddenBefore": "misskey:_misskey_makeNotesHiddenBefore",
         "quoteUrl": "as:quoteUrl",
         "votersCount": "toot:votersCount",
         "featured": {"@id": "toot:featured", "@type": "@id"},
@@ -110,6 +113,12 @@ def render_actor(actor: Actor) -> dict:
         data["movedTo"] = actor.moved_to_ap_id
     if getattr(actor, "also_known_as", None):
         data["alsoKnownAs"] = actor.also_known_as
+    if getattr(actor, "require_signin_to_view", False):
+        data["_misskey_requireSigninToViewContents"] = True
+    if getattr(actor, "make_notes_followers_only_before", None) is not None:
+        data["_misskey_makeNotesFollowersOnlyBefore"] = actor.make_notes_followers_only_before
+    if getattr(actor, "make_notes_hidden_before", None) is not None:
+        data["_misskey_makeNotesHiddenBefore"] = actor.make_notes_hidden_before
 
     return data
 

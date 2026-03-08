@@ -1,7 +1,9 @@
 import re
 import uuid
 
-from sqlalchemy import func, select
+from datetime import datetime, timezone
+
+from sqlalchemy import func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -256,13 +258,39 @@ async def check_note_visible(
     current_actor_id: uuid.UUID | None = None,
 ) -> bool:
     """Check whether the current user is allowed to see this note."""
+    # Author can always see their own notes
+    if current_actor_id and note.actor_id == current_actor_id:
+        return True
+
+    actor = note.actor
+
+    # Misskey: make_notes_hidden_before — hide notes before this timestamp from everyone
+    if getattr(actor, "make_notes_hidden_before", None) and note.published:
+        threshold = datetime.fromtimestamp(actor.make_notes_hidden_before / 1000.0, tz=timezone.utc)
+        if note.published < threshold:
+            return False
+
+    # Misskey: make_notes_followers_only_before — treat old notes as followers-only
+    if getattr(actor, "make_notes_followers_only_before", None) and note.published:
+        threshold = datetime.fromtimestamp(actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc)
+        if note.published < threshold:
+            if not current_actor_id:
+                return False
+            from app.models.follow import Follow as FollowModel
+            result = await db.execute(
+                select(FollowModel.id).where(
+                    FollowModel.following_id == note.actor_id,
+                    FollowModel.follower_id == current_actor_id,
+                    FollowModel.accepted.is_(True),
+                ).limit(1)
+            )
+            if result.scalar_one_or_none() is None:
+                return False
+
     if note.visibility in ("public", "unlisted"):
         return True
     if not current_actor_id:
         return False
-    # Author can always see their own notes
-    if note.actor_id == current_actor_id:
-        return True
     if note.visibility == "followers":
         from app.models.follow import Follow
         result = await db.execute(
@@ -327,6 +355,27 @@ async def get_public_timeline(
         excluded = await _get_excluded_ids(db, current_actor_id)
         if excluded:
             query = query.where(Note.actor_id.not_in(excluded))
+    else:
+        # Unauthenticated: exclude actors with require_signin_to_view
+        query = query.where(Actor.require_signin_to_view.is_(False))
+
+    # Exclude notes hidden before threshold (all users)
+    query = query.where(
+        or_(
+            Actor.make_notes_hidden_before.is_(None),
+            Note.published > func.to_timestamp(Actor.make_notes_hidden_before / 1000.0),
+        )
+    )
+
+    # Unauthenticated: also exclude notes before followers-only threshold
+    if not current_actor_id:
+        query = query.where(
+            or_(
+                Actor.make_notes_followers_only_before.is_(None),
+                Note.published > func.to_timestamp(Actor.make_notes_followers_only_before / 1000.0),
+            )
+        )
+
     if max_id:
         # Get the published time of max_id note for cursor pagination
         sub = select(Note.published).where(Note.id == max_id).scalar_subquery()

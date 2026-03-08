@@ -2,7 +2,7 @@ import datetime as dt
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
+from sqlalchemy import BigInteger, Boolean, Date, DateTime, ForeignKey, Index, String, Text, UniqueConstraint, func
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -35,6 +35,9 @@ class Actor(Base):
     fields: Mapped[list | None] = mapped_column(JSONB, default=list)
     birthday: Mapped[dt.date | None] = mapped_column(Date, nullable=True)
     is_bot: Mapped[bool] = mapped_column(Boolean, default=False)
+    require_signin_to_view: Mapped[bool] = mapped_column(Boolean, default=False)
+    make_notes_followers_only_before: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    make_notes_hidden_before: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
