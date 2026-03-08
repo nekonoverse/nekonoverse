@@ -18,6 +18,7 @@ from app.schemas.admin import (
     AdminRemoteEmojiResponse,
     AdminStatsResponse,
     AdminUserResponse,
+    ImportByShortcodeRequest,
     DomainBlockRequest,
     DomainBlockResponse,
     ModerationActionRequest,
@@ -496,6 +497,24 @@ async def import_remote_emoji(
     from app.services.emoji_service import import_remote_emoji_to_local
     try:
         emoji = await import_remote_emoji_to_local(db, emoji_id)
+        await db.commit()
+        return AdminEmojiResponse.model_validate(emoji)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/emoji/import-by-shortcode", response_model=AdminEmojiResponse)
+async def import_remote_emoji_by_shortcode(
+    body: ImportByShortcodeRequest,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local
+    remote = await get_custom_emoji(db, body.shortcode, body.domain)
+    if not remote:
+        raise HTTPException(status_code=404, detail="Remote emoji not found")
+    try:
+        emoji = await import_remote_emoji_to_local(db, remote.id)
         await db.commit()
         return AdminEmojiResponse.model_validate(emoji)
     except ValueError as e:

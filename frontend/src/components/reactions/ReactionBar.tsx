@@ -2,9 +2,13 @@ import { createSignal, Show, For, onCleanup } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import type { ReactionSummary, ReactionUser } from "../../api/statuses";
 import { reactToNote, unreactToNote, getReactedBy } from "../../api/statuses";
+import { importRemoteEmojiByShortcode } from "../../api/admin";
 import EmojiPicker from "./EmojiPicker";
 import Emoji from "../Emoji";
+import { currentUser } from "../../stores/auth";
 import { useI18n } from "../../i18n";
+
+const REMOTE_EMOJI_RE = /^:([a-zA-Z0-9_]+)@([a-zA-Z0-9.-]+):$/;
 
 interface Props {
   noteId: string;
@@ -19,6 +23,8 @@ export default function ReactionBar(props: Props) {
   const [modalEmoji, setModalEmoji] = createSignal<string | null>(null);
   const [modalUsers, setModalUsers] = createSignal<ReactionUser[]>([]);
   const [modalLoading, setModalLoading] = createSignal(false);
+  const [importState, setImportState] = createSignal<"idle" | "loading" | "success" | "error">("idle");
+  const [importError, setImportError] = createSignal("");
 
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let didLongPress = false;
@@ -38,9 +44,32 @@ export default function ReactionBar(props: Props) {
     }
   };
 
+  const importableEmoji = () => {
+    const emoji = modalEmoji();
+    if (!emoji) return null;
+    const m = REMOTE_EMOJI_RE.exec(emoji);
+    if (!m) return null;
+    return { shortcode: m[1], domain: m[2] };
+  };
+
+  const handleImport = async () => {
+    const parsed = importableEmoji();
+    if (!parsed) return;
+    setImportState("loading");
+    try {
+      await importRemoteEmojiByShortcode(parsed.shortcode, parsed.domain);
+      setImportState("success");
+    } catch (e: any) {
+      setImportState("error");
+      setImportError(e.message || t("reactions.importFailed"));
+    }
+  };
+
   const openModal = async (emoji: string) => {
     setModalEmoji(emoji);
     setModalLoading(true);
+    setImportState("idle");
+    setImportError("");
     try {
       const users = await getReactedBy(props.noteId, emoji);
       setModalUsers(users);
@@ -113,7 +142,29 @@ export default function ReactionBar(props: Props) {
                 />
                 {t("reactions.reactedBy")}
               </h3>
-              <button class="modal-close" onClick={closeModal}>✕</button>
+              <div style="display: flex; align-items: center; gap: 8px">
+                <Show when={currentUser()?.role === "admin" && importableEmoji()}>
+                  <Show when={importState() === "idle"}>
+                    <button class="btn btn-small" onClick={handleImport}>
+                      {t("reactions.importEmoji")}
+                    </button>
+                  </Show>
+                  <Show when={importState() === "loading"}>
+                    <button class="btn btn-small" disabled>
+                      {t("common.loading")}
+                    </button>
+                  </Show>
+                  <Show when={importState() === "success"}>
+                    <span class="import-success">{t("reactions.importSuccess")}</span>
+                  </Show>
+                  <Show when={importState() === "error"}>
+                    <span class="import-error" title={importError()}>
+                      {t("reactions.importFailed")}
+                    </span>
+                  </Show>
+                </Show>
+                <button class="modal-close" onClick={closeModal}>✕</button>
+              </div>
             </div>
             <div class="reacted-by-list">
               <Show when={modalLoading()}>

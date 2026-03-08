@@ -2907,6 +2907,18 @@ a:hover {
   color: var(--text-primary);
 }
 
+.import-success {
+  color: var(--success, #4caf50);
+  font-size: 0.85em;
+  font-weight: 500;
+}
+
+.import-error {
+  color: var(--error, #f44336);
+  font-size: 0.85em;
+  cursor: help;
+}
+
 .modal-loading {
   padding: 32px;
   text-align: center;

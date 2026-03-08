@@ -128,6 +128,11 @@ class AdminRemoteEmojiResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ImportByShortcodeRequest(BaseModel):
+    shortcode: str = Field(min_length=1, max_length=100)
+    domain: str = Field(min_length=1, max_length=255)
+
+
 class AdminEmojiUpdate(BaseModel):
     shortcode: str | None = Field(None, max_length=100, pattern=r"^[a-zA-Z0-9_]+$")
     category: str | None = Field(None, max_length=100)
