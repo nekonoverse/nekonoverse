@@ -67,6 +67,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     thumbnail_url = None
     title = "Nekonoverse"
     description = "A cat-friendly ActivityPub server"
+    registration_open = settings.registration_open
     try:
         icon_url = await get_setting(db, "server_icon_url")
         if icon_url:
@@ -77,6 +78,9 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         desc = await get_setting(db, "server_description")
         if desc:
             description = desc
+        reg = await get_setting(db, "registration_open")
+        if reg is not None:
+            registration_open = reg == "true"
     except Exception:
         pass
 
@@ -84,10 +88,10 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "uri": settings.domain,
         "title": title,
         "description": description,
-        "version": "0.5.1",
+        "version": "0.5.2",
         "urls": {},
         "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
-        "registrations": settings.registration_open,
+        "registrations": registration_open,
     }
     if thumbnail_url:
         resp["thumbnail"] = {"url": thumbnail_url}

@@ -2,9 +2,9 @@ name: Federation Test
 
 on:
   push:
-    branches: [main, master]
+    branches: [develop, main]
   pull_request:
-    branches: [main, master]
+    branches: [develop, main]
 
 jobs:
   federation-test:

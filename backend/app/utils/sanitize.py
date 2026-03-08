@@ -18,12 +18,15 @@ def _replace_mention(match: re.Match) -> str:
         href = f"https://{domain}/@{username}"
     else:
         from app.config import settings
+
         href = f"{settings.server_url}/@{username}"
+
+    display = f"{username}@{domain}" if domain else username
 
     return (
         f'<span class="h-card">'
-        f'<a href="{href}" class="u-url mention">@<span>{username}</span></a>'
-        f'</span>'
+        f'<a href="{href}" class="u-url mention">@<span>{display}</span></a>'
+        f"</span>"
     )
 
 
@@ -38,14 +41,14 @@ def text_to_html(text: str) -> str:
     )
 
     # Parse mentions (skip inside existing <a> tags)
-    parts = re.split(r'(<a[^>]*>.*?</a>)', escaped)
+    parts = re.split(r"(<a[^>]*>.*?</a>)", escaped)
     result = []
     for part in parts:
-        if part.startswith('<a'):
+        if part.startswith("<a"):
             result.append(part)
         else:
             result.append(MENTION_PATTERN.sub(_replace_mention, part))
-    escaped = ''.join(result)
+    escaped = "".join(result)
 
     # Line breaks
     escaped = escaped.replace("\n", "<br>")

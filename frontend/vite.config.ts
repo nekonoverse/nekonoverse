@@ -2,6 +2,8 @@ import { defineConfig } from "vite";
 import solidPlugin from "vite-plugin-solid";
 import { VitePWA } from "vite-plugin-pwa";
 
+const backendUrl = process.env.VITE_BACKEND_URL || "http://localhost:8000";
+
 export default defineConfig({
   plugins: [
     solidPlugin(),
@@ -36,27 +38,27 @@ export default defineConfig({
     allowedHosts: true,
     proxy: {
       "/api": {
-        target: "http://localhost:8000",
+        target: backendUrl,
         changeOrigin: true,
       },
       "/.well-known": {
-        target: "http://localhost:8000",
+        target: backendUrl,
         changeOrigin: true,
       },
       "/users": {
-        target: "http://localhost:8000",
+        target: backendUrl,
         changeOrigin: true,
       },
       "/inbox": {
-        target: "http://localhost:8000",
+        target: backendUrl,
         changeOrigin: true,
       },
       "/nodeinfo": {
-        target: "http://localhost:8000",
+        target: backendUrl,
         changeOrigin: true,
       },
       "/manifest.webmanifest": {
-        target: "http://localhost:8000",
+        target: backendUrl,
         changeOrigin: true,
       },
     },

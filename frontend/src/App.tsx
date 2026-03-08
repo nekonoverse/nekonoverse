@@ -18,6 +18,7 @@ const Drive = lazy(() => import("./pages/Drive"));
 const Bookmarks = lazy(() => import("./pages/Bookmarks"));
 const Search = lazy(() => import("./pages/Search"));
 const Profile = lazy(() => import("./pages/Profile"));
+const FollowList = lazy(() => import("./pages/FollowList"));
 
 function Layout(props: ParentProps) {
   onMount(() => {
@@ -46,6 +47,8 @@ export default function App() {
         <Route path="/drive" component={Drive} />
         <Route path="/bookmarks" component={Bookmarks} />
         <Route path="/search" component={Search} />
+        <Route path="/:acct/followers" component={FollowList} />
+        <Route path="/:acct/following" component={FollowList} />
         <Route path="/:acct" component={Profile} />
       </Router>
     </I18nProvider>

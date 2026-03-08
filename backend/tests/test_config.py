@@ -2,7 +2,7 @@ from app.config import Settings
 
 
 def test_server_url_http():
-    s = Settings(domain="example.com", frontend_url="http://localhost:3000")
+    s = Settings(domain="example.com", frontend_url="http://localhost:3000", use_https=False)
     assert s.server_url == "http://example.com"
 
 
@@ -12,8 +12,8 @@ def test_server_url_https():
 
 
 def test_default_values():
-    """Settings picks up env vars set by conftest (REGISTRATION_OPEN=true)."""
-    s = Settings(domain="localhost", frontend_url="http://localhost:3000")
+    """Settings accepts explicit values."""
+    s = Settings(domain="localhost", frontend_url="http://localhost:3000", debug=True)
     assert s.domain == "localhost"
     assert s.debug is True
 

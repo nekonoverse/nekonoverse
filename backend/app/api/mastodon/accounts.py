@@ -6,13 +6,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.actor import Actor
 from app.models.follow import Follow
 from app.models.note import Note
 from app.models.user import User
-from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
-from app.services.follow_service import follow_actor, unfollow_actor
+from app.services.follow_service import follow_actor, get_follow_counts, unfollow_actor
 from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
@@ -85,7 +84,8 @@ async def lookup_account(
     if not actor:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    return _actor_to_account(actor)
+    fc, fic = await get_follow_counts(db, actor.id)
+    return _actor_to_account(actor, followers_count=fc, following_count=fic)
 
 
 @router.get("/search")
@@ -118,8 +118,12 @@ async def search_accounts(
     return [_actor_to_account(actor)]
 
 
-def _actor_to_account(actor: Actor) -> dict:
-    return {
+def _actor_to_account(
+    actor: Actor,
+    followers_count: int | None = None,
+    following_count: int | None = None,
+) -> dict:
+    data = {
         "id": str(actor.id),
         "username": actor.username,
         "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
@@ -136,6 +140,31 @@ def _actor_to_account(actor: Actor) -> dict:
             {"name": f.get("name", ""), "value": f.get("value", ""), "verified_at": None}
             for f in (actor.fields or [])
         ],
+    }
+    if followers_count is not None:
+        data["followers_count"] = followers_count
+    if following_count is not None:
+        data["following_count"] = following_count
+    return data
+
+
+def _actor_to_limited_account(actor: Actor) -> dict:
+    """Return minimal account info for actors with require_signin_to_view."""
+    return {
+        "id": str(actor.id),
+        "username": actor.username,
+        "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
+        "display_name": actor.display_name,
+        "note": "",
+        "avatar": "/default-avatar.svg",
+        "header": "",
+        "url": actor.ap_id,
+        "created_at": actor.created_at.isoformat() if actor.created_at else None,
+        "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
+        "locked": actor.manually_approves_followers,
+        "discoverable": actor.discoverable,
+        "fields": [],
+        "limited": True,
     }
 
 
@@ -235,6 +264,7 @@ async def unmute_account(
 async def get_account_statuses(
     actor_id: uuid.UUID,
     limit: int = 20,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     result = await db.execute(select(Actor).where(Actor.id == actor_id))
@@ -242,10 +272,16 @@ async def get_account_statuses(
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
+    # Respect Misskey require_signin_to_view
+    if actor.require_signin_to_view and not user:
+        return []
+
+    from datetime import datetime, timezone
+
     from app.schemas.note import NoteActorResponse, NoteResponse, ReactionSummary
     from app.services.note_service import get_reaction_summary
 
-    notes_result = await db.execute(
+    query = (
         select(Note)
         .options(selectinload(Note.actor))
         .where(
@@ -253,48 +289,103 @@ async def get_account_statuses(
             Note.visibility.in_(["public", "unlisted"]),
             Note.deleted_at.is_(None),
         )
-        .order_by(Note.published.desc())
-        .limit(min(limit, 40))
     )
+
+    # Filter notes hidden before threshold
+    if actor.make_notes_hidden_before:
+        threshold = datetime.fromtimestamp(actor.make_notes_hidden_before / 1000.0, tz=timezone.utc)
+        query = query.where(Note.published > threshold)
+
+    # Filter notes followers-only before threshold (unauthenticated only)
+    if actor.make_notes_followers_only_before and not user:
+        threshold = datetime.fromtimestamp(actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc)
+        query = query.where(Note.published > threshold)
+
+    query = query.order_by(Note.published.desc()).limit(min(limit, 40))
+    notes_result = await db.execute(query)
     notes = notes_result.scalars().all()
 
     response = []
     for note in notes:
         reactions = await get_reaction_summary(db, note.id, None)
         a = note.actor
-        response.append(NoteResponse(
-            id=note.id,
-            ap_id=note.ap_id,
-            content=note.content,
-            source=note.source,
-            visibility=note.visibility,
-            sensitive=note.sensitive,
-            spoiler_text=note.spoiler_text,
-            published=note.published,
-            replies_count=note.replies_count,
-            reactions_count=note.reactions_count,
-            renotes_count=note.renotes_count,
-            actor=NoteActorResponse(
-                id=a.id,
-                username=a.username,
-                display_name=a.display_name,
-                avatar_url=media_proxy_url(a.avatar_url) or "/default-avatar.svg",
-                ap_id=a.ap_id,
-                domain=a.domain,
-            ),
-            reactions=[ReactionSummary(**r) for r in (reactions or [])],
-        ))
+        response.append(
+            NoteResponse(
+                id=note.id,
+                ap_id=note.ap_id,
+                content=note.content,
+                source=note.source,
+                visibility=note.visibility,
+                sensitive=note.sensitive,
+                spoiler_text=note.spoiler_text,
+                published=note.published,
+                replies_count=note.replies_count,
+                reactions_count=note.reactions_count,
+                renotes_count=note.renotes_count,
+                actor=NoteActorResponse(
+                    id=a.id,
+                    username=a.username,
+                    display_name=a.display_name,
+                    avatar_url=media_proxy_url(a.avatar_url) or "/default-avatar.svg",
+                    ap_id=a.ap_id,
+                    domain=a.domain,
+                ),
+                reactions=[ReactionSummary(**r) for r in (reactions or [])],
+            )
+        )
     return response
 
 
+@router.get("/{actor_id}/followers")
+async def list_followers(
+    actor_id: uuid.UUID,
+    limit: int = 40,
+    db: AsyncSession = Depends(get_db),
+):
+    """List accounts that follow the given account."""
+    from app.services.follow_service import get_followers
+
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    actors = await get_followers(db, actor_id, min(limit, 80))
+    return [_actor_to_account(a) for a in actors]
+
+
+@router.get("/{actor_id}/following")
+async def list_following(
+    actor_id: uuid.UUID,
+    limit: int = 40,
+    db: AsyncSession = Depends(get_db),
+):
+    """List accounts the given account is following."""
+    from app.services.follow_service import get_following
+
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    actors = await get_following(db, actor_id, min(limit, 80))
+    return [_actor_to_account(a) for a in actors]
+
+
 @router.get("/{actor_id}")
-async def get_account(actor_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def get_account(
+    actor_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
     result = await db.execute(select(Actor).where(Actor.id == actor_id))
     actor = result.scalar_one_or_none()
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
-    return _actor_to_account(actor)
+    if actor.require_signin_to_view and not user:
+        return _actor_to_limited_account(actor)
+
+    fc, fic = await get_follow_counts(db, actor.id)
+    return _actor_to_account(actor, followers_count=fc, following_count=fic)
 
 
 @router.get("/{actor_id}/relationship")
@@ -312,14 +403,20 @@ async def get_relationship(
     blocking = False
     muting = False
 
+    # フォロー状態の確認 (accepted / pending)
+    requested = False
     result = await db.execute(
         select(Follow).where(
             Follow.follower_id == user.actor_id,
             Follow.following_id == actor_id,
-            Follow.accepted.is_(True),
         )
     )
-    following = result.scalar_one_or_none() is not None
+    outgoing_follow = result.scalar_one_or_none()
+    if outgoing_follow:
+        following = outgoing_follow.accepted
+        requested = not outgoing_follow.accepted
+    else:
+        following = False
 
     result2 = await db.execute(
         select(Follow).where(
@@ -339,6 +436,7 @@ async def get_relationship(
         "followed_by": followed_by,
         "blocking": blocking,
         "muting": muting,
+        "requested": requested,
     }
 
 

@@ -10,40 +10,7 @@ Client → nginx → backend (API) / frontend / s3proxy-deliverer (メディア)
 
 ## 本番更新手順
 
-GHCR のイメージを使っている場合の更新手順。
-
-### develop (最新の main) を追う場合
-
-```bash
-docker compose pull
-docker compose up -d
-docker compose restart nginx
-```
-
-### リリースタグを指定する場合
-
-`docker-compose.yml` のイメージタグを変更してから:
-
-```bash
-docker compose pull
-docker compose up -d
-docker compose restart nginx
-```
-
-!!! important "nginx の再起動"
-    `docker compose up -d` でバックエンドのコンテナが再作成されると内部 IP が変わる。nginx は起動時に upstream の DNS を解決してキャッシュするため、**app 更新後は必ず `docker compose restart nginx` を実行すること**。これを忘れると 502 エラーになる。
-
-!!! note "Cloudflare CDN を使っている場合"
-    フロントエンドの更新後、Cloudflare ダッシュボードから **Caching > Configuration > Purge Everything** を実行して CDN キャッシュをクリアすること。
-
-### イメージタグの命名規則
-
-| タグ | 内容 | 用途 |
-|------|------|------|
-| `develop` | main ブランチの最新ビルド | 本番で最新を追いたい場合 |
-| `latest` | 最新リリースタグのビルド | 安定版を使いたい場合 |
-| `0.4.5` | 特定バージョン | バージョン固定したい場合 |
-| `0.4` | マイナーバージョン最新 | パッチ更新を自動で受けたい場合 |
+更新手順は [クイックスタート > 本番更新手順](quickstart.md#本番更新手順) を参照してください。
 
 ---
 
