@@ -680,6 +680,7 @@ a:hover {
 /* Note Card */
 .note-card {
   display: flex;
+  flex-wrap: wrap;
   gap: 14px;
   background: var(--bg-secondary);
   padding: 16px;
@@ -834,7 +835,9 @@ a:hover {
   gap: 6px;
   font-size: 0.82em;
   color: var(--text-secondary);
-  padding: 0 0 6px 52px;
+  padding-left: 52px;
+  flex-basis: 100%;
+  margin-bottom: -8px;
 }
 .note-reblog-indicator svg {
   color: #2ecc71;
@@ -1059,7 +1062,9 @@ a:hover {
   gap: 6px;
   font-size: 0.82em;
   color: var(--text-secondary);
-  padding: 0 0 6px 52px;
+  padding-left: 52px;
+  flex-basis: 100%;
+  margin-bottom: -8px;
 }
 .note-pin-indicator svg {
   flex-shrink: 0;
