@@ -11,8 +11,7 @@ from app.models.actor import Actor
 from app.models.follow import Follow
 from app.models.note import Note
 from app.models.user import User
-from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
-from app.services.follow_service import follow_actor, unfollow_actor
+from app.services.follow_service import follow_actor, get_follow_counts, unfollow_actor
 from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
@@ -85,7 +84,8 @@ async def lookup_account(
     if not actor:
         raise HTTPException(status_code=404, detail="Account not found")
 
-    return _actor_to_account(actor)
+    fc, fic = await get_follow_counts(db, actor.id)
+    return _actor_to_account(actor, followers_count=fc, following_count=fic)
 
 
 @router.get("/search")
@@ -118,8 +118,12 @@ async def search_accounts(
     return [_actor_to_account(actor)]
 
 
-def _actor_to_account(actor: Actor) -> dict:
-    return {
+def _actor_to_account(
+    actor: Actor,
+    followers_count: int | None = None,
+    following_count: int | None = None,
+) -> dict:
+    data = {
         "id": str(actor.id),
         "username": actor.username,
         "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
@@ -137,6 +141,11 @@ def _actor_to_account(actor: Actor) -> dict:
             for f in (actor.fields or [])
         ],
     }
+    if followers_count is not None:
+        data["followers_count"] = followers_count
+    if following_count is not None:
+        data["following_count"] = following_count
+    return data
 
 
 def _actor_to_limited_account(actor: Actor) -> dict:
@@ -301,29 +310,65 @@ async def get_account_statuses(
     for note in notes:
         reactions = await get_reaction_summary(db, note.id, None)
         a = note.actor
-        response.append(NoteResponse(
-            id=note.id,
-            ap_id=note.ap_id,
-            content=note.content,
-            source=note.source,
-            visibility=note.visibility,
-            sensitive=note.sensitive,
-            spoiler_text=note.spoiler_text,
-            published=note.published,
-            replies_count=note.replies_count,
-            reactions_count=note.reactions_count,
-            renotes_count=note.renotes_count,
-            actor=NoteActorResponse(
-                id=a.id,
-                username=a.username,
-                display_name=a.display_name,
-                avatar_url=media_proxy_url(a.avatar_url) or "/default-avatar.svg",
-                ap_id=a.ap_id,
-                domain=a.domain,
-            ),
-            reactions=[ReactionSummary(**r) for r in (reactions or [])],
-        ))
+        response.append(
+            NoteResponse(
+                id=note.id,
+                ap_id=note.ap_id,
+                content=note.content,
+                source=note.source,
+                visibility=note.visibility,
+                sensitive=note.sensitive,
+                spoiler_text=note.spoiler_text,
+                published=note.published,
+                replies_count=note.replies_count,
+                reactions_count=note.reactions_count,
+                renotes_count=note.renotes_count,
+                actor=NoteActorResponse(
+                    id=a.id,
+                    username=a.username,
+                    display_name=a.display_name,
+                    avatar_url=media_proxy_url(a.avatar_url) or "/default-avatar.svg",
+                    ap_id=a.ap_id,
+                    domain=a.domain,
+                ),
+                reactions=[ReactionSummary(**r) for r in (reactions or [])],
+            )
+        )
     return response
+
+
+@router.get("/{actor_id}/followers")
+async def list_followers(
+    actor_id: uuid.UUID,
+    limit: int = 40,
+    db: AsyncSession = Depends(get_db),
+):
+    """List accounts that follow the given account."""
+    from app.services.follow_service import get_followers
+
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    actors = await get_followers(db, actor_id, min(limit, 80))
+    return [_actor_to_account(a) for a in actors]
+
+
+@router.get("/{actor_id}/following")
+async def list_following(
+    actor_id: uuid.UUID,
+    limit: int = 40,
+    db: AsyncSession = Depends(get_db),
+):
+    """List accounts the given account is following."""
+    from app.services.follow_service import get_following
+
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    actors = await get_following(db, actor_id, min(limit, 80))
+    return [_actor_to_account(a) for a in actors]
 
 
 @router.get("/{actor_id}")
@@ -340,7 +385,8 @@ async def get_account(
     if actor.require_signin_to_view and not user:
         return _actor_to_limited_account(actor)
 
-    return _actor_to_account(actor)
+    fc, fic = await get_follow_counts(db, actor.id)
+    return _actor_to_account(actor, followers_count=fc, following_count=fic)
 
 
 @router.get("/{actor_id}/relationship")
