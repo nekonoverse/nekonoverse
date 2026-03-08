@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
+import { createSignal, createEffect, on, onCleanup, Show, For } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
 import { updateAvatar, updateHeader, updateProfile } from "../api/settings";
@@ -73,7 +73,20 @@ export default function Profile() {
     }
   };
 
-  onMount(loadProfile);
+  createEffect(on(() => params.acct, () => {
+    setAccount(null);
+    setNotes([]);
+    setLoading(true);
+    setError("");
+    setIsFollowing(false);
+    setIsRequested(false);
+    setIsBlocking(false);
+    setIsMuting(false);
+    setEditing(false);
+    setMoreOpen(false);
+    setShowUnfollowModal(false);
+    loadProfile();
+  }));
 
   const isOwn = () => {
     const acc = account();
