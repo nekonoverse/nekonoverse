@@ -60,6 +60,10 @@ async def create_note(
     for username, domain in mentions:
         from app.services.actor_service import actor_uri, get_actor_by_username
         mentioned_actor = await get_actor_by_username(db, username, domain)
+        # リモートユーザーがDBに未登録の場合、WebFingerで解決
+        if not mentioned_actor and domain:
+            from app.services.actor_service import resolve_webfinger
+            mentioned_actor = await resolve_webfinger(db, username, domain)
         if mentioned_actor:
             mentioned_uri = actor_uri(mentioned_actor)
             mention_data.append({
@@ -156,14 +160,30 @@ async def create_note(
         if emoji_tags:
             note._emoji_tags = emoji_tags
 
-    # Deliver to followers (public/unlisted/followers visibility)
-    if visibility in ("public", "unlisted", "followers"):
+    # Deliver to followers and mentioned remote users
+    if visibility in ("public", "unlisted", "followers", "direct"):
         from app.activitypub.renderer import render_create_activity
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
 
         activity = render_create_activity(note)
-        inboxes = await get_follower_inboxes(db, actor.id)
+        inboxes: set[str] = set()
+
+        # フォロワーへの配送 (direct以外)
+        if visibility != "direct":
+            follower_inboxes = await get_follower_inboxes(db, actor.id)
+            inboxes.update(follower_inboxes)
+
+        # メンション先リモートユーザーへの配送
+        for m in mention_data:
+            if m.get("domain"):
+                from app.services.actor_service import get_actor_by_username
+
+                mentioned = await get_actor_by_username(db, m["username"], m["domain"])
+                if mentioned and mentioned.inbox_url:
+                    inbox = mentioned.shared_inbox_url or mentioned.inbox_url
+                    inboxes.add(inbox)
+
         for inbox_url in inboxes:
             await enqueue_delivery(db, actor.id, inbox_url, activity)
 
@@ -193,8 +213,9 @@ async def create_note(
     # Publish real-time events via Valkey pub/sub
     try:
         import json
-        from app.valkey_client import valkey as valkey_client
+
         from app.services.follow_service import get_follower_ids
+        from app.valkey_client import valkey as valkey_client
 
         event = json.dumps({"event": "update", "payload": {"id": str(note_id)}})
         if visibility in ("public", "unlisted"):
