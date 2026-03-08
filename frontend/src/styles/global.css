@@ -816,6 +816,10 @@ a:hover {
   border-radius: 999px;
   font-size: 0.95em;
   cursor: pointer;
+  -webkit-touch-callout: none;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
 }
 
 .reaction-badge .twemoji {

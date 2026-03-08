@@ -112,7 +112,7 @@ export default function ReactionBar(props: Props) {
             onMouseUp={cancelLongPress}
             onMouseLeave={cancelLongPress}
             onTouchStart={() => startLongPress(r.emoji)}
-            onTouchEnd={() => { cancelLongPress(); if (didLongPress) { /* prevent click */ } }}
+            onTouchEnd={(e) => { cancelLongPress(); if (didLongPress) { e.preventDefault(); } }}
             onContextMenu={(e) => e.preventDefault()}
           >
             <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
