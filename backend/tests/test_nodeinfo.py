@@ -1,5 +1,6 @@
 import pytest
 
+from app import __version__
 from tests.conftest import make_note
 
 
@@ -25,10 +26,24 @@ async def test_nodeinfo(app_client):
     assert "localPosts" in data["usage"]
 
 
+async def test_nodeinfo_version_from_init(app_client):
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["software"]["version"] == __version__
+
+
 async def test_nodeinfo_user_count(app_client, test_user):
     resp = await app_client.get("/nodeinfo/2.0")
     data = resp.json()
     assert data["usage"]["users"]["total"] >= 1
+
+
+async def test_nodeinfo_active_users(app_client, test_user, db):
+    await make_note(db, test_user.actor, content="active user note")
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["usage"]["users"]["activeHalfyear"] >= 1
+    assert data["usage"]["users"]["activeMonth"] >= 1
 
 
 async def test_nodeinfo_post_count(app_client, test_user, db):
@@ -36,6 +51,22 @@ async def test_nodeinfo_post_count(app_client, test_user, db):
     resp = await app_client.get("/nodeinfo/2.0")
     data = resp.json()
     assert data["usage"]["localPosts"] >= 1
+
+
+async def test_nodeinfo_open_registrations_default(app_client):
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert isinstance(data["openRegistrations"], bool)
+
+
+async def test_nodeinfo_registration_closed(app_client, db):
+    from app.services.server_settings_service import set_setting
+    await set_setting(db, "registration_mode", "closed")
+    await db.commit()
+
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["openRegistrations"] is False
 
 
 async def test_nodeinfo_metadata(app_client):
