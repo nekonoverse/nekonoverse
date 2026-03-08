@@ -74,11 +74,17 @@ async def get_server_settings(
     from app.services.server_settings_service import get_all_settings
 
     settings = await get_all_settings(db)
+    mode = settings.get("registration_mode")
+    if mode is None:
+        reg_open = settings.get("registration_open", "true") == "true"
+        mode = "open" if reg_open else "closed"
     return ServerSettingsResponse(
         server_name=settings.get("server_name"),
         server_description=settings.get("server_description"),
         tos_url=settings.get("tos_url"),
-        registration_open=settings.get("registration_open", "true") == "true",
+        registration_open=mode != "closed",
+        registration_mode=mode,
+        invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
     )
 
@@ -96,6 +102,12 @@ async def update_server_settings(
     for key, value in updates.items():
         if key == "registration_open":
             await set_setting(db, key, "true" if value else "false")
+        elif key == "registration_mode":
+            await set_setting(db, key, value)
+            # Sync legacy registration_open for backward compat
+            await set_setting(db, "registration_open", "true" if value != "closed" else "false")
+        elif key == "invite_create_role":
+            await set_setting(db, key, value)
         else:
             await set_setting(db, key, value)
     await db.commit()
@@ -104,11 +116,17 @@ async def update_server_settings(
     await db.commit()
 
     settings = await get_all_settings(db)
+    mode = settings.get("registration_mode")
+    if mode is None:
+        reg_open = settings.get("registration_open", "true") == "true"
+        mode = "open" if reg_open else "closed"
     return ServerSettingsResponse(
         server_name=settings.get("server_name"),
         server_description=settings.get("server_description"),
         tos_url=settings.get("tos_url"),
-        registration_open=settings.get("registration_open", "true") == "true",
+        registration_open=mode != "closed",
+        registration_mode=mode,
+        invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
     )
 

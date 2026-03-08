@@ -263,6 +263,23 @@ export const ja = {
   "settings.maxFields": "最大4つまで",
   "pwa.updateAvailable": "新しいバージョンがあります",
   "pwa.reload": "更新",
+  "auth.inviteCode": "招待コード",
+  "auth.inviteCodePlaceholder": "招待コードを入力",
+  "auth.inviteRequired": "登録には招待コードが必要です。",
+  "admin.tabInvites": "招待管理",
+  "admin.registrationMode": "登録モード",
+  "admin.regModeOpen": "オープン",
+  "admin.regModeInvite": "招待制",
+  "admin.regModeClosed": "受付停止",
+  "admin.inviteCreateRole": "招待コードを作成できる権限",
+  "admin.roleAdmin": "管理者のみ",
+  "admin.roleModerator": "モデレーター以上",
+  "admin.roleUser": "全ユーザー",
+  "admin.createInvite": "招待コード作成",
+  "admin.noInvites": "招待コードはありません",
+  "admin.inviteUsedBy": "使用者:",
+  "admin.inviteUnused": "未使用",
+  "admin.confirmRevokeInvite": "この招待コードを取り消しますか？",
 } as const;
 
 export type Dictionary = typeof ja;

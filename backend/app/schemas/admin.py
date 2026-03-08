@@ -9,6 +9,8 @@ class ServerSettingsResponse(BaseModel):
     server_description: str | None = None
     tos_url: str | None = None
     registration_open: bool = True
+    registration_mode: str = "open"
+    invite_create_role: str = "admin"
     server_icon_url: str | None = None
 
 
@@ -17,6 +19,8 @@ class ServerSettingsUpdate(BaseModel):
     server_description: str | None = Field(None, max_length=2000)
     tos_url: str | None = Field(None, max_length=2048)
     registration_open: bool | None = None
+    registration_mode: str | None = Field(None, pattern=r"^(open|invite|closed)$")
+    invite_create_role: str | None = Field(None, pattern=r"^(admin|moderator|user)$")
 
 
 class AdminUserResponse(BaseModel):

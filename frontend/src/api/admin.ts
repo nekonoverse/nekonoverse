@@ -11,6 +11,8 @@ export interface ServerSettings {
   server_description: string | null;
   tos_url: string | null;
   registration_open: boolean;
+  registration_mode: string;
+  invite_create_role: string;
   server_icon_url: string | null;
 }
 
@@ -272,4 +274,26 @@ export async function uploadServerFile(file: File): Promise<ServerFile> {
 
 export async function deleteServerFile(fileId: string): Promise<void> {
   await apiRequest(`/api/v1/admin/server-files/${fileId}`, { method: "DELETE" });
+}
+
+// Invitation Codes
+export interface InviteCode {
+  code: string;
+  created_by: string;
+  used_by: string | null;
+  used_at: string | null;
+  expires_at: string | null;
+  created_at: string;
+}
+
+export async function getInviteCodes(): Promise<InviteCode[]> {
+  return apiRequest<InviteCode[]>("/api/v1/invites");
+}
+
+export async function createInviteCode(): Promise<InviteCode> {
+  return apiRequest<InviteCode>("/api/v1/invites", { method: "POST" });
+}
+
+export async function revokeInviteCode(code: string): Promise<void> {
+  await apiRequest(`/api/v1/invites/${code}`, { method: "DELETE" });
 }

@@ -7,6 +7,7 @@ interface InstanceInfo {
   description: string;
   version: string;
   registrations: boolean;
+  registration_mode?: string;
   thumbnail?: { url: string };
 }
 
@@ -17,6 +18,14 @@ export { instance, instanceLoading };
 
 export function registrationOpen(): boolean {
   return instance()?.registrations ?? false;
+}
+
+export function registrationMode(): string {
+  return instance()?.registration_mode ?? (instance()?.registrations ? "open" : "closed");
+}
+
+export function inviteRequired(): boolean {
+  return registrationMode() === "invite";
 }
 
 export function instanceIcon(): string | undefined {
