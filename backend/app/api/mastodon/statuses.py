@@ -16,12 +16,15 @@ from app.schemas.note import (
     NoteCreateRequest,
     NoteMediaAttachment,
     NoteResponse,
-    PollResponse,
-    PollOptionResponse,
     ReactionSummary,
 )
 from app.services.actor_service import actor_uri
-from app.services.note_service import check_note_visible, create_note, get_note_by_id, get_reaction_summary
+from app.services.note_service import (
+    check_note_visible,
+    create_note,
+    get_note_by_id,
+    get_reaction_summary,
+)
 from app.utils.media_proxy import media_proxy_url
 
 _SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
@@ -69,8 +72,12 @@ async def note_to_response(
 ) -> NoteResponse:
     actor = note.actor
     reblog = None
-    if reblog_note:
-        reblog = await note_to_response(reblog_note, db=db)
+    # 明示的にreblog_noteが渡されない場合、renote_ofリレーションを使う
+    actual_reblog = reblog_note
+    if not actual_reblog and hasattr(note, "renote_of") and note.renote_of:
+        actual_reblog = note.renote_of
+    if actual_reblog:
+        reblog = await note_to_response(actual_reblog, db=db)
 
     # Build media attachments
     media_attachments = []
@@ -239,7 +246,6 @@ async def reacted_by(
     emoji: str | None = None,
     db: AsyncSession = Depends(get_db),
 ):
-    from app.models.actor import Actor
     from app.models.reaction import Reaction
 
     note = await get_note_by_id(db, note_id)
