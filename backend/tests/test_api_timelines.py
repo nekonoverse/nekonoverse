@@ -128,3 +128,25 @@ async def test_home_timeline_shows_followed_user(
     assert resp.status_code == 200
     contents = [n["content"] for n in resp.json()]
     assert any("Followed user note" in c for c in contents)
+
+
+async def test_public_timeline_excludes_unlisted(authed_client, mock_valkey):
+    """Unlisted notes should not appear on the public timeline."""
+    await authed_client.post("/api/v1/statuses", json={
+        "content": "Unlisted hidden from TL", "visibility": "unlisted"
+    })
+    resp = await authed_client.get("/api/v1/timelines/public")
+    assert resp.status_code == 200
+    contents = [n["content"] for n in resp.json()]
+    assert not any("Unlisted hidden from TL" in c for c in contents)
+
+
+async def test_public_timeline_excludes_direct(authed_client, mock_valkey):
+    """Direct messages should not appear on the public timeline."""
+    await authed_client.post("/api/v1/statuses", json={
+        "content": "Direct hidden from TL", "visibility": "direct"
+    })
+    resp = await authed_client.get("/api/v1/timelines/public")
+    assert resp.status_code == 200
+    contents = [n["content"] for n in resp.json()]
+    assert not any("Direct hidden from TL" in c for c in contents)

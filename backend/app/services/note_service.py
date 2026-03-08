@@ -229,6 +229,41 @@ async def get_note_by_id(db: AsyncSession, note_id: uuid.UUID) -> Note | None:
     return result.scalar_one_or_none()
 
 
+async def check_note_visible(
+    db: AsyncSession,
+    note: Note,
+    current_actor_id: uuid.UUID | None = None,
+) -> bool:
+    """Check whether the current user is allowed to see this note."""
+    if note.visibility in ("public", "unlisted"):
+        return True
+    if not current_actor_id:
+        return False
+    # Author can always see their own notes
+    if note.actor_id == current_actor_id:
+        return True
+    if note.visibility == "followers":
+        from app.models.follow import Follow
+        result = await db.execute(
+            select(Follow.id).where(
+                Follow.following_id == note.actor_id,
+                Follow.follower_id == current_actor_id,
+                Follow.accepted.is_(True),
+            ).limit(1)
+        )
+        return result.scalar_one_or_none() is not None
+    if note.visibility == "direct":
+        from app.models.actor import Actor
+        result = await db.execute(
+            select(Actor.ap_id).where(Actor.id == current_actor_id)
+        )
+        actor_ap_id = result.scalar_one_or_none()
+        if not actor_ap_id:
+            return False
+        return any(m.get("ap_id") == actor_ap_id for m in (note.mentions or []))
+    return False
+
+
 async def get_note_by_ap_id(db: AsyncSession, ap_id: str) -> Note | None:
     result = await db.execute(
         select(Note)

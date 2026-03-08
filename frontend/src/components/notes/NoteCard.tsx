@@ -1,12 +1,13 @@
 import { Show, For, createSignal, onCleanup } from "solid-js";
 import type { Note, Poll } from "../../api/statuses";
 import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll } from "../../api/statuses";
-import { followAccount, unfollowAccount, blockAccount, muteAccount } from "../../api/accounts";
+import { blockAccount, muteAccount } from "../../api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
 import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "../../i18n";
+import { twemojify } from "../../utils/twemojify";
 
 interface Props {
   note: Note;
@@ -45,7 +46,7 @@ function QuoteEmbed(props: { note: Note }) {
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
       </div>
-      <div class="note-quote-content" innerHTML={props.note.content} />
+      <div class="note-quote-content" ref={(el) => { el.innerHTML = props.note.content; twemojify(el); }} />
       <Show when={props.note.media_attachments?.length > 0}>
         <div class="note-quote-media">
           <For each={props.note.media_attachments.slice(0, 2)}>
@@ -141,8 +142,6 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
 
 export default function NoteCard(props: Props) {
   const { t } = useI18n();
-  const [followed, setFollowed] = createSignal(false);
-  const [loading, setLoading] = createSignal(false);
   const [moreOpen, setMoreOpen] = createSignal(false);
   const [boosted, setBoosted] = createSignal(false);
   const [boostLoading, setBoostLoading] = createSignal(false);
@@ -165,22 +164,6 @@ export default function NoteCard(props: Props) {
     const user = currentUser();
     const note = displayNote();
     return user && user.username === note.actor.username && !note.actor.domain;
-  };
-
-  const handleFollow = async (e: MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setLoading(true);
-    try {
-      if (followed()) {
-        await unfollowAccount(displayNote().actor.id);
-        setFollowed(false);
-      } else {
-        await followAccount(displayNote().actor.id);
-        setFollowed(true);
-      }
-    } catch {}
-    setLoading(false);
   };
 
   // Close more menu on outside click
@@ -312,15 +295,6 @@ export default function NoteCard(props: Props) {
               </a>
             </UserHoverCard>
             <span class="note-handle">{actorHandle(note().actor)}</span>
-            <Show when={currentUser() && !isOwnNote()}>
-              <button
-                class={`note-follow-btn${followed() ? " following" : ""}`}
-                onClick={handleFollow}
-                disabled={loading()}
-              >
-                {followed() ? "\u2713" : "+"}
-              </button>
-            </Show>
           </div>
           <div class="note-header-right">
             <span class="note-time">{formatTime(note().published)}</span>
@@ -356,7 +330,7 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <div class="note-content" innerHTML={note().content} />
+        <div class="note-content" ref={(el) => { el.innerHTML = note().content; twemojify(el); }} />
         <Show when={note().poll}>
           <PollDisplay poll={note().poll!} noteId={note().id} />
         </Show>

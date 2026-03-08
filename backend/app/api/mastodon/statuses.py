@@ -11,7 +11,7 @@ from app.models.note import Note
 from app.models.user import User
 from app.schemas.note import NoteActorResponse, NoteCreateRequest, NoteMediaAttachment, NoteResponse, PollResponse, PollOptionResponse, ReactionSummary
 from app.services.actor_service import actor_uri
-from app.services.note_service import create_note, get_note_by_id, get_reaction_summary
+from app.services.note_service import check_note_visible, create_note, get_note_by_id, get_reaction_summary
 
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
 
@@ -136,6 +136,9 @@ async def get_status(
         raise HTTPException(status_code=404, detail="Note not found")
 
     actor_id = user.actor_id if user else None
+    if not await check_note_visible(db, note, actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
     reactions = await get_reaction_summary(db, note.id, actor_id)
     return note_to_response(note, reactions)
 

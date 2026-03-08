@@ -7,6 +7,7 @@ import { getNote } from "../api/statuses";
 import NoteCard from "../components/notes/NoteCard";
 import { useI18n } from "../i18n";
 import { currentUser, fetchCurrentUser } from "../stores/auth";
+import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -52,12 +53,15 @@ export default function Profile() {
       const statuses = await getAccountStatuses(acc.id);
       setNotes(statuses);
       // Load relationship if logged in and not own profile
-      if (currentUser() && currentUser()!.username !== acc.username) {
+      const own = currentUser()?.username === acc.username && !acc.acct.includes("@");
+      if (currentUser() && !own) {
         try {
           const rel = await getRelationship(acc.id);
           setIsFollowing(rel.following);
           setIsBlocking(rel.blocking);
           setIsMuting(rel.muting);
+          if (rel.following) addFollowedId(acc.id);
+          else removeFollowedId(acc.id);
         } catch {}
       }
     } catch (e: any) {
@@ -331,6 +335,7 @@ export default function Profile() {
                       </Show>
                     </Show>
                     <Show when={!isOwn() && currentUser()}>
+                      <div class="profile-actions-right">
                       <button
                         class={`btn btn-small${isFollowing() ? " btn-following" : ""}`}
                         disabled={followLoading()}
@@ -343,6 +348,7 @@ export default function Profile() {
                           try {
                             await followAccount(acc.id);
                             setIsFollowing(true);
+                            addFollowedId(acc.id);
                           } catch {}
                           setFollowLoading(false);
                         }}
@@ -374,6 +380,7 @@ export default function Profile() {
                             </button>
                           </div>
                         </Show>
+                      </div>
                       </div>
                     </Show>
                   </div>
@@ -527,8 +534,10 @@ export default function Profile() {
                 onClick={async () => {
                   setFollowLoading(true);
                   try {
-                    await unfollowAccount(account()!.id);
+                    const accId = account()!.id;
+                    await unfollowAccount(accId);
                     setIsFollowing(false);
+                    removeFollowedId(accId);
                   } catch {}
                   setFollowLoading(false);
                   setShowUnfollowModal(false);

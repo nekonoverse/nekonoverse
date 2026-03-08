@@ -230,3 +230,19 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
 
     await db.commit()
     logger.info("Saved remote note %s from %s", ap_id, actor_ap_id)
+
+    # Publish to Valkey for real-time SSE streaming
+    try:
+        import json
+        from app.valkey_client import valkey as valkey_client
+        from app.services.follow_service import get_follower_ids
+
+        event = json.dumps({"event": "update", "payload": {"id": str(note.id)}})
+        if visibility in ("public", "unlisted"):
+            await valkey_client.publish("timeline:public", event)
+        # Deliver to followers of this remote actor (local users who follow them)
+        follower_ids = await get_follower_ids(db, actor.id)
+        for fid in follower_ids:
+            await valkey_client.publish(f"timeline:home:{fid}", event)
+    except Exception:
+        logger.exception("Failed to publish remote note to streaming")

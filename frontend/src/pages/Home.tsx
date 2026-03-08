@@ -1,9 +1,9 @@
-import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
+import { createSignal, createEffect, onMount, onCleanup, Show, For, createMemo } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
 import { currentUser, authLoading, fetchCurrentUser } from "../stores/auth";
 import { fetchInstance, registrationOpen } from "../stores/instance";
 import { getPublicTimeline, getHomeTimeline, getNote, type Note } from "../api/statuses";
-import { createStream, type Stream } from "../api/streaming";
+import { onUpdate } from "../stores/streaming";
 import { useI18n } from "../i18n";
 import NoteComposer from "../components/notes/NoteComposer";
 import NoteCard from "../components/notes/NoteCard";
@@ -14,6 +14,7 @@ export default function Home() {
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [timelineLoading, setTimelineLoading] = createSignal(true);
   const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
+  const [newNoteIds, setNewNoteIds] = createSignal<Set<string>>(new Set());
 
   const isHomeTL = () => searchParams.tl === "home" && !!currentUser();
 
@@ -22,7 +23,7 @@ export default function Home() {
     try {
       const data = isHomeTL()
         ? await getHomeTimeline()
-        : await getPublicTimeline({ local: true });
+        : await getPublicTimeline();
       setNotes(data);
     } catch {
       // ignore
@@ -31,33 +32,27 @@ export default function Home() {
     }
   };
 
-  let stream: Stream | null = null;
-
   onMount(async () => {
     await Promise.all([fetchCurrentUser(), fetchInstance()]);
     await loadTimeline();
-
-    // Start SSE stream for real-time updates
-    const streamPath = currentUser()
-      ? "/api/v1/streaming/user"
-      : "/api/v1/streaming/public";
-    stream = createStream(streamPath);
-    stream.on("update", async (data) => {
-      const { id } = data as { id: string };
-      if (!id) return;
-      try {
-        const note = await getNote(id);
-        setNotes((prev) => {
-          if (prev.some((n) => n.id === id)) return prev;
-          return [note, ...prev];
-        });
-      } catch { /* ignore */ }
-    });
   });
 
-  onCleanup(() => {
-    stream?.close();
+  // Subscribe to real-time timeline updates from global stream
+  const unsub = onUpdate(async (data) => {
+    const { id } = data as { id: string };
+    if (!id) return;
+    try {
+      const note = await getNote(id);
+      setNotes((prev) => {
+        if (prev.some((n) => n.id === id)) return prev;
+        return [note, ...prev];
+      });
+      setNewNoteIds((s) => new Set(s).add(id));
+      setTimeout(() => setNewNoteIds((s) => { const next = new Set(s); next.delete(id); return next; }), 600);
+    } catch { /* ignore */ }
   });
+
+  onCleanup(unsub);
 
   // Reload when switching between public/home
   createEffect(() => {
@@ -105,7 +100,7 @@ export default function Home() {
         <h2>{isHomeTL() ? t("timeline.home") : t("timeline.public")}</h2>
         <Show when={!timelineLoading()} fallback={<p>{t("timeline.loading")}</p>}>
           <Show when={notes().length > 0} fallback={<p class="empty">{t("timeline.empty")}</p>}>
-            <For each={notes()}>{(note) => <NoteCard note={note} onReactionUpdate={() => refreshNote(note.id)} onQuote={(n) => { setQuoteTarget(n); window.scrollTo({ top: 0, behavior: "smooth" }); }} onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))} />}</For>
+            <For each={notes()}>{(note) => <div class={newNoteIds().has(note.id) ? "note-slide-in" : ""}><NoteCard note={note} onReactionUpdate={() => refreshNote(note.id)} onQuote={(n) => { setQuoteTarget(n); window.scrollTo({ top: 0, behavior: "smooth" }); }} onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))} /></div>}</For>
           </Show>
         </Show>
       </div>

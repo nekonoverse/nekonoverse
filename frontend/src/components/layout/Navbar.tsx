@@ -1,9 +1,9 @@
 import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation } from "@solidjs/router";
 import { currentUser, logout } from "../../stores/auth";
+import { connect, disconnect, onNotification, unreadCount, resetUnread } from "../../stores/streaming";
 import { useI18n } from "../../i18n";
 import { getNotifications, type Notification } from "../../api/notifications";
-import { createStream, type Stream } from "../../api/streaming";
 import Emoji from "../Emoji";
 
 const PREVIEW_COUNT = 5;
@@ -29,24 +29,25 @@ export default function Navbar() {
   const [notifItems, setNotifItems] = createSignal<Notification[]>([]);
   const [notifLoaded, setNotifLoaded] = createSignal(false);
   const [notifHasMore, setNotifHasMore] = createSignal(false);
-  const [unreadCount, setUnreadCount] = createSignal(0);
   let notifTimer: ReturnType<typeof setTimeout> | undefined;
-  let stream: Stream | null = null;
 
-  // SSE connection for real-time notification badge
+  // Manage global SSE connection based on auth state
   createEffect(() => {
     if (currentUser()) {
-      stream?.close();
-      stream = createStream("/api/v1/streaming/user");
-      stream.on("notification", () => {
-        setUnreadCount((c) => c + 1);
-        setNotifLoaded(false); // Force re-fetch on next hover
-      });
+      connect();
+    } else {
+      disconnect();
     }
   });
 
+  // Invalidate notification preview cache when new notifications arrive
+  const unsub = onNotification(() => {
+    setNotifLoaded(false);
+  });
+
   onCleanup(() => {
-    stream?.close();
+    unsub();
+    disconnect();
   });
 
   const isActive = (path: string) => location.pathname === path;
@@ -200,7 +201,7 @@ export default function Navbar() {
                     href="/notifications"
                     class={`navbar-icon${isActive("/notifications") ? " active" : ""}`}
                     title={t("notifications.title")}
-                    onClick={() => setUnreadCount(0)}
+                    onClick={() => resetUnread()}
                   >
                     <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                       <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
