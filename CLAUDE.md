@@ -111,10 +111,25 @@ docker compose logs -f frontend
 
 ## Git Workflow
 
+### Repositories
+
+| Remote | Repository | Role |
+|--------|-----------|------|
+| `origin` | 各自のフォーク (例: `nananek/nekonoverse`) | 普段の作業はここで行う |
+| `upstream` | `nekonoverse/nkonoverse` | 本体 — 完成したらここにマージ (PR or push) |
+
+### Branches
+
 - **`main`**: Stable releases only. Tagged with semver (`v0.5.0`, `v0.5.1`, ...).
 - **`develop`**: Active development branch. Push here for `unstable` Docker images.
 - Merge to main: `git merge --no-ff develop`
 - Tag on main: `git tag v<version>`
+
+### 作業開始前のルール
+
+1. **Plan Issue を作成する** — 作業開始前に `nekonoverse/nkonoverse` にIssueを立てる (`gh issue create -R nekonoverse/nkonoverse`)。タイトルに `[Plan]` プレフィックスを付け、自分にアサインする。
+2. **重複チェック** — Issue作成前に `gh issue list -R nekonoverse/nkonoverse -l plan` や検索で、同じ内容の既存Planが進行中でないか確認する。進行中の重複があればそちらに合流する。
+3. **作業完了後** — `origin` (fork) に push → `upstream` に PR またはマージ。Plan Issue を閉じる。
 
 ### Docker Image Tags (CI)
 - `v*` tag push → `latest` + semver tags (`0.5.1`, `0.5`)
