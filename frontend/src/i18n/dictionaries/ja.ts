@@ -285,6 +285,17 @@ export const ja = {
   "admin.inviteUsedBy": "使用者:",
   "admin.inviteUnused": "未使用",
   "admin.confirmRevokeInvite": "この招待コードを取り消しますか？",
+  "settings.tabAbout": "情報",
+  "about.serverInfo": "サーバー情報",
+  "about.serverName": "サーバー名",
+  "about.description": "説明",
+  "about.domain": "ドメイン",
+  "about.versionInfo": "バージョン情報",
+  "about.backendVersion": "バックエンド",
+  "about.frontendVersion": "フロントエンド",
+  "about.clearCache": "キャッシュクリア",
+  "about.clearCacheDesc": "キャッシュとService Workerをクリアしてページを再読み込みします。表示の不具合がある場合にお試しください。",
+  "about.cacheClearing": "クリア中...",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;
