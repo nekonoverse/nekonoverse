@@ -452,6 +452,109 @@ async def test_note_response_remote_fallback_to_local(db, mock_valkey):
     assert resp.emojis[0].shortcode == "localonly"
 
 
+# --- get_reaction_summary: remote emoji resolution ---
+
+
+async def test_reaction_summary_resolves_remote_emoji_without_domain(db, mock_valkey):
+    """When reaction emoji is ':blobcat:' (no domain, as Misskey sends it),
+    get_reaction_summary should find the remote-cached emoji."""
+    from app.models.reaction import Reaction
+    from app.services.emoji_service import upsert_remote_emoji
+    from app.services.note_service import get_reaction_summary
+    from app.services.user_service import create_user
+    from tests.conftest import make_note, make_remote_actor
+
+    # Cache a remote emoji (as the like handler would)
+    await upsert_remote_emoji(
+        db, "remotereact", "misskey.example",
+        "https://misskey.example/emoji/remotereact.png",
+    )
+
+    user = await create_user(db, "rxn_target", "rxn@test.com", "password1234")
+    note = await make_note(db, user.actor, content="Hello")
+    remote_actor = await make_remote_actor(db, username="rxn_sender", domain="misskey.example")
+
+    # Store reaction as ":remotereact:" (no domain — Misskey format)
+    reaction = Reaction(
+        actor_id=remote_actor.id,
+        note_id=note.id,
+        emoji=":remotereact:",
+    )
+    db.add(reaction)
+    await db.flush()
+
+    summary = await get_reaction_summary(db, note.id)
+    assert len(summary) == 1
+    assert summary[0]["emoji"] == ":remotereact:"
+    assert summary[0]["emoji_url"] != ""
+    assert "remotereact" in summary[0]["emoji_url"]
+
+
+async def test_reaction_summary_prefers_local_over_remote(db, mock_valkey):
+    """When both local and remote emoji exist with same shortcode,
+    local version should be preferred."""
+    from app.models.reaction import Reaction
+    from app.services.emoji_service import create_local_emoji, upsert_remote_emoji
+    from app.services.note_service import get_reaction_summary
+    from app.services.user_service import create_user
+    from tests.conftest import make_note, make_remote_actor
+
+    await create_local_emoji(db, "dupreact", "http://localhost/emoji/dupreact_local.png")
+    await upsert_remote_emoji(
+        db, "dupreact", "remote.example",
+        "https://remote.example/emoji/dupreact_remote.png",
+    )
+
+    user = await create_user(db, "rxn_dup_target", "rxndup@test.com", "password1234")
+    note = await make_note(db, user.actor, content="Test")
+    remote_actor = await make_remote_actor(db, username="rxn_dup_sender", domain="remote.example")
+
+    reaction = Reaction(
+        actor_id=remote_actor.id,
+        note_id=note.id,
+        emoji=":dupreact:",
+    )
+    db.add(reaction)
+    await db.flush()
+
+    summary = await get_reaction_summary(db, note.id)
+    assert len(summary) == 1
+    # Should use local emoji URL
+    assert "dupreact_local" in summary[0]["emoji_url"]
+
+
+async def test_reaction_summary_with_domain_in_emoji(db, mock_valkey):
+    """When reaction emoji has domain (e.g. ':cat@other.example:'),
+    get_reaction_summary should find the remote emoji by domain."""
+    from app.models.reaction import Reaction
+    from app.services.emoji_service import upsert_remote_emoji
+    from app.services.note_service import get_reaction_summary
+    from app.services.user_service import create_user
+    from tests.conftest import make_note, make_remote_actor
+
+    await upsert_remote_emoji(
+        db, "domcat", "other.example",
+        "https://other.example/emoji/domcat.png",
+    )
+
+    user = await create_user(db, "rxn_dom_target", "rxndom@test.com", "password1234")
+    note = await make_note(db, user.actor, content="Test")
+    remote_actor = await make_remote_actor(db, username="rxn_dom_sender", domain="other.example")
+
+    reaction = Reaction(
+        actor_id=remote_actor.id,
+        note_id=note.id,
+        emoji=":domcat@other.example:",
+    )
+    db.add(reaction)
+    await db.flush()
+
+    summary = await get_reaction_summary(db, note.id)
+    assert len(summary) == 1
+    assert summary[0]["emoji_url"] != ""
+    assert "domcat" in summary[0]["emoji_url"]
+
+
 async def test_handle_emoji_react(db, mock_valkey):
     """EmojiReact activity saves the reaction with the emoji."""
     from app.activitypub.handlers.like import handle_emoji_react
