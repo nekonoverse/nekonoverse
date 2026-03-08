@@ -8,6 +8,7 @@
   --accent-hover: #ff6b81;
   --accent-text: #ffffff;
   --border: #2a2a4a;
+  --reblog: #2ecc71;
   --radius: 8px;
   --font-size-base: 16px;
 }
@@ -22,6 +23,7 @@
   --accent-hover: #b82e44;
   --accent-text: #ffffff;
   --border: #cccccc;
+  --reblog: #27ae60;
 }
 
 [data-theme="novel"] {
@@ -34,6 +36,7 @@
   --accent-hover: #c45e35;
   --accent-text: #f7f0e3;
   --border: #c8b898;
+  --reblog: #6b8e23;
 }
 
 * {
@@ -679,6 +682,7 @@ a:hover {
 
 /* Note Card */
 .note-card {
+  position: relative;
   display: flex;
   flex-wrap: wrap;
   gap: 14px;
@@ -840,7 +844,7 @@ a:hover {
   margin-bottom: -8px;
 }
 .note-reblog-indicator svg {
-  color: #2ecc71;
+  color: var(--reblog);
   flex-shrink: 0;
 }
 .note-reblog-indicator a {
@@ -849,6 +853,35 @@ a:hover {
 }
 .note-reblog-indicator a:hover {
   color: var(--accent);
+}
+
+.note-reblog-banner {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 80px;
+  height: 80px;
+  pointer-events: none;
+  overflow: hidden;
+}
+.note-reblog-banner::before {
+  content: "";
+  position: absolute;
+  top: 8px;
+  left: -20px;
+  width: 100px;
+  height: 20px;
+  background: var(--reblog);
+  transform: rotate(-45deg);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.25);
+}
+.note-reblog-banner svg {
+  position: absolute;
+  top: 15px;
+  left: 19px;
+  color: #fff;
+  transform: rotate(-45deg);
+  filter: drop-shadow(0 1px 1px rgba(0, 0, 0, 0.2));
 }
 
 .note-actions {
@@ -883,7 +916,7 @@ a:hover {
 }
 
 .note-boost-btn.boosted {
-  color: #2ecc71;
+  color: var(--reblog);
 }
 .note-boost-btn.boosted:hover {
   color: #27ae60;
