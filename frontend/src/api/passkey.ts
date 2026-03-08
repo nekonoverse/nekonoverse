@@ -47,6 +47,7 @@ function parseCreationOptions(
     excludeCredentials: o.excludeCredentials?.map((c) => ({
       ...c,
       id: base64urlToBuffer(c.id),
+      type: c.type as "public-key",
     })),
   };
 }
@@ -67,6 +68,7 @@ function parseRequestOptions(
     allowCredentials: o.allowCredentials?.map((c) => ({
       ...c,
       id: base64urlToBuffer(c.id),
+      type: c.type as "public-key",
     })),
   };
 }

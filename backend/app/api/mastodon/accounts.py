@@ -4,7 +4,6 @@ from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.actor import Actor
@@ -279,11 +278,11 @@ async def get_account_statuses(
     from datetime import datetime, timezone
 
     from app.api.mastodon.statuses import note_to_response
-    from app.services.note_service import get_reaction_summary
+    from app.services.note_service import _note_load_options, get_reaction_summary
 
     query = (
         select(Note)
-        .options(selectinload(Note.actor))
+        .options(*_note_load_options())
         .where(
             Note.actor_id == actor_id,
             Note.visibility.in_(["public", "unlisted"]),

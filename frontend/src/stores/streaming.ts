@@ -10,6 +10,7 @@ type Handler = (data: unknown) => void;
 
 const updateHandlers = new Set<Handler>();
 const notificationHandlers = new Set<Handler>();
+const reactionHandlers = new Set<Handler>();
 
 let es: EventSource | null = null;
 let retryMs = 1000;
@@ -44,6 +45,13 @@ function doConnect(path: string) {
       const data = JSON.parse(e.data);
       setUnreadCount((c) => c + 1);
       notificationHandlers.forEach((h) => h(data));
+    } catch { /* ignore */ }
+  });
+
+  es.addEventListener("status.reaction", (e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data);
+      reactionHandlers.forEach((h) => h(data));
     } catch { /* ignore */ }
   });
 
@@ -94,6 +102,12 @@ export function onUpdate(handler: Handler): () => void {
 export function onNotification(handler: Handler): () => void {
   notificationHandlers.add(handler);
   return () => notificationHandlers.delete(handler);
+}
+
+/** Subscribe to reaction update events. Returns unsubscribe function. */
+export function onReaction(handler: Handler): () => void {
+  reactionHandlers.add(handler);
+  return () => reactionHandlers.delete(handler);
 }
 
 export function resetUnread() {

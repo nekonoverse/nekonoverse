@@ -34,10 +34,28 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     from app.config import settings
     from app.services.server_settings_service import get_setting
 
-    reg_setting = await get_setting(db, "registration_open")
-    registration_open = (reg_setting == "true") if reg_setting is not None else settings.registration_open
-    if not registration_open:
+    # Determine registration mode
+    mode_setting = await get_setting(db, "registration_mode")
+    if mode_setting is not None:
+        mode = mode_setting
+    else:
+        # Fallback to legacy registration_open setting
+        reg_setting = await get_setting(db, "registration_open")
+        reg_open = (reg_setting == "true") if reg_setting is not None else settings.registration_open
+        mode = "open" if reg_open else "closed"
+
+    if mode == "closed":
         raise HTTPException(status_code=403, detail="Registration is closed")
+
+    # Validate invite code when in invite mode
+    invite = None
+    if mode == "invite":
+        if not body.invite_code:
+            raise HTTPException(status_code=422, detail="Invitation code is required")
+        from app.services.invitation_service import validate_invitation_code
+        invite = await validate_invitation_code(db, body.invite_code)
+        if invite is None:
+            raise HTTPException(status_code=422, detail="Invalid or expired invitation code")
 
     try:
         user = await create_user(
@@ -49,6 +67,12 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # Redeem invite code after successful user creation
+    if invite:
+        from app.services.invitation_service import redeem_invitation
+        await redeem_invitation(db, invite, user)
+        await db.commit()
 
     return _user_response(user)
 

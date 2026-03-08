@@ -10,12 +10,14 @@ import {
   getAdminEmojis, addEmoji, deleteEmoji, importEmojis, getEmojiExportUrl,
   getRemoteEmojis, getRemoteEmojiDomains, importRemoteEmoji,
   getServerFiles, uploadServerFile, deleteServerFile,
+  getInviteCodes, createInviteCode, revokeInviteCode,
   type AdminStats, type ServerSettings, type AdminUser,
   type DomainBlock, type Report, type ModerationLogEntry,
   type AdminEmoji, type RemoteEmoji, type ServerFile,
+  type InviteCode,
 } from "../api/admin";
 
-type Tab = "overview" | "settings" | "users" | "domains" | "reports" | "log" | "emoji" | "files";
+type Tab = "overview" | "settings" | "users" | "domains" | "reports" | "log" | "emoji" | "files" | "invites";
 
 export default function Admin() {
   const { t } = useI18n();
@@ -43,6 +45,7 @@ export default function Admin() {
             ...(isAdmin() ? [
               { key: "emoji" as Tab, label: t("admin.tabEmoji") },
               { key: "files" as Tab, label: t("admin.tabFiles") },
+              { key: "invites" as Tab, label: t("admin.tabInvites") },
             ] : []),
           ]).map((tab) => (
             <button
@@ -62,6 +65,7 @@ export default function Admin() {
         <Show when={activeTab() === "log"}><LogTab /></Show>
         <Show when={activeTab() === "emoji"}><EmojiTab /></Show>
         <Show when={activeTab() === "files"}><ServerFilesTab /></Show>
+        <Show when={activeTab() === "invites"}><InvitesTab /></Show>
       </Show>
     </div>
   );
@@ -108,7 +112,8 @@ function ServerSettingsTab() {
   const [name, setName] = createSignal("");
   const [desc, setDesc] = createSignal("");
   const [tos, setTos] = createSignal("");
-  const [regOpen, setRegOpen] = createSignal(true);
+  const [regMode, setRegMode] = createSignal("open");
+  const [inviteRole, setInviteRole] = createSignal("admin");
   const [iconUrl, setIconUrl] = createSignal("");
   const [uploadingIcon, setUploadingIcon] = createSignal(false);
   let iconInput!: HTMLInputElement;
@@ -120,7 +125,8 @@ function ServerSettingsTab() {
       setName(s.server_name || "");
       setDesc(s.server_description || "");
       setTos(s.tos_url || "");
-      setRegOpen(s.registration_open);
+      setRegMode(s.registration_mode || "open");
+      setInviteRole(s.invite_create_role || "admin");
       if (s.server_icon_url) setIconUrl(s.server_icon_url);
     } catch {}
   });
@@ -133,8 +139,9 @@ function ServerSettingsTab() {
         server_name: name() || null,
         server_description: desc() || null,
         tos_url: tos() || null,
-        registration_open: regOpen(),
-      });
+        registration_mode: regMode(),
+        invite_create_role: inviteRole(),
+      } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
     } catch {}
@@ -158,10 +165,24 @@ function ServerSettingsTab() {
           <label>{t("admin.tosUrl")}</label>
           <input type="text" value={tos()} onInput={(e) => setTos(e.currentTarget.value)} />
         </div>
-        <label class="toggle-label">
-          <input type="checkbox" checked={regOpen()} onChange={(e) => setRegOpen(e.currentTarget.checked)} />
-          {t("admin.registrationOpen")}
-        </label>
+        <div class="settings-form-group">
+          <label>{t("admin.registrationMode")}</label>
+          <select value={regMode()} onChange={(e) => setRegMode(e.currentTarget.value)}>
+            <option value="open">{t("admin.regModeOpen")}</option>
+            <option value="invite">{t("admin.regModeInvite")}</option>
+            <option value="closed">{t("admin.regModeClosed")}</option>
+          </select>
+        </div>
+        <Show when={regMode() === "invite"}>
+          <div class="settings-form-group">
+            <label>{t("admin.inviteCreateRole")}</label>
+            <select value={inviteRole()} onChange={(e) => setInviteRole(e.currentTarget.value)}>
+              <option value="admin">{t("admin.roleAdmin")}</option>
+              <option value="moderator">{t("admin.roleModerator")}</option>
+              <option value="user">{t("admin.roleUser")}</option>
+            </select>
+          </div>
+        </Show>
         <button class="btn btn-small" onClick={handleSave} disabled={saving()}>
           {saving() ? t("profile.saving") : t("settings.save")}
         </button>
@@ -625,7 +646,7 @@ function EmojiTab() {
         <button class="btn btn-small" onClick={() => importInput.click()} disabled={importing()}>
           {importing() ? t("common.loading") : t("admin.emojiImport")}
         </button>
-        <a class="btn btn-small" href={getEmojiExportUrl()} download>{t("admin.emojiExport")}</a>
+        <a class="btn btn-small" href={getEmojiExportUrl()} download="">{t("admin.emojiExport")}</a>
         <input ref={importInput} type="file" accept=".zip" style="display:none" onChange={handleImport} />
       </div>
       <Show when={importMsg()}><p class="settings-success">{importMsg()}</p></Show>
@@ -842,6 +863,85 @@ function ServerFilesTab() {
                       {t("admin.remove")}
                     </button>
                   </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
+function InvitesTab() {
+  const { t } = useI18n();
+  const [invites, setInvites] = createSignal<InviteCode[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [creating, setCreating] = createSignal(false);
+  const [copied, setCopied] = createSignal("");
+
+  const load = async () => {
+    try { setInvites(await getInviteCodes()); } catch {}
+    setLoading(false);
+  };
+
+  onMount(load);
+
+  const handleCreate = async () => {
+    setCreating(true);
+    try {
+      await createInviteCode();
+      await load();
+    } catch {}
+    setCreating(false);
+  };
+
+  const handleRevoke = async (code: string) => {
+    if (!confirm(t("admin.confirmRevokeInvite"))) return;
+    try { await revokeInviteCode(code); await load(); } catch {}
+  };
+
+  const copyCode = (code: string) => {
+    navigator.clipboard.writeText(code);
+    setCopied(code);
+    setTimeout(() => setCopied(""), 2000);
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.tabInvites")}</h3>
+      <button class="btn btn-small" onClick={handleCreate} disabled={creating()}>
+        {creating() ? t("common.loading") : t("admin.createInvite")}
+      </button>
+      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+        <Show when={invites().length > 0} fallback={<p class="empty">{t("admin.noInvites")}</p>}>
+          <div class="admin-invite-list">
+            <For each={invites()}>
+              {(inv) => (
+                <div class={`admin-invite-item${inv.used_by ? " used" : ""}`}>
+                  <div class="admin-invite-info">
+                    <code class="admin-invite-code">{inv.code}</code>
+                    <Show when={inv.used_by} fallback={
+                      <span class="admin-invite-unused">{t("admin.inviteUnused")}</span>
+                    }>
+                      <span class="admin-invite-used">
+                        {t("admin.inviteUsedBy")} @{inv.used_by}
+                      </span>
+                    </Show>
+                    <span class="admin-invite-time">
+                      {new Date(inv.created_at).toLocaleString()}
+                    </span>
+                  </div>
+                  <Show when={!inv.used_by}>
+                    <div class="admin-invite-actions">
+                      <button class="btn btn-small" onClick={() => copyCode(inv.code)}>
+                        {copied() === inv.code ? t("admin.copied") : t("admin.copyUrl")}
+                      </button>
+                      <button class="btn btn-small btn-danger" onClick={() => handleRevoke(inv.code)}>
+                        {t("admin.remove")}
+                      </button>
+                    </div>
+                  </Show>
                 </div>
               )}
             </For>

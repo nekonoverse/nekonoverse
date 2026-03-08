@@ -11,6 +11,31 @@ from app.services.actor_service import actor_uri
 from app.utils.emoji import is_custom_emoji_shortcode, is_single_emoji
 
 
+async def _publish_reaction_event(db: AsyncSession, note: Note) -> None:
+    """Publish a real-time reaction event via Valkey pub/sub."""
+    try:
+        import json
+
+        from app.services.follow_service import get_follower_ids
+        from app.valkey_client import valkey as valkey_client
+
+        event = json.dumps({
+            "event": "status.reaction",
+            "payload": {"id": str(note.id)},
+        })
+
+        if note.visibility in ("public", "unlisted"):
+            await valkey_client.publish("timeline:public", event)
+
+        await valkey_client.publish(f"timeline:home:{note.actor_id}", event)
+
+        follower_ids = await get_follower_ids(db, note.actor_id)
+        for fid in follower_ids:
+            await valkey_client.publish(f"timeline:home:{fid}", event)
+    except Exception:
+        pass
+
+
 async def add_reaction(
     db: AsyncSession, user: User, note: Note, emoji: str
 ) -> Reaction:
@@ -44,6 +69,8 @@ async def add_reaction(
     db.add(reaction)
     note.reactions_count += 1
     await db.commit()
+
+    await _publish_reaction_event(db, note)
 
     # Deliver Like activity to the note's author server
     if not note.actor.is_local:
@@ -97,6 +124,8 @@ async def remove_reaction(
     await db.delete(reaction)
     note.reactions_count = max(0, note.reactions_count - 1)
     await db.commit()
+
+    await _publish_reaction_event(db, note)
 
     # Send Undo(Like) to the note's author server
     if not note.actor.is_local and reaction_ap_id:

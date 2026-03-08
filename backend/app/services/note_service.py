@@ -1,6 +1,5 @@
 import re
 import uuid
-
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
@@ -240,6 +239,11 @@ def _note_load_options():
         selectinload(Note.attachments),
         selectinload(Note.quoted_note).selectinload(Note.actor),
         selectinload(Note.quoted_note).selectinload(Note.attachments),
+        # リノート(ブースト)元ノートとそのサブリレーション
+        selectinload(Note.renote_of).selectinload(Note.actor),
+        selectinload(Note.renote_of).selectinload(Note.attachments),
+        selectinload(Note.renote_of).selectinload(Note.quoted_note).selectinload(Note.actor),
+        selectinload(Note.renote_of).selectinload(Note.quoted_note).selectinload(Note.attachments),
     ]
 
 
@@ -454,6 +458,7 @@ async def get_reaction_summary(
         emoji_url = None
         m = _CUSTOM_EMOJI_REACTION_RE.match(emoji)
         if m:
+            from app.models.custom_emoji import CustomEmoji
             from app.services.emoji_service import get_custom_emoji
             shortcode, domain = m.group(1), m.group(2)
             local = await get_custom_emoji(db, shortcode, None)
@@ -463,7 +468,247 @@ async def get_reaction_summary(
                 remote = await get_custom_emoji(db, shortcode, domain)
                 if remote:
                     emoji_url = remote.url
+            else:
+                # No domain in reaction string (e.g. Misskey sends ":blobcat:"
+                # without domain) — search any remote emoji with this shortcode
+                result2 = await db.execute(
+                    select(CustomEmoji).where(
+                        CustomEmoji.shortcode == shortcode,
+                        CustomEmoji.domain.isnot(None),
+                    ).limit(1)
+                )
+                remote = result2.scalar_one_or_none()
+                if remote:
+                    emoji_url = remote.url
 
         from app.utils.media_proxy import media_proxy_url
         summaries.append({"emoji": emoji, "count": count, "me": me, "emoji_url": media_proxy_url(emoji_url)})
     return summaries
+
+
+async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
+    """Fetch a remote note by AP ID and store it locally.
+
+    Used by announce/create handlers when the referenced note
+    (boost target or quote target) is not in the local database.
+    """
+    import logging
+
+    from app.models.note_attachment import NoteAttachment
+    from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
+    from app.utils.sanitize import sanitize_html
+
+    logger = logging.getLogger(__name__)
+
+    # DBに既にあればそれを返す
+    existing = await get_note_by_ap_id(db, ap_id)
+    if existing:
+        return existing
+
+    try:
+        from app.services.actor_service import _signed_get
+        resp = await _signed_get(db, ap_id)
+        if not resp or resp.status_code != 200:
+            status = getattr(resp, "status_code", "no response")
+            logger.warning("Failed to fetch remote note %s: %s", ap_id, status)
+            return None
+        data = resp.json()
+    except Exception:
+        logger.exception("Error fetching remote note %s", ap_id)
+        return None
+
+    obj_type = data.get("type")
+    if obj_type not in ("Note", "Question"):
+        logger.info("Fetched object %s is type %s, not Note", ap_id, obj_type)
+        return None
+
+    note_ap_id = data.get("id")
+    if not note_ap_id:
+        return None
+
+    # 重複チェック(fetchの間に別のリクエストで作成された可能性)
+    existing = await get_note_by_ap_id(db, note_ap_id)
+    if existing:
+        return existing
+
+    actor_ap_id = data.get("attributedTo")
+    if not actor_ap_id:
+        return None
+
+    actor = await get_actor_by_ap_id(db, actor_ap_id)
+    if not actor:
+        actor = await fetch_remote_actor(db, actor_ap_id)
+    if not actor:
+        logger.warning("Could not resolve actor %s for fetched note %s", actor_ap_id, note_ap_id)
+        return None
+
+    content = sanitize_html(data.get("content", ""))
+    source_data = data.get("source")
+    source = None
+    if isinstance(source_data, dict):
+        source = source_data.get("content")
+    if source is None:
+        misskey_content = data.get("_misskey_content")
+        if isinstance(misskey_content, str):
+            source = misskey_content
+
+    # 可視性判定
+    to_list = data.get("to", [])
+    cc_list = data.get("cc", [])
+    public = "https://www.w3.org/ns/activitystreams#Public"
+    if public in to_list:
+        visibility = "public"
+    elif public in cc_list:
+        visibility = "unlisted"
+    elif any(url.endswith("/followers") for url in to_list):
+        visibility = "followers"
+    else:
+        visibility = "direct"
+
+    # リプライ解決
+    in_reply_to_ap_id = data.get("inReplyTo")
+    in_reply_to_id = None
+    if in_reply_to_ap_id:
+        reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id)
+        if reply_note:
+            in_reply_to_id = reply_note.id
+
+    # 引用解決 (再帰fetchはしない)
+    quote_ap_id = (
+        data.get("_misskey_quote")
+        or data.get("quoteUrl")
+        or data.get("quoteUri")
+    )
+    quote_id = None
+    if quote_ap_id:
+        quoted_note = await get_note_by_ap_id(db, quote_ap_id)
+        if quoted_note:
+            quote_id = quoted_note.id
+
+    # メンションとカスタム絵文字
+    tags = data.get("tag", [])
+    if isinstance(tags, dict):
+        tags = [tags]
+    mentions_list = []
+    for tag in tags:
+        if isinstance(tag, dict) and tag.get("type") == "Mention":
+            href = tag.get("href", "")
+            name = tag.get("name", "")
+            mentions_list.append({"ap_id": href, "name": name})
+        elif isinstance(tag, dict) and tag.get("type") == "Emoji":
+            icon = tag.get("icon", {})
+            emoji_url = icon.get("url") if isinstance(icon, dict) else None
+            emoji_name = tag.get("name", "").strip(":")
+            if emoji_name and emoji_url and actor.domain:
+                from app.services.emoji_service import upsert_remote_emoji
+                static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
+                _ml = tag.get("_misskey_license")
+                license_text = tag.get("license") or (
+                    (_ml.get("freeText") if isinstance(_ml, dict) else None)
+                )
+                await upsert_remote_emoji(
+                    db, shortcode=emoji_name, domain=actor.domain, url=emoji_url,
+                    static_url=static_url,
+                    aliases=tag.get("keywords"),
+                    license=license_text,
+                    is_sensitive=bool(tag.get("isSensitive", False)),
+                    author=tag.get("author") or tag.get("creator"),
+                    description=tag.get("description"),
+                    copy_permission=tag.get("copyPermission"),
+                    usage_info=tag.get("usageInfo"),
+                    is_based_on=tag.get("isBasedOn"),
+                    category=tag.get("category"),
+                )
+
+    # 投票データ
+    is_poll = data.get("type") == "Question"
+    poll_options = None
+    poll_multiple = False
+    poll_expires_at = None
+    if is_poll:
+        one_of = data.get("oneOf")
+        any_of = data.get("anyOf")
+        choices = any_of or one_of or []
+        poll_multiple = any_of is not None
+        poll_options = []
+        for choice in choices:
+            if isinstance(choice, dict):
+                title = choice.get("name", "")
+                replies = choice.get("replies", {})
+                votes = replies.get("totalItems", 0) if isinstance(replies, dict) else 0
+                poll_options.append({"title": title, "votes_count": votes})
+        end_time = data.get("endTime")
+        if end_time:
+            from datetime import datetime as dt
+            try:
+                poll_expires_at = dt.fromisoformat(end_time.replace("Z", "+00:00"))
+            except ValueError:
+                pass
+
+    note = Note(
+        ap_id=note_ap_id,
+        actor_id=actor.id,
+        content=content,
+        source=source,
+        visibility=visibility,
+        sensitive=data.get("sensitive", False),
+        spoiler_text=data.get("summary"),
+        to=to_list,
+        cc=cc_list,
+        in_reply_to_id=in_reply_to_id,
+        in_reply_to_ap_id=in_reply_to_ap_id,
+        quote_id=quote_id,
+        quote_ap_id=quote_ap_id,
+        mentions=mentions_list,
+        local=False,
+        is_poll=is_poll,
+        poll_options=poll_options,
+        poll_multiple=poll_multiple,
+        poll_expires_at=poll_expires_at,
+    )
+
+    published = data.get("published")
+    if published:
+        from datetime import datetime as dt
+        try:
+            note.published = dt.fromisoformat(published.replace("Z", "+00:00"))
+        except ValueError:
+            pass
+
+    db.add(note)
+    await db.flush()
+
+    # 添付ファイル処理
+    attachments = data.get("attachment", [])
+    if isinstance(attachments, dict):
+        attachments = [attachments]
+    for position, att_data in enumerate(attachments[:4]):
+        if not isinstance(att_data, dict):
+            continue
+        att_type = att_data.get("type", "")
+        if att_type not in ("Document", "Image", "Video", "Audio"):
+            continue
+        att_url = att_data.get("url")
+        if isinstance(att_url, list):
+            att_url = (
+                att_url[0].get("href")
+                if att_url and isinstance(att_url[0], dict)
+                else (att_url[0] if att_url else None)
+            )
+        if not att_url or not isinstance(att_url, str):
+            continue
+        attachment = NoteAttachment(
+            note_id=note.id,
+            position=position,
+            remote_url=att_url,
+            remote_mime_type=att_data.get("mediaType"),
+            remote_name=att_data.get("name"),
+            remote_blurhash=att_data.get("blurhash"),
+            remote_width=att_data.get("width"),
+            remote_height=att_data.get("height"),
+            remote_description=att_data.get("name"),
+        )
+        db.add(attachment)
+
+    logger.info("Fetched and stored remote note %s from %s", note_ap_id, actor_ap_id)
+    return note

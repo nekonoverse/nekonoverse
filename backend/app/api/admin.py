@@ -18,6 +18,7 @@ from app.schemas.admin import (
     AdminRemoteEmojiResponse,
     AdminStatsResponse,
     AdminUserResponse,
+    ImportByShortcodeRequest,
     DomainBlockRequest,
     DomainBlockResponse,
     ModerationActionRequest,
@@ -73,11 +74,17 @@ async def get_server_settings(
     from app.services.server_settings_service import get_all_settings
 
     settings = await get_all_settings(db)
+    mode = settings.get("registration_mode")
+    if mode is None:
+        reg_open = settings.get("registration_open", "true") == "true"
+        mode = "open" if reg_open else "closed"
     return ServerSettingsResponse(
         server_name=settings.get("server_name"),
         server_description=settings.get("server_description"),
         tos_url=settings.get("tos_url"),
-        registration_open=settings.get("registration_open", "true") == "true",
+        registration_open=mode != "closed",
+        registration_mode=mode,
+        invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
     )
 
@@ -95,6 +102,12 @@ async def update_server_settings(
     for key, value in updates.items():
         if key == "registration_open":
             await set_setting(db, key, "true" if value else "false")
+        elif key == "registration_mode":
+            await set_setting(db, key, value)
+            # Sync legacy registration_open for backward compat
+            await set_setting(db, "registration_open", "true" if value != "closed" else "false")
+        elif key == "invite_create_role":
+            await set_setting(db, key, value)
         else:
             await set_setting(db, key, value)
     await db.commit()
@@ -103,11 +116,17 @@ async def update_server_settings(
     await db.commit()
 
     settings = await get_all_settings(db)
+    mode = settings.get("registration_mode")
+    if mode is None:
+        reg_open = settings.get("registration_open", "true") == "true"
+        mode = "open" if reg_open else "closed"
     return ServerSettingsResponse(
         server_name=settings.get("server_name"),
         server_description=settings.get("server_description"),
         tos_url=settings.get("tos_url"),
-        registration_open=settings.get("registration_open", "true") == "true",
+        registration_open=mode != "closed",
+        registration_mode=mode,
+        invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
     )
 
@@ -203,6 +222,7 @@ async def suspend_user(
         raise HTTPException(status_code=422, detail="Already suspended")
     if target.id == user.id:
         raise HTTPException(status_code=422, detail="Cannot suspend self")
+    _check_moderation_permission(user, target)
 
     await suspend_actor(db, target.actor, user, body.reason)
     await db.commit()
@@ -220,6 +240,7 @@ async def unsuspend_user(
     target = await _get_user(db, user_id)
     if not target.actor.is_suspended:
         raise HTTPException(status_code=422, detail="Not suspended")
+    _check_moderation_permission(user, target)
 
     await unsuspend_actor(db, target.actor, user)
     await db.commit()
@@ -238,6 +259,7 @@ async def silence_user(
     target = await _get_user(db, user_id)
     if target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Already silenced")
+    _check_moderation_permission(user, target)
 
     await silence_actor(db, target.actor, user, body.reason)
     await db.commit()
@@ -255,6 +277,7 @@ async def unsilence_user(
     target = await _get_user(db, user_id)
     if not target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Not silenced")
+    _check_moderation_permission(user, target)
 
     await unsilence_actor(db, target.actor, user)
     await db.commit()
@@ -397,6 +420,8 @@ async def admin_delete_note(
     note = await get_note_by_id(db, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    if note.actor and note.actor.local_user:
+        _check_moderation_permission(user, note.actor.local_user)
 
     await _delete(db, note, user, body.reason)
     await db.commit()
@@ -415,6 +440,8 @@ async def force_note_sensitive(
     note = await get_note_by_id(db, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
+    if note.actor and note.actor.local_user:
+        _check_moderation_permission(user, note.actor.local_user)
 
     await force_sensitive(db, note, user)
     await db.commit()
@@ -496,6 +523,24 @@ async def import_remote_emoji(
     from app.services.emoji_service import import_remote_emoji_to_local
     try:
         emoji = await import_remote_emoji_to_local(db, emoji_id)
+        await db.commit()
+        return AdminEmojiResponse.model_validate(emoji)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+
+@router.post("/emoji/import-by-shortcode", response_model=AdminEmojiResponse)
+async def import_remote_emoji_by_shortcode(
+    body: ImportByShortcodeRequest,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local
+    remote = await get_custom_emoji(db, body.shortcode, body.domain)
+    if not remote:
+        raise HTTPException(status_code=404, detail="Remote emoji not found")
+    try:
+        emoji = await import_remote_emoji_to_local(db, remote.id)
         await db.commit()
         return AdminEmojiResponse.model_validate(emoji)
     except ValueError as e:
@@ -840,6 +885,17 @@ async def delete_server_file_endpoint(
 
 
 # --- Helpers ---
+
+
+def _check_moderation_permission(actor: User, target: User):
+    """Prevent moderators from taking action against staff members."""
+    if actor.is_admin:
+        return
+    if target.is_staff:
+        raise HTTPException(
+            status_code=403,
+            detail="Moderators cannot take action against staff members",
+        )
 
 
 async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:

@@ -1,13 +1,13 @@
 """Handle Announce activities (boost/renote)."""
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.note import Note
 from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
-from app.services.note_service import get_note_by_ap_id
+from app.services.note_service import fetch_remote_note, get_note_by_ap_id
 
 logger = logging.getLogger(__name__)
 
@@ -43,10 +43,10 @@ async def handle_announce(db: AsyncSession, activity: dict):
         if existing:
             return
 
-    # Resolve the original note
+    # Resolve the original note (ローカルに無ければリモートからfetch)
     original = await get_note_by_ap_id(db, note_ap_id)
-    # If original note is not found locally, we still store the renote
-    # with renote_of_ap_id for reference
+    if not original:
+        original = await fetch_remote_note(db, note_ap_id)
 
     # Determine visibility from to/cc
     to_list = activity.get("to", [])

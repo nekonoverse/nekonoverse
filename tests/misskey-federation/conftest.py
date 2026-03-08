@@ -119,6 +119,11 @@ class NekoClient:
         resp.raise_for_status()
         return resp.json()
 
+    def unreact(self, note_id: str, emoji: str):
+        resp = self.http.post(f"/api/v1/statuses/{note_id}/unreact/{emoji}")
+        resp.raise_for_status()
+        return resp.json()
+
     def reblog(self, note_id: str):
         resp = self.http.post(f"/api/v1/statuses/{note_id}/reblog")
         resp.raise_for_status()
@@ -188,6 +193,12 @@ class MisskeyClient:
 
     def react(self, note_id: str, reaction: str):
         return self._api("notes/reactions/create", {"noteId": note_id, "reaction": reaction})
+
+    def unreact(self, note_id: str):
+        return self._api("notes/reactions/delete", {"noteId": note_id})
+
+    def get_reactions(self, note_id: str):
+        return self._api("notes/reactions", {"noteId": note_id})
 
     def renote(self, note_id: str):
         return self._api("notes/create", {"renoteId": note_id})

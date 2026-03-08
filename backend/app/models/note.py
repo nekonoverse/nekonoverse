@@ -62,6 +62,9 @@ class Note(Base):
     quoted_note = relationship(
         "Note", foreign_keys=[quote_id], remote_side="Note.id", lazy="noload",
     )
+    renote_of = relationship(
+        "Note", foreign_keys=[renote_of_id], remote_side="Note.id", lazy="noload",
+    )
 
     __table_args__ = (
         Index("ix_notes_actor_published", "actor_id", "published"),

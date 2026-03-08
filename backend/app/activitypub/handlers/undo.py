@@ -92,6 +92,10 @@ async def _undo_reaction(db: AsyncSession, activity: dict, inner: dict):
         await db.delete(reaction)
         note.reactions_count = max(0, note.reactions_count - 1)
         await db.commit()
+
+        from app.services.reaction_service import _publish_reaction_event
+        await _publish_reaction_event(db, note)
+
         logger.info("Undo reaction from %s on %s", actor_ap_id, note_ap_id)
 
 

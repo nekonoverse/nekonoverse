@@ -1,4 +1,4 @@
-import { createSignal, createEffect, on, onCleanup, Show, For } from "solid-js";
+import { createSignal, createEffect, on, onCleanup, Show, For, Index } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
 import { updateAvatar, updateHeader, updateProfile } from "../api/settings";
@@ -8,6 +8,7 @@ import NoteCard from "../components/notes/NoteCard";
 import { useI18n } from "../i18n";
 import { currentUser, fetchCurrentUser } from "../stores/auth";
 import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
+import { onReaction } from "../stores/streaming";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -229,6 +230,15 @@ export default function Profile() {
       setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
     } catch {}
   };
+
+  const unsubReaction = onReaction(async (data) => {
+    const { id } = data as { id: string };
+    if (!id) return;
+    if (notes().some((n) => n.id === id || n.reblog?.id === id)) {
+      await refreshNote(id);
+    }
+  });
+  onCleanup(() => unsubReaction());
 
   const formatDate = (iso?: string) => {
     if (!iso) return "";
@@ -452,29 +462,29 @@ export default function Profile() {
                       />
 
                       <label class="profile-edit-label">{t("settings.fields")}</label>
-                      <For each={editFields()}>
+                      <Index each={editFields()}>
                         {(field, i) => (
                           <div class="profile-edit-field-row">
                             <input
                               class="profile-edit-field-input"
                               type="text"
-                              value={field.name}
-                              onInput={(e) => updateFieldValue(i(), "name", e.currentTarget.value)}
+                              value={field().name}
+                              onInput={(e) => updateFieldValue(i, "name", e.currentTarget.value)}
                               placeholder={t("settings.fieldLabel")}
                             />
                             <input
                               class="profile-edit-field-input"
                               type="text"
-                              value={field.value}
-                              onInput={(e) => updateFieldValue(i(), "value", e.currentTarget.value)}
+                              value={field().value}
+                              onInput={(e) => updateFieldValue(i, "value", e.currentTarget.value)}
                               placeholder={t("settings.fieldContent")}
                             />
-                            <button class="btn btn-small btn-danger" onClick={() => removeField(i())}>
+                            <button class="btn btn-small btn-danger" onClick={() => removeField(i)}>
                               {t("settings.removeField")}
                             </button>
                           </div>
                         )}
-                      </For>
+                      </Index>
                       <Show when={editFields().length < 4}>
                         <button class="btn btn-small" onClick={addField}>
                           {t("settings.addField")}

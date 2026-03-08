@@ -3,6 +3,8 @@
 Uses self-signed certificates for HTTPS to enable full federation.
 """
 
+import time
+
 import httpx
 import pytest
 
@@ -342,3 +344,150 @@ class TestFullFederation:
 
         tl = misskey.timeline_local(limit=10)
         assert any(n.get("renoteId") == mk_note["id"] for n in tl)
+
+
+# ── 9. Reaction federation (extended) ─────────────────────────
+
+
+class TestReactionFederation:
+    """Extended reaction federation tests between Misskey and Nekonoverse."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, misskey: MisskeyClient):
+        """Ensure bob@misskey follows alice@neko (idempotent)."""
+        if cls._follow_established:
+            return
+        resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
+        try:
+            misskey.follow(resolved["id"])
+        except Exception:
+            pass  # Already following
+        time.sleep(3)
+        cls._follow_established = True
+
+    def _wait_for_note_on_misskey(self, neko: NekoClient, misskey: MisskeyClient, text: str):
+        """Create a note on Neko and wait for it to appear on Misskey."""
+        self._ensure_follow(neko, misskey)
+        note = neko.create_note(text)
+
+        def find_note():
+            tl = misskey._api("notes/global-timeline", {"limit": 20})
+            for n in tl:
+                if text in (n.get("text") or ""):
+                    return n
+            return None
+
+        mk_note = poll_until(find_note, timeout=60, interval=2, desc=f"'{text}' on misskey")
+        return note, mk_note
+
+    def test_misskey_reaction_emoji_preserved(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """Verify the specific emoji from Misskey reaction is preserved on Nekonoverse."""
+        note, mk_note = self._wait_for_note_on_misskey(neko, misskey, f"Emoji check {time.time()}")
+        misskey.react(mk_note["id"], "🎉")
+
+        def check_reaction():
+            n = neko.get_note(note["id"])
+            reactions = n.get("emoji_reactions") or n.get("reactions") or {}
+            if isinstance(reactions, list):
+                return any(r.get("name") == "🎉" or r.get("emoji") == "🎉" for r in reactions)
+            if isinstance(reactions, dict):
+                return "🎉" in reactions
+            return n.get("reactions_count", 0) > 0
+
+        poll_until(check_reaction, timeout=30, desc="🎉 reaction on neko")
+
+    def test_misskey_multiple_reactions_different_emoji(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """Misskey user reacts, unreacts, then reacts with different emoji."""
+        note, mk_note = self._wait_for_note_on_misskey(neko, misskey, f"Multi react {time.time()}")
+
+        # React with 👍
+        misskey.react(mk_note["id"], "👍")
+
+        def check_first():
+            n = neko.get_note(note["id"])
+            return n.get("reactions_count", 0) >= 1
+
+        poll_until(check_first, timeout=30, desc="first reaction arrives")
+
+        # Unreact on Misskey (removes current reaction)
+        misskey.unreact(mk_note["id"])
+
+        def check_unreact():
+            n = neko.get_note(note["id"])
+            return n.get("reactions_count", 0) == 0
+
+        poll_until(check_unreact, timeout=30, desc="unreaction arrives")
+
+        # React with different emoji
+        misskey.react(mk_note["id"], "❤")
+
+        def check_second():
+            n = neko.get_note(note["id"])
+            return n.get("reactions_count", 0) >= 1
+
+        poll_until(check_second, timeout=30, desc="second reaction arrives")
+
+    def test_neko_reacts_to_misskey_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """alice@neko reacts to bob@misskey's note (reverse direction).
+
+        alice follows bob@misskey first so that bob's notes federate to Neko,
+        then reacts to a newly created note.
+        """
+        # Resolve bob@misskey on Neko and follow
+        results = neko.search_accounts(f"bob@{MISSKEY_DOMAIN}", resolve=True)
+        assert len(results) > 0, "Could not resolve bob@misskey on Neko"
+        bob_on_neko = results[0]
+        neko.follow(bob_on_neko["id"])
+
+        # Wait for follow to be accepted
+        import time
+        time.sleep(5)
+
+        # Bob creates a note on Misskey
+        unique = f"React from Neko {time.time()}"
+        result = misskey.create_note(unique)
+        mk_note = result["createdNote"]
+
+        # Wait for it to federate to Neko's home timeline (via follow)
+        def find_on_neko():
+            tl = neko.public_timeline()
+            for n in tl:
+                if unique in (n.get("content") or ""):
+                    return n
+            return None
+
+        neko_note = poll_until(find_on_neko, timeout=60, interval=2, desc="misskey note on neko")
+
+        # Alice reacts on Neko
+        neko.react(neko_note["id"], "⭐")
+
+        # Check reaction arrived on Misskey
+        def check_reaction_on_misskey():
+            reactions = misskey.get_reactions(mk_note["id"])
+            return len(reactions) > 0
+
+        poll_until(check_reaction_on_misskey, timeout=30, desc="reaction federated to misskey")
+
+    def test_misskey_heart_reaction_maps_correctly(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """Misskey ❤ (Like) reaction is correctly stored on Nekonoverse."""
+        note, mk_note = self._wait_for_note_on_misskey(neko, misskey, f"Heart test {time.time()}")
+        misskey.react(mk_note["id"], "❤")
+
+        def check():
+            n = neko.get_note(note["id"])
+            return n.get("reactions_count", 0) > 0
+
+        poll_until(check, timeout=30, desc="heart reaction on neko")
+
+    def test_misskey_reaction_count_accurate(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """Reaction count on Nekonoverse accurately reflects Misskey reactions."""
+        note, mk_note = self._wait_for_note_on_misskey(neko, misskey, f"Count test {time.time()}")
+        misskey.react(mk_note["id"], "😂")
+
+        def check_count():
+            n = neko.get_note(note["id"])
+            return n.get("reactions_count", 0) == 1
+
+        poll_until(check_count, timeout=30, desc="reaction count == 1")

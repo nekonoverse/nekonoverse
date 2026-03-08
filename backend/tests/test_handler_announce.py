@@ -1,5 +1,7 @@
 """Tests for Announce (boost/renote) handler."""
 
+from unittest.mock import AsyncMock, patch
+
 from tests.conftest import make_note, make_remote_actor
 
 
@@ -80,8 +82,9 @@ async def test_handle_announce_duplicate(db, mock_valkey):
     assert count_result.scalar() == 1
 
 
-async def test_handle_announce_unknown_note(db, mock_valkey):
-    """Announce of a note we don't have should still create the renote."""
+@patch("app.services.actor_service._signed_get", new_callable=AsyncMock, return_value=None)
+async def test_handle_announce_unknown_note(mock_get, db, mock_valkey):
+    """Announce of a note we don't have (and fetch fails) still creates the renote."""
     from app.activitypub.handlers.announce import handle_announce
 
     remote_actor = await make_remote_actor(db, username="unk_booster", domain="unk.example")
@@ -103,3 +106,62 @@ async def test_handle_announce_unknown_note(db, mock_valkey):
     assert renote is not None
     assert renote.renote_of_id is None
     assert renote.renote_of_ap_id == "http://other.example/notes/unknown-note"
+
+
+async def test_renote_api_response_includes_reblog(authed_client, test_user, mock_valkey):
+    """Renote in timeline returns reblog field with the original note data."""
+    # 元ノートを作成
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Original post for renote test", "visibility": "public"
+    })
+    assert create_resp.status_code == 201
+    original = create_resp.json()
+
+    # リブログ
+    reblog_resp = await authed_client.post(f"/api/v1/statuses/{original['id']}/reblog")
+    assert reblog_resp.status_code == 200
+    reblog_data = reblog_resp.json()
+    assert reblog_data["reblog"] is not None
+    assert reblog_data["reblog"]["id"] == original["id"]
+    assert reblog_data["reblog"]["content"] == original["content"]
+
+    # タイムラインでrenoteがreblogフィールド付きで表示されることを確認
+    tl_resp = await authed_client.get("/api/v1/timelines/home")
+    assert tl_resp.status_code == 200
+    tl_data = tl_resp.json()
+    # タイムラインの最新ノートはrenoteのはず
+    renote_in_tl = next((n for n in tl_data if n.get("reblog")), None)
+    assert renote_in_tl is not None
+    assert renote_in_tl["reblog"]["id"] == original["id"]
+
+
+async def test_remote_renote_has_reblog_in_response(db, authed_client, test_user, mock_valkey):
+    """Remote Announce creates renote that appears with reblog in API response."""
+    from app.activitypub.handlers.announce import handle_announce
+
+    # ローカルノートを作成
+    original = await make_note(db, test_user.actor, content="Renote me")
+    remote_actor = await make_remote_actor(db, username="rn_booster", domain="rn.example")
+    await db.commit()
+
+    activity = {
+        "id": "http://rn.example/activities/announce-api-test",
+        "type": "Announce",
+        "actor": remote_actor.ap_id,
+        "object": original.ap_id,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "cc": [remote_actor.followers_url],
+        "published": "2026-03-08T12:00:00Z",
+    }
+    await handle_announce(db, activity)
+
+    from app.services.note_service import get_note_by_ap_id
+    renote = await get_note_by_ap_id(db, "http://rn.example/activities/announce-api-test")
+    assert renote is not None
+
+    # APIレスポンスにreblogが含まれることを確認
+    resp = await authed_client.get(f"/api/v1/statuses/{renote.id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["reblog"] is not None
+    assert data["reblog"]["content"] == original.content

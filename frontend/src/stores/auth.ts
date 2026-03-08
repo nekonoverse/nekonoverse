@@ -60,10 +60,12 @@ export async function loginWithPasskey() {
   await fetchCurrentUser();
 }
 
-export async function register(username: string, email: string, password: string) {
+export async function register(username: string, email: string, password: string, inviteCode?: string) {
+  const body: Record<string, string> = { username, email, password };
+  if (inviteCode) body.invite_code = inviteCode;
   await apiRequest("/api/v1/accounts", {
     method: "POST",
-    body: { username, email, password },
+    body,
   });
   await login(username, password);
 }
