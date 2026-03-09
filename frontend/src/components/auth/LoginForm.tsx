@@ -1,7 +1,7 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { login, loginWithPasskey } from "../../stores/auth";
-import { fetchInstance, registrationOpen } from "../../stores/instance";
+import { registrationOpen } from "../../stores/instance";
 import { useI18n } from "../../i18n";
 
 export default function LoginForm() {
@@ -12,10 +12,6 @@ export default function LoginForm() {
   const [loading, setLoading] = createSignal(false);
   const [passkeyLoading, setPasskeyLoading] = createSignal(false);
   const navigate = useNavigate();
-
-  onMount(() => {
-    fetchInstance();
-  });
 
   const handleSubmit = async (e: Event) => {
     e.preventDefault();

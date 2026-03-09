@@ -1,12 +1,14 @@
 import { Router, Route } from "@solidjs/router";
-import { lazy, onMount, type ParentProps } from "solid-js";
+import { lazy, onMount, onCleanup, type ParentProps } from "solid-js";
 import { I18nProvider } from "./i18n";
 import { initTheme } from "./stores/theme";
 import { fetchCurrentUser } from "./stores/auth";
+import { fetchInstance, checkClientVersion, startVersionPolling } from "./stores/instance";
 import Navbar from "./components/layout/Navbar";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";
 
 initTheme();
+checkClientVersion();
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login"));
@@ -25,7 +27,11 @@ const NoteThread = lazy(() => import("./pages/NoteThread"));
 function Layout(props: ParentProps) {
   onMount(() => {
     fetchCurrentUser();
+    fetchInstance();
   });
+
+  const stopPolling = startVersionPolling();
+  onCleanup(stopPolling);
 
   return (
     <>
