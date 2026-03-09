@@ -412,6 +412,7 @@ export const ja = {
   "reply.repliesCount": "返信",
   "cw.show": "もっと見る",
   "cw.hide": "隠す",
+  "remote.viewOnRemote": "元サーバーで表示",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

@@ -414,4 +414,5 @@ export const en: Dictionary = {
   "reply.repliesCount": "replies",
   "cw.show": "Show more",
   "cw.hide": "Hide",
+  "remote.viewOnRemote": "View on remote server",
 };
