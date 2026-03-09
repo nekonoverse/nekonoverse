@@ -43,15 +43,25 @@ function profileUrl(actor: Note["actor"]): string {
 
 function QuoteEmbed(props: { note: Note }) {
   const navigate = useNavigate();
+  const handleClick = (e: MouseEvent) => {
+    // Don't navigate if clicking a link inside the quote
+    if ((e.target as HTMLElement).closest("a")) return;
+    e.preventDefault();
+    navigate(`/notes/${props.note.id}`);
+  };
   return (
-    <div class="note-quote-embed">
+    <div class="note-quote-embed" onClick={handleClick}>
       <div class="note-quote-header">
         <img
           class="note-quote-avatar"
           src={props.note.actor.avatar_url || defaultAvatar()}
           alt=""
         />
-        <a href={profileUrl(props.note.actor)} class="note-quote-name">
+        <a
+          href={profileUrl(props.note.actor)}
+          class="note-quote-name"
+          onClick={(e) => e.stopPropagation()}
+        >
           <strong ref={(el) => {
             el.textContent = props.note.actor.display_name || props.note.actor.username;
             emojify(el, props.note.actor.emojis || []);

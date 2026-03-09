@@ -89,6 +89,9 @@ async def note_to_response(
     actual_reblog = reblog_note
     if not actual_reblog and hasattr(note, "renote_of") and note.renote_of:
         actual_reblog = note.renote_of
+    # Fallback: renote_of not loaded but renote_of_id is set
+    if not actual_reblog and db and note.renote_of_id:
+        actual_reblog = await get_note_by_id(db, note.renote_of_id)
     # リレーション未解決だがrenote_of_ap_idがある場合、遅延解決
     if not actual_reblog and db and note.renote_of_ap_id:
         from app.services.note_service import fetch_remote_note
@@ -114,6 +117,13 @@ async def note_to_response(
         quote = await note_to_response(
             note.quoted_note, db=db, emoji_cache=emoji_cache,
         )
+    # Fallback: quoted_note not loaded but quote_id is set
+    if not quote and db and note.quote_id:
+        loaded_quote = await get_note_by_id(db, note.quote_id)
+        if loaded_quote:
+            quote = await note_to_response(
+                loaded_quote, db=db, emoji_cache=emoji_cache,
+            )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
     if not quote and db and note.quote_ap_id:
         from app.services.note_service import fetch_remote_note

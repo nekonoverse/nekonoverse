@@ -150,3 +150,71 @@ async def test_public_timeline_excludes_direct(authed_client, mock_valkey):
     assert resp.status_code == 200
     contents = [n["content"] for n in resp.json()]
     assert not any("Direct hidden from TL" in c for c in contents)
+
+
+async def test_public_timeline_includes_quote_embed(authed_client, mock_valkey):
+    """Quote notes on the public timeline should include the quoted note data."""
+    # Create the original note
+    orig_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Original to be quoted on TL",
+        "visibility": "public",
+    })
+    assert orig_resp.status_code == 201
+    original_id = orig_resp.json()["id"]
+
+    # Create a quote note referencing the original
+    quote_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Quoting on timeline!",
+        "visibility": "public",
+        "quote_id": original_id,
+    })
+    assert quote_resp.status_code == 201
+    quote_id = quote_resp.json()["id"]
+
+    # Fetch the public timeline and find the quote note
+    tl_resp = await authed_client.get("/api/v1/timelines/public")
+    assert tl_resp.status_code == 200
+    tl_notes = tl_resp.json()
+
+    quote_note = None
+    for n in tl_notes:
+        if n["id"] == quote_id:
+            quote_note = n
+            break
+
+    assert quote_note is not None, "Quote note not found on timeline"
+    assert quote_note["quote"] is not None, "quote field is null on timeline"
+    assert quote_note["quote"]["id"] == original_id
+    assert "Original to be quoted on TL" in quote_note["quote"]["content"]
+
+
+async def test_home_timeline_includes_quote_embed(authed_client, mock_valkey):
+    """Quote notes on the home timeline should include the quoted note data."""
+    orig_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Original for home TL quote",
+        "visibility": "public",
+    })
+    assert orig_resp.status_code == 201
+    original_id = orig_resp.json()["id"]
+
+    quote_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Quoting for home TL!",
+        "visibility": "public",
+        "quote_id": original_id,
+    })
+    assert quote_resp.status_code == 201
+    quote_id = quote_resp.json()["id"]
+
+    tl_resp = await authed_client.get("/api/v1/timelines/home")
+    assert tl_resp.status_code == 200
+    tl_notes = tl_resp.json()
+
+    quote_note = None
+    for n in tl_notes:
+        if n["id"] == quote_id:
+            quote_note = n
+            break
+
+    assert quote_note is not None, "Quote note not found on home timeline"
+    assert quote_note["quote"] is not None, "quote field is null on home timeline"
+    assert quote_note["quote"]["id"] == original_id

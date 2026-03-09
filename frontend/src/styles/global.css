@@ -1177,6 +1177,11 @@ a:hover {
   border-radius: var(--radius);
   background: var(--bg-primary);
   font-size: 0.9em;
+  cursor: pointer;
+  transition: border-color 0.15s;
+}
+.note-quote-embed:hover {
+  border-color: var(--accent);
 }
 .note-quote-header {
   display: flex;
