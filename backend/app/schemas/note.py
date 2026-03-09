@@ -77,6 +77,20 @@ class TagInfo(BaseModel):
     url: str
 
 
+class NoteEditRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=5000)
+    spoiler_text: str | None = Field(default=None, max_length=500)
+
+
+class NoteEditHistoryEntry(BaseModel):
+    content: str
+    source: str | None
+    spoiler_text: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class NoteResponse(BaseModel):
     id: uuid.UUID
     ap_id: str
@@ -86,6 +100,7 @@ class NoteResponse(BaseModel):
     sensitive: bool
     spoiler_text: str | None
     published: datetime
+    edited_at: str | None = None
     replies_count: int
     reactions_count: int
     renotes_count: int

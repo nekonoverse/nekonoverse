@@ -1,6 +1,6 @@
 import { Show, For, createSignal, onCleanup } from "solid-js";
 import type { Note, Poll, MediaAttachment } from "../../api/statuses";
-import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll } from "../../api/statuses";
+import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll, editNote } from "../../api/statuses";
 import { blockAccount, muteAccount } from "../../api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
@@ -169,6 +169,12 @@ export default function NoteCard(props: Props) {
   const [bookmarked, setBookmarked] = createSignal(false);
   const [pinned, setPinned] = createSignal(false);
   const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
+  const [editing, setEditing] = createSignal(false);
+  const [editContent, setEditContent] = createSignal("");
+  const [editSaving, setEditSaving] = createSignal(false);
+  const [noteContent, setNoteContent] = createSignal(props.note.content);
+  const [noteSource, setNoteSource] = createSignal(props.note.source);
+  const [noteEditedAt, setNoteEditedAt] = createSignal(props.note.edited_at);
 
   // If this is a reblog, the displayed note is the inner one
   const isReblog = () => !!props.note.reblog;
@@ -236,6 +242,30 @@ export default function NoteCard(props: Props) {
         setPinned(true);
       }
     } catch {}
+  };
+
+  const handleEdit = () => {
+    setMoreOpen(false);
+    const source = noteSource() ?? "";
+    setEditContent(source);
+    setEditing(true);
+  };
+
+  const handleEditSave = async () => {
+    if (editSaving()) return;
+    setEditSaving(true);
+    try {
+      const updated = await editNote(displayNote().id, editContent());
+      setNoteContent(updated.content);
+      setNoteSource(updated.source);
+      setNoteEditedAt(updated.edited_at);
+      setEditing(false);
+    } catch {}
+    setEditSaving(false);
+  };
+
+  const handleEditCancel = () => {
+    setEditing(false);
   };
 
   const handleBookmark = async () => {
@@ -355,6 +385,9 @@ export default function NoteCard(props: Props) {
                 <Show when={moreOpen()}>
                   <div class="note-more-dropdown">
                     <Show when={isOwnNote()}>
+                      <button class="note-more-item" onClick={handleEdit}>
+                        {t("note.edit")}
+                      </button>
                       <button class="note-more-item" onClick={handlePin}>
                         {pinned() ? t("note.unpin") : t("note.pin")}
                       </button>
@@ -376,16 +409,43 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <div class="note-content" ref={(el) => {
-          if (note().source !== null && note().source !== undefined) {
-            renderMfm(el, note().source, note().emojis, navigate);
-          } else {
-            el.innerHTML = sanitizeHtml(note().content);
-            mentionify(el, navigate);
-            emojify(el, note().emojis);
-            twemojify(el);
-          }
-        }} />
+        <Show when={editing()} fallback={
+          <div class="note-content" ref={(el) => {
+            const src = noteSource();
+            if (src !== null && src !== undefined) {
+              renderMfm(el, src, note().emojis, navigate);
+            } else {
+              el.innerHTML = sanitizeHtml(noteContent());
+              mentionify(el, navigate);
+              emojify(el, note().emojis);
+              twemojify(el);
+            }
+          }} />
+        }>
+          <div class="note-edit-form">
+            <textarea
+              class="note-edit-textarea"
+              value={editContent()}
+              onInput={(e) => setEditContent(e.currentTarget.value)}
+              rows={4}
+            />
+            <div class="note-edit-actions">
+              <button
+                class="btn btn-small note-edit-save-btn"
+                onClick={handleEditSave}
+                disabled={editSaving()}
+              >
+                {editSaving() ? t("note.editing") : t("note.save")}
+              </button>
+              <button
+                class="btn btn-small note-edit-cancel-btn"
+                onClick={handleEditCancel}
+              >
+                {t("note.cancel")}
+              </button>
+            </div>
+          </div>
+        </Show>
         <Show when={note().poll}>
           <PollDisplay poll={note().poll!} noteId={note().id} />
         </Show>
@@ -485,6 +545,9 @@ export default function NoteCard(props: Props) {
           </div>
         </Show>
         <div class="note-footer">
+          <Show when={noteEditedAt()}>
+            <span class="note-edited-label">{t("note.edited")}</span>
+          </Show>
           <a href={`/notes/${note().id}`} class="note-time-link">
             <span class="note-time">{formatTime(note().published)}</span>
           </a>
