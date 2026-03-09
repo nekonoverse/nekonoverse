@@ -4,7 +4,6 @@ import json
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
@@ -15,7 +14,6 @@ from app.activitypub.http_signature import sign_request
 from app.database import async_session
 from app.models.actor import Actor
 from app.models.delivery import DeliveryJob
-from app.models.user import User
 from app.valkey_client import valkey as valkey_client
 
 logger = logging.getLogger(__name__)
@@ -131,7 +129,7 @@ async def run_delivery_loop():
             had_work = await process_jobs()
             if not had_work:
                 # Wait for notification from Valkey
-                result = await valkey_client.brpop("delivery:queue", timeout=5)
+                await valkey_client.brpop("delivery:queue", timeout=5)
                     # result is discarded -- we just use it as a wake-up signal
         except Exception:
             logger.exception("Error in delivery worker loop")

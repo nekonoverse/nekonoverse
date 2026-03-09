@@ -144,7 +144,8 @@ async def create_note(
     note = await get_note_by_id(db, note_id)
 
     # Extract and upsert hashtags
-    from app.services.hashtag_service import extract_hashtags, upsert_hashtags as upsert_ht
+    from app.services.hashtag_service import extract_hashtags
+    from app.services.hashtag_service import upsert_hashtags as upsert_ht
     hashtag_names = extract_hashtags(content)
     if hashtag_names:
         await upsert_ht(db, note_id, hashtag_names)
@@ -289,7 +290,9 @@ async def check_note_visible(
 
     # Misskey: make_notes_followers_only_before — treat old notes as followers-only
     if getattr(actor, "make_notes_followers_only_before", None) and note.published:
-        threshold = datetime.fromtimestamp(actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc)
+        threshold = datetime.fromtimestamp(
+            actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc,
+        )
         if note.published < threshold:
             if not current_actor_id:
                 return False
@@ -495,7 +498,10 @@ async def get_reaction_summary(
                     emoji_url = remote.url
 
         from app.utils.media_proxy import media_proxy_url
-        summaries.append({"emoji": emoji, "count": count, "me": me, "emoji_url": media_proxy_url(emoji_url)})
+        summaries.append({
+            "emoji": emoji, "count": count,
+            "me": me, "emoji_url": media_proxy_url(emoji_url),
+        })
     return summaries
 
 
@@ -726,6 +732,8 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
     # Extract and upsert hashtags from AP tags
     from app.services.hashtag_service import (
         extract_hashtags_from_ap_tags,
+    )
+    from app.services.hashtag_service import (
         upsert_hashtags as upsert_ht,
     )
     hashtag_names = extract_hashtags_from_ap_tags(tags)

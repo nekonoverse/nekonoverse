@@ -334,7 +334,9 @@ async def get_account_statuses(
 
     # Filter notes followers-only before threshold (unauthenticated only)
     if actor.make_notes_followers_only_before and not user:
-        threshold = datetime.fromtimestamp(actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc)
+        threshold = datetime.fromtimestamp(
+            actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc
+        )
         query = query.where(Note.published > threshold)
 
     query = query.order_by(Note.published.desc()).limit(min(limit, 40))

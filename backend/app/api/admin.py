@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_admin_user, get_current_user, get_db, get_staff_user
+from app.dependencies import get_admin_user, get_db, get_staff_user
 from app.models.actor import Actor
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
@@ -18,9 +18,9 @@ from app.schemas.admin import (
     AdminRemoteEmojiResponse,
     AdminStatsResponse,
     AdminUserResponse,
-    ImportByShortcodeRequest,
     DomainBlockRequest,
     DomainBlockResponse,
+    ImportByShortcodeRequest,
     ModerationActionRequest,
     ModerationLogResponse,
     ReportResponse,
@@ -350,8 +350,12 @@ async def get_reports(
     return [
         ReportResponse(
             id=r.id,
-            reporter=r.reporter_actor.username + ("@" + r.reporter_actor.domain if r.reporter_actor.domain else ""),
-            target=r.target_actor.username + ("@" + r.target_actor.domain if r.target_actor.domain else ""),
+            reporter=r.reporter_actor.username + (
+                "@" + r.reporter_actor.domain if r.reporter_actor.domain else ""
+            ),
+            target=r.target_actor.username + (
+                "@" + r.target_actor.domain if r.target_actor.domain else ""
+            ),
             target_note_id=r.target_note_id,
             comment=r.comment,
             status=r.status,
@@ -369,7 +373,8 @@ async def resolve_report(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
-    from app.services.report_service import get_report_by_id, resolve_report as _resolve
+    from app.services.report_service import get_report_by_id
+    from app.services.report_service import resolve_report as _resolve
 
     report = await get_report_by_id(db, report_id)
     if not report:
@@ -390,7 +395,8 @@ async def reject_report(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
-    from app.services.report_service import get_report_by_id, reject_report as _reject
+    from app.services.report_service import get_report_by_id
+    from app.services.report_service import reject_report as _reject
 
     report = await get_report_by_id(db, report_id)
     if not report:
@@ -467,7 +473,11 @@ async def get_moderation_log(
     return [
         ModerationLogResponse(
             id=e.id,
-            moderator=e.moderator.actor.username if e.moderator and e.moderator.actor else "unknown",
+            moderator=(
+                e.moderator.actor.username
+                if e.moderator and e.moderator.actor
+                else "unknown"
+            ),
             action=e.action,
             target_type=e.target_type,
             target_id=e.target_id,
@@ -565,6 +575,7 @@ async def add_emoji(
     db: AsyncSession = Depends(get_db),
 ):
     import json as json_mod
+
     from app.services.drive_service import file_to_url, upload_drive_file
     from app.services.emoji_service import create_local_emoji, get_custom_emoji
 
@@ -620,7 +631,7 @@ async def delete_emoji_endpoint(
     user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.emoji_service import get_emoji_by_id, delete_emoji
+    from app.services.emoji_service import delete_emoji, get_emoji_by_id
 
     emoji = await get_emoji_by_id(db, emoji_id)
     if not emoji:

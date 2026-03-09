@@ -12,10 +12,10 @@ from app.models.note import Note
 from app.models.note_attachment import NoteAttachment
 from app.models.note_edit import NoteEdit
 from app.models.notification import Notification
-from app.models.pinned_note import PinnedNote
-from app.models.poll_vote import PollVote
 from app.models.oauth import OAuthApplication, OAuthAuthorizationCode, OAuthToken
 from app.models.passkey import PasskeyCredential
+from app.models.pinned_note import PinnedNote
+from app.models.poll_vote import PollVote
 from app.models.reaction import Reaction
 from app.models.report import Report
 from app.models.server_setting import ServerSetting

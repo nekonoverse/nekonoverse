@@ -1,9 +1,8 @@
 """Moderation actions: suspend, silence, delete, force-sensitive."""
 
-import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.actor import Actor
@@ -51,10 +50,9 @@ async def suspend_actor(
     # Deliver Delete(Person) to followers
     if actor.is_local:
         from app.activitypub.renderer import render_delete_activity
+        from app.services.actor_service import actor_uri
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
-
-        from app.services.actor_service import actor_uri
 
         actor_url = actor_uri(actor)
         delete_activity = render_delete_activity(
@@ -102,10 +100,9 @@ async def admin_delete_note(
     # Deliver Delete(Tombstone) to followers
     if note.local:
         from app.activitypub.renderer import render_delete_activity
+        from app.services.actor_service import actor_uri
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
-
-        from app.services.actor_service import actor_uri
 
         delete_activity = render_delete_activity(
             activity_id=f"{note.ap_id}/delete",

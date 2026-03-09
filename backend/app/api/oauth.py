@@ -4,11 +4,11 @@ import hashlib
 import hmac
 import html as html_mod
 import secrets
-from urllib.parse import urlencode
 import uuid
 from datetime import datetime, timedelta, timezone
+from urllib.parse import urlencode
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -16,7 +16,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
 from app.models.oauth import OAuthApplication, OAuthAuthorizationCode, OAuthToken
-from app.models.user import User
 
 router = APIRouter(tags=["oauth"])
 

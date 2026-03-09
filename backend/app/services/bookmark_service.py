@@ -4,7 +4,6 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.bookmark import Bookmark
 from app.models.note import Note
