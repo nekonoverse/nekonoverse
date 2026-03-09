@@ -13,6 +13,7 @@ import { emojify } from "../../utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "../../utils/mentionify";
 import { sanitizeHtml } from "../../utils/sanitize";
+import { renderMfm } from "../../utils/mfm";
 import { defaultAvatar } from "../../stores/instance";
 
 interface Props {
@@ -53,7 +54,16 @@ function QuoteEmbed(props: { note: Note }) {
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
       </div>
-      <div class="note-quote-content" ref={(el) => { el.innerHTML = sanitizeHtml(props.note.content); mentionify(el, navigate); emojify(el, props.note.emojis); twemojify(el); }} />
+      <div class="note-quote-content" ref={(el) => {
+        if (props.note.source !== null && props.note.source !== undefined) {
+          renderMfm(el, props.note.source, props.note.emojis, navigate);
+        } else {
+          el.innerHTML = sanitizeHtml(props.note.content);
+          mentionify(el, navigate);
+          emojify(el, props.note.emojis);
+          twemojify(el);
+        }
+      }} />
       <Show when={props.note.media_attachments?.length > 0}>
         <div class="note-quote-media">
           <For each={props.note.media_attachments.slice(0, 2)}>
@@ -339,7 +349,16 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <div class="note-content" ref={(el) => { el.innerHTML = sanitizeHtml(note().content); mentionify(el, navigate); emojify(el, note().emojis); twemojify(el); }} />
+        <div class="note-content" ref={(el) => {
+          if (note().source !== null && note().source !== undefined) {
+            renderMfm(el, note().source, note().emojis, navigate);
+          } else {
+            el.innerHTML = sanitizeHtml(note().content);
+            mentionify(el, navigate);
+            emojify(el, note().emojis);
+            twemojify(el);
+          }
+        }} />
         <Show when={note().poll}>
           <PollDisplay poll={note().poll!} noteId={note().id} />
         </Show>
