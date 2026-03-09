@@ -148,7 +148,7 @@ export default function Notifications() {
                           <a href={profileUrl(notif.account)} class="notification-actor">
                             <img
                               class="notification-avatar"
-                              src={notif.account!.avatar_url || {defaultAvatar()}}
+                              src={notif.account!.avatar_url || defaultAvatar()}
                               alt=""
                             />
                             <strong>{notif.account!.display_name || notif.account!.username}</strong>

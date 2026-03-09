@@ -59,7 +59,7 @@ export default function Search() {
                 <a href={`/@${acc.acct}`} class="search-result-item">
                   <img
                     class="search-result-avatar"
-                    src={acc.avatar || {defaultAvatar()}}
+                    src={acc.avatar || defaultAvatar()}
                     alt=""
                   />
                   <div class="search-result-info">

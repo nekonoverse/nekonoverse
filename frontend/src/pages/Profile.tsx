@@ -297,7 +297,7 @@ export default function Profile() {
                     >
                       <img
                         class="profile-avatar"
-                        src={acc.avatar || {defaultAvatar()}}
+                        src={acc.avatar || defaultAvatar()}
                         alt=""
                       />
                       <div class="profile-avatar-overlay">
@@ -315,7 +315,7 @@ export default function Profile() {
                   <Show when={!editing()}>
                     <img
                       class="profile-avatar"
-                      src={acc.avatar || {defaultAvatar()}}
+                      src={acc.avatar || defaultAvatar()}
                       alt=""
                     />
                   </Show>

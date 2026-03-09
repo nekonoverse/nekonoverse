@@ -295,7 +295,7 @@ function BlocksTab() {
                 {(acc) => (
                   <div class="blockmute-item">
                     <a href={`/@${acc.acct}`} class="blockmute-user">
-                      <img class="blockmute-avatar" src={acc.avatar || {defaultAvatar()}} alt="" />
+                      <img class="blockmute-avatar" src={acc.avatar || defaultAvatar()} alt="" />
                       <div>
                         <strong>{acc.display_name || acc.username}</strong>
                         <span class="blockmute-handle">@{acc.acct}</span>
@@ -346,7 +346,7 @@ function MutesTab() {
                 {(acc) => (
                   <div class="blockmute-item">
                     <a href={`/@${acc.acct}`} class="blockmute-user">
-                      <img class="blockmute-avatar" src={acc.avatar || {defaultAvatar()}} alt="" />
+                      <img class="blockmute-avatar" src={acc.avatar || defaultAvatar()} alt="" />
                       <div>
                         <strong>{acc.display_name || acc.username}</strong>
                         <span class="blockmute-handle">@{acc.acct}</span>
