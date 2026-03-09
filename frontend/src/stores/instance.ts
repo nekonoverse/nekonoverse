@@ -52,6 +52,20 @@ function updateDynamicIcons(iconUrl: string) {
 }
 
 const VERSION_KEY = "nekonoverse_version";
+const VERSION_POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
+
+async function forceReloadForNewVersion(newVersion: string) {
+  localStorage.setItem(VERSION_KEY, newVersion);
+  if ("serviceWorker" in navigator) {
+    const regs = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(regs.map((r) => r.unregister()));
+  }
+  if ("caches" in window) {
+    const keys = await caches.keys();
+    await Promise.all(keys.map((k) => caches.delete(k)));
+  }
+  location.reload();
+}
 
 export async function fetchInstance() {
   setInstanceLoading(true);
@@ -62,16 +76,7 @@ export async function fetchInstance() {
     // Force reload when server version changes (deploy)
     const stored = localStorage.getItem(VERSION_KEY);
     if (stored && stored !== info.version) {
-      localStorage.setItem(VERSION_KEY, info.version);
-      if ("serviceWorker" in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map((r) => r.unregister()));
-      }
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-      location.reload();
+      await forceReloadForNewVersion(info.version);
       return;
     }
     localStorage.setItem(VERSION_KEY, info.version);
@@ -84,4 +89,22 @@ export async function fetchInstance() {
   } finally {
     setInstanceLoading(false);
   }
+}
+
+// Periodically check for version changes while the tab is open
+let versionPollTimer: ReturnType<typeof setInterval> | null = null;
+
+export function startVersionPolling() {
+  if (versionPollTimer) return;
+  versionPollTimer = setInterval(async () => {
+    try {
+      const info = await apiRequest<InstanceInfo>("/api/v1/instance");
+      const stored = localStorage.getItem(VERSION_KEY);
+      if (stored && stored !== info.version) {
+        await forceReloadForNewVersion(info.version);
+      }
+    } catch {
+      // Network error during poll — ignore, retry next interval
+    }
+  }, VERSION_POLL_INTERVAL);
 }

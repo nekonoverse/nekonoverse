@@ -30,8 +30,7 @@ export default function ReactionBar(props: Props) {
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let didLongPress = false;
 
-  const handleReaction = async (emoji: string) => {
-    if (didLongPress) return;
+  const toggleReaction = async (emoji: string) => {
     const existing = props.reactions.find((r) => r.emoji === emoji && r.me);
     try {
       if (existing) {
@@ -43,6 +42,11 @@ export default function ReactionBar(props: Props) {
     } catch {
       // ignore
     }
+  };
+
+  const handleReaction = (emoji: string) => {
+    if (didLongPress) return;
+    toggleReaction(emoji);
   };
 
   const importableEmoji = () => {
@@ -83,6 +87,7 @@ export default function ReactionBar(props: Props) {
   const closeModal = () => {
     setModalEmoji(null);
     setModalUsers([]);
+    didLongPress = false;
   };
 
   const startLongPress = (emoji: string) => {
@@ -124,7 +129,7 @@ export default function ReactionBar(props: Props) {
         </button>
         <Show when={showPicker()}>
           <EmojiPicker
-            onSelect={(emoji) => handleReaction(emoji)}
+            onSelect={(emoji) => toggleReaction(emoji)}
             onClose={() => setShowPicker(false)}
             usedEmojis={props.reactions.filter((r) => r.me).map((r) => r.emoji)}
           />
