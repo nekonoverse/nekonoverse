@@ -10,6 +10,7 @@ export interface Notification {
   account?: NoteActor;
   status?: Note;
   emoji?: string;
+  emoji_url?: string | null;
 }
 
 export async function getNotifications(params?: {
