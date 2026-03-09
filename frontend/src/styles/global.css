@@ -1513,53 +1513,33 @@ a:hover {
   padding: 8px;
   z-index: 100;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  min-width: 240px;
-}
-
-.emoji-picker-tabs {
+  min-width: 280px;
+  max-width: 320px;
   display: flex;
-  gap: 2px;
-  margin-bottom: 8px;
-  border-bottom: 1px solid var(--border);
-  padding-bottom: 4px;
-}
-
-.emoji-picker-tab {
-  flex: 1;
-  padding: 4px 8px;
-  background: none;
-  border: none;
-  border-radius: var(--radius) var(--radius) 0 0;
-  cursor: pointer;
-  font-size: 0.8em;
-  color: var(--text-secondary);
-}
-
-.emoji-picker-tab.active {
-  color: var(--text-primary);
-  background: var(--bg-secondary);
-  font-weight: 600;
+  flex-direction: column;
 }
 
 .emoji-search {
   width: 100%;
   padding: 6px 8px;
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-primary);
   color: var(--text-primary);
   font-size: 0.85em;
   box-sizing: border-box;
+  flex-shrink: 0;
 }
 
 .emoji-search::placeholder {
   color: var(--text-secondary);
 }
 
-.emoji-custom-list {
-  max-height: 200px;
+.emoji-scroll-area {
+  max-height: 320px;
   overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .emoji-custom-empty {
@@ -1572,20 +1552,28 @@ a:hover {
 .emoji-category-label {
   font-size: 0.7em;
   color: var(--text-secondary);
-  padding: 4px 2px 2px;
+  padding: 6px 2px 2px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
+  font-weight: 600;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  margin-top: 4px;
+}
+
+.emoji-category-label:first-child {
+  margin-top: 0;
 }
 
 .emoji-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 4px;
+  grid-template-columns: repeat(8, 1fr);
+  gap: 2px;
 }
 
 .emoji-btn .custom-emoji {
-  height: 1.4em;
-  width: 1.4em;
+  height: 1.3em;
+  width: 1.3em;
   object-fit: contain;
 }
 
@@ -1607,13 +1595,13 @@ a:hover {
 }
 
 .emoji-btn .twemoji {
-  height: 1.4em;
-  width: 1.4em;
+  height: 1.3em;
+  width: 1.3em;
 }
 
 .emoji-btn {
-  width: 2.25em;
-  height: 2.25em;
+  width: 2em;
+  height: 2em;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1621,7 +1609,8 @@ a:hover {
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
-  font-size: 1.25em;
+  font-size: 1.15em;
+  padding: 0;
 }
 
 .emoji-btn:hover:not(:disabled) {
