@@ -413,6 +413,23 @@ export const ja = {
   "cw.show": "もっと見る",
   "cw.hide": "隠す",
   "remote.viewOnRemote": "元サーバーで表示",
+  "totp.title": "二要素認証",
+  "totp.description": "認証アプリを使って、ログイン時にワンタイムパスワードを要求します。",
+  "totp.enable": "有効にする",
+  "totp.disable": "無効にする",
+  "totp.enabled": "二要素認証は有効です",
+  "totp.scanQr": "認証アプリでQRコードをスキャンしてください",
+  "totp.enterCode": "認証コードを入力",
+  "totp.recoveryCodes": "リカバリーコード",
+  "totp.recoveryWarning":
+    "これらのコードを安全な場所に保存してください。認証アプリが使えなくなった場合に必要です。",
+  "totp.saved": "保存しました",
+  "totp.verify": "確認",
+  "totp.required": "二要素認証コードを入力",
+  "totp.copySecret": "シークレットをコピー",
+  "totp.copyCodes": "コードをコピー",
+  "totp.disableConfirm": "二要素認証を無効にするにはパスワードを入力してください",
+  "totp.recoveryHint": "認証アプリが使えない場合はリカバリーコードを入力してください",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

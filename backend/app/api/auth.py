@@ -1,6 +1,8 @@
+import asyncio
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -23,6 +25,7 @@ from app.services.user_service import (
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
 SESSION_COOKIE = "nekonoverse_session"
+TOTP_TOKEN_TTL = 300  # 5 minutes
 
 
 def get_session_id(request: Request) -> str | None:
@@ -54,11 +57,16 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     invite = None
     if mode == "invite":
         if not body.invite_code:
-            raise HTTPException(status_code=422, detail="Invitation code is required")
+            raise HTTPException(
+                status_code=422, detail="Invitation code is required",
+            )
         from app.services.invitation_service import validate_invitation_code
         invite = await validate_invitation_code(db, body.invite_code)
         if invite is None:
-            raise HTTPException(status_code=422, detail="Invalid or expired invitation code")
+            raise HTTPException(
+                status_code=422,
+                detail="Invalid or expired invitation code",
+            )
 
     try:
         user = await create_user(
@@ -88,7 +96,21 @@ async def login(
 ):
     user = await authenticate_user(db, body.username, body.password)
     if user is None:
-        raise HTTPException(status_code=401, detail="Invalid username or password")
+        raise HTTPException(
+            status_code=401, detail="Invalid username or password",
+        )
+
+    # If TOTP is enabled, return a temporary token instead of a session
+    if user.totp_enabled:
+        from app.valkey_client import valkey
+
+        totp_token = uuid.uuid4().hex
+        await valkey.set(
+            f"totp_pending:{totp_token}",
+            str(user.id),
+            ex=TOTP_TOKEN_TTL,
+        )
+        return {"requires_totp": True, "totp_token": totp_token}
 
     from app.valkey_client import valkey
 
@@ -195,9 +217,13 @@ async def update_credentials(
         try:
             fields_list = _json.loads(fields_attributes)
         except (ValueError, TypeError):
-            raise HTTPException(status_code=422, detail="Invalid fields JSON")
+            raise HTTPException(
+                status_code=422, detail="Invalid fields JSON",
+            )
         if not isinstance(fields_list, list) or len(fields_list) > 4:
-            raise HTTPException(status_code=422, detail="Maximum 4 fields allowed")
+            raise HTTPException(
+                status_code=422, detail="Maximum 4 fields allowed",
+            )
         validated = []
         for f in fields_list:
             if not isinstance(f, dict):
@@ -217,7 +243,9 @@ async def update_credentials(
             try:
                 user.actor.birthday = _dt.date.fromisoformat(birthday)
             except ValueError:
-                raise HTTPException(status_code=422, detail="Invalid date format")
+                raise HTTPException(
+                    status_code=422, detail="Invalid date format",
+                )
         changed = True
 
     if is_cat is not None:
@@ -276,7 +304,10 @@ async def update_credentials(
         await db.refresh(user)
 
         # Federate profile update to followers
-        from app.activitypub.renderer import render_actor, render_update_activity
+        from app.activitypub.renderer import (
+            render_actor,
+            render_update_activity,
+        )
         from app.services.actor_service import actor_uri
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
@@ -303,7 +334,181 @@ async def change_password_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     try:
-        await change_password(db, user, body.current_password, body.new_password)
+        await change_password(
+            db, user, body.current_password, body.new_password,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     return {"ok": True}
+
+
+# ── TOTP endpoints ──
+
+
+class TotpEnableRequest(BaseModel):
+    code: str
+
+
+class TotpDisableRequest(BaseModel):
+    password: str
+
+
+class TotpVerifyRequest(BaseModel):
+    totp_token: str
+    code: str
+
+
+@router.post("/auth/totp/setup")
+async def totp_setup(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.totp_service import (
+        encrypt_secret,
+        generate_provisioning_uri,
+        generate_totp_secret,
+    )
+
+    if user.totp_enabled:
+        raise HTTPException(
+            status_code=400, detail="TOTP is already enabled",
+        )
+
+    secret = generate_totp_secret()
+    user.totp_secret = encrypt_secret(secret)
+    await db.commit()
+
+    uri = generate_provisioning_uri(secret, user.actor.username)
+    return {"secret": secret, "provisioning_uri": uri}
+
+
+@router.post("/auth/totp/enable")
+async def totp_enable(
+    body: TotpEnableRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.totp_service import (
+        decrypt_secret,
+        generate_recovery_codes,
+        hash_recovery_codes,
+        verify_totp_code,
+    )
+
+    if user.totp_enabled:
+        raise HTTPException(
+            status_code=400, detail="TOTP is already enabled",
+        )
+    if not user.totp_secret:
+        raise HTTPException(
+            status_code=400, detail="Call /auth/totp/setup first",
+        )
+
+    secret = decrypt_secret(user.totp_secret)
+    if not verify_totp_code(secret, body.code):
+        raise HTTPException(
+            status_code=400, detail="Invalid TOTP code",
+        )
+
+    recovery_codes = generate_recovery_codes()
+    hashed = await asyncio.to_thread(hash_recovery_codes, recovery_codes)
+
+    user.totp_enabled = True
+    user.totp_recovery_codes = hashed
+    await db.commit()
+
+    return {"recovery_codes": recovery_codes}
+
+
+@router.post("/auth/totp/disable")
+async def totp_disable(
+    body: TotpDisableRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    import bcrypt as _bcrypt
+
+    if not user.totp_enabled:
+        raise HTTPException(
+            status_code=400, detail="TOTP is not enabled",
+        )
+
+    valid = await asyncio.to_thread(
+        _bcrypt.checkpw,
+        body.password.encode(),
+        user.password_hash.encode(),
+    )
+    if not valid:
+        raise HTTPException(status_code=400, detail="Invalid password")
+
+    user.totp_enabled = False
+    user.totp_secret = None
+    user.totp_recovery_codes = None
+    await db.commit()
+
+    return {"ok": True}
+
+
+@router.post("/auth/totp/verify")
+async def totp_verify(
+    body: TotpVerifyRequest,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.valkey_client import valkey
+
+    user_id_str = await valkey.get(f"totp_pending:{body.totp_token}")
+    if not user_id_str:
+        raise HTTPException(
+            status_code=401, detail="Invalid or expired TOTP token",
+        )
+
+    user = await get_user_by_id(db, uuid.UUID(user_id_str))
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    from app.services.totp_service import decrypt_secret, verify_totp_code
+
+    secret = decrypt_secret(user.totp_secret)
+    code = body.code.strip().replace("-", "")
+
+    if verify_totp_code(secret, code):
+        # Valid TOTP code — create session
+        pass
+    elif user.totp_recovery_codes:
+        # Try recovery code
+        from app.services.totp_service import verify_recovery_code
+
+        valid, remaining = await asyncio.to_thread(
+            verify_recovery_code, body.code.strip(), user.totp_recovery_codes,
+        )
+        if not valid:
+            raise HTTPException(
+                status_code=401, detail="Invalid TOTP code",
+            )
+        user.totp_recovery_codes = remaining
+        await db.commit()
+    else:
+        raise HTTPException(status_code=401, detail="Invalid TOTP code")
+
+    # Delete the pending token
+    await valkey.delete(f"totp_pending:{body.totp_token}")
+
+    # Create session
+    session_id = uuid.uuid4().hex
+    await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
+
+    response.set_cookie(
+        SESSION_COOKIE,
+        session_id,
+        httponly=True,
+        secure=settings.use_https,
+        samesite="lax",
+        max_age=86400 * 30,
+    )
+    return {"ok": True}
+
+
+@router.get("/auth/totp/status")
+async def totp_status(user: User = Depends(get_current_user)):
+    return {"totp_enabled": user.totp_enabled}
