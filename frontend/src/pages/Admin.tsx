@@ -2,6 +2,7 @@ import {
   createSignal,
   createMemo,
   onMount,
+  onCleanup,
   Show,
   For,
   Switch,
@@ -46,6 +47,12 @@ import {
   revokeInviteCode,
   getFederatedServers,
   getFederatedServerDetail,
+  getQueueStats,
+  getQueueJobs,
+  retryQueueJob,
+  retryAllDeadJobs,
+  purgeDeliveredJobs,
+  getSystemStats,
   type AdminStats,
   type ServerSettings,
   type AdminUser,
@@ -59,6 +66,10 @@ import {
   type FederatedServer,
   type FederatedServerDetail,
   type FederatedServerList,
+  type QueueStats,
+  type QueueJob,
+  type QueueJobList,
+  type SystemStats,
 } from "../api/admin";
 
 interface AdminSection {
@@ -118,6 +129,16 @@ const categories: AdminCategory[] = [
         key: "invites",
         labelKey: "admin.tabInvites",
         descKey: "admin.descInvites",
+      },
+      {
+        key: "queue",
+        labelKey: "admin.tabQueue",
+        descKey: "admin.descQueue",
+      },
+      {
+        key: "system",
+        labelKey: "admin.tabSystem",
+        descKey: "admin.descSystem",
       },
     ],
   },
@@ -223,6 +244,12 @@ export default function Admin() {
             </Match>
             <Match when={section() === "invites"}>
               <InvitesTab />
+            </Match>
+            <Match when={section() === "queue"}>
+              <QueueTab />
+            </Match>
+            <Match when={section() === "system"}>
+              <SystemTab />
             </Match>
           </Switch>
         </Show>
@@ -1843,6 +1870,428 @@ function FederationTab() {
             </div>
           </Show>
         </Show>
+      </Show>
+    </div>
+  );
+}
+
+function QueueTab() {
+  const { t } = useI18n();
+  const [stats, setStats] = createSignal<QueueStats | null>(null);
+  const [jobs, setJobs] = createSignal<QueueJob[]>([]);
+  const [jobTotal, setJobTotal] = createSignal(0);
+  const [statusFilter, setStatusFilter] = createSignal("");
+  const [domainFilter, setDomainFilter] = createSignal("");
+  const [jobOffset, setJobOffset] = createSignal(0);
+  const [loading, setLoading] = createSignal(false);
+  const [message, setMessage] = createSignal("");
+  const jobLimit = 20;
+
+  const loadStats = async () => {
+    try {
+      setStats(await getQueueStats());
+    } catch {}
+  };
+
+  const loadJobs = async () => {
+    setLoading(true);
+    try {
+      const res = await getQueueJobs({
+        status: statusFilter() || undefined,
+        domain: domainFilter() || undefined,
+        limit: jobLimit,
+        offset: jobOffset(),
+      });
+      setJobs(res.jobs);
+      setJobTotal(res.total);
+    } catch {}
+    setLoading(false);
+  };
+
+  const load = () => {
+    loadStats();
+    loadJobs();
+  };
+
+  // 自動更新: 15秒ごと
+  let interval: ReturnType<typeof setInterval>;
+  onMount(() => {
+    load();
+    interval = setInterval(load, 15000);
+  });
+  onCleanup(() => clearInterval(interval));
+
+  const handleRetry = async (jobId: string) => {
+    try {
+      await retryQueueJob(jobId);
+      load();
+    } catch {}
+  };
+
+  const handleRetryAll = async () => {
+    if (!confirm(t("admin.queueConfirmRetryAll"))) return;
+    try {
+      const res = await retryAllDeadJobs(domainFilter() || undefined);
+      setMessage(
+        t("admin.queueRetried").replace("{count}", String(res.retried)),
+      );
+      load();
+    } catch {}
+  };
+
+  const handlePurge = async () => {
+    if (!confirm(t("admin.queueConfirmPurge"))) return;
+    try {
+      const res = await purgeDeliveredJobs();
+      setMessage(t("admin.queuePurged").replace("{count}", String(res.purged)));
+      load();
+    } catch {}
+  };
+
+  const totalJobPages = () => Math.max(1, Math.ceil(jobTotal() / jobLimit));
+  const currentJobPage = () => Math.floor(jobOffset() / jobLimit) + 1;
+
+  const truncateUrl = (url: string) => {
+    try {
+      const u = new URL(url);
+      return (
+        u.host + u.pathname.slice(0, 30) + (u.pathname.length > 30 ? "..." : "")
+      );
+    } catch {
+      return url.slice(0, 50);
+    }
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.tabQueue")}</h3>
+
+      <Show when={stats()} fallback={<p>{t("common.loading")}</p>}>
+        {(s) => (
+          <>
+            <div class="admin-queue-stats">
+              <div class="admin-queue-stat-card pending">
+                <span class="admin-queue-stat-num">{s().pending}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queuePending")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card processing">
+                <span class="admin-queue-stat-num">{s().processing}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueProcessing")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card delivered">
+                <span class="admin-queue-stat-num">{s().delivered}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueDelivered")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card dead">
+                <span class="admin-queue-stat-num">{s().dead}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueDead")}
+                </span>
+              </div>
+            </div>
+            <div class="admin-queue-stats admin-queue-stats-sub">
+              <div class="admin-queue-stat-card total">
+                <span class="admin-queue-stat-num">{s().total}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueTotal")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card recent">
+                <span class="admin-queue-stat-num">{s().recent_delivered}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueRecentDelivered")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card recent-dead">
+                <span class="admin-queue-stat-num">{s().recent_dead}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueRecentDead")}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+      </Show>
+
+      <div class="admin-queue-controls">
+        <h4>{t("admin.queueJobs")}</h4>
+        <div class="admin-queue-filters">
+          <select
+            value={statusFilter()}
+            onChange={(e) => {
+              setStatusFilter(e.currentTarget.value);
+              setJobOffset(0);
+              loadJobs();
+            }}
+          >
+            <option value="">{t("admin.queueAllStatuses")}</option>
+            <option value="pending">{t("admin.queuePending")}</option>
+            <option value="processing">{t("admin.queueProcessing")}</option>
+            <option value="delivered">{t("admin.queueDelivered")}</option>
+            <option value="dead">{t("admin.queueDead")}</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Domain"
+            value={domainFilter()}
+            onInput={(e) => setDomainFilter(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setJobOffset(0);
+                loadJobs();
+              }
+            }}
+          />
+          <button class="btn btn-small" onClick={handleRetryAll}>
+            {t("admin.queueRetryAll")}
+          </button>
+          <button class="btn btn-small btn-danger" onClick={handlePurge}>
+            {t("admin.queuePurge")}
+          </button>
+        </div>
+      </div>
+
+      <Show when={message()}>
+        <p class="success-message">{message()}</p>
+      </Show>
+
+      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+        <Show
+          when={jobs().length > 0}
+          fallback={<p class="empty-state">{t("admin.queueNoJobs")}</p>}
+        >
+          <div class="admin-queue-table-wrap">
+            <table class="admin-queue-table">
+              <thead>
+                <tr>
+                  <th>{t("admin.queueTarget")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("admin.queueAttempts")}</th>
+                  <th>{t("admin.queueError")}</th>
+                  <th>{t("admin.queueCreated")}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={jobs()}>
+                  {(job) => (
+                    <tr class={`admin-queue-row ${job.status}`}>
+                      <td
+                        class="admin-queue-target"
+                        title={job.target_inbox_url}
+                      >
+                        {truncateUrl(job.target_inbox_url)}
+                      </td>
+                      <td>
+                        <span class={`admin-queue-badge ${job.status}`}>
+                          {job.status}
+                        </span>
+                      </td>
+                      <td>
+                        {job.attempts}/{job.max_attempts}
+                      </td>
+                      <td
+                        class="admin-queue-error"
+                        title={job.error_message || ""}
+                      >
+                        {job.error_message
+                          ? job.error_message.slice(0, 60) +
+                            (job.error_message.length > 60 ? "..." : "")
+                          : "-"}
+                      </td>
+                      <td>{new Date(job.created_at).toLocaleString()}</td>
+                      <td>
+                        <Show when={job.status === "dead"}>
+                          <button
+                            class="btn btn-small"
+                            onClick={() => handleRetry(job.id)}
+                          >
+                            {t("admin.queueRetry")}
+                          </button>
+                        </Show>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
+
+          <Show when={totalJobPages() > 1}>
+            <div class="admin-queue-pagination">
+              <button
+                class="btn btn-small"
+                disabled={currentJobPage() <= 1}
+                onClick={() => {
+                  setJobOffset(jobOffset() - jobLimit);
+                  loadJobs();
+                }}
+              >
+                &larr;
+              </button>
+              <span>
+                {currentJobPage()} / {totalJobPages()}
+              </span>
+              <button
+                class="btn btn-small"
+                disabled={currentJobPage() >= totalJobPages()}
+                onClick={() => {
+                  setJobOffset(jobOffset() + jobLimit);
+                  loadJobs();
+                }}
+              >
+                &rarr;
+              </button>
+            </div>
+          </Show>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
+function SystemTab() {
+  const { t } = useI18n();
+  const [stats, setStats] = createSignal<SystemStats | null>(null);
+
+  const load = async () => {
+    try {
+      setStats(await getSystemStats());
+    } catch {}
+  };
+
+  // 自動更新: 10秒ごと
+  let interval: ReturnType<typeof setInterval>;
+  onMount(() => {
+    load();
+    interval = setInterval(load, 10000);
+  });
+  onCleanup(() => clearInterval(interval));
+
+  const formatUptime = (seconds: number) => {
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.tabSystem")}</h3>
+
+      <Show when={stats()} fallback={<p>{t("common.loading")}</p>}>
+        {(s) => (
+          <div class="admin-system-grid">
+            <div class="admin-system-card">
+              <h4>{t("admin.systemDatabase")}</h4>
+              <div class="admin-system-rows">
+                <div class="admin-system-row">
+                  <span>{t("admin.systemPoolSize")}</span>
+                  <strong>{s().db_pool_size}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemPoolCheckedIn")}</span>
+                  <strong>{s().db_pool_checked_in}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemPoolCheckedOut")}</span>
+                  <strong>{s().db_pool_checked_out}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemPoolOverflow")}</span>
+                  <strong>{s().db_pool_overflow}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-system-card">
+              <h4>{t("admin.systemValkey")}</h4>
+              <div class="admin-system-rows">
+                <div class="admin-system-row">
+                  <span>{t("admin.systemClients")}</span>
+                  <strong>{s().valkey_connected_clients}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemMemory")}</span>
+                  <strong>{s().valkey_used_memory_human}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemKeys")}</span>
+                  <strong>{s().valkey_total_keys}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-system-card">
+              <h4>{t("admin.systemServer")}</h4>
+              <div class="admin-system-rows">
+                <div class="admin-system-row">
+                  <span>{t("admin.systemLoadAvg")}</span>
+                  <strong>
+                    {s().load_avg_1m.toFixed(2)} / {s().load_avg_5m.toFixed(2)}{" "}
+                    / {s().load_avg_15m.toFixed(2)}
+                  </strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemMemTotal")}</span>
+                  <strong>{s().memory_total_mb} MB</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemMemAvailable")}</span>
+                  <strong>{s().memory_available_mb} MB</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemMemPercent")}</span>
+                  <strong>
+                    <span
+                      class={`admin-system-usage ${s().memory_percent > 90 ? "critical" : s().memory_percent > 70 ? "warning" : "ok"}`}
+                    >
+                      {s().memory_percent.toFixed(1)}%
+                    </span>
+                  </strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemUptime")}</span>
+                  <strong>{formatUptime(s().uptime_seconds)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-system-card">
+              <h4>{t("admin.systemWorker")}</h4>
+              <div class="admin-system-rows">
+                <div class="admin-system-row">
+                  <span>{t("common.status")}</span>
+                  <strong>
+                    <span
+                      class={`admin-system-worker-status ${s().worker_alive ? "alive" : "dead"}`}
+                    >
+                      {s().worker_alive
+                        ? t("admin.systemWorkerAlive")
+                        : t("admin.systemWorkerDead")}
+                    </span>
+                  </strong>
+                </div>
+                <Show when={s().worker_last_heartbeat}>
+                  <div class="admin-system-row">
+                    <span>{t("admin.systemLastHeartbeat")}</span>
+                    <strong>
+                      {new Date(s().worker_last_heartbeat!).toLocaleString()}
+                    </strong>
+                  </div>
+                </Show>
+              </div>
+            </div>
+          </div>
+        )}
       </Show>
     </div>
   );

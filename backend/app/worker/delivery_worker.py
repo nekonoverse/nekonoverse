@@ -120,12 +120,22 @@ async def process_jobs():
         return True
 
 
+async def _update_heartbeat():
+    """Update worker heartbeat in Valkey."""
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        await valkey_client.set("worker:heartbeat", now, ex=30)
+    except Exception:
+        pass
+
+
 async def run_delivery_loop():
     """Main delivery worker loop."""
     logger.info("Delivery worker started")
 
     while True:
         try:
+            await _update_heartbeat()
             had_work = await process_jobs()
             if not had_work:
                 # Wait for notification from Valkey
