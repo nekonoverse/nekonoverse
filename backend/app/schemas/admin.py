@@ -198,3 +198,69 @@ class AdminEmojiUpdate(BaseModel):
     copy_permission: str | None = Field(None, pattern=r"^(allow|deny|conditional)$")
     usage_info: str | None = Field(None, max_length=512)
     is_based_on: str | None = Field(None, max_length=1024)
+
+
+# --- Queue Management ---
+
+
+class QueueStatsResponse(BaseModel):
+    """Overall delivery queue statistics."""
+
+    pending: int = 0
+    processing: int = 0
+    delivered: int = 0
+    dead: int = 0
+    total: int = 0
+    recent_delivered: int = 0
+    recent_dead: int = 0
+
+
+class QueueJobResponse(BaseModel):
+    """Single delivery queue job."""
+
+    id: uuid.UUID
+    target_inbox_url: str
+    status: str
+    attempts: int
+    max_attempts: int
+    error_message: str | None
+    created_at: datetime
+    last_attempted_at: datetime | None
+    next_retry_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class QueueJobListResponse(BaseModel):
+    """Paginated list of queue jobs."""
+
+    jobs: list[QueueJobResponse]
+    total: int
+
+
+# --- System Stats ---
+
+
+class SystemStatsResponse(BaseModel):
+    """System resource and service health stats."""
+
+    # Database pool
+    db_pool_size: int = 0
+    db_pool_checked_in: int = 0
+    db_pool_checked_out: int = 0
+    db_pool_overflow: int = 0
+    # Valkey
+    valkey_connected_clients: int = 0
+    valkey_used_memory_human: str = ""
+    valkey_total_keys: int = 0
+    # System
+    load_avg_1m: float = 0.0
+    load_avg_5m: float = 0.0
+    load_avg_15m: float = 0.0
+    memory_total_mb: int = 0
+    memory_available_mb: int = 0
+    memory_percent: float = 0.0
+    uptime_seconds: float = 0.0
+    # Worker
+    worker_alive: bool = False
+    worker_last_heartbeat: str | None = None
