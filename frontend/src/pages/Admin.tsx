@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, createMemo, onMount, Show, For } from "solid-js";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 import {
@@ -11,13 +11,15 @@ import {
   getRemoteEmojis, getRemoteEmojiDomains, importRemoteEmoji,
   getServerFiles, uploadServerFile, deleteServerFile,
   getInviteCodes, createInviteCode, revokeInviteCode,
+  getFederatedServers, getFederatedServerDetail,
   type AdminStats, type ServerSettings, type AdminUser,
   type DomainBlock, type Report, type ModerationLogEntry,
   type AdminEmoji, type RemoteEmoji, type ServerFile,
   type InviteCode,
+  type FederatedServer, type FederatedServerDetail, type FederatedServerList,
 } from "../api/admin";
 
-type Tab = "overview" | "settings" | "users" | "domains" | "reports" | "log" | "emoji" | "files" | "invites";
+type Tab = "overview" | "settings" | "users" | "domains" | "federation" | "reports" | "log" | "emoji" | "files" | "invites";
 
 export default function Admin() {
   const { t } = useI18n();
@@ -40,6 +42,7 @@ export default function Admin() {
             ...(isAdmin() ? [{ key: "settings" as Tab, label: t("admin.tabSettings") }] : []),
             { key: "users" as Tab, label: t("admin.tabUsers") },
             { key: "domains" as Tab, label: t("admin.tabDomains") },
+            { key: "federation" as Tab, label: t("admin.tabFederation") },
             { key: "reports" as Tab, label: t("admin.tabReports") },
             { key: "log" as Tab, label: t("admin.tabLog") },
             ...(isAdmin() ? [
@@ -61,6 +64,7 @@ export default function Admin() {
         <Show when={activeTab() === "settings"}><ServerSettingsTab /></Show>
         <Show when={activeTab() === "users"}><UsersTab /></Show>
         <Show when={activeTab() === "domains"}><DomainsTab /></Show>
+        <Show when={activeTab() === "federation"}><FederationTab /></Show>
         <Show when={activeTab() === "reports"}><ReportsTab /></Show>
         <Show when={activeTab() === "log"}><LogTab /></Show>
         <Show when={activeTab() === "emoji"}><EmojiTab /></Show>
@@ -1023,6 +1027,305 @@ function InvitesTab() {
               )}
             </For>
           </div>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
+function FederationTab() {
+  const { t } = useI18n();
+  const [servers, setServers] = createSignal<FederatedServer[]>([]);
+  const [total, setTotal] = createSignal(0);
+  const [loading, setLoading] = createSignal(true);
+  const [search, setSearch] = createSignal("");
+  const [statusFilter, setStatusFilter] = createSignal("all");
+  const [sort, setSort] = createSignal("user_count");
+  const [order, setOrder] = createSignal("desc");
+  const [offset, setOffset] = createSignal(0);
+  const [expandedDomain, setExpandedDomain] = createSignal<string | null>(null);
+  const [detail, setDetail] = createSignal<FederatedServerDetail | null>(null);
+  const [detailLoading, setDetailLoading] = createSignal(false);
+  const limit = 40;
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await getFederatedServers({
+        limit,
+        offset: offset(),
+        sort: sort(),
+        order: order(),
+        search: search() || undefined,
+        status: statusFilter(),
+      });
+      setServers(res.servers);
+      setTotal(res.total);
+    } catch {}
+    setLoading(false);
+  };
+
+  onMount(load);
+
+  const handleSearch = () => {
+    setOffset(0);
+    load();
+  };
+
+  const handleSort = (col: string) => {
+    if (sort() === col) {
+      setOrder(order() === "desc" ? "asc" : "desc");
+    } else {
+      setSort(col);
+      setOrder("desc");
+    }
+    setOffset(0);
+    load();
+  };
+
+  const handleStatusFilter = (s: string) => {
+    setStatusFilter(s);
+    setOffset(0);
+    load();
+  };
+
+  const toggleDetail = async (domain: string) => {
+    if (expandedDomain() === domain) {
+      setExpandedDomain(null);
+      setDetail(null);
+      return;
+    }
+    setExpandedDomain(domain);
+    setDetailLoading(true);
+    setDetail(null);
+    try {
+      setDetail(await getFederatedServerDetail(domain));
+    } catch {}
+    setDetailLoading(false);
+  };
+
+  const totalPages = createMemo(() => Math.max(1, Math.ceil(total() / limit)));
+  const currentPage = createMemo(() => Math.floor(offset() / limit) + 1);
+
+  const sortIndicator = (col: string) => {
+    if (sort() !== col) return "";
+    return order() === "asc" ? " \u2191" : " \u2193";
+  };
+
+  const deliveryRate = (s: FederatedServer) => {
+    const t = s.delivery_stats.success + s.delivery_stats.failure + s.delivery_stats.dead;
+    if (t === 0) return "-";
+    return Math.round((s.delivery_stats.success / t) * 100) + "%";
+  };
+
+  const formatDate = (d: string | null) => {
+    if (!d) return "-";
+    return new Date(d).toLocaleDateString();
+  };
+
+  const statusLabels = {
+    all: () => t("admin.federationStatus_all"),
+    active: () => t("admin.federationStatus_active"),
+    suspended: () => t("admin.federationStatus_suspended"),
+    silenced: () => t("admin.federationStatus_silenced"),
+  } as const;
+
+  const statusLabel = (s: string) => {
+    const fn = statusLabels[s as keyof typeof statusLabels];
+    return fn ? fn() : s;
+  };
+
+  const emptyMessages = {
+    all: () => t("admin.noFederatedServers"),
+    active: () => t("admin.noFederatedServers_active"),
+    suspended: () => t("admin.noFederatedServers_suspended"),
+    silenced: () => t("admin.noFederatedServers_silenced"),
+  } as const;
+
+  const emptyMessage = () => {
+    const fn = emptyMessages[statusFilter() as keyof typeof emptyMessages];
+    return fn ? fn() : t("admin.noFederatedServers");
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.tabFederation")}</h3>
+
+      <div class="admin-federation-controls">
+        <div class="admin-federation-search">
+          <input
+            type="text"
+            placeholder={t("admin.federationSearchPlaceholder")}
+            value={search()}
+            onInput={(e) => setSearch(e.currentTarget.value)}
+            onKeyDown={(e) => e.key === "Enter" && handleSearch()}
+          />
+          <button class="btn btn-small" onClick={handleSearch}>
+            {t("admin.search")}
+          </button>
+        </div>
+        <div class="admin-federation-filters">
+          {(["all", "active", "suspended", "silenced"] as const).map((s) => (
+            <button
+              class={`btn btn-small${statusFilter() === s ? " btn-active" : ""}`}
+              onClick={() => handleStatusFilter(s)}
+            >
+              {statusLabel(s)}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+        <Show
+          when={servers().length > 0}
+          fallback={<p class="empty">{emptyMessage()}</p>}
+        >
+          <div class="admin-federation-table-wrap">
+            <table class="admin-federation-table">
+              <thead>
+                <tr>
+                  <th class="sortable" onClick={() => handleSort("domain")}>
+                    {t("admin.federationDomain")}{sortIndicator("domain")}
+                  </th>
+                  <th class="sortable" onClick={() => handleSort("user_count")}>
+                    {t("admin.federationUsers")}{sortIndicator("user_count")}
+                  </th>
+                  <th class="sortable" onClick={() => handleSort("note_count")}>
+                    {t("admin.federationNotes")}{sortIndicator("note_count")}
+                  </th>
+                  <th class="sortable" onClick={() => handleSort("last_activity")}>
+                    {t("admin.federationLastActivity")}{sortIndicator("last_activity")}
+                  </th>
+                  <th>{t("admin.federationStatus")}</th>
+                  <th>{t("admin.federationDelivery")}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={servers()}>
+                  {(s) => (
+                    <>
+                      <tr
+                        class={`admin-federation-row${expandedDomain() === s.domain ? " expanded" : ""}`}
+                        onClick={() => toggleDetail(s.domain)}
+                      >
+                        <td class="admin-federation-domain">{s.domain}</td>
+                        <td>{s.user_count}</td>
+                        <td>{s.note_count}</td>
+                        <td>{formatDate(s.last_activity_at)}</td>
+                        <td>
+                          <span class={`admin-status-badge ${s.status}`}>
+                            {statusLabel(s.status)}
+                          </span>
+                        </td>
+                        <td>{deliveryRate(s)}</td>
+                      </tr>
+                      <Show when={expandedDomain() === s.domain}>
+                        <tr class="admin-federation-detail-row">
+                          <td colSpan={6}>
+                            <Show
+                              when={!detailLoading()}
+                              fallback={<p>{t("common.loading")}</p>}
+                            >
+                              <Show when={detail()}>
+                                {(d) => (
+                                  <div class="admin-federation-detail">
+                                    <div class="admin-federation-detail-stats">
+                                      <div class="admin-stat-card">
+                                        <span class="admin-stat-num">
+                                          {d().delivery_stats.success}
+                                        </span>
+                                        <span class="admin-stat-label">
+                                          {t("admin.federationDeliverySuccess")}
+                                        </span>
+                                      </div>
+                                      <div class="admin-stat-card">
+                                        <span class="admin-stat-num">
+                                          {d().delivery_stats.failure}
+                                        </span>
+                                        <span class="admin-stat-label">
+                                          {t("admin.federationDeliveryFailure")}
+                                        </span>
+                                      </div>
+                                      <div class="admin-stat-card">
+                                        <span class="admin-stat-num">
+                                          {d().delivery_stats.pending}
+                                        </span>
+                                        <span class="admin-stat-label">
+                                          {t("admin.federationDeliveryPending")}
+                                        </span>
+                                      </div>
+                                      <div class="admin-stat-card">
+                                        <span class="admin-stat-num">
+                                          {d().delivery_stats.dead}
+                                        </span>
+                                        <span class="admin-stat-label">
+                                          {t("admin.federationDeliveryDead")}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <Show when={d().first_seen_at}>
+                                      <p class="admin-federation-meta">
+                                        {t("admin.federationFirstSeen")}: {formatDate(d().first_seen_at)}
+                                      </p>
+                                    </Show>
+                                    <Show when={d().block_reason}>
+                                      <p class="admin-federation-meta">
+                                        {t("admin.federationBlockReason")}: {d().block_reason}
+                                      </p>
+                                    </Show>
+                                    <Show when={d().recent_actors.length > 0}>
+                                      <h4>{t("admin.federationRecentActors")}</h4>
+                                      <div class="admin-federation-actors">
+                                        <For each={d().recent_actors}>
+                                          {(a) => (
+                                            <div class="admin-federation-actor">
+                                              <strong>
+                                                {a.display_name || a.username}
+                                              </strong>
+                                              <span class="admin-user-handle">
+                                                @{a.username}@{d().domain}
+                                              </span>
+                                            </div>
+                                          )}
+                                        </For>
+                                      </div>
+                                    </Show>
+                                  </div>
+                                )}
+                              </Show>
+                            </Show>
+                          </td>
+                        </tr>
+                      </Show>
+                    </>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
+
+          <Show when={totalPages() > 1}>
+            <div class="admin-federation-pagination">
+              <button
+                class="btn btn-small"
+                disabled={currentPage() <= 1}
+                onClick={() => { setOffset(offset() - limit); load(); }}
+              >
+                \u2190
+              </button>
+              <span>
+                {currentPage()} / {totalPages()}
+              </span>
+              <button
+                class="btn btn-small"
+                disabled={currentPage() >= totalPages()}
+                onClick={() => { setOffset(offset() + limit); load(); }}
+              >
+                \u2192
+              </button>
+            </div>
+          </Show>
         </Show>
       </Show>
     </div>

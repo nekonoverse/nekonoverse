@@ -297,3 +297,63 @@ export async function createInviteCode(): Promise<InviteCode> {
 export async function revokeInviteCode(code: string): Promise<void> {
   await apiRequest(`/api/v1/invites/${code}`, { method: "DELETE" });
 }
+
+// Federation
+export interface DeliveryStats {
+  success: number;
+  failure: number;
+  pending: number;
+  dead: number;
+}
+
+export interface FederatedServer {
+  domain: string;
+  user_count: number;
+  note_count: number;
+  last_activity_at: string | null;
+  first_seen_at: string | null;
+  status: string;
+  block_severity: string | null;
+  delivery_stats: DeliveryStats;
+}
+
+export interface FederatedServerList {
+  servers: FederatedServer[];
+  total: number;
+}
+
+export interface ActorSummary {
+  username: string;
+  display_name: string | null;
+  ap_id: string;
+  last_fetched_at: string | null;
+}
+
+export interface FederatedServerDetail extends FederatedServer {
+  block_reason: string | null;
+  recent_actors: ActorSummary[];
+}
+
+export async function getFederatedServers(params: {
+  limit?: number;
+  offset?: number;
+  sort?: string;
+  order?: string;
+  search?: string;
+  status?: string;
+} = {}): Promise<FederatedServerList> {
+  const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.offset) qs.set("offset", String(params.offset));
+  if (params.sort) qs.set("sort", params.sort);
+  if (params.order) qs.set("order", params.order);
+  if (params.search) qs.set("search", params.search);
+  if (params.status) qs.set("status", params.status);
+  return apiRequest<FederatedServerList>(`/api/v1/admin/federation?${qs}`);
+}
+
+export async function getFederatedServerDetail(domain: string): Promise<FederatedServerDetail> {
+  return apiRequest<FederatedServerDetail>(
+    `/api/v1/admin/federation/${encodeURIComponent(domain)}`
+  );
+}
