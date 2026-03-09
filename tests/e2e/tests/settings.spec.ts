@@ -6,26 +6,31 @@ test.describe("User Settings", () => {
     await loginAsAdmin(page);
   });
 
-  test("settings page loads with tabs", async ({ page }) => {
+  test("settings page loads with category menu", async ({ page }) => {
     await page.goto("/settings");
-    await expect(page.locator(".settings-tabs")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".settings-menu")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".settings-menu-card").first()).toBeVisible();
   });
 
-  test("can switch tabs", async ({ page }) => {
+  test("can navigate to sub-page and back", async ({ page }) => {
     await page.goto("/settings");
-    await expect(page.locator(".settings-tabs")).toBeVisible({ timeout: 15_000 });
+    await expect(page.locator(".settings-menu")).toBeVisible({ timeout: 15_000 });
 
-    // Click Appearance tab
-    await page.click('.settings-tab:has-text("Appearance")');
+    // Click Appearance card
+    await page.click('.settings-menu-card:has-text("Appearance")');
     // Theme selector should be visible
     await expect(page.locator(".theme-selector").first()).toBeVisible({ timeout: 5_000 });
+    // Breadcrumb should be visible
+    await expect(page.locator(".breadcrumb")).toBeVisible();
+
+    // Click breadcrumb link to go back
+    await page.click(".breadcrumb-link");
+    await expect(page.locator(".settings-menu")).toBeVisible({ timeout: 5_000 });
   });
 
   test("can switch theme", async ({ page }) => {
-    await page.goto("/settings");
-    await expect(page.locator(".settings-tabs")).toBeVisible({ timeout: 15_000 });
-    await page.click('.settings-tab:has-text("Appearance")');
-    await expect(page.locator(".theme-selector").first()).toBeVisible({ timeout: 5_000 });
+    await page.goto("/settings/appearance");
+    await expect(page.locator(".theme-selector").first()).toBeVisible({ timeout: 15_000 });
 
     // Click Light theme button
     await page.click('.theme-btn:has-text("Light")');
