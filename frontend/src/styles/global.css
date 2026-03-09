@@ -1158,6 +1158,33 @@ a:hover {
   margin-bottom: 12px;
 }
 
+/* About tab info grid */
+.about-info-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-info-row {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.about-info-label {
+  color: var(--text-secondary);
+  font-size: 0.9em;
+  min-width: 120px;
+  flex-shrink: 0;
+}
+
+.about-info-value {
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
 /* Admin server icon preview */
 .admin-server-icon-preview {
   width: 64px;
