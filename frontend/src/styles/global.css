@@ -836,6 +836,15 @@ a:hover {
   color: var(--text-primary);
 }
 
+/* Visibility indicator */
+.note-visibility-indicator {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-secondary);
+  margin-right: 8px;
+  line-height: 1;
+}
+
 /* Edited label */
 .note-edited-label {
   font-size: 0.75em;
