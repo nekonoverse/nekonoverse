@@ -173,6 +173,7 @@ export default function NoteCard(props: Props) {
   const [bookmarked, setBookmarked] = createSignal(false);
   const [pinned, setPinned] = createSignal(false);
   const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
+  const [cwExpanded, setCwExpanded] = createSignal(false);
   const [editing, setEditing] = createSignal(false);
   const [editContent, setEditContent] = createSignal("");
   const [editSaving, setEditSaving] = createSignal(false);
@@ -424,73 +425,88 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <Show when={editing()} fallback={
-          <div class="note-content" ref={(el) => {
-            const src = noteSource();
-            if (src !== null && src !== undefined) {
-              renderMfm(el, src, note().emojis, navigate);
-            } else {
-              el.innerHTML = sanitizeHtml(noteContent());
-              mentionify(el, navigate);
-              emojify(el, note().emojis);
-              twemojify(el);
-            }
+        <Show when={note().spoiler_text}>
+          <div class="note-cw-text" ref={(el) => {
+            el.textContent = note().spoiler_text!;
+            emojify(el, note().emojis);
+            twemojify(el);
           }} />
-        }>
-          <div class="note-edit-form">
-            <textarea
-              class="note-edit-textarea"
-              value={editContent()}
-              onInput={(e) => setEditContent(e.currentTarget.value)}
-              rows={4}
-            />
-            <div class="note-edit-actions">
-              <button
-                class="btn btn-small note-edit-save-btn"
-                onClick={handleEditSave}
-                disabled={editSaving()}
-              >
-                {editSaving() ? t("note.editing") : t("note.save")}
-              </button>
-              <button
-                class="btn btn-small note-edit-cancel-btn"
-                onClick={handleEditCancel}
-              >
-                {t("note.cancel")}
-              </button>
-            </div>
-          </div>
+          <button
+            class="note-cw-toggle"
+            onClick={() => setCwExpanded(!cwExpanded())}
+          >
+            {cwExpanded() ? t("cw.hide") : t("cw.show")}
+          </button>
         </Show>
-        <Show when={note().poll}>
-          <PollDisplay poll={note().poll!} noteId={note().id} />
-        </Show>
-        <Show when={note().quote}>
-          <QuoteEmbed note={note().quote!} />
-        </Show>
-        <Show when={note().media_attachments?.length > 0}>
-          <div class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}>
-            <For each={note().media_attachments}>
-              {(media, i) => (
+        <Show when={!note().spoiler_text || cwExpanded()}>
+          <Show when={editing()} fallback={
+            <div class="note-content" ref={(el) => {
+              const src = noteSource();
+              if (src !== null && src !== undefined) {
+                renderMfm(el, src, note().emojis, navigate);
+              } else {
+                el.innerHTML = sanitizeHtml(noteContent());
+                mentionify(el, navigate);
+                emojify(el, note().emojis);
+                twemojify(el);
+              }
+            }} />
+          }>
+            <div class="note-edit-form">
+              <textarea
+                class="note-edit-textarea"
+                value={editContent()}
+                onInput={(e) => setEditContent(e.currentTarget.value)}
+                rows={4}
+              />
+              <div class="note-edit-actions">
                 <button
-                  class="note-media-item"
-                  onClick={() => setLightboxIndex(i())}
-                  type="button"
+                  class="btn btn-small note-edit-save-btn"
+                  onClick={handleEditSave}
+                  disabled={editSaving()}
                 >
-                  <img
-                    src={media.preview_url || media.url}
-                    alt={media.description || ""}
-                    loading="lazy"
-                  />
+                  {editSaving() ? t("note.editing") : t("note.save")}
                 </button>
-              )}
-            </For>
-          </div>
-          <Show when={lightboxIndex() !== null}>
-            <ImageLightbox
-              media={note().media_attachments}
-              initialIndex={lightboxIndex()!}
-              onClose={() => setLightboxIndex(null)}
-            />
+                <button
+                  class="btn btn-small note-edit-cancel-btn"
+                  onClick={handleEditCancel}
+                >
+                  {t("note.cancel")}
+                </button>
+              </div>
+            </div>
+          </Show>
+          <Show when={note().poll}>
+            <PollDisplay poll={note().poll!} noteId={note().id} />
+          </Show>
+          <Show when={note().quote}>
+            <QuoteEmbed note={note().quote!} />
+          </Show>
+          <Show when={note().media_attachments?.length > 0}>
+            <div class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}>
+              <For each={note().media_attachments}>
+                {(media, i) => (
+                  <button
+                    class="note-media-item"
+                    onClick={() => setLightboxIndex(i())}
+                    type="button"
+                  >
+                    <img
+                      src={media.preview_url || media.url}
+                      alt={media.description || ""}
+                      loading="lazy"
+                    />
+                  </button>
+                )}
+              </For>
+            </div>
+            <Show when={lightboxIndex() !== null}>
+              <ImageLightbox
+                media={note().media_attachments}
+                initialIndex={lightboxIndex()!}
+                onClose={() => setLightboxIndex(null)}
+              />
+            </Show>
           </Show>
         </Show>
         <Show when={currentUser()}>
