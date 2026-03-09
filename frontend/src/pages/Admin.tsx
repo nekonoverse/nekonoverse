@@ -1,7 +1,7 @@
 import {
   createSignal,
   createMemo,
-  onMount,
+  createEffect,
   onCleanup,
   Show,
   For,
@@ -262,10 +262,19 @@ function OverviewTab() {
   const { t } = useI18n();
   const [stats, setStats] = createSignal<AdminStats | null>(null);
 
-  onMount(async () => {
-    try {
-      setStats(await getAdminStats());
-    } catch {}
+  // Use createEffect for reliable initialization inside Switch/Match
+  let overviewInit = false;
+  createEffect(() => {
+    if (!overviewInit) {
+      overviewInit = true;
+      (async () => {
+        try {
+          setStats(await getAdminStats());
+        } catch (e) {
+          console.error("Failed to load admin stats:", e);
+        }
+      })();
+    }
   });
 
   return (
@@ -307,17 +316,26 @@ function ServerSettingsTab() {
   const [uploadingIcon, setUploadingIcon] = createSignal(false);
   let iconInput!: HTMLInputElement;
 
-  onMount(async () => {
-    try {
-      const s = await getServerSettings();
-      setSettings(s);
-      setName(s.server_name || "");
-      setDesc(s.server_description || "");
-      setTos(s.tos_url || "");
-      setRegMode(s.registration_mode || "open");
-      setInviteRole(s.invite_create_role || "admin");
-      if (s.server_icon_url) setIconUrl(s.server_icon_url);
-    } catch {}
+  // Use createEffect for reliable initialization inside Switch/Match
+  let settingsInit = false;
+  createEffect(() => {
+    if (!settingsInit) {
+      settingsInit = true;
+      (async () => {
+        try {
+          const s = await getServerSettings();
+          setSettings(s);
+          setName(s.server_name || "");
+          setDesc(s.server_description || "");
+          setTos(s.tos_url || "");
+          setRegMode(s.registration_mode || "open");
+          setInviteRole(s.invite_create_role || "admin");
+          if (s.server_icon_url) setIconUrl(s.server_icon_url);
+        } catch (e) {
+          console.error("Failed to load server settings:", e);
+        }
+      })();
+    }
   });
 
   const handleSave = async () => {
@@ -482,20 +500,39 @@ function UsersTab() {
   const { t } = useI18n();
   const [users, setUsers] = createSignal<AdminUser[]>([]);
   const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal("");
   const isAdmin = () => currentUser()?.role === "admin";
   const isSelf = (userId: string) => currentUser()?.id === userId;
 
-  onMount(async () => {
+  const loadUsers = async () => {
+    setLoading(true);
+    setError("");
     try {
       setUsers(await getAdminUsers());
-    } catch {}
+    } catch (e) {
+      console.error("Failed to load admin users:", e);
+      setError(e instanceof Error ? e.message : "Failed to load users");
+    }
     setLoading(false);
+  };
+
+  // Use createEffect for reliable initialization inside Switch/Match
+  let usersInit = false;
+  createEffect(() => {
+    if (!usersInit) {
+      usersInit = true;
+      loadUsers();
+    }
   });
 
   const reload = async () => {
+    setError("");
     try {
       setUsers(await getAdminUsers());
-    } catch {}
+    } catch (e) {
+      console.error("Failed to reload admin users:", e);
+      setError(e instanceof Error ? e.message : "Failed to load users");
+    }
   };
 
   const handleRoleChange = async (userId: string, role: string) => {
@@ -569,6 +606,9 @@ function UsersTab() {
     <>
       <div class="settings-section">
         <h3>{t("admin.tabUsers")}</h3>
+        <Show when={error()}>
+          <p class="error">{error()}</p>
+        </Show>
         <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
           <div class="admin-user-list">
             <For each={users()}>
@@ -714,11 +754,20 @@ function DomainsTab() {
   const [newSeverity, setNewSeverity] = createSignal("suspend");
   const [newReason, setNewReason] = createSignal("");
 
-  onMount(async () => {
-    try {
-      setBlocks(await getDomainBlocks());
-    } catch {}
-    setLoading(false);
+  // Use createEffect for reliable initialization inside Switch/Match
+  let domainsInit = false;
+  createEffect(() => {
+    if (!domainsInit) {
+      domainsInit = true;
+      (async () => {
+        try {
+          setBlocks(await getDomainBlocks());
+        } catch (e) {
+          console.error("Failed to load domain blocks:", e);
+        }
+        setLoading(false);
+      })();
+    }
   });
 
   const handleAdd = async () => {
@@ -814,11 +863,20 @@ function ReportsTab() {
     setLoading(true);
     try {
       setReports(await getReports(filter()));
-    } catch {}
+    } catch (e) {
+      console.error("Failed to load reports:", e);
+    }
     setLoading(false);
   };
 
-  onMount(load);
+  // Use createEffect for reliable initialization inside Switch/Match
+  let reportsInit = false;
+  createEffect(() => {
+    if (!reportsInit) {
+      reportsInit = true;
+      load();
+    }
+  });
 
   const handleResolve = async (id: string) => {
     try {
@@ -912,11 +970,20 @@ function LogTab() {
   const [entries, setEntries] = createSignal<ModerationLogEntry[]>([]);
   const [loading, setLoading] = createSignal(true);
 
-  onMount(async () => {
-    try {
-      setEntries(await getModerationLog());
-    } catch {}
-    setLoading(false);
+  // Use createEffect for reliable initialization inside Switch/Match
+  let logInit = false;
+  createEffect(() => {
+    if (!logInit) {
+      logInit = true;
+      (async () => {
+        try {
+          setEntries(await getModerationLog());
+        } catch (e) {
+          console.error("Failed to load moderation log:", e);
+        }
+        setLoading(false);
+      })();
+    }
   });
 
   return (
@@ -984,11 +1051,20 @@ function EmojiTab() {
   const load = async () => {
     try {
       setEmojis(await getAdminEmojis());
-    } catch {}
+    } catch (e) {
+      console.error("Failed to load emojis:", e);
+    }
     setLoading(false);
   };
 
-  onMount(load);
+  // Use createEffect for reliable initialization inside Switch/Match
+  let emojiInit = false;
+  createEffect(() => {
+    if (!emojiInit) {
+      emojiInit = true;
+      load();
+    }
+  });
 
   const handleAdd = async () => {
     const file = fileInput.files?.[0];
@@ -1349,11 +1425,20 @@ function ServerFilesTab() {
   const load = async () => {
     try {
       setFiles(await getServerFiles());
-    } catch {}
+    } catch (e) {
+      console.error("Failed to load server files:", e);
+    }
     setLoading(false);
   };
 
-  onMount(load);
+  // Use createEffect for reliable initialization inside Switch/Match
+  let filesInit = false;
+  createEffect(() => {
+    if (!filesInit) {
+      filesInit = true;
+      load();
+    }
+  });
 
   const handleUpload = async (e: Event) => {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -1465,11 +1550,20 @@ function InvitesTab() {
   const load = async () => {
     try {
       setInvites(await getInviteCodes());
-    } catch {}
+    } catch (e) {
+      console.error("Failed to load invite codes:", e);
+    }
     setLoading(false);
   };
 
-  onMount(load);
+  // Use createEffect for reliable initialization inside Switch/Match
+  let invitesInit = false;
+  createEffect(() => {
+    if (!invitesInit) {
+      invitesInit = true;
+      load();
+    }
+  });
 
   const handleCreate = async () => {
     setCreating(true);
@@ -1587,11 +1681,20 @@ function FederationTab() {
       });
       setServers(res.servers);
       setTotal(res.total);
-    } catch {}
+    } catch (e) {
+      console.error("Failed to load federated servers:", e);
+    }
     setLoading(false);
   };
 
-  onMount(load);
+  // Use createEffect for reliable initialization inside Switch/Match
+  let federationInit = false;
+  createEffect(() => {
+    if (!federationInit) {
+      federationInit = true;
+      load();
+    }
+  });
 
   const handleSearch = () => {
     setOffset(0);
@@ -1916,11 +2019,15 @@ function QueueTab() {
     loadJobs();
   };
 
-  // 自動更新: 15秒ごと
+  // 自動更新: 15秒ごと — use createEffect for reliable initialization inside Switch/Match
   let interval: ReturnType<typeof setInterval>;
-  onMount(() => {
-    load();
-    interval = setInterval(load, 15000);
+  let queueInit = false;
+  createEffect(() => {
+    if (!queueInit) {
+      queueInit = true;
+      load();
+      interval = setInterval(load, 15000);
+    }
   });
   onCleanup(() => clearInterval(interval));
 
@@ -2169,11 +2276,15 @@ function SystemTab() {
     } catch {}
   };
 
-  // 自動更新: 10秒ごと
+  // 自動更新: 10秒ごと — use createEffect for reliable initialization inside Switch/Match
   let interval: ReturnType<typeof setInterval>;
-  onMount(() => {
-    load();
-    interval = setInterval(load, 10000);
+  let systemInit = false;
+  createEffect(() => {
+    if (!systemInit) {
+      systemInit = true;
+      load();
+      interval = setInterval(load, 10000);
+    }
   });
   onCleanup(() => clearInterval(interval));
 
