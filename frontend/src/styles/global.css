@@ -3614,3 +3614,238 @@ a:hover {
   -webkit-box-orient: vertical;
   overflow: hidden;
 }
+
+/* ===== MFM (Misskey Flavored Markup) ===== */
+
+.mfm-center {
+  text-align: center;
+}
+
+.mfm-small {
+  font-size: 0.8em;
+  opacity: 0.7;
+}
+
+.mfm-quote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.8em;
+  margin: 0.4em 0;
+  color: var(--text-secondary);
+}
+
+.mfm-inline-code {
+  background: rgba(255, 255, 255, 0.1);
+  padding: 0.1em 0.4em;
+  border-radius: 4px;
+  font-family: monospace;
+  font-size: 0.9em;
+}
+
+.mfm-code-block {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 0.8em;
+  border-radius: var(--radius);
+  overflow-x: auto;
+  margin: 0.4em 0;
+}
+
+.mfm-code-block code {
+  font-family: monospace;
+  font-size: 0.9em;
+  white-space: pre;
+}
+
+.mfm-math-inline {
+  font-family: monospace;
+}
+
+.mfm-math-block {
+  background: rgba(0, 0, 0, 0.2);
+  padding: 0.8em;
+  border-radius: var(--radius);
+  margin: 0.4em 0;
+  text-align: center;
+}
+
+.mfm-hashtag {
+  color: var(--accent);
+}
+
+.mfm-search {
+  margin: 0.4em 0;
+}
+
+.mfm-fn {
+  display: inline-block;
+}
+
+.mfm-fn-blur {
+  filter: blur(6px);
+  transition: filter 0.3s;
+}
+
+.mfm-fn-blur:hover {
+  filter: none;
+}
+
+/* MFM Animations */
+
+.mfm-fn-tada {
+  animation: mfm-tada var(--mfm-speed, 1s) linear infinite both;
+}
+
+@keyframes mfm-tada {
+  0% { transform: scale(1) rotate(0); }
+  10% { transform: scale(0.9) rotate(-3deg); }
+  20% { transform: scale(0.9) rotate(-3deg); }
+  30% { transform: scale(1.1) rotate(3deg); }
+  40% { transform: scale(1.1) rotate(-3deg); }
+  50% { transform: scale(1.1) rotate(3deg); }
+  60% { transform: scale(1.1) rotate(-3deg); }
+  70% { transform: scale(1.1) rotate(3deg); }
+  80% { transform: scale(1.1) rotate(-3deg); }
+  90% { transform: scale(1.1) rotate(3deg); }
+  100% { transform: scale(1) rotate(0); }
+}
+
+.mfm-fn-jelly {
+  animation: mfm-jelly var(--mfm-speed, 1s) linear infinite both;
+}
+
+@keyframes mfm-jelly {
+  0% { transform: scaleX(1) scaleY(1); }
+  33% { transform: scaleX(1.25) scaleY(0.75); }
+  66% { transform: scaleX(0.75) scaleY(1.25); }
+  100% { transform: scaleX(1) scaleY(1); }
+}
+
+.mfm-fn-twitch {
+  animation: mfm-twitch var(--mfm-speed, 0.5s) ease infinite;
+}
+
+@keyframes mfm-twitch {
+  0% { transform: translate(7px, -2px); }
+  5% { transform: translate(-3px, 1px); }
+  10% { transform: translate(-7px, -1px); }
+  15% { transform: translate(0, -1px); }
+  20% { transform: translate(-8px, 6px); }
+  25% { transform: translate(-1px, -3px); }
+  30% { transform: translate(-2px, -6px); }
+  35% { transform: translate(2px, -1px); }
+  40% { transform: translate(-8px, -8px); }
+  45% { transform: translate(0, 0); }
+  50% { transform: translate(4px, -4px); }
+  55% { transform: translate(-8px, 3px); }
+  60% { transform: translate(5px, 0); }
+  65% { transform: translate(3px, -6px); }
+  70% { transform: translate(-4px, 4px); }
+  75% { transform: translate(0, 0); }
+  80% { transform: translate(3px, -1px); }
+  85% { transform: translate(-8px, -3px); }
+  90% { transform: translate(2px, 7px); }
+  95% { transform: translate(5px, -1px); }
+  100% { transform: translate(-3px, -2px); }
+}
+
+.mfm-fn-shake {
+  animation: mfm-shake var(--mfm-speed, 0.5s) ease infinite;
+}
+
+@keyframes mfm-shake {
+  0% { transform: translate(-3px, -1px) rotate(-8deg); }
+  5% { transform: translate(0, -1px) rotate(-10deg); }
+  10% { transform: translate(1px, -3px) rotate(0); }
+  15% { transform: translate(1px, 1px) rotate(11deg); }
+  20% { transform: translate(-2px, 1px) rotate(1deg); }
+  25% { transform: translate(-1px, -2px) rotate(-2deg); }
+  30% { transform: translate(-1px, 2px) rotate(-3deg); }
+  35% { transform: translate(2px, 1px) rotate(6deg); }
+  40% { transform: translate(-2px, -3px) rotate(-9deg); }
+  45% { transform: translate(0, -1px) rotate(-12deg); }
+  50% { transform: translate(1px, 2px) rotate(10deg); }
+  55% { transform: translate(0, -3px) rotate(8deg); }
+  60% { transform: translate(1px, -1px) rotate(8deg); }
+  65% { transform: translate(0, -1px) rotate(-7deg); }
+  70% { transform: translate(-1px, -3px) rotate(6deg); }
+  75% { transform: translate(0, -2px) rotate(4deg); }
+  80% { transform: translate(-2px, -1px) rotate(3deg); }
+  85% { transform: translate(1px, -3px) rotate(-10deg); }
+  90% { transform: translate(1px, 0) rotate(3deg); }
+  95% { transform: translate(-2px, 0) rotate(-3deg); }
+  100% { transform: translate(2px, 1px) rotate(2deg); }
+}
+
+.mfm-fn-spin {
+  animation: mfm-spin var(--mfm-speed, 1.5s) linear infinite;
+}
+
+.mfm-fn-spin.mfm-spin-left {
+  animation-direction: reverse;
+}
+
+.mfm-fn-spin.mfm-spin-alternate {
+  animation-direction: alternate;
+}
+
+@keyframes mfm-spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+.mfm-fn-spin.mfm-spin-x {
+  animation-name: mfm-spin-x;
+}
+
+@keyframes mfm-spin-x {
+  0% { transform: perspective(300px) rotateX(0deg); }
+  100% { transform: perspective(300px) rotateX(360deg); }
+}
+
+.mfm-fn-spin.mfm-spin-y {
+  animation-name: mfm-spin-y;
+}
+
+@keyframes mfm-spin-y {
+  0% { transform: perspective(300px) rotateY(0deg); }
+  100% { transform: perspective(300px) rotateY(360deg); }
+}
+
+.mfm-fn-jump {
+  animation: mfm-jump var(--mfm-speed, 0.75s) linear infinite;
+}
+
+@keyframes mfm-jump {
+  0% { transform: translateY(0); }
+  25% { transform: translateY(-16px); }
+  50% { transform: translateY(0); }
+  75% { transform: translateY(-8px); }
+  100% { transform: translateY(0); }
+}
+
+.mfm-fn-bounce {
+  animation: mfm-bounce var(--mfm-speed, 0.75s) linear infinite;
+  transform-origin: center bottom;
+}
+
+@keyframes mfm-bounce {
+  0% { transform: translateY(0) scale(1); }
+  25% { transform: translateY(-16px) scale(1); }
+  50% { transform: translateY(0) scale(1); }
+  75% { transform: translateY(0) scale(1.15, 0.75); }
+  100% { transform: translateY(0) scale(1); }
+}
+
+.mfm-fn-rainbow {
+  animation: mfm-rainbow var(--mfm-speed, 1s) linear infinite;
+}
+
+@keyframes mfm-rainbow {
+  0% { filter: hue-rotate(0deg) contrast(150%) saturate(150%); }
+  100% { filter: hue-rotate(360deg) contrast(150%) saturate(150%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mfm-fn {
+    animation: none !important;
+  }
+}
