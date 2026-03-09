@@ -4219,3 +4219,30 @@ a:hover {
   background: var(--border);
   color: var(--text-primary);
 }
+
+/* Swipe-back gesture indicator */
+.swipe-back-indicator {
+  position: fixed;
+  top: 50%;
+  left: 0;
+  width: 40px;
+  height: 40px;
+  margin-top: -20px;
+  border-radius: 50%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 150;
+  color: var(--text-secondary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+  pointer-events: none;
+  will-change: transform;
+}
+
+.swipe-back-indicator.swipe-back-ready {
+  color: var(--accent);
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--accent) 15%, var(--bg-secondary));
+}
