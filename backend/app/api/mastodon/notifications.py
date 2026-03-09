@@ -1,5 +1,6 @@
 """Notification API endpoints."""
 
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query
@@ -13,6 +14,46 @@ from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/notifications", tags=["notifications"])
 
+_CUSTOM_EMOJI_RE = re.compile(
+    r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$"
+)
+
+
+async def _resolve_reaction_emoji_url(
+    db, emoji: str | None,
+) -> str | None:
+    """Resolve custom emoji reaction string to its image URL."""
+    if not emoji or not db:
+        return None
+    m = _CUSTOM_EMOJI_RE.match(emoji)
+    if not m:
+        return None
+
+    from app.models.custom_emoji import CustomEmoji
+    from app.services.emoji_service import get_custom_emoji
+
+    shortcode, domain = m.group(1), m.group(2)
+    # Prefer local emoji
+    local = await get_custom_emoji(db, shortcode, None)
+    if local:
+        return media_proxy_url(local.url)
+    if domain:
+        remote = await get_custom_emoji(db, shortcode, domain)
+        if remote:
+            return media_proxy_url(remote.url)
+    else:
+        from sqlalchemy import select
+        result = await db.execute(
+            select(CustomEmoji).where(
+                CustomEmoji.shortcode == shortcode,
+                CustomEmoji.domain.isnot(None),
+            ).limit(1)
+        )
+        remote = result.scalar_one_or_none()
+        if remote:
+            return media_proxy_url(remote.url)
+    return None
+
 
 async def _notification_to_response(notif, db=None) -> NotificationResponse:
     account = None
@@ -21,7 +62,10 @@ async def _notification_to_response(notif, db=None) -> NotificationResponse:
             id=notif.sender.id,
             username=notif.sender.username,
             display_name=notif.sender.display_name,
-            avatar_url=media_proxy_url(notif.sender.avatar_url) or "/default-avatar.svg",
+            avatar_url=(
+                media_proxy_url(notif.sender.avatar_url)
+                or "/default-avatar.svg"
+            ),
             ap_id=notif.sender.ap_id,
             domain=notif.sender.domain,
         )
@@ -31,6 +75,10 @@ async def _notification_to_response(notif, db=None) -> NotificationResponse:
         from app.api.mastodon.statuses import note_to_response
         status = await note_to_response(notif.note, db=db)
 
+    emoji_url = await _resolve_reaction_emoji_url(
+        db, notif.reaction_emoji,
+    )
+
     return NotificationResponse(
         id=notif.id,
         type=notif.type,
@@ -39,6 +87,7 @@ async def _notification_to_response(notif, db=None) -> NotificationResponse:
         account=account,
         status=status,
         emoji=notif.reaction_emoji,
+        emoji_url=emoji_url,
     )
 
 
