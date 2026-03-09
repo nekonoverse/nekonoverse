@@ -44,12 +44,20 @@ export default function UserHoverCard(props: Props) {
     } catch {}
   };
 
-  // --- Click handler: show card on click (both desktop and mobile) ---
+  // --- Click handler: desktop only (タッチデバイスはtouchイベントで処理) ---
   const handleClick = (e: MouseEvent) => {
+    if (isTouchDevice()) {
+      e.preventDefault();
+      return;
+    }
     e.preventDefault();
     e.stopPropagation();
-    setVisible(true);
-    if (!account()) fetchAccount();
+    if (visible()) {
+      setVisible(false);
+    } else {
+      setVisible(true);
+      if (!account()) fetchAccount();
+    }
   };
 
   // --- Desktop: mouse hover handlers ---
@@ -88,6 +96,11 @@ export default function UserHoverCard(props: Props) {
       // Prevent the tap from navigating to the profile after long-press
       e.preventDefault();
       longPressTriggered = false;
+    } else if (!visible()) {
+      // 短いタップでカードを表示
+      e.preventDefault();
+      setVisible(true);
+      if (!account()) fetchAccount();
     }
   };
 
@@ -97,24 +110,8 @@ export default function UserHoverCard(props: Props) {
     longPressTriggered = false;
   };
 
-  // --- Touch: close on tap outside ---
-  // The backdrop handles most "tap outside" cases, but this listener
-  // serves as a safety net for edge cases.
-  const handleDocumentTouch = (e: TouchEvent) => {
-    if (!visible()) return;
-    const target = e.target as HTMLElement;
-    // Close if tap is outside the card itself (backdrop click is handled separately)
-    if (cardEl && !cardEl.contains(target) && !target.closest(".hover-card")) {
-      setVisible(false);
-    }
-  };
-
-  if (typeof document !== "undefined") {
-    document.addEventListener("touchstart", handleDocumentTouch, { passive: true });
-    onCleanup(() => {
-      document.removeEventListener("touchstart", handleDocumentTouch);
-    });
-  }
+  // タッチデバイスでのカード外タップはbackdropのonClickで処理するため、
+  // documentレベルのtouchstartリスナーは不要
 
   // --- Positioning for mobile: adjust card so it doesn't overflow viewport ---
   const adjustCardPosition = (el: HTMLDivElement) => {
@@ -196,8 +193,9 @@ export default function UserHoverCard(props: Props) {
       <Show when={visible() && isTouchDevice()}>
         <div
           class="hover-card-backdrop"
-          onClick={() => setVisible(false)}
-          onTouchEnd={(e) => { e.preventDefault(); setVisible(false); }}
+          onTouchStart={(e) => { e.stopPropagation(); }}
+          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setVisible(false); }}
+          onClick={(e) => { e.stopPropagation(); setVisible(false); }}
         />
       </Show>
       <Show when={visible()}>
