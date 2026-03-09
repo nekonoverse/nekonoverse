@@ -98,7 +98,7 @@ jobs:
 
       - name: Run E2E tests
         working-directory: tests/e2e
-        run: npx playwright test
+        run: npx playwright test --update-snapshots
 
       - name: Upload test results
         if: failure()
@@ -106,6 +106,13 @@ jobs:
         with:
           name: e2e-results
           path: tests/e2e/test-results/
+
+      - name: Upload updated snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-snapshots
+          path: tests/e2e/tests/**/*-snapshots/
 
       - name: Cleanup
         if: always()
