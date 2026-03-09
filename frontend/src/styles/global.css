@@ -3307,6 +3307,29 @@ a:hover {
   color: var(--text-primary);
 }
 
+.confirm-input-hint {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+  line-height: 1.4;
+}
+
+.confirm-input {
+  width: 100%;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font-size: 0.95em;
+  box-sizing: border-box;
+}
+
+.confirm-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .import-success {
   color: var(--success, #4caf50);
   font-size: 0.85em;

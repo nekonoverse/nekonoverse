@@ -278,18 +278,50 @@ function UsersTab() {
     try { await changeUserRole(userId, role); await reload(); } catch {}
   };
 
-  const handleSuspend = async (userId: string) => {
-    if (!confirm(t("admin.confirmSuspend"))) return;
-    try { await suspendUser(userId); await reload(); } catch {}
+  const [confirmAction, setConfirmAction] = createSignal<{
+    type: "suspend" | "silence";
+    userId: string;
+    username: string;
+  } | null>(null);
+  const [confirmInput, setConfirmInput] = createSignal("");
+  const [actionLoading, setActionLoading] = createSignal(false);
+
+  const openConfirm = (type: "suspend" | "silence", userId: string, username: string) => {
+    setConfirmInput("");
+    setConfirmAction({ type, userId, username });
+  };
+
+  const closeConfirm = () => {
+    setConfirmAction(null);
+    setConfirmInput("");
+    setActionLoading(false);
+  };
+
+  const executeConfirm = async () => {
+    const action = confirmAction();
+    if (!action) return;
+    setActionLoading(true);
+    try {
+      if (action.type === "suspend") {
+        await suspendUser(action.userId);
+      } else {
+        await silenceUser(action.userId);
+      }
+      await reload();
+      closeConfirm();
+    } catch {
+      setActionLoading(false);
+    }
+  };
+
+  const confirmMatches = () => {
+    const action = confirmAction();
+    if (!action) return false;
+    return confirmInput() === `@${action.username}`;
   };
 
   const handleUnsuspend = async (userId: string) => {
     try { await unsuspendUser(userId); await reload(); } catch {}
-  };
-
-  const handleSilence = async (userId: string) => {
-    if (!confirm(t("admin.confirmSilence"))) return;
-    try { await silenceUser(userId); await reload(); } catch {}
   };
 
   const handleUnsilence = async (userId: string) => {
@@ -324,7 +356,7 @@ function UsersTab() {
                       </select>
                     </Show>
                     <Show when={!u.suspended}>
-                      <button class="btn btn-small btn-danger" onClick={() => handleSuspend(u.id)}>
+                      <button class="btn btn-small btn-danger" onClick={() => openConfirm("suspend", u.id, u.username)}>
                         {t("admin.suspend")}
                       </button>
                     </Show>
@@ -334,7 +366,7 @@ function UsersTab() {
                       </button>
                     </Show>
                     <Show when={!u.silenced}>
-                      <button class="btn btn-small" onClick={() => handleSilence(u.id)}>
+                      <button class="btn btn-small" onClick={() => openConfirm("silence", u.id, u.username)}>
                         {t("admin.silence")}
                       </button>
                     </Show>
@@ -351,6 +383,51 @@ function UsersTab() {
         </Show>
       </div>
       <SensitiveMarker />
+
+      {/* Confirmation modal for suspend/silence */}
+      <Show when={confirmAction()}>
+        {(action) => (
+          <div class="modal-overlay" onClick={closeConfirm}>
+            <div class="modal-content" style="max-width: 420px" onClick={(e) => e.stopPropagation()}>
+              <div class="modal-header">
+                <h3>
+                  {action().type === "suspend"
+                    ? t("admin.confirmSuspendTitle")
+                    : t("admin.confirmSilenceTitle")}
+                </h3>
+                <button class="modal-close" onClick={closeConfirm}>✕</button>
+              </div>
+              <div style="padding: 16px">
+                <p class="confirm-input-hint">
+                  {t("admin.typeToConfirm").replace("{username}", action().username)}
+                </p>
+                <input
+                  class="confirm-input"
+                  type="text"
+                  value={confirmInput()}
+                  onInput={(e) => setConfirmInput(e.currentTarget.value)}
+                  placeholder={`@${action().username}`}
+                  autofocus
+                />
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px">
+                  <button class="btn btn-small" onClick={closeConfirm}>
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    class="btn btn-small btn-danger"
+                    disabled={!confirmMatches() || actionLoading()}
+                    onClick={executeConfirm}
+                  >
+                    {action().type === "suspend"
+                      ? t("admin.suspend")
+                      : t("admin.silence")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Show>
     </>
   );
 }
