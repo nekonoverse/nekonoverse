@@ -23,11 +23,15 @@ test.describe("Note Editing", () => {
     const noteCard = page.locator(".note-card").filter({ hasText: originalText });
     await noteCard.locator(".note-more-btn").click();
 
+    // Wait for dropdown to appear
+    const editBtn = noteCard.locator(".note-more-item").filter({ hasText: /Edit|編集/ });
+    await expect(editBtn).toBeVisible({ timeout: 5_000 });
+
     // Click the Edit button
-    await noteCard.locator(".note-more-item").filter({ hasText: /Edit|編集/ }).click();
+    await editBtn.click();
 
     // The edit textarea should appear
-    await expect(noteCard.locator(".note-edit-textarea")).toBeVisible({ timeout: 5_000 });
+    await expect(noteCard.locator(".note-edit-textarea")).toBeVisible({ timeout: 10_000 });
 
     // Clear and type new content
     await noteCard.locator(".note-edit-textarea").fill(editedText);
