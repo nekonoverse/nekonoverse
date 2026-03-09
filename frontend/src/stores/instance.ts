@@ -12,8 +12,9 @@ interface InstanceInfo {
 
 const [instance, setInstance] = createSignal<InstanceInfo | null>(null);
 const [instanceLoading, setInstanceLoading] = createSignal(true);
+const [versionUpdateReady, setVersionUpdateReady] = createSignal(false);
 
-export { instance, instanceLoading };
+export { instance, instanceLoading, versionUpdateReady };
 
 export function registrationOpen(): boolean {
   return instance()?.registrations ?? false;
@@ -53,8 +54,6 @@ function updateDynamicIcons(iconUrl: string) {
 // --- Version detection keys ---
 const SERVER_VERSION_KEY = "nekonoverse_version";
 const CLIENT_VERSION_KEY = "nekonoverse_client_version";
-const RELOAD_COUNT_KEY = "nekonoverse_reload_count";
-const RELOAD_TS_KEY = "nekonoverse_reload_ts";
 const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
 // --- BroadcastChannel for multi-tab sync ---
@@ -65,30 +64,12 @@ const versionChannel =
 
 versionChannel?.addEventListener("message", (e) => {
   if (e.data?.type === "version-changed") {
-    location.reload();
+    setVersionUpdateReady(true);
   }
 });
 
-// --- Reload loop protection ---
-function canReload(): boolean {
-  const now = Date.now();
-  const ts = Number(sessionStorage.getItem(RELOAD_TS_KEY) || "0");
-  let count = Number(sessionStorage.getItem(RELOAD_COUNT_KEY) || "0");
-
-  if (now - ts > 10_000) {
-    // Reset counter after 10 seconds
-    count = 0;
-  }
-  if (count >= 3) return false;
-
-  sessionStorage.setItem(RELOAD_COUNT_KEY, String(count + 1));
-  sessionStorage.setItem(RELOAD_TS_KEY, String(now));
-  return true;
-}
-
-// --- Force reload: clear SW, caches, notify other tabs ---
-async function forceReload() {
-  if (!canReload()) return;
+// --- Apply update: clear SW, caches, notify other tabs, reload ---
+export async function applyUpdate() {
   versionChannel?.postMessage({ type: "version-changed" });
   if ("serviceWorker" in navigator) {
     const regs = await navigator.serviceWorker.getRegistrations();
@@ -107,7 +88,7 @@ export function checkClientVersion() {
   const stored = localStorage.getItem(CLIENT_VERSION_KEY);
   if (stored && stored !== __APP_VERSION__) {
     localStorage.setItem(CLIENT_VERSION_KEY, __APP_VERSION__);
-    forceReload();
+    setVersionUpdateReady(true);
     return;
   }
   localStorage.setItem(CLIENT_VERSION_KEY, __APP_VERSION__);
@@ -126,11 +107,12 @@ export async function fetchInstance() {
     const info = await fetchInstanceRaw();
     setInstance(info);
 
-    // Force reload when server version changes (deploy)
+    // Notify when server version changes (deploy)
     const stored = localStorage.getItem(SERVER_VERSION_KEY);
     if (stored && stored !== info.version) {
       localStorage.setItem(SERVER_VERSION_KEY, info.version);
-      await forceReload();
+      setVersionUpdateReady(true);
+      versionChannel?.postMessage({ type: "version-changed" });
       return;
     }
     localStorage.setItem(SERVER_VERSION_KEY, info.version);
