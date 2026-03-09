@@ -483,6 +483,7 @@ function UsersTab() {
   const [users, setUsers] = createSignal<AdminUser[]>([]);
   const [loading, setLoading] = createSignal(true);
   const isAdmin = () => currentUser()?.role === "admin";
+  const isSelf = (userId: string) => currentUser()?.id === userId;
 
   onMount(async () => {
     try {
@@ -592,52 +593,54 @@ function UsersTab() {
                       </span>
                     </Show>
                   </div>
-                  <div class="admin-user-actions">
-                    <Show when={isAdmin()}>
-                      <select
-                        value={u.role}
-                        onChange={(e) =>
-                          handleRoleChange(u.id, e.currentTarget.value)
-                        }
-                      >
-                        <option value="user">user</option>
-                        <option value="moderator">moderator</option>
-                        <option value="admin">admin</option>
-                      </select>
-                    </Show>
-                    <Show when={!u.suspended}>
-                      <button
-                        class="btn btn-small btn-danger"
-                        onClick={() => openConfirm("suspend", u.id, u.username)}
-                      >
-                        {t("admin.suspend")}
-                      </button>
-                    </Show>
-                    <Show when={u.suspended}>
-                      <button
-                        class="btn btn-small"
-                        onClick={() => handleUnsuspend(u.id)}
-                      >
-                        {t("admin.unsuspend")}
-                      </button>
-                    </Show>
-                    <Show when={!u.silenced}>
-                      <button
-                        class="btn btn-small"
-                        onClick={() => openConfirm("silence", u.id, u.username)}
-                      >
-                        {t("admin.silence")}
-                      </button>
-                    </Show>
-                    <Show when={u.silenced}>
-                      <button
-                        class="btn btn-small"
-                        onClick={() => handleUnsilence(u.id)}
-                      >
-                        {t("admin.unsilence")}
-                      </button>
-                    </Show>
-                  </div>
+                  <Show when={!isSelf(u.id)}>
+                    <div class="admin-user-actions">
+                      <Show when={isAdmin()}>
+                        <select
+                          value={u.role}
+                          onChange={(e) =>
+                            handleRoleChange(u.id, e.currentTarget.value)
+                          }
+                        >
+                          <option value="user">user</option>
+                          <option value="moderator">moderator</option>
+                          <option value="admin">admin</option>
+                        </select>
+                      </Show>
+                      <Show when={!u.suspended}>
+                        <button
+                          class="btn btn-small btn-danger"
+                          onClick={() => openConfirm("suspend", u.id, u.username)}
+                        >
+                          {t("admin.suspend")}
+                        </button>
+                      </Show>
+                      <Show when={u.suspended}>
+                        <button
+                          class="btn btn-small"
+                          onClick={() => handleUnsuspend(u.id)}
+                        >
+                          {t("admin.unsuspend")}
+                        </button>
+                      </Show>
+                      <Show when={!u.silenced}>
+                        <button
+                          class="btn btn-small"
+                          onClick={() => openConfirm("silence", u.id, u.username)}
+                        >
+                          {t("admin.silence")}
+                        </button>
+                      </Show>
+                      <Show when={u.silenced}>
+                        <button
+                          class="btn btn-small"
+                          onClick={() => handleUnsilence(u.id)}
+                        >
+                          {t("admin.unsilence")}
+                        </button>
+                      </Show>
+                    </div>
+                  </Show>
                 </div>
               )}
             </For>
