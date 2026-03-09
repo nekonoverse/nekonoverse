@@ -3849,3 +3849,27 @@ a:hover {
     animation: none !important;
   }
 }
+
+/* Tag Timeline */
+.tag-timeline-header {
+  color: var(--accent);
+  font-size: 1.5em;
+  margin-bottom: 1em;
+  word-break: break-all;
+}
+
+.load-more-container {
+  display: flex;
+  justify-content: center;
+  padding: 1em 0;
+}
+
+.mfm-hashtag {
+  color: var(--accent);
+  font-weight: 500;
+}
+
+.mfm-hashtag:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}

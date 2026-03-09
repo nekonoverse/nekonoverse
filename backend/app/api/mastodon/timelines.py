@@ -54,3 +54,24 @@ async def home_timeline(
         reactions = await get_reaction_summary(db, n.id, user.actor_id)
         result.append(await note_to_response(n, reactions, db=db))
     return _deduplicate_timeline(result)
+
+
+@router.get("/tag/{tag}", response_model=list[NoteResponse])
+async def tag_timeline(
+    tag: str,
+    max_id: uuid.UUID | None = Query(None),
+    limit: int = Query(20, ge=1, le=40),
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.hashtag_service import get_notes_by_hashtag
+
+    actor_id = user.actor_id if user else None
+    notes = await get_notes_by_hashtag(
+        db, tag_name=tag, limit=limit, max_id=max_id, current_actor_id=actor_id
+    )
+    result = []
+    for n in notes:
+        reactions = await get_reaction_summary(db, n.id, actor_id)
+        result.append(await note_to_response(n, reactions, db=db))
+    return result

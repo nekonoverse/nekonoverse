@@ -49,6 +49,11 @@ export interface CustomEmoji {
   static_url: string;
 }
 
+export interface TagInfo {
+  name: string;
+  url: string;
+}
+
 export interface Note {
   id: string;
   ap_id: string;
@@ -69,6 +74,7 @@ export interface Note {
   poll: Poll | null;
   pinned: boolean;
   emojis: CustomEmoji[];
+  tags: TagInfo[];
 }
 
 export async function uploadMedia(file: File, description?: string): Promise<MediaAttachment> {
@@ -189,4 +195,27 @@ export async function votePoll(noteId: string, choices: number[]): Promise<Poll>
     method: "POST",
     body: { choices },
   });
+}
+
+export async function getTagTimeline(tag: string, params?: {
+  max_id?: string;
+  limit?: number;
+}): Promise<Note[]> {
+  const query = new URLSearchParams();
+  if (params?.max_id) query.set("max_id", params.max_id);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return apiRequest<Note[]>(
+    `/api/v1/timelines/tag/${encodeURIComponent(tag)}${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export interface TrendingTag {
+  name: string;
+  url: string;
+  history: unknown[];
+}
+
+export async function getTrendingTags(limit = 10): Promise<TrendingTag[]> {
+  return apiRequest<TrendingTag[]>(`/api/v1/trends/tags?limit=${limit}`);
 }

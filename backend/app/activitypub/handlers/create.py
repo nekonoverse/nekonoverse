@@ -231,6 +231,15 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         )
         db.add(attachment)
 
+    # Extract and upsert hashtags from AP tags
+    from app.services.hashtag_service import (
+        extract_hashtags_from_ap_tags,
+        upsert_hashtags as upsert_ht,
+    )
+    hashtag_names = extract_hashtags_from_ap_tags(tags)
+    if hashtag_names:
+        await upsert_ht(db, note.id, hashtag_names)
+
     await db.commit()
     logger.info("Saved remote note %s from %s", ap_id, actor_ap_id)
 

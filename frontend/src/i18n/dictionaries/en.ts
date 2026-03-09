@@ -299,4 +299,6 @@ export const en: Dictionary = {
   "about.clearCacheDesc": "Clear cache and Service Worker, then reload the page. Try this if you experience display issues.",
   "about.cacheClearing": "Clearing...",
   "lightbox.openExternal": "Open in browser",
+  "hashtag.empty": "No posts with this hashtag.",
+  "hashtag.loadMore": "Load more",
 };

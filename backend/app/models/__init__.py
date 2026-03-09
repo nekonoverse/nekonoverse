@@ -5,6 +5,7 @@ from app.models.delivery import DeliveryJob
 from app.models.domain_block import DomainBlock
 from app.models.drive_file import DriveFile
 from app.models.follow import Follow
+from app.models.hashtag import Hashtag, NoteHashtag
 from app.models.invitation_code import InvitationCode
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
@@ -29,10 +30,12 @@ __all__ = [
     "DomainBlock",
     "DriveFile",
     "Follow",
+    "Hashtag",
     "InvitationCode",
     "ModerationLog",
     "Note",
     "NoteAttachment",
+    "NoteHashtag",
     "Notification",
     "PinnedNote",
     "PollVote",

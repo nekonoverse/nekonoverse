@@ -297,6 +297,8 @@ export const ja = {
   "about.clearCacheDesc": "キャッシュとService Workerをクリアしてページを再読み込みします。表示の不具合がある場合にお試しください。",
   "about.cacheClearing": "クリア中...",
   "lightbox.openExternal": "ブラウザで開く",
+  "hashtag.empty": "このハッシュタグの投稿はありません。",
+  "hashtag.loadMore": "もっと見る",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

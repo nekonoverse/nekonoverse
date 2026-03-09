@@ -72,6 +72,11 @@ class PollResponse(BaseModel):
     own_votes: list[int] = []
 
 
+class TagInfo(BaseModel):
+    name: str
+    url: str
+
+
 class NoteResponse(BaseModel):
     id: uuid.UUID
     ap_id: str
@@ -92,5 +97,6 @@ class NoteResponse(BaseModel):
     poll: PollResponse | None = None
     pinned: bool = False
     emojis: list[CustomEmojiInfo] = []
+    tags: list[TagInfo] = []
 
     model_config = {"from_attributes": True}

@@ -17,6 +17,7 @@ from app.schemas.note import (
     NoteMediaAttachment,
     NoteResponse,
     ReactionSummary,
+    TagInfo,
 )
 from app.services.actor_service import actor_uri
 from app.services.note_service import (
@@ -130,6 +131,17 @@ async def note_to_response(
                     shortcode=emoji.shortcode, url=url, static_url=static,
                 ))
 
+    # Resolve hashtags
+    tags: list[TagInfo] = []
+    if db:
+        from app.services.hashtag_service import get_hashtags_for_note
+        tag_names = await get_hashtags_for_note(db, note.id)
+        from app.config import settings as app_settings
+        tags = [
+            TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}")
+            for tn in tag_names
+        ]
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -155,6 +167,7 @@ async def note_to_response(
         media_attachments=media_attachments,
         quote=quote,
         emojis=emojis,
+        tags=tags,
     )
 
 
