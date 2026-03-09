@@ -145,7 +145,7 @@ export default function ImageLightbox(props: Props) {
   };
 
   const openExternal = () => {
-    window.open(current().url, "_blank");
+    window.open(current().url, "_blank", "noopener,noreferrer");
   };
 
   const isPWA = () => window.matchMedia("(display-mode: standalone)").matches;

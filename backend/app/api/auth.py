@@ -96,6 +96,7 @@ async def login(
         SESSION_COOKIE,
         session_id,
         httponly=True,
+        secure=settings.use_https,
         samesite="lax",
         max_age=86400 * 30,
     )

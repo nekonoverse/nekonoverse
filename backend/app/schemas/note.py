@@ -14,7 +14,7 @@ class NoteCreateRequest(BaseModel):
     content: str = Field(min_length=1, max_length=5000)
     visibility: str = Field(default="public", pattern=r"^(public|unlisted|followers|direct)$")
     sensitive: bool = False
-    spoiler_text: str | None = None
+    spoiler_text: str | None = Field(default=None, max_length=500)
     in_reply_to_id: uuid.UUID | None = None
     media_ids: list[uuid.UUID] = Field(default_factory=list, max_length=4)
     quote_id: uuid.UUID | None = None

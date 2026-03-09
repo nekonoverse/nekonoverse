@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from webauthn.helpers import bytes_to_base64url
 
 from app.api.auth import SESSION_COOKIE, get_session_id
+from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.services import passkey_service
 
@@ -138,6 +139,7 @@ async def authenticate_verify(
         SESSION_COOKIE,
         session_id,
         httponly=True,
+        secure=settings.use_https,
         samesite="lax",
         max_age=86400 * 30,
     )
