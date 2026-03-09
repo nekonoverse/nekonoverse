@@ -11,6 +11,7 @@ import { twemojify } from "../../utils/twemojify";
 import { emojify } from "../../utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "../../utils/mentionify";
+import { defaultAvatar } from "../../stores/instance";
 
 interface Props {
   note: Note;
@@ -42,7 +43,7 @@ function QuoteEmbed(props: { note: Note }) {
       <div class="note-quote-header">
         <img
           class="note-quote-avatar"
-          src={props.note.actor.avatar_url || "/default-avatar.svg"}
+          src={props.note.actor.avatar_url || defaultAvatar()}
           alt=""
         />
         <a href={profileUrl(props.note.actor)} class="note-quote-name">
@@ -287,7 +288,7 @@ export default function NoteCard(props: Props) {
       <a href={profileUrl(note().actor)} class="note-avatar-link">
         <img
           class="note-avatar"
-          src={note().actor.avatar_url || "/default-avatar.svg"}
+          src={note().actor.avatar_url || defaultAvatar()}
           alt=""
         />
       </a>

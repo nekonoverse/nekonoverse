@@ -6,6 +6,7 @@ import { getNote } from "../api/statuses";
 import { onNotification, onReaction, resetUnread } from "../stores/streaming";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
+import { defaultAvatar } from "../stores/instance";
 
 function actorHandle(account: Notification["account"]): string {
   if (!account) return "";
@@ -147,7 +148,7 @@ export default function Notifications() {
                           <a href={profileUrl(notif.account)} class="notification-actor">
                             <img
                               class="notification-avatar"
-                              src={notif.account!.avatar_url || "/default-avatar.svg"}
+                              src={notif.account!.avatar_url || defaultAvatar()}
                               alt=""
                             />
                             <strong>{notif.account!.display_name || notif.account!.username}</strong>

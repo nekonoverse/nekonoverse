@@ -3,6 +3,7 @@ import { getAccount, followAccount, unfollowAccount, type Account } from "../api
 import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { currentUser } from "../stores/auth";
 import { useI18n } from "../i18n";
+import { defaultAvatar } from "../stores/instance";
 
 interface Props {
   actorId: string;
@@ -215,7 +216,7 @@ export default function UserHoverCard(props: Props) {
                     <a href={`/@${acc.acct}`} class="hover-card-avatar-link">
                       <img
                         class="hover-card-avatar"
-                        src={acc.avatar || "/default-avatar.svg"}
+                        src={acc.avatar || defaultAvatar()}
                         alt=""
                       />
                     </a>

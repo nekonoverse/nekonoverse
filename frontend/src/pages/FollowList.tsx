@@ -11,6 +11,7 @@ import {
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "../stores/followedUsers";
+import { defaultAvatar } from "../stores/instance";
 
 export default function FollowList() {
   const { t } = useI18n();
@@ -116,7 +117,7 @@ export default function FollowList() {
                       <A href={`/@${acc.acct}`} class="follow-list-item-link">
                         <img
                           class="follow-list-avatar"
-                          src={acc.avatar || "/default-avatar.svg"}
+                          src={acc.avatar || defaultAvatar()}
                           alt=""
                         />
                         <div class="follow-list-item-info">
