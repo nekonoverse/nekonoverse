@@ -1,7 +1,7 @@
 import { createSignal, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { login, loginWithPasskey } from "../../stores/auth";
-import { registrationOpen } from "../../stores/instance";
+import { registrationMode } from "../../stores/instance";
 import { useI18n } from "../../i18n";
 
 export default function LoginForm() {
@@ -83,7 +83,7 @@ export default function LoginForm() {
           {passkeyLoading() ? t("auth.authenticating") : t("auth.loginWithPasskey")}
         </button>
       </Show>
-      <Show when={registrationOpen()}>
+      <Show when={registrationMode() !== "closed"}>
         <p class="alt-action">
           {t("auth.noAccount")} <a href="/register">{t("common.register")}</a>
         </p>

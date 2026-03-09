@@ -16,20 +16,12 @@ const [versionUpdateReady, setVersionUpdateReady] = createSignal(false);
 
 export { instance, instanceLoading, versionUpdateReady };
 
-export function registrationOpen(): boolean {
-  return instance()?.registrations ?? false;
-}
-
 export function registrationMode(): string {
   return instance()?.registration_mode ?? (instance()?.registrations ? "open" : "closed");
 }
 
 export function inviteRequired(): boolean {
   return registrationMode() === "invite";
-}
-
-export function instanceIcon(): string | undefined {
-  return instance()?.thumbnail?.url;
 }
 
 export function defaultAvatar(): string {
@@ -68,9 +60,8 @@ versionChannel?.addEventListener("message", (e) => {
   }
 });
 
-// --- Apply update: clear SW, caches, notify other tabs, reload ---
-export async function applyUpdate() {
-  versionChannel?.postMessage({ type: "version-changed" });
+// --- Clear all service workers and caches ---
+export async function clearServiceWorkerAndCaches() {
   if ("serviceWorker" in navigator) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -79,6 +70,12 @@ export async function applyUpdate() {
     const keys = await caches.keys();
     await Promise.all(keys.map((k) => caches.delete(k)));
   }
+}
+
+// --- Apply update: clear SW, caches, notify other tabs, reload ---
+export async function applyUpdate() {
+  versionChannel?.postMessage({ type: "version-changed" });
+  await clearServiceWorkerAndCaches();
   location.reload();
 }
 

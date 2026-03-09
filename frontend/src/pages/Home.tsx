@@ -1,7 +1,7 @@
 import { createSignal, createEffect, on, onCleanup, Show, For, untrack } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
 import { currentUser, authLoading } from "../stores/auth";
-import { registrationOpen } from "../stores/instance";
+import { registrationMode } from "../stores/instance";
 import { getPublicTimeline, getHomeTimeline, getNote, type Note } from "../api/statuses";
 import { onUpdate, onReaction } from "../stores/streaming";
 import { useI18n } from "../i18n";
@@ -95,7 +95,7 @@ export default function Home() {
               <p>{t("app.tagline")}</p>
               <div class="home-actions">
                 <a href="/login" class="btn">{t("common.login")}</a>
-                <Show when={registrationOpen()}>
+                <Show when={registrationMode() !== "closed"}>
                   <a href="/register" class="btn btn-secondary">{t("common.register")}</a>
                 </Show>
               </div>
