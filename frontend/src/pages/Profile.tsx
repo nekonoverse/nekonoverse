@@ -9,6 +9,7 @@ import { useI18n } from "../i18n";
 import { currentUser, fetchCurrentUser } from "../stores/auth";
 import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { onReaction } from "../stores/streaming";
+import { sanitizeHTML } from "../utils/sanitize";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -513,7 +514,7 @@ export default function Profile() {
                   </Show>
                   <Show when={!editing()}>
                     <Show when={acc.note}>
-                      <p class="profile-bio" innerHTML={acc.note} />
+                      <p class="profile-bio" innerHTML={sanitizeHTML(acc.note)} />
                     </Show>
                     <Show when={acc.fields && acc.fields.length > 0}>
                       <dl class="profile-fields">
@@ -521,7 +522,7 @@ export default function Profile() {
                           {(field) => (
                             <>
                               <dt class="profile-field-label">{field.name}</dt>
-                              <dd class="profile-field-value" innerHTML={field.value} />
+                              <dd class="profile-field-value" innerHTML={sanitizeHTML(field.value)} />
                             </>
                           )}
                         </For>

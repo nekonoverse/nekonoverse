@@ -4,32 +4,34 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_db
-
 from app.activitypub.nodeinfo import router as nodeinfo_router
 from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
+from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
-from app.api.mastodon.accounts import relationships_router, router as accounts_router
+from app.api.invites import router as invites_router
+from app.api.mastodon.accounts import relationships_router
+from app.api.mastodon.accounts import router as accounts_router
 from app.api.mastodon.bookmarks import router as bookmarks_router
+from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.mastodon.notifications import router as notifications_router
 from app.api.mastodon.polls import router as polls_router
 from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.streaming import router as streaming_router
 from app.api.mastodon.timelines import router as timelines_router
-from app.api.oauth import router as oauth_router
-from app.api.admin import router as admin_router
-from app.api.invites import router as invites_router
 from app.api.media import router as media_router
-from app.api.mastodon.media_proxy import router as media_proxy_router
+from app.api.oauth import router as oauth_router
 from app.api.passkey import router as passkey_router
 from app.config import settings
+from app.dependencies import get_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import logging
+
     from app.storage import ensure_bucket
+
     try:
         await ensure_bucket()
     except Exception as e:
@@ -56,8 +58,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 
@@ -110,6 +112,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
 @app.get("/manifest.webmanifest")
 async def manifest(db: AsyncSession = Depends(get_db)):
     from fastapi.responses import JSONResponse
+
     from app.services.server_settings_service import get_setting
 
     name = await get_setting(db, "server_name") or "Nekonoverse"
@@ -125,7 +128,12 @@ async def manifest(db: AsyncSession = Depends(get_db)):
         icons = [
             {"src": "/pwa-192x192.svg", "sizes": "192x192", "type": "image/svg+xml"},
             {"src": "/pwa-512x512.svg", "sizes": "512x512", "type": "image/svg+xml"},
-            {"src": "/pwa-512x512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable"},
+            {
+                "src": "/pwa-512x512.svg",
+                "sizes": "512x512",
+                "type": "image/svg+xml",
+                "purpose": "maskable",
+            },
         ]
 
     return JSONResponse(

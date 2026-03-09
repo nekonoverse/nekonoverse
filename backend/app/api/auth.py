@@ -41,7 +41,9 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     else:
         # Fallback to legacy registration_open setting
         reg_setting = await get_setting(db, "registration_open")
-        reg_open = (reg_setting == "true") if reg_setting is not None else settings.registration_open
+        reg_open = (
+            (reg_setting == "true") if reg_setting is not None else settings.registration_open
+        )
         mode = "open" if reg_open else "closed"
 
     if mode == "closed":
@@ -53,6 +55,7 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
         if not body.invite_code:
             raise HTTPException(status_code=422, detail="Invitation code is required")
         from app.services.invitation_service import validate_invitation_code
+
         invite = await validate_invitation_code(db, body.invite_code)
         if invite is None:
             raise HTTPException(status_code=422, detail="Invalid or expired invitation code")
@@ -71,6 +74,7 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     # Redeem invite code after successful user creation
     if invite:
         from app.services.invitation_service import redeem_invitation
+
         await redeem_invitation(db, invite, user)
         await db.commit()
 
@@ -96,6 +100,7 @@ async def login(
         SESSION_COOKIE,
         session_id,
         httponly=True,
+        secure=settings.use_https,
         samesite="lax",
         max_age=86400 * 30,
     )
@@ -185,6 +190,7 @@ async def update_credentials(
 
     if fields_attributes is not None:
         import json as _json
+
         try:
             fields_list = _json.loads(fields_attributes)
         except (ValueError, TypeError):
@@ -207,6 +213,7 @@ async def update_credentials(
             user.actor.birthday = None
         else:
             import datetime as _dt
+
             try:
                 user.actor.birthday = _dt.date.fromisoformat(birthday)
             except ValueError:
@@ -236,7 +243,9 @@ async def update_credentials(
         data = await avatar.read()
         try:
             drive_file = await upload_drive_file(
-                db=db, owner=user, data=data,
+                db=db,
+                owner=user,
+                data=data,
                 filename=avatar.filename or "avatar",
                 mime_type=avatar.content_type or "image/png",
             )
@@ -253,7 +262,9 @@ async def update_credentials(
         data = await header.read()
         try:
             drive_file = await upload_drive_file(
-                db=db, owner=user, data=data,
+                db=db,
+                owner=user,
+                data=data,
                 filename=header.filename or "header",
                 mime_type=header.content_type or "image/png",
             )
@@ -270,10 +281,9 @@ async def update_credentials(
 
         # Federate profile update to followers
         from app.activitypub.renderer import render_actor, render_update_activity
+        from app.services.actor_service import actor_uri
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
-
-        from app.services.actor_service import actor_uri
 
         actor = user.actor
         actor_url = actor_uri(actor)

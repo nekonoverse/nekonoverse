@@ -11,6 +11,7 @@ import {
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "../stores/followedUsers";
+import { sanitizeHTML } from "../utils/sanitize";
 
 export default function FollowList() {
   const { t } = useI18n();
@@ -125,7 +126,7 @@ export default function FollowList() {
                           </span>
                           <span class="follow-list-handle">@{acc.acct}</span>
                           <Show when={acc.note}>
-                            <p class="follow-list-bio" innerHTML={acc.note} />
+                            <p class="follow-list-bio" innerHTML={sanitizeHTML(acc.note)} />
                           </Show>
                         </div>
                       </A>

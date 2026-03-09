@@ -1,11 +1,13 @@
 """OAuth 2.0 endpoints (Mastodon compatible)."""
 
 import hashlib
+import hmac
+import html
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -13,7 +15,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
 from app.models.oauth import OAuthApplication, OAuthAuthorizationCode, OAuthToken
-from app.models.user import User
 
 router = APIRouter(tags=["oauth"])
 
@@ -78,10 +79,15 @@ async def authorize_form(
     session_id = request.cookies.get("nekonoverse_session")
     if not session_id:
         # Return a simple login form
+        safe_name = html.escape(app.name)
+        safe_client_id = html.escape(client_id)
+        safe_redirect_uri = html.escape(redirect_uri)
+        safe_scope = html.escape(scope)
+        safe_response_type = html.escape(response_type)
         return HTMLResponse(f"""
         <html><body style="font-family:sans-serif;max-width:400px;margin:40px auto">
-        <h2>Authorize {app.name}</h2>
-        <p>Please <a href="/login?redirect=/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&response_type={response_type}">log in</a> first.</p>
+        <h2>Authorize {safe_name}</h2>
+        <p>Please <a href="/login?redirect=/oauth/authorize?client_id={safe_client_id}&redirect_uri={safe_redirect_uri}&scope={safe_scope}&response_type={safe_response_type}">log in</a> first.</p>
         </body></html>
         """)
 
@@ -129,13 +135,10 @@ async def token(
     """Exchange authorization code for access token."""
     # Validate application
     result = await db.execute(
-        select(OAuthApplication).where(
-            OAuthApplication.client_id == client_id,
-            OAuthApplication.client_secret == client_secret,
-        )
+        select(OAuthApplication).where(OAuthApplication.client_id == client_id)
     )
     app = result.scalar_one_or_none()
-    if not app:
+    if not app or not hmac.compare_digest(app.client_secret, client_secret):
         raise HTTPException(status_code=401, detail="Invalid client credentials")
 
     if grant_type == "authorization_code":
@@ -162,10 +165,7 @@ async def token(
         if auth_code.code_challenge and auth_code.code_challenge_method == "S256":
             if not code_verifier:
                 raise HTTPException(status_code=400, detail="Missing code_verifier")
-            challenge = (
-                hashlib.sha256(code_verifier.encode())
-                .digest()
-            )
+            challenge = hashlib.sha256(code_verifier.encode()).digest()
             import base64
 
             expected = base64.urlsafe_b64encode(challenge).rstrip(b"=").decode()
@@ -223,9 +223,7 @@ async def revoke_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Revoke an access token."""
-    result = await db.execute(
-        select(OAuthToken).where(OAuthToken.access_token == token)
-    )
+    result = await db.execute(select(OAuthToken).where(OAuthToken.access_token == token))
     token_obj = result.scalar_one_or_none()
     if token_obj:
         token_obj.revoked_at = datetime.now(timezone.utc)
