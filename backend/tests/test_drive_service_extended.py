@@ -62,7 +62,7 @@ async def test_upload_drive_file_unsupported_type(db, mock_valkey, test_user):
 async def test_upload_drive_file_success(db, mock_valkey, test_user):
     # 有効なPNGヘッダ + ダミーデータ
     png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16 + b"\x00\x01" * 4
-    with patch("app.storage.upload_file", new_callable=AsyncMock):
+    with patch("app.services.drive_service.upload_file", new_callable=AsyncMock):
         df = await upload_drive_file(db, test_user, png_data, "test.png", "image/png")
     assert df.filename == "test.png"
     assert df.mime_type == "image/png"
@@ -79,7 +79,7 @@ async def test_file_to_url(db, mock_valkey, test_user):
 
 async def test_delete_drive_file(db, mock_valkey, test_user):
     df = await _create_drive_file(db, test_user)
-    with patch("app.storage.delete_file", new_callable=AsyncMock):
+    with patch("app.services.drive_service.delete_file", new_callable=AsyncMock):
         await delete_drive_file(db, df)
     result = await get_drive_file(db, df.id)
     assert result is None
