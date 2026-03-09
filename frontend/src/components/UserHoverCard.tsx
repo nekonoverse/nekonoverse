@@ -3,6 +3,7 @@ import { getAccount, followAccount, unfollowAccount, type Account } from "../api
 import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { currentUser } from "../stores/auth";
 import { useI18n } from "../i18n";
+import { sanitizeHtml } from "../utils/sanitize";
 
 interface Props {
   actorId: string;
@@ -229,7 +230,7 @@ export default function UserHoverCard(props: Props) {
                     </div>
                   </div>
                   <Show when={acc.note}>
-                    <p class="hover-card-bio" innerHTML={acc.note} />
+                    <p class="hover-card-bio" innerHTML={sanitizeHtml(acc.note)} />
                   </Show>
                   <Show when={currentUser() && !isOwnAccount()}>
                     <div class="hover-card-actions">

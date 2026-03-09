@@ -2,6 +2,7 @@ import { createSignal, Show, For, onCleanup } from "solid-js";
 import { createNote, uploadMedia, type Note, type MediaAttachment } from "../../api/statuses";
 import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
+import { sanitizeHtml } from "../../utils/sanitize";
 import type { DriveFile } from "../../api/drive";
 import {
   getInitialVisibility,
@@ -151,7 +152,7 @@ export default function NoteComposer(props: Props) {
             </div>
             <div class="composer-quote-body">
               <strong>{qn().actor.display_name || qn().actor.username}</strong>
-              <div class="composer-quote-text" innerHTML={qn().content} />
+              <div class="composer-quote-text" innerHTML={sanitizeHtml(qn().content)} />
             </div>
           </div>
         )}

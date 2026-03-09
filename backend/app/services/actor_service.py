@@ -148,11 +148,15 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     now = datetime.now(timezone.utc)
 
     # Parse profile fields from PropertyValue attachments
+    from app.utils.sanitize import sanitize_html
     attachments = data.get("attachment", [])
     fields = None
     if isinstance(attachments, list):
         fields = [
-            {"name": att.get("name", ""), "value": att.get("value", "")}
+            {
+                "name": sanitize_html(att.get("name", "")),
+                "value": sanitize_html(att.get("value", "")),
+            }
             for att in attachments
             if isinstance(att, dict) and att.get("type") == "PropertyValue"
         ]
@@ -174,7 +178,8 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     if existing:
         existing.type = actor_type
         existing.display_name = data.get("name", username)
-        existing.summary = data.get("summary")
+        raw_summary = data.get("summary")
+        existing.summary = sanitize_html(raw_summary) if raw_summary else None
         existing.inbox_url = data.get("inbox", existing.inbox_url)
         existing.outbox_url = data.get("outbox", existing.outbox_url)
         existing.shared_inbox_url = shared_inbox or existing.shared_inbox_url
@@ -221,7 +226,7 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         username=username,
         domain=domain,
         display_name=data.get("name", username),
-        summary=data.get("summary"),
+        summary=sanitize_html(data["summary"]) if data.get("summary") else None,
         avatar_url=avatar_url,
         header_url=header_url,
         inbox_url=data.get("inbox", ""),
