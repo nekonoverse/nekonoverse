@@ -301,4 +301,12 @@ export const en: Dictionary = {
   "lightbox.openExternal": "Open in browser",
   "hashtag.empty": "No posts with this hashtag.",
   "hashtag.loadMore": "Load more",
+  "thread.title": "Thread",
+  "thread.ancestors": "Earlier in thread",
+  "thread.descendants": "Replies",
+  "thread.loading": "Loading thread...",
+  "thread.notFound": "Post not found",
+  "reply.replyingTo": "Replying to",
+  "reply.reply": "Reply",
+  "reply.repliesCount": "replies",
 };

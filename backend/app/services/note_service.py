@@ -118,6 +118,12 @@ async def create_note(
             note.poll_expires_at = datetime.now(timezone.utc) + timedelta(seconds=poll_expires_in)
     db.add(note)
 
+    # Increment parent's replies_count
+    if in_reply_to_id:
+        parent = await get_note_by_id(db, in_reply_to_id)
+        if parent:
+            parent.replies_count = parent.replies_count + 1
+
     # Attach media files
     if media_ids:
         from app.models.note_attachment import NoteAttachment

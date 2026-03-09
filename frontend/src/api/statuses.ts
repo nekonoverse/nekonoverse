@@ -66,6 +66,8 @@ export interface Note {
   replies_count: number;
   reactions_count: number;
   renotes_count: number;
+  in_reply_to_id: string | null;
+  in_reply_to_account_id: string | null;
   actor: NoteActor;
   reactions: ReactionSummary[];
   media_attachments: MediaAttachment[];
@@ -75,6 +77,11 @@ export interface Note {
   pinned: boolean;
   emojis: CustomEmoji[];
   tags: TagInfo[];
+}
+
+export interface NoteContext {
+  ancestors: Note[];
+  descendants: Note[];
 }
 
 export async function uploadMedia(file: File, description?: string): Promise<MediaAttachment> {
@@ -87,13 +94,24 @@ export async function uploadMedia(file: File, description?: string): Promise<Med
   });
 }
 
-export async function createNote(content: string, visibility = "public", mediaIds?: string[], quoteId?: string): Promise<Note> {
+export async function createNote(
+  content: string,
+  visibility = "public",
+  mediaIds?: string[],
+  quoteId?: string,
+  inReplyToId?: string,
+): Promise<Note> {
   const body: Record<string, unknown> = { content, visibility, media_ids: mediaIds || [] };
   if (quoteId) body.quote_id = quoteId;
+  if (inReplyToId) body.in_reply_to_id = inReplyToId;
   return apiRequest<Note>("/api/v1/statuses", {
     method: "POST",
     body,
   });
+}
+
+export async function getContext(noteId: string): Promise<NoteContext> {
+  return apiRequest<NoteContext>(`/api/v1/statuses/${noteId}/context`);
 }
 
 export async function reblogNote(noteId: string): Promise<Note> {

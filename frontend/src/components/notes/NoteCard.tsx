@@ -21,6 +21,8 @@ interface Props {
   onReactionUpdate?: () => void;
   onQuote?: (note: Note) => void;
   onDelete?: (noteId: string) => void;
+  onReply?: (note: Note) => void;
+  inReplyToActor?: { username: string; domain: string | null } | null;
 }
 
 function formatTime(iso: string): string {
@@ -269,7 +271,21 @@ export default function NoteCard(props: Props) {
     props.onQuote?.(displayNote());
   };
 
+  const handleReply = () => {
+    if (props.onReply) {
+      props.onReply(displayNote());
+    } else {
+      navigate(`/notes/${displayNote().id}`);
+    }
+  };
+
   const note = displayNote;
+
+  // Determine the reply-to actor display
+  const replyToDisplay = () => {
+    if (props.inReplyToActor) return props.inReplyToActor;
+    return null;
+  };
 
   return (
     <div class={`note-card${pinned() ? " note-pinned" : ""}`}>
@@ -297,6 +313,17 @@ export default function NoteCard(props: Props) {
           </a>
           {" "}{t("boost.boosted")}
         </div>
+      </Show>
+      <Show when={replyToDisplay()}>
+        {(actor) => (
+          <div class="note-reply-indicator">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 17 4 12 9 7" />
+              <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+            </svg>
+            {t("reply.replyingTo")} @{actor().username}{actor().domain ? `@${actor().domain}` : ""}
+          </div>
+        )}
       </Show>
       <a href={profileUrl(note().actor)} class="note-avatar-link">
         <img
@@ -394,6 +421,18 @@ export default function NoteCard(props: Props) {
         <Show when={currentUser()}>
           <div class="note-actions">
             <button
+              class="note-action-btn note-reply-btn"
+              onClick={handleReply}
+              title={t("reply.reply")}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <Show when={note().replies_count > 0}>
+                <span class="note-action-count">{note().replies_count}</span>
+              </Show>
+            </button>
+            <button
               class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}`}
               onClick={handleBoost}
               disabled={boostLoading()}
@@ -446,7 +485,9 @@ export default function NoteCard(props: Props) {
           </div>
         </Show>
         <div class="note-footer">
-          <span class="note-time">{formatTime(note().published)}</span>
+          <a href={`/notes/${note().id}`} class="note-time-link">
+            <span class="note-time">{formatTime(note().published)}</span>
+          </a>
         </div>
       </div>
     </div>
