@@ -1,9 +1,10 @@
 import { Show, For, createSignal, onCleanup } from "solid-js";
-import type { Note, Poll } from "../../api/statuses";
+import type { Note, Poll, MediaAttachment } from "../../api/statuses";
 import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll } from "../../api/statuses";
 import { blockAccount, muteAccount } from "../../api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
+import ImageLightbox from "../ImageLightbox";
 import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "../../i18n";
@@ -153,6 +154,7 @@ export default function NoteCard(props: Props) {
   const [boostCount, setBoostCount] = createSignal(0);
   const [bookmarked, setBookmarked] = createSignal(false);
   const [pinned, setPinned] = createSignal(false);
+  const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
 
   // If this is a reblog, the displayed note is the inner one
   const isReblog = () => !!props.note.reblog;
@@ -346,17 +348,28 @@ export default function NoteCard(props: Props) {
         <Show when={note().media_attachments?.length > 0}>
           <div class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}>
             <For each={note().media_attachments}>
-              {(media) => (
-                <a href={media.url} target="_blank" rel="noopener" class="note-media-item">
+              {(media, i) => (
+                <button
+                  class="note-media-item"
+                  onClick={() => setLightboxIndex(i())}
+                  type="button"
+                >
                   <img
                     src={media.preview_url || media.url}
                     alt={media.description || ""}
                     loading="lazy"
                   />
-                </a>
+                </button>
               )}
             </For>
           </div>
+          <Show when={lightboxIndex() !== null}>
+            <ImageLightbox
+              media={note().media_attachments}
+              initialIndex={lightboxIndex()!}
+              onClose={() => setLightboxIndex(null)}
+            />
+          </Show>
         </Show>
         <Show when={currentUser()}>
           <div class="note-actions">

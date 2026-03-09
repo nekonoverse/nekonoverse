@@ -298,4 +298,5 @@ export const neko: Dictionary = {
   "about.clearCache": "キャッシュけすにゃ",
   "about.clearCacheDesc": "キャッシュとService Workerをけして、ぺーじをよみなおすにゃ。ひょうじがへんなときためすにゃ。",
   "about.cacheClearing": "けしてるにゃ...",
+  "lightbox.openExternal": "ブラウザでひらくにゃ",
 };
