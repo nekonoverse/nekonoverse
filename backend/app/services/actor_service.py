@@ -175,6 +175,37 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     actor_type = data.get("type", "Person")
     is_bot = actor_type == "Service"
 
+    # Extract custom emoji from tags
+    tags = data.get("tag", [])
+    if isinstance(tags, dict):
+        tags = [tags]
+    for tag in tags:
+        if isinstance(tag, dict) and tag.get("type") == "Emoji":
+            icon = tag.get("icon", {})
+            emoji_url = icon.get("url") if isinstance(icon, dict) else None
+            emoji_name = tag.get("name", "").strip(":")
+            if emoji_name and emoji_url and domain:
+                from app.services.emoji_service import upsert_remote_emoji
+
+                static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
+                _ml = tag.get("_misskey_license")
+                license_text = tag.get("license") or (
+                    _ml.get("freeText") if isinstance(_ml, dict) else None
+                )
+                await upsert_remote_emoji(
+                    db, shortcode=emoji_name, domain=domain, url=emoji_url,
+                    static_url=static_url,
+                    aliases=tag.get("keywords"),
+                    license=license_text,
+                    is_sensitive=bool(tag.get("isSensitive", False)),
+                    author=tag.get("author") or tag.get("creator"),
+                    description=tag.get("description"),
+                    copy_permission=tag.get("copyPermission"),
+                    usage_info=tag.get("usageInfo"),
+                    is_based_on=tag.get("isBasedOn"),
+                    category=tag.get("category"),
+                )
+
     if existing:
         existing.type = actor_type
         existing.display_name = data.get("name", username)

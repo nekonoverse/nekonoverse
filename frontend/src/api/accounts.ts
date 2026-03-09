@@ -1,6 +1,12 @@
 import { apiRequest } from "./client";
 import type { Note } from "./statuses";
 
+export interface AccountEmoji {
+  shortcode: string;
+  url: string;
+  static_url: string;
+}
+
 export interface Account {
   id: string;
   username: string;
@@ -17,6 +23,7 @@ export interface Account {
   fields?: { name: string; value: string; verified_at: string | null }[];
   followers_count?: number;
   following_count?: number;
+  emojis?: AccountEmoji[];
 }
 
 export async function getAccount(id: string): Promise<Account> {
