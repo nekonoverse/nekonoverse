@@ -6,7 +6,7 @@ import {
   defaultVisibility, setDefaultVisibility,
   rememberVisibility, setRememberVisibility,
 } from "../stores/composer";
-import { instance } from "../stores/instance";
+import { instance, defaultAvatar } from "../stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "../i18n";
 import { changePassword } from "../api/settings";
@@ -295,7 +295,7 @@ function BlocksTab() {
                 {(acc) => (
                   <div class="blockmute-item">
                     <a href={`/@${acc.acct}`} class="blockmute-user">
-                      <img class="blockmute-avatar" src={acc.avatar || "/default-avatar.svg"} alt="" />
+                      <img class="blockmute-avatar" src={acc.avatar || {defaultAvatar()}} alt="" />
                       <div>
                         <strong>{acc.display_name || acc.username}</strong>
                         <span class="blockmute-handle">@{acc.acct}</span>
@@ -346,7 +346,7 @@ function MutesTab() {
                 {(acc) => (
                   <div class="blockmute-item">
                     <a href={`/@${acc.acct}`} class="blockmute-user">
-                      <img class="blockmute-avatar" src={acc.avatar || "/default-avatar.svg"} alt="" />
+                      <img class="blockmute-avatar" src={acc.avatar || {defaultAvatar()}} alt="" />
                       <div>
                         <strong>{acc.display_name || acc.username}</strong>
                         <span class="blockmute-handle">@{acc.acct}</span>

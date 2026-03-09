@@ -7,6 +7,7 @@ import EmojiPicker from "./EmojiPicker";
 import Emoji from "../Emoji";
 import { currentUser } from "../../stores/auth";
 import { useI18n } from "../../i18n";
+import { defaultAvatar } from "../../stores/instance";
 
 const REMOTE_EMOJI_RE = /^:([a-zA-Z0-9_]+)@([a-zA-Z0-9.-]+):$/;
 
@@ -189,7 +190,7 @@ export default function ReactionBar(props: Props) {
                     >
                       <img
                         class="reacted-by-avatar"
-                        src={ru.actor.avatar_url || "/default-avatar.svg"}
+                        src={ru.actor.avatar_url || {defaultAvatar()}}
                         alt=""
                       />
                       <div class="reacted-by-names">

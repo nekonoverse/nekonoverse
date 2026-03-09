@@ -10,6 +10,7 @@ import { currentUser, fetchCurrentUser } from "../stores/auth";
 import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { onReaction } from "../stores/streaming";
 import { sanitizeHtml } from "../utils/sanitize";
+import { defaultAvatar } from "../stores/instance";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -294,7 +295,7 @@ export default function Profile() {
                     >
                       <img
                         class="profile-avatar"
-                        src={acc.avatar || "/default-avatar.svg"}
+                        src={acc.avatar || {defaultAvatar()}}
                         alt=""
                       />
                       <div class="profile-avatar-overlay">
@@ -312,7 +313,7 @@ export default function Profile() {
                   <Show when={!editing()}>
                     <img
                       class="profile-avatar"
-                      src={acc.avatar || "/default-avatar.svg"}
+                      src={acc.avatar || {defaultAvatar()}}
                       alt=""
                     />
                   </Show>

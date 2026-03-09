@@ -2,6 +2,7 @@ import { createSignal, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { searchAccounts, type Account } from "../api/accounts";
 import { useI18n } from "../i18n";
+import { defaultAvatar } from "../stores/instance";
 
 export default function Search() {
   const { t } = useI18n();
@@ -58,7 +59,7 @@ export default function Search() {
                 <a href={`/@${acc.acct}`} class="search-result-item">
                   <img
                     class="search-result-avatar"
-                    src={acc.avatar || "/default-avatar.svg"}
+                    src={acc.avatar || {defaultAvatar()}}
                     alt=""
                   />
                   <div class="search-result-info">

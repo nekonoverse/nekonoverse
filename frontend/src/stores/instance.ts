@@ -32,6 +32,10 @@ export function instanceIcon(): string | undefined {
   return instance()?.thumbnail?.url;
 }
 
+export function defaultAvatar(): string {
+  return instance()?.thumbnail?.url || "/default-avatar.svg";
+}
+
 function updateDynamicIcons(iconUrl: string) {
   // Favicon
   let link = document.querySelector("link[rel='icon']") as HTMLLinkElement | null;
