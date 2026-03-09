@@ -19,6 +19,7 @@ dependencies = [
     "python-multipart>=0.0.18",
     "email-validator>=2.0.0",
     "webauthn>=2.0.0",
+    "pyotp>=2.9.0",
 ]
 
 [project.optional-dependencies]

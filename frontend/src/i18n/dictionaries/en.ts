@@ -415,4 +415,24 @@ export const en: Dictionary = {
   "cw.show": "Show more",
   "cw.hide": "Hide",
   "remote.viewOnRemote": "View on remote server",
+  "totp.title": "Two-Factor Authentication",
+  "totp.description":
+    "Use an authenticator app to require a one-time password when logging in.",
+  "totp.enable": "Enable",
+  "totp.disable": "Disable",
+  "totp.enabled": "Two-factor authentication is enabled",
+  "totp.scanQr": "Scan the QR code with your authenticator app",
+  "totp.enterCode": "Enter verification code",
+  "totp.recoveryCodes": "Recovery codes",
+  "totp.recoveryWarning":
+    "Save these codes in a safe place. You will need them if you lose access to your authenticator app.",
+  "totp.saved": "Saved",
+  "totp.verify": "Verify",
+  "totp.required": "Enter 2FA code",
+  "totp.copySecret": "Copy secret",
+  "totp.copyCodes": "Copy codes",
+  "totp.disableConfirm":
+    "Enter your password to disable two-factor authentication",
+  "totp.recoveryHint":
+    "If you cannot use your authenticator app, enter a recovery code",
 };

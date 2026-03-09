@@ -11,6 +11,7 @@ import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "../i18n";
 import { changePassword } from "../api/settings";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "../api/accounts";
+import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "../api/totp";
 import PasskeyManager from "../components/PasskeyManager";
 import Breadcrumb from "../components/Breadcrumb";
 
@@ -232,6 +233,28 @@ function SecurityTab(props: { onLogout: () => void }) {
   const [pwMsg, setPwMsg] = createSignal("");
   const [pwError, setPwError] = createSignal("");
 
+  // TOTP state
+  const [totpEnabled, setTotpEnabled] = createSignal(false);
+  const [totpLoading, setTotpLoading] = createSignal(true);
+  const [totpStep, setTotpStep] = createSignal<
+    "idle" | "qr" | "verify" | "recovery" | "disable"
+  >("idle");
+  const [totpSecret, setTotpSecret] = createSignal("");
+  const [totpUri, setTotpUri] = createSignal("");
+  const [totpCode, setTotpCode] = createSignal("");
+  const [recoveryCodes, setRecoveryCodes] = createSignal<string[]>([]);
+  const [totpError, setTotpError] = createSignal("");
+  const [totpProcessing, setTotpProcessing] = createSignal(false);
+  const [disablePw, setDisablePw] = createSignal("");
+
+  onMount(async () => {
+    try {
+      const status = await getTotpStatus();
+      setTotpEnabled(status.totp_enabled);
+    } catch {}
+    setTotpLoading(false);
+  });
+
   const handleChangePassword = async () => {
     setPwMsg("");
     setPwError("");
@@ -251,6 +274,59 @@ function SecurityTab(props: { onLogout: () => void }) {
     } finally {
       setChangingPw(false);
     }
+  };
+
+  const handleSetupTotp = async () => {
+    setTotpError("");
+    setTotpProcessing(true);
+    try {
+      const data = await setupTotp();
+      setTotpSecret(data.secret);
+      setTotpUri(data.provisioning_uri);
+      setTotpStep("qr");
+    } catch (e: any) {
+      setTotpError(e.message);
+    } finally {
+      setTotpProcessing(false);
+    }
+  };
+
+  const handleEnableTotp = async () => {
+    setTotpError("");
+    setTotpProcessing(true);
+    try {
+      const data = await enableTotp(totpCode());
+      setRecoveryCodes(data.recovery_codes);
+      setTotpStep("recovery");
+      setTotpEnabled(true);
+    } catch (e: any) {
+      setTotpError(e.message);
+    } finally {
+      setTotpProcessing(false);
+    }
+  };
+
+  const handleDisableTotp = async () => {
+    setTotpError("");
+    setTotpProcessing(true);
+    try {
+      await disableTotp(disablePw());
+      setTotpEnabled(false);
+      setTotpStep("idle");
+      setDisablePw("");
+    } catch (e: any) {
+      setTotpError(e.message);
+    } finally {
+      setTotpProcessing(false);
+    }
+  };
+
+  const handleCopySecret = () => {
+    navigator.clipboard.writeText(totpSecret());
+  };
+
+  const handleCopyRecovery = () => {
+    navigator.clipboard.writeText(recoveryCodes().join("\n"));
   };
 
   return (
@@ -290,6 +366,140 @@ function SecurityTab(props: { onLogout: () => void }) {
         >
           {t("settings.changePassword")}
         </button>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("totp.title")}</h3>
+        <Show when={!totpLoading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={totpError()}><p class="error">{totpError()}</p></Show>
+
+          <Switch>
+            <Match when={totpStep() === "idle" && !totpEnabled()}>
+              <p class="settings-desc">{t("totp.description")}</p>
+              <button
+                class="btn btn-small"
+                onClick={handleSetupTotp}
+                disabled={totpProcessing()}
+              >
+                {t("totp.enable")}
+              </button>
+            </Match>
+
+            <Match when={totpStep() === "qr"}>
+              <p>{t("totp.scanQr")}</p>
+              <div class="totp-qr-section">
+                <img
+                  src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(totpUri())}&size=200x200`}
+                  alt="TOTP QR Code"
+                  class="totp-qr-image"
+                  width="200"
+                  height="200"
+                />
+                <div class="totp-secret-display">
+                  <code>{totpSecret()}</code>
+                  <button
+                    class="btn btn-small"
+                    onClick={handleCopySecret}
+                  >
+                    {t("totp.copySecret")}
+                  </button>
+                </div>
+              </div>
+              <div class="settings-form-group">
+                <label>{t("totp.enterCode")}</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={totpCode()}
+                  onInput={(e) => setTotpCode(e.currentTarget.value)}
+                  placeholder="000000"
+                />
+              </div>
+              <div class="totp-actions">
+                <button
+                  class="btn btn-small"
+                  onClick={handleEnableTotp}
+                  disabled={totpProcessing() || totpCode().length < 6}
+                >
+                  {t("totp.verify")}
+                </button>
+                <button
+                  class="btn btn-small"
+                  onClick={() => { setTotpStep("idle"); setTotpError(""); }}
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </Match>
+
+            <Match when={totpStep() === "recovery"}>
+              <p class="totp-recovery-warning">{t("totp.recoveryWarning")}</p>
+              <div class="totp-recovery-codes">
+                <For each={recoveryCodes()}>
+                  {(code) => <code class="totp-recovery-code">{code}</code>}
+                </For>
+              </div>
+              <div class="totp-actions">
+                <button class="btn btn-small" onClick={handleCopyRecovery}>
+                  {t("totp.copyCodes")}
+                </button>
+                <button
+                  class="btn btn-small"
+                  onClick={() => {
+                    setTotpStep("idle");
+                    setRecoveryCodes([]);
+                    setTotpCode("");
+                    setTotpError("");
+                  }}
+                >
+                  {t("totp.saved")}
+                </button>
+              </div>
+            </Match>
+
+            <Match when={totpStep() === "idle" && totpEnabled()}>
+              <p class="settings-success">{t("totp.enabled")}</p>
+              <button
+                class="btn btn-small btn-danger"
+                onClick={() => setTotpStep("disable")}
+              >
+                {t("totp.disable")}
+              </button>
+            </Match>
+
+            <Match when={totpStep() === "disable"}>
+              <p>{t("totp.disableConfirm")}</p>
+              <div class="settings-form-group">
+                <label>{t("auth.password")}</label>
+                <input
+                  type="password"
+                  value={disablePw()}
+                  onInput={(e) => setDisablePw(e.currentTarget.value)}
+                />
+              </div>
+              <div class="totp-actions">
+                <button
+                  class="btn btn-small btn-danger"
+                  onClick={handleDisableTotp}
+                  disabled={totpProcessing() || !disablePw()}
+                >
+                  {t("totp.disable")}
+                </button>
+                <button
+                  class="btn btn-small"
+                  onClick={() => {
+                    setTotpStep("idle");
+                    setDisablePw("");
+                    setTotpError("");
+                  }}
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </Match>
+          </Switch>
+        </Show>
       </div>
 
       <div class="settings-section">

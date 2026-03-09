@@ -1,8 +1,9 @@
 import uuid
 from datetime import datetime, timezone
+from typing import Optional
 
 from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -24,6 +25,15 @@ class User(Base):
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     private_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
+    totp_secret: Mapped[Optional[str]] = mapped_column(
+        Text, nullable=True, default=None
+    )
+    totp_enabled: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    totp_recovery_codes: Mapped[Optional[list]] = mapped_column(
+        JSON, nullable=True, default=None
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
