@@ -4939,3 +4939,22 @@ a:hover {
   border-color: var(--accent);
   background: color-mix(in srgb, var(--accent) 15%, var(--bg-secondary));
 }
+
+/* Remote view link */
+.remote-view-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  text-decoration: none;
+  margin-right: 8px;
+}
+
+.remote-view-link:hover {
+  color: var(--accent);
+}
+
+.remote-view-link svg {
+  flex-shrink: 0;
+}
