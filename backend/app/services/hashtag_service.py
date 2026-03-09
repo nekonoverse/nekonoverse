@@ -152,3 +152,26 @@ async def get_hashtags_for_note(
         .where(NoteHashtag.note_id == note_id)
     )
     return [row[0] for row in result.all()]
+
+
+async def get_hashtags_for_notes(
+    db: AsyncSession,
+    note_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, list[str]]:
+    """Return hashtag names for multiple notes in a single query.
+
+    Returns a dict mapping note_id -> list of hashtag name strings.
+    """
+    if not note_ids:
+        return {}
+
+    result = await db.execute(
+        select(NoteHashtag.note_id, Hashtag.name)
+        .join(Hashtag, Hashtag.id == NoteHashtag.hashtag_id)
+        .where(NoteHashtag.note_id.in_(note_ids))
+    )
+
+    tags_map: dict[uuid.UUID, list[str]] = {nid: [] for nid in note_ids}
+    for note_id_val, tag_name in result.all():
+        tags_map[note_id_val].append(tag_name)
+    return tags_map

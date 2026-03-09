@@ -75,6 +75,7 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
 async def note_to_response(
     note, reactions: list[dict] | None = None, reblog_note=None, db=None,
     emoji_cache: dict | None = None,
+    hashtags_cache: dict | None = None,
 ) -> NoteResponse:
     """Convert a Note model to a NoteResponse.
 
@@ -100,6 +101,7 @@ async def note_to_response(
     if actual_reblog:
         reblog = await note_to_response(
             actual_reblog, db=db, emoji_cache=emoji_cache,
+            hashtags_cache=hashtags_cache,
         )
 
     # Build media attachments
@@ -113,6 +115,7 @@ async def note_to_response(
     if hasattr(note, 'quoted_note') and note.quoted_note:
         quote = await note_to_response(
             note.quoted_note, db=db, emoji_cache=emoji_cache,
+            hashtags_cache=hashtags_cache,
         )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
     if not quote and db and note.quote_ap_id:
@@ -125,6 +128,7 @@ async def note_to_response(
             if loaded_quote:
                 quote = await note_to_response(
                     loaded_quote, db=db, emoji_cache=emoji_cache,
+                    hashtags_cache=hashtags_cache,
                 )
 
     # Resolve custom emoji from content and display_name
@@ -187,7 +191,14 @@ async def note_to_response(
 
     # Resolve hashtags
     tags: list[TagInfo] = []
-    if db:
+    if hashtags_cache is not None:
+        from app.config import settings as app_settings
+        tag_names = hashtags_cache.get(note.id, [])
+        tags = [
+            TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}")
+            for tn in tag_names
+        ]
+    elif db:
         from app.services.hashtag_service import get_hashtags_for_note
         tag_names = await get_hashtags_for_note(db, note.id)
         from app.config import settings as app_settings
@@ -196,12 +207,15 @@ async def note_to_response(
             for tn in tag_names
         ]
 
-    # Resolve in_reply_to_account_id
+    # Resolve in_reply_to_account_id (prefer eager-loaded relationship)
     in_reply_to_account_id = None
-    if note.in_reply_to_id and db:
-        parent_note = await get_note_by_id(db, note.in_reply_to_id)
-        if parent_note:
-            in_reply_to_account_id = parent_note.actor_id
+    if note.in_reply_to_id:
+        if hasattr(note, "in_reply_to") and note.in_reply_to:
+            in_reply_to_account_id = note.in_reply_to.actor_id
+        elif db:
+            parent_note = await get_note_by_id(db, note.in_reply_to_id)
+            if parent_note:
+                in_reply_to_account_id = parent_note.actor_id
 
     edited_at = None
     if note.updated_at:
@@ -312,7 +326,7 @@ async def notes_to_responses(
     reactions_map: dict,
     db,
 ) -> list[NoteResponse]:
-    """Convert multiple notes to responses with batched emoji resolution.
+    """Convert multiple notes to responses with batched emoji/hashtag resolution.
 
     Args:
         notes: List of Note model objects.
@@ -323,13 +337,34 @@ async def notes_to_responses(
     Returns:
         List of NoteResponse in the same order as input notes.
     """
+    from app.services.hashtag_service import get_hashtags_for_notes
+
     emoji_cache = await _build_emoji_cache(db, notes)
+
+    # Batch-fetch hashtags for all notes (including renote/quote targets)
+    all_note_ids: list = [n.id for n in notes]
+    for n in notes:
+        if hasattr(n, "renote_of") and n.renote_of:
+            all_note_ids.append(n.renote_of.id)
+            if hasattr(n.renote_of, "quoted_note") and n.renote_of.quoted_note:
+                all_note_ids.append(n.renote_of.quoted_note.id)
+        if hasattr(n, "quoted_note") and n.quoted_note:
+            all_note_ids.append(n.quoted_note.id)
+    # Deduplicate while preserving order
+    seen_ids: set = set()
+    unique_ids = []
+    for nid in all_note_ids:
+        if nid not in seen_ids:
+            seen_ids.add(nid)
+            unique_ids.append(nid)
+    hashtags_cache = await get_hashtags_for_notes(db, unique_ids)
 
     result = []
     for n in notes:
         reactions = reactions_map.get(n.id, [])
         resp = await note_to_response(
             n, reactions, db=db, emoji_cache=emoji_cache,
+            hashtags_cache=hashtags_cache,
         )
         result.append(resp)
     return result
