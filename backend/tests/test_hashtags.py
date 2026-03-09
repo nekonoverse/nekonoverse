@@ -157,16 +157,16 @@ class TestGetTrendingTags:
 
 
 class TestTagTimelineEndpoint:
-    async def test_tag_timeline(self, app_client, db, test_user, mock_valkey):
+    async def test_tag_timeline(self, authed_client, db, mock_valkey):
         # Create a note with a hashtag via API
-        resp = await app_client.post(
+        resp = await authed_client.post(
             "/api/v1/statuses",
             json={"content": "Hello #testendpoint", "visibility": "public"},
         )
         assert resp.status_code == 201
 
         # Fetch tag timeline
-        resp = await app_client.get("/api/v1/timelines/tag/testendpoint")
+        resp = await authed_client.get("/api/v1/timelines/tag/testendpoint")
         assert resp.status_code == 200
         data = resp.json()
         assert len(data) >= 1
@@ -178,21 +178,21 @@ class TestTagTimelineEndpoint:
         data = resp.json()
         assert data == []
 
-    async def test_trending_tags_endpoint(self, app_client, db, test_user, mock_valkey):
+    async def test_trending_tags_endpoint(self, authed_client, db, mock_valkey):
         # Create some notes with hashtags
         for i in range(3):
-            await app_client.post(
+            await authed_client.post(
                 "/api/v1/statuses",
                 json={"content": f"Trending #{i} #trendtest", "visibility": "public"},
             )
 
-        resp = await app_client.get("/api/v1/trends/tags")
+        resp = await authed_client.get("/api/v1/trends/tags")
         assert resp.status_code == 200
         data = resp.json()
         assert isinstance(data, list)
 
-    async def test_note_response_includes_tags(self, app_client, db, test_user, mock_valkey):
-        resp = await app_client.post(
+    async def test_note_response_includes_tags(self, authed_client, db, mock_valkey):
+        resp = await authed_client.post(
             "/api/v1/statuses",
             json={"content": "Check tags #tagresponse", "visibility": "public"},
         )
