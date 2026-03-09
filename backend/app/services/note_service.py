@@ -137,6 +137,13 @@ async def create_note(
     # Reload note with all relationships for rendering and response
     note = await get_note_by_id(db, note_id)
 
+    # Extract and upsert hashtags
+    from app.services.hashtag_service import extract_hashtags, upsert_hashtags as upsert_ht
+    hashtag_names = extract_hashtags(content)
+    if hashtag_names:
+        await upsert_ht(db, note_id, hashtag_names)
+        note._hashtag_names = hashtag_names
+
     # Extract custom emoji shortcodes for AP federation tags
     shortcodes = set(_EMOJI_SHORTCODE_RE.findall(content))
     if shortcodes:
@@ -709,6 +716,15 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             remote_description=att_data.get("name"),
         )
         db.add(attachment)
+
+    # Extract and upsert hashtags from AP tags
+    from app.services.hashtag_service import (
+        extract_hashtags_from_ap_tags,
+        upsert_hashtags as upsert_ht,
+    )
+    hashtag_names = extract_hashtags_from_ap_tags(tags)
+    if hashtag_names:
+        await upsert_ht(db, note.id, hashtag_names)
 
     logger.info("Fetched and stored remote note %s from %s", note_ap_id, actor_ap_id)
     return note

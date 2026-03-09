@@ -165,6 +165,24 @@ async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
     ]
 
 
+@app.get("/api/v1/trends/tags")
+async def trending_tags(
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.hashtag_service import get_trending_tags
+
+    tags = await get_trending_tags(db, limit=limit)
+    return [
+        {
+            "name": tag.name,
+            "url": f"{settings.server_url}/tags/{tag.name}",
+            "history": [],
+        }
+        for tag in tags
+    ]
+
+
 @app.get("/api/v1/health")
 async def health():
     return {"status": "ok"}

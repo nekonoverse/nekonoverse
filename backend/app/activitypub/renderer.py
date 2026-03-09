@@ -193,6 +193,15 @@ def render_note(note: Note) -> dict:
                 "name": name,
             })
 
+    # Hashtag tags
+    if hasattr(note, '_hashtag_names') and note._hashtag_names:
+        for ht_name in note._hashtag_names:
+            tag.append({
+                "type": "Hashtag",
+                "href": f"{settings.server_url}/tags/{ht_name}",
+                "name": f"#{ht_name}",
+            })
+
     # Custom emoji tags
     if hasattr(note, '_emoji_tags') and note._emoji_tags:
         for e in note._emoji_tags:
