@@ -25,7 +25,6 @@ frontend/dist/
 # Docker
 docker-compose.yml
 docker-compose.dev.yml
-docker-compose.cloudflared.yml
 postgresql_data/
 valkey_data/
 

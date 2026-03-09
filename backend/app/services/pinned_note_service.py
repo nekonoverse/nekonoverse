@@ -77,7 +77,18 @@ async def get_pinned_notes(db: AsyncSession, actor_id: uuid.UUID) -> list[Pinned
     """Get pinned notes for an actor, ordered by position."""
     result = await db.execute(
         select(PinnedNote)
-        .options(selectinload(PinnedNote.note).selectinload(Note.actor))
+        .options(
+            selectinload(PinnedNote.note).selectinload(Note.actor),
+            selectinload(PinnedNote.note).selectinload(Note.attachments),
+            selectinload(PinnedNote.note)
+            .selectinload(Note.quoted_note).selectinload(Note.actor),
+            selectinload(PinnedNote.note)
+            .selectinload(Note.quoted_note).selectinload(Note.attachments),
+            selectinload(PinnedNote.note)
+            .selectinload(Note.renote_of).selectinload(Note.actor),
+            selectinload(PinnedNote.note)
+            .selectinload(Note.renote_of).selectinload(Note.attachments),
+        )
         .where(PinnedNote.actor_id == actor_id)
         .order_by(PinnedNote.position)
     )

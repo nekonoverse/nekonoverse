@@ -104,14 +104,21 @@ def _get_image_dimensions(data: bytes, mime_type: str) -> tuple[int | None, int 
                     break
                 marker = data[i + 1]
                 if marker in (0xC0, 0xC1, 0xC2):
-                    return int.from_bytes(data[i + 7:i + 9], "big"), int.from_bytes(data[i + 5:i + 7], "big")
+                    w = int.from_bytes(data[i + 7:i + 9], "big")
+                    h = int.from_bytes(data[i + 5:i + 7], "big")
+                    return w, h
                 length = int.from_bytes(data[i + 2:i + 4], "big")
                 i += 2 + length
         elif mime_type == "image/gif" and len(data) >= 10 and data[:3] == b"GIF":
             return int.from_bytes(data[6:8], "little"), int.from_bytes(data[8:10], "little")
-        elif mime_type == "image/webp" and len(data) >= 30 and data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        elif (
+            mime_type == "image/webp" and len(data) >= 30
+            and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+        ):
             if data[12:16] == b"VP8 ":
-                return int.from_bytes(data[26:28], "little") & 0x3FFF, int.from_bytes(data[28:30], "little") & 0x3FFF
+                w = int.from_bytes(data[26:28], "little") & 0x3FFF
+                h = int.from_bytes(data[28:30], "little") & 0x3FFF
+                return w, h
     except Exception:
         pass
     return None, None

@@ -297,3 +297,150 @@ export async function createInviteCode(): Promise<InviteCode> {
 export async function revokeInviteCode(code: string): Promise<void> {
   await apiRequest(`/api/v1/invites/${code}`, { method: "DELETE" });
 }
+
+// Federation
+export interface DeliveryStats {
+  success: number;
+  failure: number;
+  pending: number;
+  dead: number;
+}
+
+export interface FederatedServer {
+  domain: string;
+  user_count: number;
+  note_count: number;
+  last_activity_at: string | null;
+  first_seen_at: string | null;
+  status: string;
+  block_severity: string | null;
+  delivery_stats: DeliveryStats;
+}
+
+export interface FederatedServerList {
+  servers: FederatedServer[];
+  total: number;
+}
+
+export interface ActorSummary {
+  username: string;
+  display_name: string | null;
+  ap_id: string;
+  last_fetched_at: string | null;
+}
+
+export interface FederatedServerDetail extends FederatedServer {
+  block_reason: string | null;
+  recent_actors: ActorSummary[];
+}
+
+export async function getFederatedServers(params: {
+  limit?: number;
+  offset?: number;
+  sort?: string;
+  order?: string;
+  search?: string;
+  status?: string;
+} = {}): Promise<FederatedServerList> {
+  const qs = new URLSearchParams();
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.offset) qs.set("offset", String(params.offset));
+  if (params.sort) qs.set("sort", params.sort);
+  if (params.order) qs.set("order", params.order);
+  if (params.search) qs.set("search", params.search);
+  if (params.status) qs.set("status", params.status);
+  return apiRequest<FederatedServerList>(`/api/v1/admin/federation?${qs}`);
+}
+
+export async function getFederatedServerDetail(domain: string): Promise<FederatedServerDetail> {
+  return apiRequest<FederatedServerDetail>(
+    `/api/v1/admin/federation/${encodeURIComponent(domain)}`
+  );
+}
+
+// Queue Management
+export interface QueueStats {
+  pending: number;
+  processing: number;
+  delivered: number;
+  dead: number;
+  total: number;
+  recent_delivered: number;
+  recent_dead: number;
+}
+
+export interface QueueJob {
+  id: string;
+  target_inbox_url: string;
+  status: string;
+  attempts: number;
+  max_attempts: number;
+  error_message: string | null;
+  created_at: string;
+  last_attempted_at: string | null;
+  next_retry_at: string | null;
+}
+
+export interface QueueJobList {
+  jobs: QueueJob[];
+  total: number;
+}
+
+export async function getQueueStats(): Promise<QueueStats> {
+  return apiRequest<QueueStats>("/api/v1/admin/queue/stats");
+}
+
+export async function getQueueJobs(params: {
+  status?: string;
+  domain?: string;
+  limit?: number;
+  offset?: number;
+} = {}): Promise<QueueJobList> {
+  const qs = new URLSearchParams();
+  if (params.status) qs.set("status", params.status);
+  if (params.domain) qs.set("domain", params.domain);
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.offset) qs.set("offset", String(params.offset));
+  return apiRequest<QueueJobList>(`/api/v1/admin/queue/jobs?${qs}`);
+}
+
+export async function retryQueueJob(jobId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/queue/retry/${jobId}`, { method: "POST" });
+}
+
+export async function retryAllDeadJobs(domain?: string): Promise<{ retried: number }> {
+  const qs = domain ? `?domain=${encodeURIComponent(domain)}` : "";
+  return apiRequest(`/api/v1/admin/queue/retry-all${qs}`, { method: "POST" });
+}
+
+export async function purgeDeliveredJobs(
+  olderThanHours: number = 24
+): Promise<{ purged: number }> {
+  return apiRequest(`/api/v1/admin/queue/purge?older_than_hours=${olderThanHours}`, {
+    method: "DELETE",
+  });
+}
+
+// System Stats
+export interface SystemStats {
+  db_pool_size: number;
+  db_pool_checked_in: number;
+  db_pool_checked_out: number;
+  db_pool_overflow: number;
+  valkey_connected_clients: number;
+  valkey_used_memory_human: string;
+  valkey_total_keys: number;
+  load_avg_1m: number;
+  load_avg_5m: number;
+  load_avg_15m: number;
+  memory_total_mb: number;
+  memory_available_mb: number;
+  memory_percent: number;
+  uptime_seconds: number;
+  worker_alive: boolean;
+  worker_last_heartbeat: string | null;
+}
+
+export async function getSystemStats(): Promise<SystemStats> {
+  return apiRequest<SystemStats>("/api/v1/admin/system/stats");
+}

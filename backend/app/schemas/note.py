@@ -28,6 +28,7 @@ class NoteActorResponse(BaseModel):
     avatar_url: str | None
     ap_id: str
     domain: str | None
+    emojis: list["CustomEmojiInfo"] = []
 
     model_config = {"from_attributes": True}
 
@@ -72,6 +73,25 @@ class PollResponse(BaseModel):
     own_votes: list[int] = []
 
 
+class TagInfo(BaseModel):
+    name: str
+    url: str
+
+
+class NoteEditRequest(BaseModel):
+    content: str = Field(min_length=1, max_length=5000)
+    spoiler_text: str | None = Field(default=None, max_length=500)
+
+
+class NoteEditHistoryEntry(BaseModel):
+    content: str
+    source: str | None
+    spoiler_text: str | None
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
 class NoteResponse(BaseModel):
     id: uuid.UUID
     ap_id: str
@@ -81,9 +101,12 @@ class NoteResponse(BaseModel):
     sensitive: bool
     spoiler_text: str | None
     published: datetime
+    edited_at: str | None = None
     replies_count: int
     reactions_count: int
     renotes_count: int
+    in_reply_to_id: uuid.UUID | None = None
+    in_reply_to_account_id: uuid.UUID | None = None
     actor: NoteActorResponse
     reactions: list[ReactionSummary] = []
     reblog: "NoteResponse | None" = None
@@ -92,5 +115,11 @@ class NoteResponse(BaseModel):
     poll: PollResponse | None = None
     pinned: bool = False
     emojis: list[CustomEmojiInfo] = []
+    tags: list[TagInfo] = []
 
     model_config = {"from_attributes": True}
+
+
+class ContextResponse(BaseModel):
+    ancestors: list[NoteResponse] = []
+    descendants: list[NoteResponse] = []

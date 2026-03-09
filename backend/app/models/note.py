@@ -65,6 +65,9 @@ class Note(Base):
     renote_of = relationship(
         "Note", foreign_keys=[renote_of_id], remote_side="Note.id", lazy="noload",
     )
+    in_reply_to = relationship(
+        "Note", foreign_keys=[in_reply_to_id], remote_side="Note.id", lazy="noload",
+    )
 
     __table_args__ = (
         Index("ix_notes_actor_published", "actor_id", "published"),

@@ -314,8 +314,11 @@ async def get_account_statuses(
 
     from datetime import datetime, timezone
 
-    from app.api.mastodon.statuses import note_to_response
-    from app.services.note_service import _note_load_options, get_reaction_summary
+    from app.api.mastodon.statuses import notes_to_responses
+    from app.services.note_service import (
+        _note_load_options,
+        get_reaction_summaries,
+    )
 
     query = (
         select(Note)
@@ -329,23 +332,25 @@ async def get_account_statuses(
 
     # Filter notes hidden before threshold
     if actor.make_notes_hidden_before:
-        threshold = datetime.fromtimestamp(actor.make_notes_hidden_before / 1000.0, tz=timezone.utc)
+        threshold = datetime.fromtimestamp(
+            actor.make_notes_hidden_before / 1000.0, tz=timezone.utc,
+        )
         query = query.where(Note.published > threshold)
 
     # Filter notes followers-only before threshold (unauthenticated only)
     if actor.make_notes_followers_only_before and not user:
-        threshold = datetime.fromtimestamp(actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc)
+        threshold = datetime.fromtimestamp(
+            actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc
+        )
         query = query.where(Note.published > threshold)
 
     query = query.order_by(Note.published.desc()).limit(min(limit, 40))
     notes_result = await db.execute(query)
-    notes = notes_result.scalars().all()
+    notes = list(notes_result.scalars().all())
 
-    response = []
-    for note in notes:
-        reactions = await get_reaction_summary(db, note.id, None)
-        response.append(await note_to_response(note, reactions, db=db))
-    return response
+    note_ids = [n.id for n in notes]
+    reactions_map = await get_reaction_summaries(db, note_ids)
+    return await notes_to_responses(notes, reactions_map, db)
 
 
 @router.get("/{actor_id}/followers")

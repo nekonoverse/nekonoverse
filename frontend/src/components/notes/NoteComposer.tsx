@@ -1,4 +1,4 @@
-import { createSignal, Show, For, onCleanup } from "solid-js";
+import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
 import { createNote, uploadMedia, type Note, type MediaAttachment } from "../../api/statuses";
 import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
@@ -25,6 +25,8 @@ interface Props {
   onPost?: (note: Note) => void;
   quoteNote?: Note | null;
   onClearQuote?: () => void;
+  replyTo?: Note | null;
+  onClearReply?: () => void;
 }
 
 export default function NoteComposer(props: Props) {
@@ -39,6 +41,16 @@ export default function NoteComposer(props: Props) {
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
 
   let fileInput!: HTMLInputElement;
+
+  // Auto-set visibility to match parent note when replying
+  createEffect(() => {
+    if (props.replyTo) {
+      const parentVis = props.replyTo.visibility as Visibility;
+      if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
+        setVisibility(parentVis);
+      }
+    }
+  });
 
   const visEmoji = () => VISIBILITY_OPTIONS.find((o) => o.key === visibility())?.emoji || "\u{1F310}";
 
@@ -103,10 +115,18 @@ export default function NoteComposer(props: Props) {
     try {
       const mediaIds = attachments().map((a) => a.id);
       const quoteId = props.quoteNote?.id;
-      const note = await createNote(content(), visibility(), mediaIds.length > 0 ? mediaIds : undefined, quoteId);
+      const replyToId = props.replyTo?.id;
+      const note = await createNote(
+        content(),
+        visibility(),
+        mediaIds.length > 0 ? mediaIds : undefined,
+        quoteId,
+        replyToId,
+      );
       setContent("");
       setAttachments([]);
       props.onClearQuote?.();
+      props.onClearReply?.();
 
       if (rememberVisibility()) {
         setLastVisibility(visibility());
@@ -140,9 +160,29 @@ export default function NoteComposer(props: Props) {
     }
   };
 
+  const replyToActor = () => {
+    const rt = props.replyTo;
+    if (!rt) return null;
+    return rt.actor;
+  };
+
   return (
     <form onSubmit={handleSubmit} class="note-composer">
       {error() && <div class="error">{error()}</div>}
+      <Show when={replyToActor()}>
+        {(actor) => (
+          <div class="composer-reply-indicator">
+            <span class="composer-reply-label">
+              {t("reply.replyingTo")} @{actor().username}{actor().domain ? `@${actor().domain}` : ""}
+            </span>
+            <Show when={props.onClearReply}>
+              <button type="button" class="composer-reply-close" onClick={() => props.onClearReply?.()}>
+                ✕
+              </button>
+            </Show>
+          </div>
+        )}
+      </Show>
       <Show when={props.quoteNote}>
         {(qn) => (
           <div class="composer-quote-preview">
@@ -161,7 +201,7 @@ export default function NoteComposer(props: Props) {
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
         onPaste={handlePaste}
-        placeholder={t("composer.placeholder")}
+        placeholder={props.replyTo ? t("reply.reply") + "..." : t("composer.placeholder")}
         rows={3}
         maxLength={5000}
       />
@@ -230,7 +270,7 @@ export default function NoteComposer(props: Props) {
                 class="composer-post-btn"
                 disabled={loading() || (!content().trim() && attachments().length === 0)}
               >
-                {loading() ? t("composer.posting") : t("composer.post")}
+                {loading() ? t("composer.posting") : (props.replyTo ? t("reply.reply") : t("composer.post"))}
                 <span class="composer-vis-icon">{visEmoji()}</span>
               </button>
               <button

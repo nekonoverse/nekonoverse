@@ -5,31 +5,32 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app import __version__
-from app.dependencies import get_db
-
 from app.activitypub.nodeinfo import router as nodeinfo_router
 from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
+from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
-from app.api.mastodon.accounts import relationships_router, router as accounts_router
+from app.api.invites import router as invites_router
+from app.api.mastodon.accounts import relationships_router
+from app.api.mastodon.accounts import router as accounts_router
 from app.api.mastodon.bookmarks import router as bookmarks_router
+from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.mastodon.notifications import router as notifications_router
 from app.api.mastodon.polls import router as polls_router
 from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.streaming import router as streaming_router
 from app.api.mastodon.timelines import router as timelines_router
-from app.api.oauth import router as oauth_router
-from app.api.admin import router as admin_router
-from app.api.invites import router as invites_router
 from app.api.media import router as media_router
-from app.api.mastodon.media_proxy import router as media_proxy_router
+from app.api.oauth import router as oauth_router
 from app.api.passkey import router as passkey_router
 from app.config import settings
+from app.dependencies import get_db
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     import logging
+
     from app.storage import ensure_bucket
     try:
         await ensure_bucket()
@@ -111,6 +112,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
 @app.get("/manifest.webmanifest")
 async def manifest(db: AsyncSession = Depends(get_db)):
     from fastapi.responses import JSONResponse
+
     from app.services.server_settings_service import get_setting
 
     name = await get_setting(db, "server_name") or "Nekonoverse"
@@ -120,13 +122,19 @@ async def manifest(db: AsyncSession = Depends(get_db)):
         icons = [
             {"src": icon_url, "sizes": "192x192", "type": "image/png"},
             {"src": icon_url, "sizes": "512x512", "type": "image/png"},
-            {"src": icon_url, "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+            {
+                "src": icon_url, "sizes": "512x512",
+                "type": "image/png", "purpose": "maskable",
+            },
         ]
     else:
         icons = [
             {"src": "/pwa-192x192.svg", "sizes": "192x192", "type": "image/svg+xml"},
             {"src": "/pwa-512x512.svg", "sizes": "512x512", "type": "image/svg+xml"},
-            {"src": "/pwa-512x512.svg", "sizes": "512x512", "type": "image/svg+xml", "purpose": "maskable"},
+            {
+                "src": "/pwa-512x512.svg", "sizes": "512x512",
+                "type": "image/svg+xml", "purpose": "maskable",
+            },
         ]
 
     return JSONResponse(
@@ -162,6 +170,24 @@ async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
             "is_sensitive": e.is_sensitive,
         }
         for e in emojis
+    ]
+
+
+@app.get("/api/v1/trends/tags")
+async def trending_tags(
+    limit: int = 10,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.hashtag_service import get_trending_tags
+
+    tags = await get_trending_tags(db, limit=limit)
+    return [
+        {
+            "name": tag.name,
+            "url": f"{settings.server_url}/tags/{tag.name}",
+            "history": [],
+        }
+        for tag in tags
     ]
 
 

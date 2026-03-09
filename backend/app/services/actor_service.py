@@ -1,4 +1,3 @@
-import json
 import logging
 from datetime import datetime, timezone
 
@@ -47,7 +46,7 @@ async def get_actor_by_ap_id(db: AsyncSession, ap_id: str) -> Actor | None:
 
 
 async def get_actor_by_username(
-    db: AsyncSession, username: str, domain: str | None = None
+    db: AsyncSession, username: str, domain: str | None = None,
 ) -> Actor | None:
     lookup = username.lower() if domain is None else username
     result = await db.execute(
@@ -108,7 +107,10 @@ async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
     try:
         resp = await _signed_get(db, ap_id)
         if not resp or resp.status_code != 200:
-            logger.warning("Failed to fetch actor %s: HTTP %s", ap_id, resp.status_code if resp else "no response")
+            logger.warning(
+                "Failed to fetch actor %s: HTTP %s",
+                ap_id, resp.status_code if resp else "no response",
+            )
             return existing
 
         data = resp.json()
@@ -226,10 +228,19 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
             existing.header_url = image.get("url")
         existing.is_cat = data.get("isCat", False)
         existing.is_bot = is_bot
-        existing.require_signin_to_view = bool(data.get("_misskey_requireSigninToViewContents", False))
-        existing.make_notes_followers_only_before = data.get("_misskey_makeNotesFollowersOnlyBefore")
-        existing.make_notes_hidden_before = data.get("_misskey_makeNotesHiddenBefore")
-        existing.manually_approves_followers = data.get("manuallyApprovesFollowers", existing.manually_approves_followers)
+        existing.require_signin_to_view = bool(
+            data.get("_misskey_requireSigninToViewContents", False)
+        )
+        existing.make_notes_followers_only_before = data.get(
+            "_misskey_makeNotesFollowersOnlyBefore"
+        )
+        existing.make_notes_hidden_before = data.get(
+            "_misskey_makeNotesHiddenBefore"
+        )
+        existing.manually_approves_followers = data.get(
+            "manuallyApprovesFollowers",
+            existing.manually_approves_followers,
+        )
         existing.discoverable = data.get("discoverable", existing.discoverable)
         if fields is not None:
             existing.fields = fields
@@ -298,7 +309,10 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
         async with httpx.AsyncClient(timeout=10.0, verify=not settings.skip_ssl_verify) as client:
             resp = await client.get(webfinger_url, follow_redirects=True)
         if resp.status_code != 200:
-            logger.warning("WebFinger failed for %s@%s: HTTP %s", username, domain, resp.status_code)
+            logger.warning(
+                "WebFinger failed for %s@%s: HTTP %s",
+                username, domain, resp.status_code,
+            )
             return None
 
         data = resp.json()

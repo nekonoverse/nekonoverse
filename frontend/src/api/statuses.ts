@@ -7,6 +7,7 @@ export interface NoteActor {
   avatar_url: string | null;
   ap_id: string;
   domain: string | null;
+  emojis: CustomEmoji[];
 }
 
 export interface ReactionSummary {
@@ -49,6 +50,11 @@ export interface CustomEmoji {
   static_url: string;
 }
 
+export interface TagInfo {
+  name: string;
+  url: string;
+}
+
 export interface Note {
   id: string;
   ap_id: string;
@@ -58,9 +64,12 @@ export interface Note {
   sensitive: boolean;
   spoiler_text: string | null;
   published: string;
+  edited_at: string | null;
   replies_count: number;
   reactions_count: number;
   renotes_count: number;
+  in_reply_to_id: string | null;
+  in_reply_to_account_id: string | null;
   actor: NoteActor;
   reactions: ReactionSummary[];
   media_attachments: MediaAttachment[];
@@ -69,6 +78,19 @@ export interface Note {
   poll: Poll | null;
   pinned: boolean;
   emojis: CustomEmoji[];
+  tags: TagInfo[];
+}
+
+export interface NoteContext {
+  ancestors: Note[];
+  descendants: Note[];
+}
+
+export interface NoteEditHistoryEntry {
+  content: string;
+  source: string | null;
+  spoiler_text: string | null;
+  created_at: string;
 }
 
 export async function uploadMedia(file: File, description?: string): Promise<MediaAttachment> {
@@ -81,13 +103,24 @@ export async function uploadMedia(file: File, description?: string): Promise<Med
   });
 }
 
-export async function createNote(content: string, visibility = "public", mediaIds?: string[], quoteId?: string): Promise<Note> {
+export async function createNote(
+  content: string,
+  visibility = "public",
+  mediaIds?: string[],
+  quoteId?: string,
+  inReplyToId?: string,
+): Promise<Note> {
   const body: Record<string, unknown> = { content, visibility, media_ids: mediaIds || [] };
   if (quoteId) body.quote_id = quoteId;
+  if (inReplyToId) body.in_reply_to_id = inReplyToId;
   return apiRequest<Note>("/api/v1/statuses", {
     method: "POST",
     body,
   });
+}
+
+export async function getContext(noteId: string): Promise<NoteContext> {
+  return apiRequest<NoteContext>(`/api/v1/statuses/${noteId}/context`);
 }
 
 export async function reblogNote(noteId: string): Promise<Note> {
@@ -189,4 +222,42 @@ export async function votePoll(noteId: string, choices: number[]): Promise<Poll>
     method: "POST",
     body: { choices },
   });
+}
+
+export async function getTagTimeline(tag: string, params?: {
+  max_id?: string;
+  limit?: number;
+}): Promise<Note[]> {
+  const query = new URLSearchParams();
+  if (params?.max_id) query.set("max_id", params.max_id);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return apiRequest<Note[]>(
+    `/api/v1/timelines/tag/${encodeURIComponent(tag)}${qs ? `?${qs}` : ""}`,
+  );
+}
+
+export interface TrendingTag {
+  name: string;
+  url: string;
+  history: unknown[];
+}
+
+export async function getTrendingTags(limit = 10): Promise<TrendingTag[]> {
+  return apiRequest<TrendingTag[]>(`/api/v1/trends/tags?limit=${limit}`);
+}
+
+export async function editNote(
+  noteId: string,
+  content: string,
+  spoilerText?: string | null,
+): Promise<Note> {
+  return apiRequest<Note>(`/api/v1/statuses/${noteId}`, {
+    method: "PUT",
+    body: { content, spoiler_text: spoilerText ?? null },
+  });
+}
+
+export async function getNoteHistory(noteId: string): Promise<NoteEditHistoryEntry[]> {
+  return apiRequest<NoteEditHistoryEntry[]>(`/api/v1/statuses/${noteId}/history`);
 }

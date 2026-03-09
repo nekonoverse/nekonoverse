@@ -1,12 +1,19 @@
 import { Router, Route } from "@solidjs/router";
-import { lazy, onMount, type ParentProps } from "solid-js";
+import { lazy, onMount, onCleanup, type ParentProps } from "solid-js";
 import { I18nProvider } from "./i18n";
 import { initTheme } from "./stores/theme";
 import { fetchCurrentUser } from "./stores/auth";
+import {
+  fetchInstance,
+  checkClientVersion,
+  startVersionPolling,
+} from "./stores/instance";
 import Navbar from "./components/layout/Navbar";
+import SwipeBack from "./components/SwipeBack";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";
 
 initTheme();
+checkClientVersion();
 
 const Home = lazy(() => import("./pages/Home"));
 const Login = lazy(() => import("./pages/Login"));
@@ -19,15 +26,22 @@ const Bookmarks = lazy(() => import("./pages/Bookmarks"));
 const Search = lazy(() => import("./pages/Search"));
 const Profile = lazy(() => import("./pages/Profile"));
 const FollowList = lazy(() => import("./pages/FollowList"));
+const TagTimeline = lazy(() => import("./pages/TagTimeline"));
+const NoteThread = lazy(() => import("./pages/NoteThread"));
 
 function Layout(props: ParentProps) {
   onMount(() => {
     fetchCurrentUser();
+    fetchInstance();
   });
+
+  const stopPolling = startVersionPolling();
+  onCleanup(stopPolling);
 
   return (
     <>
       <Navbar />
+      <SwipeBack />
       {props.children}
     </>
   );
@@ -41,12 +55,14 @@ export default function App() {
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
-        <Route path="/settings" component={Settings} />
+        <Route path="/settings/*section" component={Settings} />
         <Route path="/notifications" component={Notifications} />
-        <Route path="/admin" component={Admin} />
+        <Route path="/admin/*section" component={Admin} />
         <Route path="/drive" component={Drive} />
         <Route path="/bookmarks" component={Bookmarks} />
         <Route path="/search" component={Search} />
+        <Route path="/tags/:tag" component={TagTimeline} />
+        <Route path="/notes/:id" component={NoteThread} />
         <Route path="/:acct/followers" component={FollowList} />
         <Route path="/:acct/following" component={FollowList} />
         <Route path="/:acct" component={Profile} />

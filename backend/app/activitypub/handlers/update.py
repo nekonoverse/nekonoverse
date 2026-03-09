@@ -58,6 +58,17 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
         logger.warning("Update note denied: actor %s does not own note %s", actor_ap_id, ap_id)
         return
 
+    # Save current state as edit history before updating
+    from app.models.note_edit import NoteEdit
+
+    edit_record = NoteEdit(
+        note_id=note.id,
+        content=note.content,
+        source=note.source,
+        spoiler_text=note.spoiler_text,
+    )
+    db.add(edit_record)
+
     content = data.get("content")
     if content:
         note.content = sanitize_html(content)

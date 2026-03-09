@@ -14,5 +14,6 @@ class NotificationResponse(BaseModel):
     account: NoteActorResponse | None = None
     status: NoteResponse | None = None
     emoji: str | None = None
+    emoji_url: str | None = None
 
     model_config = {"from_attributes": True}

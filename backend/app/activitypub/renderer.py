@@ -138,6 +138,8 @@ def render_note(note: Note) -> dict:
         "url": f"{settings.server_url}/notes/{note.id}",
     }
 
+    if getattr(note, "updated_at", None):
+        data["updated"] = _iso_z(note.updated_at)
     if note.source:
         data["source"] = {"content": note.source, "mediaType": "text/plain"}
         data["_misskey_content"] = note.source
@@ -191,6 +193,15 @@ def render_note(note: Note) -> dict:
                 "type": "Mention",
                 "href": m["ap_id"],
                 "name": name,
+            })
+
+    # Hashtag tags
+    if hasattr(note, '_hashtag_names') and note._hashtag_names:
+        for ht_name in note._hashtag_names:
+            tag.append({
+                "type": "Hashtag",
+                "href": f"{settings.server_url}/tags/{ht_name}",
+                "name": f"#{ht_name}",
             })
 
     # Custom emoji tags

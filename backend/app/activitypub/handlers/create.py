@@ -119,7 +119,9 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                 # Extract extended fields (Misskey + CherryPick)
                 static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
                 _ml = tag.get("_misskey_license")
-                license_text = tag.get("license") or ((_ml.get("freeText") if isinstance(_ml, dict) else None))
+                license_text = tag.get("license") or (
+                    _ml.get("freeText") if isinstance(_ml, dict) else None
+                )
                 await upsert_remote_emoji(
                     db, shortcode=emoji_name, domain=actor.domain, url=emoji_url,
                     static_url=static_url,
@@ -214,7 +216,11 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             continue
         att_url = att_data.get("url")
         if isinstance(att_url, list):
-            att_url = att_url[0].get("href") if att_url and isinstance(att_url[0], dict) else (att_url[0] if att_url else None)
+            att_url = (
+                att_url[0].get("href")
+                if att_url and isinstance(att_url[0], dict)
+                else (att_url[0] if att_url else None)
+            )
         if not att_url or not isinstance(att_url, str):
             continue
 
@@ -230,6 +236,17 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             remote_description=att_data.get("name"),
         )
         db.add(attachment)
+
+    # Extract and upsert hashtags from AP tags
+    from app.services.hashtag_service import (
+        extract_hashtags_from_ap_tags,
+    )
+    from app.services.hashtag_service import (
+        upsert_hashtags as upsert_ht,
+    )
+    hashtag_names = extract_hashtags_from_ap_tags(tags)
+    if hashtag_names:
+        await upsert_ht(db, note.id, hashtag_names)
 
     await db.commit()
     logger.info("Saved remote note %s from %s", ap_id, actor_ap_id)

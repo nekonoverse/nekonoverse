@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_admin_user, get_current_user, get_db, get_staff_user
+from app.dependencies import get_admin_user, get_db, get_staff_user
 from app.models.actor import Actor
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
@@ -18,15 +18,22 @@ from app.schemas.admin import (
     AdminRemoteEmojiResponse,
     AdminStatsResponse,
     AdminUserResponse,
-    ImportByShortcodeRequest,
     DomainBlockRequest,
     DomainBlockResponse,
+    FederatedServerDetailResponse,
+    FederatedServerListResponse,
+    FederatedServerResponse,
+    ImportByShortcodeRequest,
     ModerationActionRequest,
     ModerationLogResponse,
+    QueueJobListResponse,
+    QueueJobResponse,
+    QueueStatsResponse,
     ReportResponse,
     RoleChangeRequest,
     ServerSettingsResponse,
     ServerSettingsUpdate,
+    SystemStatsResponse,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -259,6 +266,8 @@ async def silence_user(
     target = await _get_user(db, user_id)
     if target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Already silenced")
+    if target.id == user.id:
+        raise HTTPException(status_code=422, detail="Cannot silence self")
     _check_moderation_permission(user, target)
 
     await silence_actor(db, target.actor, user, body.reason)
@@ -282,6 +291,55 @@ async def unsilence_user(
     await unsilence_actor(db, target.actor, user)
     await db.commit()
     return {"ok": True}
+
+
+# --- Federation ---
+
+
+@router.get("/federation", response_model=FederatedServerListResponse)
+async def list_federated_servers(
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=40, le=200, ge=1),
+    offset: int = Query(default=0, ge=0),
+    sort: str = Query(
+        default="user_count",
+        pattern=r"^(domain|user_count|note_count|last_activity)$",
+    ),
+    order: str = Query(default="desc", pattern=r"^(asc|desc)$"),
+    search: str | None = Query(default=None, max_length=255),
+    status: str | None = Query(default=None, pattern=r"^(all|active|suspended|silenced)$"),
+):
+    from app.services.federation_service import get_federated_servers
+
+    effective_status = None if status in (None, "all") else status
+    servers, total = await get_federated_servers(
+        db,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        order=order,
+        search=search,
+        status=effective_status,
+    )
+    return FederatedServerListResponse(
+        servers=[FederatedServerResponse(**s) for s in servers],
+        total=total,
+    )
+
+
+@router.get("/federation/{domain:path}", response_model=FederatedServerDetailResponse)
+async def get_federated_server_detail_endpoint(
+    domain: str,
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.federation_service import get_federated_server_detail
+
+    detail = await get_federated_server_detail(db, domain)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Server not found")
+    return FederatedServerDetailResponse(**detail)
 
 
 # --- Domain Blocks ---
@@ -350,8 +408,12 @@ async def get_reports(
     return [
         ReportResponse(
             id=r.id,
-            reporter=r.reporter_actor.username + ("@" + r.reporter_actor.domain if r.reporter_actor.domain else ""),
-            target=r.target_actor.username + ("@" + r.target_actor.domain if r.target_actor.domain else ""),
+            reporter=r.reporter_actor.username + (
+                "@" + r.reporter_actor.domain if r.reporter_actor.domain else ""
+            ),
+            target=r.target_actor.username + (
+                "@" + r.target_actor.domain if r.target_actor.domain else ""
+            ),
             target_note_id=r.target_note_id,
             comment=r.comment,
             status=r.status,
@@ -369,7 +431,8 @@ async def resolve_report(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
-    from app.services.report_service import get_report_by_id, resolve_report as _resolve
+    from app.services.report_service import get_report_by_id
+    from app.services.report_service import resolve_report as _resolve
 
     report = await get_report_by_id(db, report_id)
     if not report:
@@ -390,7 +453,8 @@ async def reject_report(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
-    from app.services.report_service import get_report_by_id, reject_report as _reject
+    from app.services.report_service import get_report_by_id
+    from app.services.report_service import reject_report as _reject
 
     report = await get_report_by_id(db, report_id)
     if not report:
@@ -467,7 +531,11 @@ async def get_moderation_log(
     return [
         ModerationLogResponse(
             id=e.id,
-            moderator=e.moderator.actor.username if e.moderator and e.moderator.actor else "unknown",
+            moderator=(
+                e.moderator.actor.username
+                if e.moderator and e.moderator.actor
+                else "unknown"
+            ),
             action=e.action,
             target_type=e.target_type,
             target_id=e.target_id,
@@ -565,6 +633,7 @@ async def add_emoji(
     db: AsyncSession = Depends(get_db),
 ):
     import json as json_mod
+
     from app.services.drive_service import file_to_url, upload_drive_file
     from app.services.emoji_service import create_local_emoji, get_custom_emoji
 
@@ -620,7 +689,7 @@ async def delete_emoji_endpoint(
     user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.emoji_service import get_emoji_by_id, delete_emoji
+    from app.services.emoji_service import delete_emoji, get_emoji_by_id
 
     emoji = await get_emoji_by_id(db, emoji_id)
     if not emoji:
@@ -882,6 +951,158 @@ async def delete_server_file_endpoint(
     await delete_drive_file(db, drive_file)
     await db.commit()
     return {"ok": True}
+
+
+# --- Queue Management ---
+
+
+@router.get("/queue/stats", response_model=QueueStatsResponse)
+async def get_queue_stats(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import get_queue_stats
+
+    return await get_queue_stats(db)
+
+
+@router.get("/queue/jobs", response_model=QueueJobListResponse)
+async def list_queue_jobs(
+    status: str | None = Query(None),
+    domain: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import get_queue_jobs
+
+    jobs, total = await get_queue_jobs(db, status, domain, limit, offset)
+    return QueueJobListResponse(
+        jobs=[QueueJobResponse.model_validate(j) for j in jobs],
+        total=total,
+    )
+
+
+@router.post("/queue/retry/{job_id}")
+async def retry_queue_job(
+    job_id: uuid.UUID,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import retry_job
+
+    success = await retry_job(db, job_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Job not found or not dead")
+    return {"ok": True}
+
+
+@router.post("/queue/retry-all")
+async def retry_all_dead_jobs(
+    domain: str | None = Query(None),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import retry_all_dead
+
+    count = await retry_all_dead(db, domain)
+    return {"ok": True, "retried": count}
+
+
+@router.delete("/queue/purge")
+async def purge_delivered_jobs(
+    older_than_hours: int = Query(24, ge=1),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import purge_delivered
+
+    count = await purge_delivered(db, older_than_hours)
+    return {"ok": True, "purged": count}
+
+
+# --- System Stats ---
+
+
+@router.get("/system/stats", response_model=SystemStatsResponse)
+async def get_system_stats(
+    user: User = Depends(get_admin_user),
+):
+    from app.database import engine
+    from app.valkey_client import valkey
+
+    data: dict = {}
+
+    # DB pool stats
+    pool = engine.pool
+    data["db_pool_size"] = pool.size()
+    data["db_pool_checked_in"] = pool.checkedin()
+    data["db_pool_checked_out"] = pool.checkedout()
+    data["db_pool_overflow"] = pool.overflow()
+
+    # Valkey stats
+    try:
+        info = await valkey.info()
+        data["valkey_connected_clients"] = info.get("connected_clients", 0)
+        data["valkey_used_memory_human"] = info.get("used_memory_human", "")
+        # キーの合計数
+        total_keys = 0
+        for key, val in info.items():
+            if key.startswith("db") and isinstance(val, dict):
+                total_keys += val.get("keys", 0)
+        data["valkey_total_keys"] = total_keys
+    except Exception:
+        pass
+
+    # System stats (/proc読み取り)
+    try:
+        with open("/proc/loadavg") as f:
+            parts = f.read().split()
+            data["load_avg_1m"] = float(parts[0])
+            data["load_avg_5m"] = float(parts[1])
+            data["load_avg_15m"] = float(parts[2])
+    except Exception:
+        pass
+
+    try:
+        with open("/proc/meminfo") as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    key = parts[0].strip()
+                    val = parts[1].strip().split()[0]
+                    meminfo[key] = int(val)
+            total_kb = meminfo.get("MemTotal", 0)
+            available_kb = meminfo.get("MemAvailable", 0)
+            data["memory_total_mb"] = total_kb // 1024
+            data["memory_available_mb"] = available_kb // 1024
+            if total_kb > 0:
+                data["memory_percent"] = round(
+                    (1 - available_kb / total_kb) * 100, 1
+                )
+    except Exception:
+        pass
+
+    try:
+        with open("/proc/uptime") as f:
+            data["uptime_seconds"] = float(f.read().split()[0])
+    except Exception:
+        pass
+
+    # Worker heartbeat
+    try:
+        heartbeat = await valkey.get("worker:heartbeat")
+        if heartbeat:
+            data["worker_alive"] = True
+            data["worker_last_heartbeat"] = heartbeat
+        else:
+            data["worker_alive"] = False
+    except Exception:
+        pass
+
+    return SystemStatsResponse(**data)
 
 
 # --- Helpers ---

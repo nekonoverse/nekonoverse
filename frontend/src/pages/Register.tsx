@@ -1,7 +1,7 @@
 import { onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { currentUser } from "../stores/auth";
-import { fetchInstance, registrationMode, inviteRequired, instanceLoading } from "../stores/instance";
+import { registrationMode, inviteRequired, instanceLoading } from "../stores/instance";
 import { useI18n } from "../i18n";
 import RegisterForm from "../components/auth/RegisterForm";
 
@@ -12,9 +12,7 @@ export default function Register() {
   onMount(() => {
     if (currentUser()) {
       navigate("/", { replace: true });
-      return;
     }
-    fetchInstance();
   });
 
   return (

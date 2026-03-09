@@ -31,10 +31,12 @@ import app.models.delivery  # noqa: F401
 import app.models.domain_block  # noqa: F401
 import app.models.drive_file  # noqa: F401
 import app.models.follow  # noqa: F401
+import app.models.hashtag  # noqa: F401
 import app.models.invitation_code  # noqa: F401
 import app.models.moderation_log  # noqa: F401
 import app.models.note  # noqa: F401
 import app.models.note_attachment  # noqa: F401
+import app.models.note_edit  # noqa: F401
 import app.models.notification  # noqa: F401
 import app.models.oauth  # noqa: F401
 import app.models.pinned_note  # noqa: F401

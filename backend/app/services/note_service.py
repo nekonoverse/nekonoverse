@@ -118,6 +118,12 @@ async def create_note(
             note.poll_expires_at = datetime.now(timezone.utc) + timedelta(seconds=poll_expires_in)
     db.add(note)
 
+    # Increment parent's replies_count
+    if in_reply_to_id:
+        parent = await get_note_by_id(db, in_reply_to_id)
+        if parent:
+            parent.replies_count = parent.replies_count + 1
+
     # Attach media files
     if media_ids:
         from app.models.note_attachment import NoteAttachment
@@ -136,6 +142,14 @@ async def create_note(
 
     # Reload note with all relationships for rendering and response
     note = await get_note_by_id(db, note_id)
+
+    # Extract and upsert hashtags
+    from app.services.hashtag_service import extract_hashtags
+    from app.services.hashtag_service import upsert_hashtags as upsert_ht
+    hashtag_names = extract_hashtags(content)
+    if hashtag_names:
+        await upsert_ht(db, note_id, hashtag_names)
+        note._hashtag_names = hashtag_names
 
     # Extract custom emoji shortcodes for AP federation tags
     shortcodes = set(_EMOJI_SHORTCODE_RE.findall(content))
@@ -244,6 +258,8 @@ def _note_load_options():
         selectinload(Note.renote_of).selectinload(Note.attachments),
         selectinload(Note.renote_of).selectinload(Note.quoted_note).selectinload(Note.actor),
         selectinload(Note.renote_of).selectinload(Note.quoted_note).selectinload(Note.attachments),
+        # リプライ先ノートのアクター（in_reply_to_account_id解決用）
+        selectinload(Note.in_reply_to).selectinload(Note.actor),
     ]
 
 
@@ -276,7 +292,9 @@ async def check_note_visible(
 
     # Misskey: make_notes_followers_only_before — treat old notes as followers-only
     if getattr(actor, "make_notes_followers_only_before", None) and note.published:
-        threshold = datetime.fromtimestamp(actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc)
+        threshold = datetime.fromtimestamp(
+            actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc,
+        )
         if note.published < threshold:
             if not current_actor_id:
                 return False
@@ -482,7 +500,116 @@ async def get_reaction_summary(
                     emoji_url = remote.url
 
         from app.utils.media_proxy import media_proxy_url
-        summaries.append({"emoji": emoji, "count": count, "me": me, "emoji_url": media_proxy_url(emoji_url)})
+        summaries.append({
+            "emoji": emoji, "count": count,
+            "me": me,
+            "emoji_url": media_proxy_url(emoji_url),
+        })
+    return summaries
+
+
+async def get_reaction_summaries(
+    db: AsyncSession,
+    note_ids: list[uuid.UUID],
+    current_actor_id: uuid.UUID | None = None,
+) -> dict[uuid.UUID, list[dict]]:
+    """Get aggregated reactions for multiple notes in batch.
+
+    Returns a dict mapping note_id -> list of reaction summary dicts.
+    This avoids N+1 queries by fetching all reaction data in bulk.
+    """
+    from app.models.custom_emoji import CustomEmoji
+    from app.utils.media_proxy import media_proxy_url
+
+    if not note_ids:
+        return {}
+
+    # 1) Fetch all reaction counts grouped by (note_id, emoji) in one query
+    result = await db.execute(
+        select(
+            Reaction.note_id,
+            Reaction.emoji,
+            func.count(Reaction.id).label("count"),
+        )
+        .where(Reaction.note_id.in_(note_ids))
+        .group_by(Reaction.note_id, Reaction.emoji)
+        .order_by(Reaction.note_id, func.count(Reaction.id).desc())
+    )
+    rows = result.all()
+
+    # 2) Fetch "me" reactions in one query (which emojis did the current user react to)
+    me_set: set[tuple[uuid.UUID, str]] = set()
+    if current_actor_id:
+        me_result = await db.execute(
+            select(Reaction.note_id, Reaction.emoji)
+            .where(
+                Reaction.note_id.in_(note_ids),
+                Reaction.actor_id == current_actor_id,
+            )
+        )
+        for note_id_val, emoji_val in me_result.all():
+            me_set.add((note_id_val, emoji_val))
+
+    # 3) Collect all custom emoji shortcodes that need URL resolution
+    custom_emojis_needed: dict[str, str | None] = {}  # shortcode -> domain
+    for _, emoji_str, _ in rows:
+        m = _CUSTOM_EMOJI_REACTION_RE.match(emoji_str)
+        if m:
+            shortcode, domain = m.group(1), m.group(2)
+            # Always try local first, so track shortcode with None domain
+            if shortcode not in custom_emojis_needed:
+                custom_emojis_needed[shortcode] = domain
+
+    # 4) Batch-fetch all needed custom emojis in at most 2 queries
+    emoji_url_map: dict[str, str | None] = {}  # emoji string -> url
+    if custom_emojis_needed:
+        all_shortcodes = set(custom_emojis_needed.keys())
+
+        # Fetch local emojis
+        local_result = await db.execute(
+            select(CustomEmoji).where(
+                CustomEmoji.shortcode.in_(all_shortcodes),
+                CustomEmoji.domain.is_(None),
+            )
+        )
+        local_emojis = {e.shortcode: e for e in local_result.scalars().all()}
+
+        # Collect shortcodes that need remote lookup
+        remote_shortcodes = all_shortcodes - set(local_emojis.keys())
+        remote_emojis: dict[str, CustomEmoji] = {}
+        if remote_shortcodes:
+            remote_result = await db.execute(
+                select(CustomEmoji).where(
+                    CustomEmoji.shortcode.in_(remote_shortcodes),
+                    CustomEmoji.domain.isnot(None),
+                )
+            )
+            for e in remote_result.scalars().all():
+                # Keep first match per shortcode (or match domain if specified)
+                if e.shortcode not in remote_emojis:
+                    remote_emojis[e.shortcode] = e
+
+        # Build the emoji string -> URL map
+        for _, emoji_str, _ in rows:
+            m = _CUSTOM_EMOJI_REACTION_RE.match(emoji_str)
+            if m:
+                shortcode, domain = m.group(1), m.group(2)
+                if shortcode in local_emojis:
+                    emoji_url_map[emoji_str] = local_emojis[shortcode].url
+                elif shortcode in remote_emojis:
+                    emoji_url_map[emoji_str] = remote_emojis[shortcode].url
+
+    # 5) Build the result dict
+    summaries: dict[uuid.UUID, list[dict]] = {nid: [] for nid in note_ids}
+    for note_id_val, emoji_str, count in rows:
+        me = (note_id_val, emoji_str) in me_set
+        emoji_url = emoji_url_map.get(emoji_str)
+        summaries[note_id_val].append({
+            "emoji": emoji_str,
+            "count": count,
+            "me": me,
+            "emoji_url": media_proxy_url(emoji_url),
+        })
     return summaries
 
 
@@ -709,6 +836,17 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             remote_description=att_data.get("name"),
         )
         db.add(attachment)
+
+    # Extract and upsert hashtags from AP tags
+    from app.services.hashtag_service import (
+        extract_hashtags_from_ap_tags,
+    )
+    from app.services.hashtag_service import (
+        upsert_hashtags as upsert_ht,
+    )
+    hashtag_names = extract_hashtags_from_ap_tags(tags)
+    if hashtag_names:
+        await upsert_ht(db, note.id, hashtag_names)
 
     logger.info("Fetched and stored remote note %s from %s", note_ap_id, actor_ap_id)
     return note
