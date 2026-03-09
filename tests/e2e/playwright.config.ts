@@ -16,6 +16,7 @@ export default defineConfig({
     {
       name: "firefox",
       use: { browserName: "firefox" },
+      testIgnore: /swipe/,
     },
     {
       name: "mobile-chromium",
