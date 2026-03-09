@@ -1,3 +1,7 @@
+<div style="text-align: center; margin-bottom: 1em;">
+  <img src="default-avatar.png" alt="Nekonoverse" width="128" height="128" style="border-radius: 24px;">
+</div>
+
 # Nekonoverse
 
 猫にやさしい ActivityPub サーバー。Misskey 互換の絵文字リアクションと Mastodon 互換の REST API を備えた、軽量な連合型 SNS。
