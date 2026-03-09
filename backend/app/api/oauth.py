@@ -1,7 +1,10 @@
 """OAuth 2.0 endpoints (Mastodon compatible)."""
 
 import hashlib
+import hmac
+import html as html_mod
 import secrets
+from urllib.parse import urlencode
 import uuid
 from datetime import datetime, timedelta, timezone
 
@@ -77,13 +80,20 @@ async def authorize_form(
     # Check if user is logged in
     session_id = request.cookies.get("nekonoverse_session")
     if not session_id:
-        # Return a simple login form
-        return HTMLResponse(f"""
-        <html><body style="font-family:sans-serif;max-width:400px;margin:40px auto">
-        <h2>Authorize {app.name}</h2>
-        <p>Please <a href="/login?redirect=/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&response_type={response_type}">log in</a> first.</p>
-        </body></html>
-        """)
+        # Return a simple login form (escape all user-controlled values)
+        esc = html_mod.escape
+        return HTMLResponse(
+            "<html><body style='font-family:sans-serif;"
+            "max-width:400px;margin:40px auto'>"
+            f"<h2>Authorize {esc(app.name)}</h2>"
+            "<p>Please <a href=\"/login?redirect=/oauth/authorize"
+            f"?client_id={esc(client_id)}"
+            f"&redirect_uri={esc(redirect_uri)}"
+            f"&scope={esc(scope)}"
+            f"&response_type={esc(response_type)}"
+            "\">log in</a> first.</p>"
+            "</body></html>"
+        )
 
     from app.valkey_client import valkey
 
@@ -110,7 +120,7 @@ async def authorize_form(
     separator = "&" if "?" in redirect_uri else "?"
     location = f"{redirect_uri}{separator}code={code}"
     if state:
-        location += f"&state={state}"
+        location += "&" + urlencode({"state": state})
 
     return RedirectResponse(location, status_code=302)
 
@@ -129,13 +139,10 @@ async def token(
     """Exchange authorization code for access token."""
     # Validate application
     result = await db.execute(
-        select(OAuthApplication).where(
-            OAuthApplication.client_id == client_id,
-            OAuthApplication.client_secret == client_secret,
-        )
+        select(OAuthApplication).where(OAuthApplication.client_id == client_id)
     )
     app = result.scalar_one_or_none()
-    if not app:
+    if not app or not hmac.compare_digest(app.client_secret, client_secret):
         raise HTTPException(status_code=401, detail="Invalid client credentials")
 
     if grant_type == "authorization_code":

@@ -1,9 +1,10 @@
 import { Show, For, createSignal, onCleanup } from "solid-js";
-import type { Note, Poll } from "../../api/statuses";
+import type { Note, Poll, MediaAttachment } from "../../api/statuses";
 import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll } from "../../api/statuses";
 import { blockAccount, muteAccount } from "../../api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
+import ImageLightbox from "../ImageLightbox";
 import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "../../i18n";
@@ -11,6 +12,9 @@ import { twemojify } from "../../utils/twemojify";
 import { emojify } from "../../utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "../../utils/mentionify";
+import { sanitizeHtml } from "../../utils/sanitize";
+import { renderMfm } from "../../utils/mfm";
+import { defaultAvatar } from "../../stores/instance";
 
 interface Props {
   note: Note;
@@ -42,7 +46,7 @@ function QuoteEmbed(props: { note: Note }) {
       <div class="note-quote-header">
         <img
           class="note-quote-avatar"
-          src={props.note.actor.avatar_url || "/default-avatar.svg"}
+          src={props.note.actor.avatar_url || defaultAvatar()}
           alt=""
         />
         <a href={profileUrl(props.note.actor)} class="note-quote-name">
@@ -50,7 +54,16 @@ function QuoteEmbed(props: { note: Note }) {
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
       </div>
-      <div class="note-quote-content" ref={(el) => { el.innerHTML = props.note.content; mentionify(el, navigate); emojify(el, props.note.emojis); twemojify(el); }} />
+      <div class="note-quote-content" ref={(el) => {
+        if (props.note.source !== null && props.note.source !== undefined) {
+          renderMfm(el, props.note.source, props.note.emojis, navigate);
+        } else {
+          el.innerHTML = sanitizeHtml(props.note.content);
+          mentionify(el, navigate);
+          emojify(el, props.note.emojis);
+          twemojify(el);
+        }
+      }} />
       <Show when={props.note.media_attachments?.length > 0}>
         <div class="note-quote-media">
           <For each={props.note.media_attachments.slice(0, 2)}>
@@ -153,6 +166,7 @@ export default function NoteCard(props: Props) {
   const [boostCount, setBoostCount] = createSignal(0);
   const [bookmarked, setBookmarked] = createSignal(false);
   const [pinned, setPinned] = createSignal(false);
+  const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
 
   // If this is a reblog, the displayed note is the inner one
   const isReblog = () => !!props.note.reblog;
@@ -287,7 +301,7 @@ export default function NoteCard(props: Props) {
       <a href={profileUrl(note().actor)} class="note-avatar-link">
         <img
           class="note-avatar"
-          src={note().actor.avatar_url || "/default-avatar.svg"}
+          src={note().actor.avatar_url || defaultAvatar()}
           alt=""
         />
       </a>
@@ -295,16 +309,14 @@ export default function NoteCard(props: Props) {
         <div class="note-header">
           <div class="note-header-text">
             <UserHoverCard actorId={note().actor.id}>
-              <a href={profileUrl(note().actor)} class="note-display-name-link">
+              <a href={profileUrl(note().actor)} class="note-display-name-link" onClick={(e) => e.preventDefault()}>
                 <strong class="note-display-name">
                   {note().actor.display_name || note().actor.username}
                 </strong>
               </a>
             </UserHoverCard>
-            <span class="note-handle">{actorHandle(note().actor)}</span>
           </div>
           <div class="note-header-right">
-            <span class="note-time">{formatTime(note().published)}</span>
             <Show when={currentUser()}>
               <div class="note-more-menu">
                 <button
@@ -337,7 +349,16 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <div class="note-content" ref={(el) => { el.innerHTML = note().content; mentionify(el, navigate); emojify(el, note().emojis); twemojify(el); }} />
+        <div class="note-content" ref={(el) => {
+          if (note().source !== null && note().source !== undefined) {
+            renderMfm(el, note().source, note().emojis, navigate);
+          } else {
+            el.innerHTML = sanitizeHtml(note().content);
+            mentionify(el, navigate);
+            emojify(el, note().emojis);
+            twemojify(el);
+          }
+        }} />
         <Show when={note().poll}>
           <PollDisplay poll={note().poll!} noteId={note().id} />
         </Show>
@@ -347,17 +368,28 @@ export default function NoteCard(props: Props) {
         <Show when={note().media_attachments?.length > 0}>
           <div class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}>
             <For each={note().media_attachments}>
-              {(media) => (
-                <a href={media.url} target="_blank" rel="noopener" class="note-media-item">
+              {(media, i) => (
+                <button
+                  class="note-media-item"
+                  onClick={() => setLightboxIndex(i())}
+                  type="button"
+                >
                   <img
                     src={media.preview_url || media.url}
                     alt={media.description || ""}
                     loading="lazy"
                   />
-                </a>
+                </button>
               )}
             </For>
           </div>
+          <Show when={lightboxIndex() !== null}>
+            <ImageLightbox
+              media={note().media_attachments}
+              initialIndex={lightboxIndex()!}
+              onClose={() => setLightboxIndex(null)}
+            />
+          </Show>
         </Show>
         <Show when={currentUser()}>
           <div class="note-actions">
@@ -413,6 +445,9 @@ export default function NoteCard(props: Props) {
             ))}
           </div>
         </Show>
+        <div class="note-footer">
+          <span class="note-time">{formatTime(note().published)}</span>
+        </div>
       </div>
     </div>
   );

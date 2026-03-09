@@ -3,6 +3,7 @@ import { useLocation } from "@solidjs/router";
 import { currentUser, logout } from "../../stores/auth";
 import { connect, disconnect, onNotification, unreadCount, resetUnread } from "../../stores/streaming";
 import { useI18n } from "../../i18n";
+import { defaultAvatar } from "../../stores/instance";
 import type { Dictionary } from "../../i18n/dictionaries/ja";
 import { getNotifications, type Notification } from "../../api/notifications";
 import Emoji from "../Emoji";
@@ -144,7 +145,7 @@ export default function Navbar() {
               <>
                 <div class="navbar-user-menu">
                   <img
-                    src={user().avatar_url || "/default-avatar.svg"}
+                    src={user().avatar_url || defaultAvatar()}
                     alt={user().username}
                     class="navbar-avatar"
                     onClick={() => setMenuOpen(!menuOpen())}

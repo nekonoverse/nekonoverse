@@ -1,27 +1,28 @@
 import { createSignal, onMount, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { currentUser, authLoading, fetchCurrentUser, logout } from "../stores/auth";
+import { currentUser, authLoading, logout } from "../stores/auth";
 import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
   rememberVisibility, setRememberVisibility,
 } from "../stores/composer";
+import { instance, defaultAvatar } from "../stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "../i18n";
 import { changePassword } from "../api/settings";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "../api/accounts";
 import PasskeyManager from "../components/PasskeyManager";
 
-type Tab = "posting" | "appearance" | "security" | "blocks" | "mutes" | "migration";
+declare const __APP_VERSION__: string;
+
+type Tab = "posting" | "appearance" | "security" | "blocks" | "mutes" | "migration" | "about";
 
 export default function Settings() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [activeTab, setActiveTab] = createSignal<Tab>("posting");
 
-  onMount(async () => {
-    await fetchCurrentUser();
-  });
+  // Auth is handled by App.tsx Layout
 
   const handleLogout = async () => {
     await logout();
@@ -40,6 +41,7 @@ export default function Settings() {
           { key: "blocks" as Tab, label: t("settings.tabBlocks") },
           { key: "mutes" as Tab, label: t("settings.tabMutes") },
           { key: "migration" as Tab, label: t("settings.tabMigration") },
+          { key: "about" as Tab, label: t("settings.tabAbout") },
         ]).map((tab) => (
           <button
             class={`settings-tab${activeTab() === tab.key ? " settings-tab-active" : ""}`}
@@ -67,6 +69,9 @@ export default function Settings() {
       </Show>
       <Show when={activeTab() === "migration"}>
         <MigrationTab />
+      </Show>
+      <Show when={activeTab() === "about"}>
+        <AboutTab />
       </Show>
     </div>
   );
@@ -290,7 +295,7 @@ function BlocksTab() {
                 {(acc) => (
                   <div class="blockmute-item">
                     <a href={`/@${acc.acct}`} class="blockmute-user">
-                      <img class="blockmute-avatar" src={acc.avatar || "/default-avatar.svg"} alt="" />
+                      <img class="blockmute-avatar" src={acc.avatar || defaultAvatar()} alt="" />
                       <div>
                         <strong>{acc.display_name || acc.username}</strong>
                         <span class="blockmute-handle">@{acc.acct}</span>
@@ -341,7 +346,7 @@ function MutesTab() {
                 {(acc) => (
                   <div class="blockmute-item">
                     <a href={`/@${acc.acct}`} class="blockmute-user">
-                      <img class="blockmute-avatar" src={acc.avatar || "/default-avatar.svg"} alt="" />
+                      <img class="blockmute-avatar" src={acc.avatar || defaultAvatar()} alt="" />
                       <div>
                         <strong>{acc.display_name || acc.username}</strong>
                         <span class="blockmute-handle">@{acc.acct}</span>
@@ -410,5 +415,81 @@ function MigrationTab() {
         </button>
       </div>
     </AuthGuard>
+  );
+}
+
+function AboutTab() {
+  const { t } = useI18n();
+  const [clearing, setClearing] = createSignal(false);
+
+  const handleClearCache = async () => {
+    setClearing(true);
+    try {
+      if ("caches" in window) {
+        const keys = await caches.keys();
+        await Promise.all(keys.map((k) => caches.delete(k)));
+      }
+      if ("serviceWorker" in navigator) {
+        const regs = await navigator.serviceWorker.getRegistrations();
+        await Promise.all(regs.map((r) => r.unregister()));
+      }
+      location.reload();
+    } catch {
+      setClearing(false);
+    }
+  };
+
+  const info = () => instance();
+
+  return (
+    <>
+      <div class="settings-section">
+        <h3>{t("about.serverInfo")}</h3>
+        <div class="about-info-grid">
+          <Show when={info()}>
+            <div class="about-info-row">
+              <span class="about-info-label">{t("about.serverName")}</span>
+              <span class="about-info-value">{info()!.title}</span>
+            </div>
+            <Show when={info()!.description}>
+              <div class="about-info-row">
+                <span class="about-info-label">{t("about.description")}</span>
+                <span class="about-info-value">{info()!.description}</span>
+              </div>
+            </Show>
+            <div class="about-info-row">
+              <span class="about-info-label">{t("about.domain")}</span>
+              <span class="about-info-value">{info()!.uri}</span>
+            </div>
+          </Show>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("about.versionInfo")}</h3>
+        <div class="about-info-grid">
+          <div class="about-info-row">
+            <span class="about-info-label">{t("about.backendVersion")}</span>
+            <span class="about-info-value">{info()?.version ?? "—"}</span>
+          </div>
+          <div class="about-info-row">
+            <span class="about-info-label">{t("about.frontendVersion")}</span>
+            <span class="about-info-value">{__APP_VERSION__}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("about.clearCache")}</h3>
+        <p class="settings-desc">{t("about.clearCacheDesc")}</p>
+        <button
+          class="btn btn-small"
+          onClick={handleClearCache}
+          disabled={clearing()}
+        >
+          {clearing() ? t("about.cacheClearing") : t("about.clearCache")}
+        </button>
+      </div>
+    </>
   );
 }

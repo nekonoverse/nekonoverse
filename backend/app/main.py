@@ -4,6 +4,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app import __version__
 from app.dependencies import get_db
 
 from app.activitypub.nodeinfo import router as nodeinfo_router
@@ -56,8 +57,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept"],
 )
 
 
@@ -96,7 +97,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "uri": settings.domain,
         "title": title,
         "description": description,
-        "version": "0.5.2",
+        "version": __version__,
         "urls": {},
         "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
         "registrations": registration_open,

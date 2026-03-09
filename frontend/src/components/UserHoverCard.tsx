@@ -3,6 +3,10 @@ import { getAccount, followAccount, unfollowAccount, type Account } from "../api
 import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { currentUser } from "../stores/auth";
 import { useI18n } from "../i18n";
+import { sanitizeHtml } from "../utils/sanitize";
+import { emojify } from "../utils/emojify";
+import { twemojify } from "../utils/twemojify";
+import { defaultAvatar } from "../stores/instance";
 
 interface Props {
   actorId: string;
@@ -12,6 +16,11 @@ interface Props {
 // Simple in-memory cache
 const cache = new Map<string, Account>();
 
+// Detect touch-primary device (no hover capability)
+const isTouchDevice = () =>
+  typeof window !== "undefined" &&
+  (("ontouchstart" in window) || window.matchMedia("(hover: none)").matches);
+
 export default function UserHoverCard(props: Props) {
   const { t } = useI18n();
   const [visible, setVisible] = createSignal(false);
@@ -20,6 +29,10 @@ export default function UserHoverCard(props: Props) {
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
   let showTimer: number | undefined;
   let hideTimer: number | undefined;
+  let longPressTimer: number | undefined;
+  let longPressTriggered = false;
+  let wrapperEl: HTMLSpanElement | undefined;
+  let cardEl: HTMLDivElement | undefined;
 
   const fetchAccount = async () => {
     const cached = cache.get(props.actorId);
@@ -34,7 +47,25 @@ export default function UserHoverCard(props: Props) {
     } catch {}
   };
 
+  // --- Click handler: desktop only (タッチデバイスはtouchイベントで処理) ---
+  const handleClick = (e: MouseEvent) => {
+    if (isTouchDevice()) {
+      e.preventDefault();
+      return;
+    }
+    e.preventDefault();
+    e.stopPropagation();
+    if (visible()) {
+      setVisible(false);
+    } else {
+      setVisible(true);
+      if (!account()) fetchAccount();
+    }
+  };
+
+  // --- Desktop: mouse hover handlers ---
   const handleMouseEnter = () => {
+    if (isTouchDevice()) return;
     clearTimeout(hideTimer);
     showTimer = window.setTimeout(() => {
       setVisible(true);
@@ -43,13 +74,82 @@ export default function UserHoverCard(props: Props) {
   };
 
   const handleMouseLeave = () => {
+    if (isTouchDevice()) return;
     clearTimeout(showTimer);
     hideTimer = window.setTimeout(() => setVisible(false), 200);
+  };
+
+  // --- Touch: long-press handlers ---
+  const handleTouchStart = (e: TouchEvent) => {
+    if (!isTouchDevice()) return;
+    longPressTriggered = false;
+    longPressTimer = window.setTimeout(() => {
+      longPressTriggered = true;
+      // Prevent subsequent click from navigating
+      e.preventDefault();
+      setVisible(true);
+      if (!account()) fetchAccount();
+    }, 500);
+  };
+
+  const handleTouchEnd = (e: TouchEvent) => {
+    if (!isTouchDevice()) return;
+    clearTimeout(longPressTimer);
+    if (longPressTriggered) {
+      // Prevent the tap from navigating to the profile after long-press
+      e.preventDefault();
+      longPressTriggered = false;
+    } else if (!visible()) {
+      // 短いタップでカードを表示
+      e.preventDefault();
+      setVisible(true);
+      if (!account()) fetchAccount();
+    }
+  };
+
+  const handleTouchMove = () => {
+    // Cancel long-press if finger moves (user is scrolling)
+    clearTimeout(longPressTimer);
+    longPressTriggered = false;
+  };
+
+  // タッチデバイスでのカード外タップはbackdropのonClickで処理するため、
+  // documentレベルのtouchstartリスナーは不要
+
+  // --- Positioning for mobile: adjust card so it doesn't overflow viewport ---
+  const adjustCardPosition = (el: HTMLDivElement) => {
+    cardEl = el;
+    if (typeof window === "undefined") return;
+    // Use requestAnimationFrame to ensure the element is rendered
+    requestAnimationFrame(() => {
+      const rect = el.getBoundingClientRect();
+      const vw = window.innerWidth;
+
+      // Reset any previous inline positioning
+      el.style.left = "";
+      el.style.right = "";
+
+      if (rect.right > vw - 8) {
+        // Card overflows right edge
+        el.style.left = "auto";
+        el.style.right = "0";
+        // Re-check after moving
+        const newRect = el.getBoundingClientRect();
+        if (newRect.left < 8) {
+          el.style.right = "auto";
+          el.style.left = `-${rect.left - 8}px`;
+        }
+      } else if (rect.left < 8) {
+        // Card overflows left edge
+        el.style.left = `-${rect.left - 8}px`;
+      }
+    });
   };
 
   onCleanup(() => {
     clearTimeout(showTimer);
     clearTimeout(hideTimer);
+    clearTimeout(longPressTimer);
   });
 
   const isOwnAccount = () => {
@@ -83,13 +183,28 @@ export default function UserHoverCard(props: Props) {
   return (
     <span
       class="hover-card-wrapper"
+      ref={(el) => { wrapperEl = el; }}
+      onClick={handleClick}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+      onTouchMove={handleTouchMove}
     >
       {props.children}
+      {/* Mobile backdrop overlay for tap-outside-to-close (rendered outside wrapper via portal-like fixed positioning) */}
+      <Show when={visible() && isTouchDevice()}>
+        <div
+          class="hover-card-backdrop"
+          onTouchStart={(e) => { e.stopPropagation(); }}
+          onTouchEnd={(e) => { e.preventDefault(); e.stopPropagation(); setVisible(false); }}
+          onClick={(e) => { e.stopPropagation(); setVisible(false); }}
+        />
+      </Show>
       <Show when={visible()}>
         <div
-          class="hover-card"
+          class={`hover-card${isTouchDevice() ? " hover-card-touch" : ""}`}
+          ref={adjustCardPosition}
           onMouseEnter={() => clearTimeout(hideTimer)}
           onMouseLeave={handleMouseLeave}
         >
@@ -99,20 +214,30 @@ export default function UserHoverCard(props: Props) {
               return (
                 <>
                   <div class="hover-card-header">
-                    <img
-                      class="hover-card-avatar"
-                      src={acc.avatar || "/default-avatar.svg"}
-                      alt=""
-                    />
+                    <a href={`/@${acc.acct}`} class="hover-card-avatar-link">
+                      <img
+                        class="hover-card-avatar"
+                        src={acc.avatar || defaultAvatar()}
+                        alt=""
+                      />
+                    </a>
                     <div class="hover-card-names">
-                      <strong class="hover-card-display-name">
-                        {acc.display_name || acc.username}
-                      </strong>
+                      <a href={`/@${acc.acct}`} class="hover-card-name-link">
+                        <strong class="hover-card-display-name" ref={(el) => {
+                          el.textContent = acc.display_name || acc.username;
+                          if (acc.emojis) emojify(el, acc.emojis);
+                          twemojify(el);
+                        }} />
+                      </a>
                       <span class="hover-card-handle">@{acc.acct}</span>
                     </div>
                   </div>
                   <Show when={acc.note}>
-                    <p class="hover-card-bio" innerHTML={acc.note} />
+                    <p class="hover-card-bio" ref={(el) => {
+                      el.innerHTML = sanitizeHtml(acc.note);
+                      if (acc.emojis) emojify(el, acc.emojis);
+                      twemojify(el);
+                    }} />
                   </Show>
                   <Show when={currentUser() && !isOwnAccount()}>
                     <div class="hover-card-actions">

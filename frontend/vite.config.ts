@@ -1,10 +1,15 @@
+import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import solidPlugin from "vite-plugin-solid";
 import { VitePWA } from "vite-plugin-pwa";
 
 const backendUrl = process.env.VITE_BACKEND_URL || "http://localhost:8000";
+const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
 
 export default defineConfig({
+  define: {
+    __APP_VERSION__: JSON.stringify(pkg.version),
+  },
   plugins: [
     solidPlugin(),
     VitePWA({

@@ -84,7 +84,7 @@ async def lookup_account(
         raise HTTPException(status_code=404, detail="Account not found")
 
     fc, fic = await get_follow_counts(db, actor.id)
-    return _actor_to_account(actor, followers_count=fc, following_count=fic)
+    return await _actor_to_account(actor, followers_count=fc, following_count=fic, db=db)
 
 
 @router.get("/search")
@@ -114,14 +114,17 @@ async def search_accounts(
     if not actor:
         return []
 
-    return [_actor_to_account(actor)]
+    return [await _actor_to_account(actor, db=db)]
 
 
-def _actor_to_account(
+async def _actor_to_account(
     actor: Actor,
     followers_count: int | None = None,
     following_count: int | None = None,
+    db: AsyncSession | None = None,
 ) -> dict:
+    import re
+
     data = {
         "id": str(actor.id),
         "username": actor.username,
@@ -139,11 +142,45 @@ def _actor_to_account(
             {"name": f.get("name", ""), "value": f.get("value", ""), "verified_at": None}
             for f in (actor.fields or [])
         ],
+        "emojis": [],
     }
     if followers_count is not None:
         data["followers_count"] = followers_count
     if following_count is not None:
         data["following_count"] = following_count
+
+    # Resolve custom emoji from display_name, summary, and fields
+    if db:
+        shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
+        texts = [data["display_name"] or "", data["note"]]
+        for f in (actor.fields or []):
+            texts.append(f.get("name", ""))
+            texts.append(f.get("value", ""))
+        shortcodes = set()
+        for text in texts:
+            shortcodes.update(shortcode_re.findall(text))
+        if shortcodes:
+            from app.services.emoji_service import get_emojis_by_shortcodes
+
+            emoji_list = await get_emojis_by_shortcodes(db, shortcodes, actor.domain)
+            if actor.domain is not None:
+                found = {e.shortcode for e in emoji_list}
+                missing = shortcodes - found
+                if missing:
+                    local_emojis = await get_emojis_by_shortcodes(
+                        db, missing, None
+                    )
+                    emoji_list.extend(local_emojis)
+            data["emojis"] = [
+                {
+                    "shortcode": e.shortcode,
+                    "url": media_proxy_url(e.url),
+                    "static_url": media_proxy_url(e.static_url) if e.static_url
+                    else media_proxy_url(e.url),
+                }
+                for e in emoji_list
+            ]
+
     return data
 
 
@@ -325,7 +362,7 @@ async def list_followers(
         raise HTTPException(status_code=404, detail="Actor not found")
 
     actors = await get_followers(db, actor_id, min(limit, 80))
-    return [_actor_to_account(a) for a in actors]
+    return [await _actor_to_account(a, db=db) for a in actors]
 
 
 @router.get("/{actor_id}/following")
@@ -342,7 +379,7 @@ async def list_following(
         raise HTTPException(status_code=404, detail="Actor not found")
 
     actors = await get_following(db, actor_id, min(limit, 80))
-    return [_actor_to_account(a) for a in actors]
+    return [await _actor_to_account(a, db=db) for a in actors]
 
 
 @router.get("/{actor_id}")
@@ -360,7 +397,7 @@ async def get_account(
         return _actor_to_limited_account(actor)
 
     fc, fic = await get_follow_counts(db, actor.id)
-    return _actor_to_account(actor, followers_count=fc, following_count=fic)
+    return await _actor_to_account(actor, followers_count=fc, following_count=fic, db=db)
 
 
 @router.get("/{actor_id}/relationship")
@@ -466,7 +503,7 @@ async def list_blocks(
 
     result = await db.execute(select(Actor).where(Actor.id.in_(blocked_ids)))
     actors = result.scalars().all()
-    return [_actor_to_account(a) for a in actors]
+    return [await _actor_to_account(a, db=db) for a in actors]
 
 
 @relationships_router.get("/mutes")
@@ -482,4 +519,4 @@ async def list_mutes(
 
     result = await db.execute(select(Actor).where(Actor.id.in_(muted_ids)))
     actors = result.scalars().all()
-    return [_actor_to_account(a) for a in actors]
+    return [await _actor_to_account(a, db=db) for a in actors]

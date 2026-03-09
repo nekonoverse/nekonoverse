@@ -7,6 +7,7 @@ import EmojiPicker from "./EmojiPicker";
 import Emoji from "../Emoji";
 import { currentUser } from "../../stores/auth";
 import { useI18n } from "../../i18n";
+import { defaultAvatar } from "../../stores/instance";
 
 const REMOTE_EMOJI_RE = /^:([a-zA-Z0-9_]+)@([a-zA-Z0-9.-]+):$/;
 
@@ -112,7 +113,7 @@ export default function ReactionBar(props: Props) {
             onMouseUp={cancelLongPress}
             onMouseLeave={cancelLongPress}
             onTouchStart={() => startLongPress(r.emoji)}
-            onTouchEnd={() => { cancelLongPress(); if (didLongPress) { /* prevent click */ } }}
+            onTouchEnd={(e) => { cancelLongPress(); if (didLongPress) { e.preventDefault(); } }}
             onContextMenu={(e) => e.preventDefault()}
           >
             <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
@@ -189,7 +190,7 @@ export default function ReactionBar(props: Props) {
                     >
                       <img
                         class="reacted-by-avatar"
-                        src={ru.actor.avatar_url || "/default-avatar.svg"}
+                        src={ru.actor.avatar_url || defaultAvatar()}
                         alt=""
                       />
                       <div class="reacted-by-names">

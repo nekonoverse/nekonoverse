@@ -1,6 +1,6 @@
 import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { getBookmarks, getNote, type Note } from "../api/statuses";
-import { currentUser, authLoading, fetchCurrentUser } from "../stores/auth";
+import { currentUser, authLoading } from "../stores/auth";
 import { onReaction } from "../stores/streaming";
 import NoteCard from "../components/notes/NoteCard";
 import { useI18n } from "../i18n";
@@ -28,7 +28,6 @@ export default function Bookmarks() {
   };
 
   onMount(async () => {
-    await fetchCurrentUser();
     await load();
   });
 

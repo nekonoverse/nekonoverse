@@ -96,6 +96,7 @@ async def login(
         SESSION_COOKIE,
         session_id,
         httponly=True,
+        secure=settings.use_https,
         samesite="lax",
         max_age=86400 * 30,
     )
@@ -180,11 +181,13 @@ async def update_credentials(
         changed = True
 
     if summary is not None:
-        user.actor.summary = summary or None
+        from app.utils.sanitize import text_to_html
+        user.actor.summary = text_to_html(summary) if summary else None
         changed = True
 
     if fields_attributes is not None:
         import json as _json
+        import bleach as _bleach
         try:
             fields_list = _json.loads(fields_attributes)
         except (ValueError, TypeError):
@@ -195,8 +198,8 @@ async def update_credentials(
         for f in fields_list:
             if not isinstance(f, dict):
                 continue
-            name = str(f.get("name", ""))[:255]
-            value = str(f.get("value", ""))[:2048]
+            name = _bleach.clean(str(f.get("name", "")))[:255]
+            value = _bleach.clean(str(f.get("value", "")))[:2048]
             if name or value:
                 validated.append({"name": name, "value": value})
         user.actor.fields = validated

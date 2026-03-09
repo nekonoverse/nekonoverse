@@ -1,6 +1,7 @@
-from fastapi import APIRouter, HTTPException, Query, Response
+import json
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
-from fastapi import Depends
 
 from app.config import settings
 from app.dependencies import get_db
@@ -34,16 +35,17 @@ async def webfinger(
     profile_url = f"{settings.server_url}/@{actor.username}"
 
     return Response(
-        content='{"subject":"'
-        + resource
-        + '","aliases":["'
-        + actor_url
-        + '","'
-        + profile_url
-        + '"],"links":[{"rel":"self","type":"application/activity+json","href":"'
-        + actor_url
-        + '"},{"rel":"http://webfinger.net/rel/profile-page","type":"text/html","href":"'
-        + profile_url
-        + '"}]}',
+        content=json.dumps({
+            "subject": resource,
+            "aliases": [actor_url, profile_url],
+            "links": [
+                {"rel": "self", "type": "application/activity+json", "href": actor_url},
+                {
+                    "rel": "http://webfinger.net/rel/profile-page",
+                    "type": "text/html",
+                    "href": profile_url,
+                },
+            ],
+        }),
         media_type="application/jrd+json",
     )
