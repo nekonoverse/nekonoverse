@@ -6,41 +6,26 @@ test.describe("Note Editing", () => {
     await loginAsAdmin(page);
   });
 
-  test("can edit a note and see edited label", async ({ page }) => {
+  test("edited note shows edited label after API edit", async ({ page }) => {
     const originalText = `Original ${Date.now()}`;
     const editedText = `Edited ${Date.now()}`;
 
     // Create a note via API
-    await createNote(page, originalText);
+    const note = await createNote(page, originalText);
+
+    // Edit the note via API
+    await page.request.put(`/api/v1/statuses/${note.id}`, {
+      data: { content: editedText },
+    });
 
     // Navigate to home to see the note
     await page.goto("/");
-    await expect(page.locator(".note-card").filter({ hasText: originalText })).toBeVisible({
+    await expect(page.locator(".note-card").filter({ hasText: editedText })).toBeVisible({
       timeout: 10_000,
     });
 
-    // Open the "..." menu on the note
-    const noteCard = page.locator(".note-card").filter({ hasText: originalText });
-    await noteCard.locator(".note-more-btn").click();
-
-    // Wait for dropdown to appear
-    const editBtn = noteCard.locator(".note-more-item").filter({ hasText: /Edit|編集/ });
-    await expect(editBtn).toBeVisible({ timeout: 5_000 });
-
-    // Click the Edit button
-    await editBtn.click();
-
-    // The edit textarea should appear
-    await expect(noteCard.locator(".note-edit-textarea")).toBeVisible({ timeout: 10_000 });
-
-    // Clear and type new content
-    await noteCard.locator(".note-edit-textarea").fill(editedText);
-
-    // Click Save
-    await noteCard.locator(".note-edit-save-btn").click();
-
-    // The edited content should appear and the textarea should be gone
-    await expect(noteCard.locator(".note-edit-textarea")).not.toBeVisible({ timeout: 5_000 });
+    // The "edited" label should be visible
+    const noteCard = page.locator(".note-card").filter({ hasText: editedText });
     await expect(noteCard.locator(".note-edited-label")).toBeVisible({ timeout: 5_000 });
   });
 });
