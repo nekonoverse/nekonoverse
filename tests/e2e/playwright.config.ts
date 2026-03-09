@@ -1,4 +1,4 @@
-import { defineConfig } from "@playwright/test";
+import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./tests",
@@ -16,6 +16,11 @@ export default defineConfig({
     {
       name: "firefox",
       use: { browserName: "firefox" },
+    },
+    {
+      name: "mobile-chromium",
+      use: { ...devices["Pixel 7"] },
+      testMatch: /swipe/,
     },
   ],
 });

@@ -4,6 +4,7 @@ import { I18nProvider } from "./i18n";
 import { initTheme } from "./stores/theme";
 import { fetchCurrentUser } from "./stores/auth";
 import Navbar from "./components/layout/Navbar";
+import SwipeBack from "./components/SwipeBack";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";
 
 initTheme();
@@ -30,6 +31,7 @@ function Layout(props: ParentProps) {
   return (
     <>
       <Navbar />
+      <SwipeBack />
       {props.children}
     </>
   );
