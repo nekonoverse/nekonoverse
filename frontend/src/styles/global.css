@@ -693,6 +693,44 @@ a:hover {
   padding: 40px 0;
 }
 
+.new-posts-banner {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  margin-bottom: 12px;
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  border-radius: var(--radius);
+  font-size: 0.9em;
+  font-weight: 600;
+  cursor: pointer;
+  text-align: center;
+  transition: background 0.2s;
+}
+
+.new-posts-banner:hover {
+  background: var(--accent-hover);
+}
+
+.timeline-loading {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 20px 0;
+  font-size: 0.9em;
+}
+
+.timeline-end {
+  color: var(--text-secondary);
+  text-align: center;
+  padding: 20px 0;
+  font-size: 0.85em;
+}
+
+.timeline-sentinel {
+  height: 1px;
+}
+
 /* Note Card */
 .note-card {
   position: relative;
