@@ -28,6 +28,7 @@ class NoteActorResponse(BaseModel):
     avatar_url: str | None
     ap_id: str
     domain: str | None
+    emojis: list["CustomEmojiInfo"] = []
 
     model_config = {"from_attributes": True}
 
