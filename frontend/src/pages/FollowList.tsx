@@ -12,6 +12,8 @@ import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { sanitizeHtml } from "../utils/sanitize";
+import { emojify } from "../utils/emojify";
+import { twemojify } from "../utils/twemojify";
 import { defaultAvatar } from "../stores/instance";
 
 export default function FollowList() {
@@ -122,12 +124,18 @@ export default function FollowList() {
                           alt=""
                         />
                         <div class="follow-list-item-info">
-                          <span class="follow-list-display-name">
-                            {acc.display_name || acc.username}
-                          </span>
+                          <span class="follow-list-display-name" ref={(el) => {
+                            el.textContent = acc.display_name || acc.username;
+                            if (acc.emojis) emojify(el, acc.emojis);
+                            twemojify(el);
+                          }} />
                           <span class="follow-list-handle">@{acc.acct}</span>
                           <Show when={acc.note}>
-                            <p class="follow-list-bio" innerHTML={sanitizeHtml(acc.note)} />
+                            <p class="follow-list-bio" ref={(el) => {
+                              el.innerHTML = sanitizeHtml(acc.note);
+                              if (acc.emojis) emojify(el, acc.emojis);
+                              twemojify(el);
+                            }} />
                           </Show>
                         </div>
                       </A>

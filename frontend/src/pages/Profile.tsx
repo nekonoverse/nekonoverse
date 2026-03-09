@@ -10,6 +10,8 @@ import { currentUser, fetchCurrentUser } from "../stores/auth";
 import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { onReaction } from "../stores/streaming";
 import { sanitizeHtml } from "../utils/sanitize";
+import { emojify } from "../utils/emojify";
+import { twemojify } from "../utils/twemojify";
 import { defaultAvatar } from "../stores/instance";
 
 export default function Profile() {
@@ -331,9 +333,11 @@ export default function Profile() {
                       />
                     </Show>
                     <Show when={!editing()}>
-                      <h2 class="profile-display-name">
-                        {acc.display_name || acc.username}
-                      </h2>
+                      <h2 class="profile-display-name" ref={(el) => {
+                        el.textContent = acc.display_name || acc.username;
+                        if (acc.emojis) emojify(el, acc.emojis);
+                        twemojify(el);
+                      }} />
                     </Show>
 
                     <Show when={isOwn()}>
@@ -515,7 +519,11 @@ export default function Profile() {
                   </Show>
                   <Show when={!editing()}>
                     <Show when={acc.note}>
-                      <p class="profile-bio" innerHTML={sanitizeHtml(acc.note)} />
+                      <p class="profile-bio" ref={(el) => {
+                        el.innerHTML = sanitizeHtml(acc.note);
+                        if (acc.emojis) emojify(el, acc.emojis);
+                        twemojify(el);
+                      }} />
                     </Show>
                     <Show when={acc.fields && acc.fields.length > 0}>
                       <dl class="profile-fields">
@@ -523,7 +531,11 @@ export default function Profile() {
                           {(field) => (
                             <>
                               <dt class="profile-field-label">{field.name}</dt>
-                              <dd class="profile-field-value" innerHTML={sanitizeHtml(field.value)} />
+                              <dd class="profile-field-value" ref={(el) => {
+                                el.innerHTML = sanitizeHtml(field.value);
+                                if (acc.emojis) emojify(el, acc.emojis);
+                                twemojify(el);
+                              }} />
                             </>
                           )}
                         </For>

@@ -4,6 +4,8 @@ import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followed
 import { currentUser } from "../stores/auth";
 import { useI18n } from "../i18n";
 import { sanitizeHtml } from "../utils/sanitize";
+import { emojify } from "../utils/emojify";
+import { twemojify } from "../utils/twemojify";
 import { defaultAvatar } from "../stores/instance";
 
 interface Props {
@@ -221,15 +223,21 @@ export default function UserHoverCard(props: Props) {
                     </a>
                     <div class="hover-card-names">
                       <a href={`/@${acc.acct}`} class="hover-card-name-link">
-                        <strong class="hover-card-display-name">
-                          {acc.display_name || acc.username}
-                        </strong>
+                        <strong class="hover-card-display-name" ref={(el) => {
+                          el.textContent = acc.display_name || acc.username;
+                          if (acc.emojis) emojify(el, acc.emojis);
+                          twemojify(el);
+                        }} />
                       </a>
                       <span class="hover-card-handle">@{acc.acct}</span>
                     </div>
                   </div>
                   <Show when={acc.note}>
-                    <p class="hover-card-bio" innerHTML={sanitizeHtml(acc.note)} />
+                    <p class="hover-card-bio" ref={(el) => {
+                      el.innerHTML = sanitizeHtml(acc.note);
+                      if (acc.emojis) emojify(el, acc.emojis);
+                      twemojify(el);
+                    }} />
                   </Show>
                   <Show when={currentUser() && !isOwnAccount()}>
                     <div class="hover-card-actions">
