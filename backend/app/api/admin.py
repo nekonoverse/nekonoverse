@@ -262,6 +262,8 @@ async def silence_user(
     target = await _get_user(db, user_id)
     if target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Already silenced")
+    if target.id == user.id:
+        raise HTTPException(status_code=422, detail="Cannot silence self")
     _check_moderation_permission(user, target)
 
     await silence_actor(db, target.actor, user, body.reason)
