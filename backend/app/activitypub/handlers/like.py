@@ -51,7 +51,11 @@ async def handle_emoji_react(db: AsyncSession, activity: dict):
     if not actor_ap_id or not note_ap_id:
         return
 
-    emoji = content if content and (is_single_emoji(content) or is_custom_emoji_shortcode(content)) else "\u2764"
+    emoji = (
+        content
+        if content and (is_single_emoji(content) or is_custom_emoji_shortcode(content))
+        else "\u2764"
+    )
     if is_custom_emoji_shortcode(emoji):
         await _cache_custom_emoji(db, activity, emoji)
     await _save_reaction(db, activity, actor_ap_id, note_ap_id, emoji)
@@ -158,7 +162,9 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
                     # Extract extended fields (Misskey + CherryPick)
                     static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
                     _ml = tag.get("_misskey_license")
-                    license_text = tag.get("license") or ((_ml.get("freeText") if isinstance(_ml, dict) else None))
+                    license_text = tag.get("license") or (
+                        _ml.get("freeText") if isinstance(_ml, dict) else None
+                    )
                     await upsert_remote_emoji(
                         db, shortcode, domain, url,
                         static_url=static_url,

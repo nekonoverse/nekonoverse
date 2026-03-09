@@ -41,7 +41,10 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     else:
         # Fallback to legacy registration_open setting
         reg_setting = await get_setting(db, "registration_open")
-        reg_open = (reg_setting == "true") if reg_setting is not None else settings.registration_open
+        reg_open = (
+            (reg_setting == "true") if reg_setting is not None
+            else settings.registration_open
+        )
         mode = "open" if reg_open else "closed"
 
     if mode == "closed":
@@ -187,6 +190,7 @@ async def update_credentials(
 
     if fields_attributes is not None:
         import json as _json
+
         import bleach as _bleach
         try:
             fields_list = _json.loads(fields_attributes)
@@ -273,10 +277,9 @@ async def update_credentials(
 
         # Federate profile update to followers
         from app.activitypub.renderer import render_actor, render_update_activity
+        from app.services.actor_service import actor_uri
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
-
-        from app.services.actor_service import actor_uri
 
         actor = user.actor
         actor_url = actor_uri(actor)

@@ -1,7 +1,6 @@
 """Account migration service: Move activity handling."""
 
 import logging
-import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession

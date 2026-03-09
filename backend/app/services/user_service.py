@@ -56,7 +56,11 @@ async def create_user(
     # Create user
     user = User(
         email=email,
-        password_hash=(await asyncio.to_thread(_bcrypt.hashpw, password.encode(), _bcrypt.gensalt())).decode(),
+        password_hash=(
+            await asyncio.to_thread(
+                _bcrypt.hashpw, password.encode(), _bcrypt.gensalt()
+            )
+        ).decode(),
         actor_id=actor_id,
         role=role,
         private_key_pem=private_pem,
@@ -91,7 +95,11 @@ async def reset_password(db: AsyncSession, username: str, new_password: str) -> 
     if actor is None or actor.local_user is None:
         raise ValueError(f"User not found: {username}")
     user = actor.local_user
-    user.password_hash = (await asyncio.to_thread(_bcrypt.hashpw, new_password.encode(), _bcrypt.gensalt())).decode()
+    user.password_hash = (
+        await asyncio.to_thread(
+            _bcrypt.hashpw, new_password.encode(), _bcrypt.gensalt()
+        )
+    ).decode()
     await db.commit()
     await db.refresh(user)
     return user
@@ -110,10 +118,17 @@ async def update_display_name(
 async def change_password(
     db: AsyncSession, user: User, current_password: str, new_password: str
 ) -> User:
-    valid = await asyncio.to_thread(_bcrypt.checkpw, current_password.encode(), user.password_hash.encode())
+    valid = await asyncio.to_thread(
+        _bcrypt.checkpw, current_password.encode(),
+        user.password_hash.encode(),
+    )
     if not valid:
         raise ValueError("Current password is incorrect")
-    user.password_hash = (await asyncio.to_thread(_bcrypt.hashpw, new_password.encode(), _bcrypt.gensalt())).decode()
+    user.password_hash = (
+        await asyncio.to_thread(
+            _bcrypt.hashpw, new_password.encode(), _bcrypt.gensalt()
+        )
+    ).decode()
     await db.commit()
     await db.refresh(user)
     return user

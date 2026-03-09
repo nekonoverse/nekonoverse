@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.note import Note
 from app.models.poll_vote import PollVote
 from app.models.user import User
 from app.services.note_service import get_note_by_id

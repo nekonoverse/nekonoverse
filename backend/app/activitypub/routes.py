@@ -294,7 +294,18 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
             logger.info("Duplicate activity %s, skipping", activity_id)
             return
 
-    from app.activitypub.handlers import announce, block, create, delete, flag, follow, like, move, undo, update
+    from app.activitypub.handlers import (
+        announce,
+        block,
+        create,
+        delete,
+        flag,
+        follow,
+        like,
+        move,
+        undo,
+        update,
+    )
 
     handler_map = {
         "Create": create.handle_create,

@@ -46,6 +46,7 @@ async def create_notification(
     # Publish real-time notification event
     try:
         import json
+
         from app.valkey_client import valkey
 
         event = json.dumps({

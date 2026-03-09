@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from app.dependencies import get_current_user, get_optional_user
+from app.dependencies import get_current_user
 from app.models.user import User
 from app.valkey_client import valkey
 
