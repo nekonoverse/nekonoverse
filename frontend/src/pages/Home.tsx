@@ -46,6 +46,10 @@ export default function Home() {
     if (!id) return;
     try {
       const note = await getNote(id);
+      // On public timeline, only show public/unlisted notes (match REST API filtering)
+      if (!isHomeTL() && note.visibility !== "public" && note.visibility !== "unlisted") {
+        return;
+      }
       setNotes((prev) => {
         if (prev.some((n) => n.id === id)) return prev;
         return [note, ...prev];
