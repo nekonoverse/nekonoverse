@@ -1,0 +1,19 @@
+"""Tests for worker/main.py — worker entry point."""
+
+from unittest.mock import AsyncMock, patch
+
+
+async def test_run_worker_calls_delivery_loop():
+    with patch("app.worker.main.run_delivery_loop", new_callable=AsyncMock) as mock_loop:
+        from app.worker.main import run_worker
+
+        await run_worker()
+        mock_loop.assert_called_once()
+
+
+def test_main_calls_asyncio_run():
+    with patch("app.worker.main.asyncio.run") as mock_run:
+        from app.worker.main import main
+
+        main()
+        mock_run.assert_called_once()
