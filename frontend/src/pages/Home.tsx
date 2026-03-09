@@ -1,7 +1,7 @@
 import { createSignal, createEffect, on, onCleanup, Show, For, untrack } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
 import { currentUser, authLoading } from "../stores/auth";
-import { fetchInstance, startVersionPolling, registrationOpen } from "../stores/instance";
+import { registrationOpen } from "../stores/instance";
 import { getPublicTimeline, getHomeTimeline, getNote, type Note } from "../api/statuses";
 import { onUpdate, onReaction } from "../stores/streaming";
 import { useI18n } from "../i18n";
@@ -36,8 +36,6 @@ export default function Home() {
   createEffect(() => {
     if (!authLoading() && !loaded) {
       loaded = true;
-      fetchInstance();
-      startVersionPolling();
       loadTimeline();
     }
   });

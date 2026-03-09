@@ -1,5 +1,4 @@
 import { createSignal } from "solid-js";
-import { apiRequest } from "../api/client";
 
 interface InstanceInfo {
   uri: string;
@@ -51,11 +50,46 @@ function updateDynamicIcons(iconUrl: string) {
   if (apple) apple.href = iconUrl;
 }
 
-const VERSION_KEY = "nekonoverse_version";
-const VERSION_POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
+// --- Version detection keys ---
+const SERVER_VERSION_KEY = "nekonoverse_version";
+const CLIENT_VERSION_KEY = "nekonoverse_client_version";
+const RELOAD_COUNT_KEY = "nekonoverse_reload_count";
+const RELOAD_TS_KEY = "nekonoverse_reload_ts";
+const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
 
-async function forceReloadForNewVersion(newVersion: string) {
-  localStorage.setItem(VERSION_KEY, newVersion);
+// --- BroadcastChannel for multi-tab sync ---
+const versionChannel =
+  typeof BroadcastChannel !== "undefined"
+    ? new BroadcastChannel("nekonoverse_version")
+    : null;
+
+versionChannel?.addEventListener("message", (e) => {
+  if (e.data?.type === "version-changed") {
+    location.reload();
+  }
+});
+
+// --- Reload loop protection ---
+function canReload(): boolean {
+  const now = Date.now();
+  const ts = Number(sessionStorage.getItem(RELOAD_TS_KEY) || "0");
+  let count = Number(sessionStorage.getItem(RELOAD_COUNT_KEY) || "0");
+
+  if (now - ts > 10_000) {
+    // Reset counter after 10 seconds
+    count = 0;
+  }
+  if (count >= 3) return false;
+
+  sessionStorage.setItem(RELOAD_COUNT_KEY, String(count + 1));
+  sessionStorage.setItem(RELOAD_TS_KEY, String(now));
+  return true;
+}
+
+// --- Force reload: clear SW, caches, notify other tabs ---
+async function forceReload() {
+  if (!canReload()) return;
+  versionChannel?.postMessage({ type: "version-changed" });
   if ("serviceWorker" in navigator) {
     const regs = await navigator.serviceWorker.getRegistrations();
     await Promise.all(regs.map((r) => r.unregister()));
@@ -67,19 +101,39 @@ async function forceReloadForNewVersion(newVersion: string) {
   location.reload();
 }
 
+// --- Build-time client version check (call at module level) ---
+export function checkClientVersion() {
+  if (typeof __APP_VERSION__ === "undefined") return;
+  const stored = localStorage.getItem(CLIENT_VERSION_KEY);
+  if (stored && stored !== __APP_VERSION__) {
+    localStorage.setItem(CLIENT_VERSION_KEY, __APP_VERSION__);
+    forceReload();
+    return;
+  }
+  localStorage.setItem(CLIENT_VERSION_KEY, __APP_VERSION__);
+}
+
+// --- Fetch instance with cache bypass ---
+async function fetchInstanceRaw(): Promise<InstanceInfo> {
+  const resp = await fetch("/api/v1/instance", { cache: "no-store" });
+  if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+  return resp.json();
+}
+
 export async function fetchInstance() {
   setInstanceLoading(true);
   try {
-    const info = await apiRequest<InstanceInfo>("/api/v1/instance");
+    const info = await fetchInstanceRaw();
     setInstance(info);
 
     // Force reload when server version changes (deploy)
-    const stored = localStorage.getItem(VERSION_KEY);
+    const stored = localStorage.getItem(SERVER_VERSION_KEY);
     if (stored && stored !== info.version) {
-      await forceReloadForNewVersion(info.version);
+      localStorage.setItem(SERVER_VERSION_KEY, info.version);
+      await forceReload();
       return;
     }
-    localStorage.setItem(VERSION_KEY, info.version);
+    localStorage.setItem(SERVER_VERSION_KEY, info.version);
 
     if (info.thumbnail?.url) {
       updateDynamicIcons(info.thumbnail.url);
@@ -91,20 +145,10 @@ export async function fetchInstance() {
   }
 }
 
-// Periodically check for version changes while the tab is open
-let versionPollTimer: ReturnType<typeof setInterval> | null = null;
-
-export function startVersionPolling() {
-  if (versionPollTimer) return;
-  versionPollTimer = setInterval(async () => {
-    try {
-      const info = await apiRequest<InstanceInfo>("/api/v1/instance");
-      const stored = localStorage.getItem(VERSION_KEY);
-      if (stored && stored !== info.version) {
-        await forceReloadForNewVersion(info.version);
-      }
-    } catch {
-      // Network error during poll — ignore, retry next interval
-    }
-  }, VERSION_POLL_INTERVAL);
+// --- Periodic polling ---
+export function startVersionPolling(): () => void {
+  const id = setInterval(() => {
+    fetchInstance();
+  }, POLL_INTERVAL);
+  return () => clearInterval(id);
 }
