@@ -1,6 +1,15 @@
 import { Show, For, createSignal, onCleanup } from "solid-js";
 import type { Note, Poll } from "../../api/statuses";
-import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll } from "../../api/statuses";
+import {
+  reblogNote,
+  unreblogNote,
+  deleteNote,
+  bookmarkNote,
+  unbookmarkNote,
+  pinNote,
+  unpinNote,
+  votePoll,
+} from "../../api/statuses";
 import { blockAccount, muteAccount } from "../../api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
@@ -26,7 +35,9 @@ function formatTime(iso: string): string {
 }
 
 function actorHandle(actor: Note["actor"]): string {
-  return actor.domain ? `@${actor.username}@${actor.domain}` : `@${actor.username}`;
+  return actor.domain
+    ? `@${actor.username}@${actor.domain}`
+    : `@${actor.username}`;
 }
 
 function profileUrl(actor: Note["actor"]): string {
@@ -46,16 +57,29 @@ function QuoteEmbed(props: { note: Note }) {
           alt=""
         />
         <a href={profileUrl(props.note.actor)} class="note-quote-name">
-          <strong>{props.note.actor.display_name || props.note.actor.username}</strong>
+          <strong>
+            {props.note.actor.display_name || props.note.actor.username}
+          </strong>
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
       </div>
-      <div class="note-quote-content" ref={(el) => { el.innerHTML = props.note.content; mentionify(el, navigate); emojify(el, props.note.emojis); twemojify(el); }} />
+      <div
+        class="note-quote-content"
+        ref={(el) => {
+          el.innerHTML = props.note.content;
+          mentionify(el, navigate);
+          emojify(el, props.note.emojis);
+          twemojify(el);
+        }}
+      />
       <Show when={props.note.media_attachments?.length > 0}>
         <div class="note-quote-media">
           <For each={props.note.media_attachments.slice(0, 2)}>
             {(media) => (
-              <img src={media.preview_url || media.url} alt={media.description || ""} />
+              <img
+                src={media.preview_url || media.url}
+                alt={media.description || ""}
+              />
             )}
           </For>
         </div>
@@ -77,7 +101,7 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
     if (hasVoted() || poll().expired) return;
     if (poll().multiple) {
       setSelected((prev) =>
-        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx]
+        prev.includes(idx) ? prev.filter((i) => i !== idx) : [...prev, idx],
       );
     } else {
       setSelected([idx]);
@@ -98,7 +122,10 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
     <div class="note-poll">
       <For each={poll().options}>
         {(opt, idx) => {
-          const pct = () => totalVotes() > 0 ? Math.round((opt.votes_count / totalVotes()) * 100) : 0;
+          const pct = () =>
+            totalVotes() > 0
+              ? Math.round((opt.votes_count / totalVotes()) * 100)
+              : 0;
           const isOwn = () => poll().own_votes?.includes(idx());
           return (
             <div
@@ -108,9 +135,12 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
               <Show when={!hasVoted() && !poll().expired}>
                 <span class="poll-check">
                   {poll().multiple
-                    ? (selected().includes(idx()) ? "\u2611" : "\u2610")
-                    : (selected().includes(idx()) ? "\u25C9" : "\u25CB")
-                  }
+                    ? selected().includes(idx())
+                      ? "\u2611"
+                      : "\u2610"
+                    : selected().includes(idx())
+                      ? "\u25C9"
+                      : "\u25CB"}
                 </span>
               </Show>
               <span class="poll-option-text">{opt.title}</span>
@@ -136,7 +166,9 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
           {poll().votes_count} {t("poll.votes")}
           <Show when={poll().expires_at}>
             {" · "}
-            {poll().expired ? t("poll.expired") : t("poll.expiresAt") + " " + formatTime(poll().expires_at!)}
+            {poll().expired
+              ? t("poll.expired")
+              : t("poll.expiresAt") + " " + formatTime(poll().expires_at!)}
           </Show>
         </span>
       </div>
@@ -261,7 +293,16 @@ export default function NoteCard(props: Props) {
     <div class={`note-card${pinned() ? " note-pinned" : ""}`}>
       <Show when={pinned() && !isReblog()}>
         <div class="note-pin-indicator">
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            width="14"
+            height="14"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <path d="M12 17v5" />
             <path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V16h14v-.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.76V6h1a2 2 0 0 0 0-4H8a2 2 0 0 0 0 4h1v4.76z" />
           </svg>
@@ -270,7 +311,16 @@ export default function NoteCard(props: Props) {
       </Show>
       <Show when={isReblog()}>
         <div class="note-reblog-banner">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+          <svg
+            width="12"
+            height="12"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2.5"
+            stroke-linecap="round"
+            stroke-linejoin="round"
+          >
             <polyline points="17 1 21 5 17 9" />
             <path d="M3 11V9a4 4 0 0 1 4-4h14" />
             <polyline points="7 23 3 19 7 15" />
@@ -280,8 +330,8 @@ export default function NoteCard(props: Props) {
         <div class="note-reblog-indicator">
           <a href={profileUrl(props.note.actor)}>
             {props.note.actor.display_name || props.note.actor.username}
-          </a>
-          {" "}{t("boost.boosted")}
+          </a>{" "}
+          {t("boost.boosted")}
         </div>
       </Show>
       <a href={profileUrl(note().actor)} class="note-avatar-link">
@@ -303,12 +353,14 @@ export default function NoteCard(props: Props) {
             </UserHoverCard>
           </div>
           <div class="note-header-right">
-            <span class="note-time">{formatTime(note().published)}</span>
             <Show when={currentUser()}>
               <div class="note-more-menu">
                 <button
                   class="note-more-btn"
-                  onClick={(e) => { e.stopPropagation(); setMoreOpen(!moreOpen()); }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setMoreOpen(!moreOpen());
+                  }}
                 >
                   ···
                 </button>
@@ -318,7 +370,10 @@ export default function NoteCard(props: Props) {
                       <button class="note-more-item" onClick={handlePin}>
                         {pinned() ? t("note.unpin") : t("note.pin")}
                       </button>
-                      <button class="note-more-item note-more-danger" onClick={handleDelete}>
+                      <button
+                        class="note-more-item note-more-danger"
+                        onClick={handleDelete}
+                      >
                         {t("note.delete")}
                       </button>
                     </Show>
@@ -326,7 +381,10 @@ export default function NoteCard(props: Props) {
                       <button class="note-more-item" onClick={handleMute}>
                         {t("block.mute")} {actorHandle(note().actor)}
                       </button>
-                      <button class="note-more-item note-more-danger" onClick={handleBlock}>
+                      <button
+                        class="note-more-item note-more-danger"
+                        onClick={handleBlock}
+                      >
                         {t("block.block")} {actorHandle(note().actor)}
                       </button>
                     </Show>
@@ -336,7 +394,15 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <div class="note-content" ref={(el) => { el.innerHTML = note().content; mentionify(el, navigate); emojify(el, note().emojis); twemojify(el); }} />
+        <div
+          class="note-content"
+          ref={(el) => {
+            el.innerHTML = note().content;
+            mentionify(el, navigate);
+            emojify(el, note().emojis);
+            twemojify(el);
+          }}
+        />
         <Show when={note().poll}>
           <PollDisplay poll={note().poll!} noteId={note().id} />
         </Show>
@@ -344,10 +410,17 @@ export default function NoteCard(props: Props) {
           <QuoteEmbed note={note().quote!} />
         </Show>
         <Show when={note().media_attachments?.length > 0}>
-          <div class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}>
+          <div
+            class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}
+          >
             <For each={note().media_attachments}>
               {(media) => (
-                <a href={media.url} target="_blank" rel="noopener" class="note-media-item">
+                <a
+                  href={media.url}
+                  target="_blank"
+                  rel="noopener"
+                  class="note-media-item"
+                >
                   <img
                     src={media.preview_url || media.url}
                     alt={media.description || ""}
@@ -366,7 +439,16 @@ export default function NoteCard(props: Props) {
               disabled={boostLoading()}
               title={t(boosted() ? "boost.unboost" : "boost.boost")}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <polyline points="17 1 21 5 17 9" />
                 <path d="M3 11V9a4 4 0 0 1 4-4h14" />
                 <polyline points="7 23 3 19 7 15" />
@@ -381,7 +463,16 @@ export default function NoteCard(props: Props) {
               onClick={handleQuote}
               title={t("boost.quote")}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
                 <path d="M8 9h8" />
                 <path d="M8 13h4" />
@@ -392,7 +483,16 @@ export default function NoteCard(props: Props) {
               onClick={handleBookmark}
               title={t(bookmarked() ? "bookmark.remove" : "bookmark.add")}
             >
-              <svg width="18" height="18" viewBox="0 0 24 24" fill={bookmarked() ? "currentColor" : "none"} stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill={bookmarked() ? "currentColor" : "none"}
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
                 <path d="M19 21l-7-5-7 5V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2z" />
               </svg>
             </button>
@@ -412,6 +512,9 @@ export default function NoteCard(props: Props) {
             ))}
           </div>
         </Show>
+        <div class="note-footer">
+          <span class="note-time">{formatTime(note().published)}</span>
+        </div>
       </div>
     </div>
   );
