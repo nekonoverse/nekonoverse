@@ -1,4 +1,4 @@
-import { Show, For, createSignal, onCleanup } from "solid-js";
+import { Show, For, createSignal, onCleanup, batch } from "solid-js";
 import type { Note, Poll, MediaAttachment } from "../../api/statuses";
 import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll, editNote } from "../../api/statuses";
 import { blockAccount, muteAccount } from "../../api/accounts";
@@ -245,10 +245,12 @@ export default function NoteCard(props: Props) {
   };
 
   const handleEdit = () => {
-    setMoreOpen(false);
-    const source = noteSource() ?? "";
-    setEditContent(source);
-    setEditing(true);
+    batch(() => {
+      setMoreOpen(false);
+      const source = noteSource() ?? "";
+      setEditContent(source);
+      setEditing(true);
+    });
   };
 
   const handleEditSave = async () => {
