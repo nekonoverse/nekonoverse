@@ -98,7 +98,14 @@ jobs:
 
       - name: Run E2E tests
         working-directory: tests/e2e
-        run: npx playwright test
+        run: npx playwright test --update-snapshots
+
+      - name: Upload updated snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-snapshots
+          path: tests/e2e/tests/timeline.spec.ts-snapshots/
 
       - name: Upload test results
         if: failure()
