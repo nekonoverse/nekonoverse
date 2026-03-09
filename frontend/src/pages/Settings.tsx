@@ -1,5 +1,5 @@
-import { createSignal, onMount, Show, For } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { createSignal, onMount, Show, For, Switch, Match } from "solid-js";
+import { useNavigate, useParams, A } from "@solidjs/router";
 import { currentUser, authLoading, logout } from "../stores/auth";
 import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
 import {
@@ -12,17 +12,61 @@ import { useI18n, locales, type Locale } from "../i18n";
 import { changePassword } from "../api/settings";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "../api/accounts";
 import PasskeyManager from "../components/PasskeyManager";
+import Breadcrumb from "../components/Breadcrumb";
 
 declare const __APP_VERSION__: string;
 
-type Tab = "posting" | "appearance" | "security" | "blocks" | "mutes" | "migration" | "about";
+interface SettingsSection {
+  key: string;
+  labelKey: string;
+  descKey: string;
+}
+
+interface SettingsCategory {
+  labelKey: string;
+  sections: SettingsSection[];
+}
+
+const categories: SettingsCategory[] = [
+  {
+    labelKey: "settings.categoryGeneral",
+    sections: [
+      { key: "posting", labelKey: "settings.tabPosting", descKey: "settings.descPosting" },
+      { key: "appearance", labelKey: "settings.tabAppearance", descKey: "settings.descAppearance" },
+    ],
+  },
+  {
+    labelKey: "settings.categoryAccount",
+    sections: [
+      { key: "security", labelKey: "settings.tabSecurity", descKey: "settings.descSecurity" },
+      { key: "blocks", labelKey: "settings.tabBlocks", descKey: "settings.descBlocks" },
+      { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
+      { key: "migration", labelKey: "settings.tabMigration", descKey: "settings.descMigration" },
+    ],
+  },
+  {
+    labelKey: "settings.categorySystem",
+    sections: [
+      { key: "about", labelKey: "settings.tabAbout", descKey: "settings.descAbout" },
+    ],
+  },
+];
+
+function findSectionLabel(t: (key: any) => string, sectionKey: string): string {
+  for (const cat of categories) {
+    for (const s of cat.sections) {
+      if (s.key === sectionKey) return t(s.labelKey as any);
+    }
+  }
+  return "";
+}
 
 export default function Settings() {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = createSignal<Tab>("posting");
+  const params = useParams<{ section?: string }>();
 
-  // Auth is handled by App.tsx Layout
+  const section = () => params.section || "";
 
   const handleLogout = async () => {
     await logout();
@@ -31,47 +75,43 @@ export default function Settings() {
 
   return (
     <div class="page-container">
-      <h1>{t("settings.title")}</h1>
-
-      <div class="settings-tabs">
-        {([
-          { key: "posting" as Tab, label: t("settings.tabPosting") },
-          { key: "appearance" as Tab, label: t("settings.tabAppearance") },
-          { key: "security" as Tab, label: t("settings.tabSecurity") },
-          { key: "blocks" as Tab, label: t("settings.tabBlocks") },
-          { key: "mutes" as Tab, label: t("settings.tabMutes") },
-          { key: "migration" as Tab, label: t("settings.tabMigration") },
-          { key: "about" as Tab, label: t("settings.tabAbout") },
-        ]).map((tab) => (
-          <button
-            class={`settings-tab${activeTab() === tab.key ? " settings-tab-active" : ""}`}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <Show when={activeTab() === "posting"}>
-        <PostingTab />
-      </Show>
-      <Show when={activeTab() === "appearance"}>
-        <AppearanceTab />
-      </Show>
-      <Show when={activeTab() === "security"}>
-        <SecurityTab onLogout={handleLogout} />
-      </Show>
-      <Show when={activeTab() === "blocks"}>
-        <BlocksTab />
-      </Show>
-      <Show when={activeTab() === "mutes"}>
-        <MutesTab />
-      </Show>
-      <Show when={activeTab() === "migration"}>
-        <MigrationTab />
-      </Show>
-      <Show when={activeTab() === "about"}>
-        <AboutTab />
+      <Show when={section()} fallback={
+        <>
+          <h1>{t("settings.title")}</h1>
+          <div class="settings-menu">
+            <For each={categories}>
+              {(cat) => (
+                <div class="settings-menu-category">
+                  <h3 class="settings-menu-category-title">{t(cat.labelKey as any)}</h3>
+                  <div class="settings-menu-grid">
+                    <For each={cat.sections}>
+                      {(s) => (
+                        <A href={`/settings/${s.key}`} class="settings-menu-card">
+                          <span class="settings-menu-card-title">{t(s.labelKey as any)}</span>
+                          <span class="settings-menu-card-desc">{t(s.descKey as any)}</span>
+                        </A>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </>
+      }>
+        <Breadcrumb items={[
+          { label: t("settings.title"), href: "/settings" },
+          { label: findSectionLabel(t, section()) },
+        ]} />
+        <Switch>
+          <Match when={section() === "posting"}><PostingTab /></Match>
+          <Match when={section() === "appearance"}><AppearanceTab /></Match>
+          <Match when={section() === "security"}><SecurityTab onLogout={handleLogout} /></Match>
+          <Match when={section() === "blocks"}><BlocksTab /></Match>
+          <Match when={section() === "mutes"}><MutesTab /></Match>
+          <Match when={section() === "migration"}><MigrationTab /></Match>
+          <Match when={section() === "about"}><AboutTab /></Match>
+        </Switch>
       </Show>
     </div>
   );

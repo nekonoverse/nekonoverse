@@ -51,7 +51,7 @@ export default function App() {
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
-        <Route path="/settings" component={Settings} />
+        <Route path="/settings/*section" component={Settings} />
         <Route path="/notifications" component={Notifications} />
         <Route path="/admin" component={Admin} />
         <Route path="/drive" component={Drive} />
