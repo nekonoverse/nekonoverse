@@ -20,6 +20,9 @@ from app.schemas.admin import (
     AdminUserResponse,
     DomainBlockRequest,
     DomainBlockResponse,
+    FederatedServerDetailResponse,
+    FederatedServerListResponse,
+    FederatedServerResponse,
     ImportByShortcodeRequest,
     ModerationActionRequest,
     ModerationLogResponse,
@@ -282,6 +285,55 @@ async def unsilence_user(
     await unsilence_actor(db, target.actor, user)
     await db.commit()
     return {"ok": True}
+
+
+# --- Federation ---
+
+
+@router.get("/federation", response_model=FederatedServerListResponse)
+async def list_federated_servers(
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=40, le=200, ge=1),
+    offset: int = Query(default=0, ge=0),
+    sort: str = Query(
+        default="user_count",
+        pattern=r"^(domain|user_count|note_count|last_activity)$",
+    ),
+    order: str = Query(default="desc", pattern=r"^(asc|desc)$"),
+    search: str | None = Query(default=None, max_length=255),
+    status: str | None = Query(default=None, pattern=r"^(all|active|suspended|silenced)$"),
+):
+    from app.services.federation_service import get_federated_servers
+
+    effective_status = None if status in (None, "all") else status
+    servers, total = await get_federated_servers(
+        db,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        order=order,
+        search=search,
+        status=effective_status,
+    )
+    return FederatedServerListResponse(
+        servers=[FederatedServerResponse(**s) for s in servers],
+        total=total,
+    )
+
+
+@router.get("/federation/{domain:path}", response_model=FederatedServerDetailResponse)
+async def get_federated_server_detail_endpoint(
+    domain: str,
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.federation_service import get_federated_server_detail
+
+    detail = await get_federated_server_detail(db, domain)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Server not found")
+    return FederatedServerDetailResponse(**detail)
 
 
 # --- Domain Blocks ---

@@ -3408,6 +3408,122 @@ a:hover {
   margin-bottom: 8px;
 }
 
+/* Federation tab */
+.admin-federation-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+}
+
+.admin-federation-search {
+  display: flex;
+  gap: 8px;
+}
+
+.admin-federation-search input {
+  flex: 1;
+}
+
+.admin-federation-filters {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.admin-federation-table-wrap {
+  overflow-x: auto;
+}
+
+.admin-federation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.admin-federation-table th,
+.admin-federation-table td {
+  padding: 8px 12px;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.admin-federation-table th {
+  color: var(--text-secondary);
+  font-weight: 600;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+
+.admin-federation-table th.sortable {
+  cursor: pointer;
+  user-select: none;
+}
+
+.admin-federation-table th.sortable:hover {
+  color: var(--text-primary);
+}
+
+.admin-federation-row {
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.admin-federation-row:hover {
+  background: var(--bg-secondary);
+}
+
+.admin-federation-row.expanded {
+  background: var(--bg-secondary);
+}
+
+.admin-federation-domain {
+  font-weight: 600;
+}
+
+.admin-federation-detail-row td {
+  padding: 16px;
+  background: var(--bg-secondary);
+}
+
+.admin-federation-detail-stats {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+
+.admin-federation-detail-stats .admin-stat-card {
+  min-width: 80px;
+}
+
+.admin-federation-meta {
+  color: var(--text-secondary);
+  font-size: 0.9em;
+  margin: 4px 0;
+}
+
+.admin-federation-actors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.admin-federation-actor {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.admin-federation-pagination {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-top: 16px;
+}
+
 .modal-loading {
   padding: 32px;
   text-align: center;

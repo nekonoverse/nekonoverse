@@ -137,6 +137,54 @@ class ImportByShortcodeRequest(BaseModel):
     domain: str = Field(min_length=1, max_length=255)
 
 
+# --- Federation ---
+
+
+class DeliveryStatsResponse(BaseModel):
+    """Delivery statistics for a federated server."""
+
+    success: int = 0
+    failure: int = 0
+    pending: int = 0
+    dead: int = 0
+
+
+class FederatedServerResponse(BaseModel):
+    """Summary of a federated remote server."""
+
+    domain: str
+    user_count: int
+    note_count: int
+    last_activity_at: datetime | None
+    first_seen_at: datetime | None
+    status: str
+    block_severity: str | None = None
+    delivery_stats: DeliveryStatsResponse
+
+
+class FederatedServerListResponse(BaseModel):
+    """Paginated list of federated servers."""
+
+    servers: list[FederatedServerResponse]
+    total: int
+
+
+class ActorSummaryResponse(BaseModel):
+    """Brief actor info for federation detail view."""
+
+    username: str
+    display_name: str | None
+    ap_id: str
+    last_fetched_at: datetime | None
+
+
+class FederatedServerDetailResponse(FederatedServerResponse):
+    """Detailed info for a single federated server."""
+
+    block_reason: str | None = None
+    recent_actors: list[ActorSummaryResponse]
+
+
 class AdminEmojiUpdate(BaseModel):
     shortcode: str | None = Field(None, max_length=100, pattern=r"^[a-zA-Z0-9_]+$")
     category: str | None = Field(None, max_length=100)
