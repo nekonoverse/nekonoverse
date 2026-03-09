@@ -11,6 +11,7 @@ from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.note import (
+    ContextResponse,
     CustomEmojiInfo,
     NoteActorResponse,
     NoteCreateRequest,
@@ -21,6 +22,7 @@ from app.schemas.note import (
 )
 from app.services.actor_service import actor_uri
 from app.services.note_service import (
+    _note_load_options,
     check_note_visible,
     create_note,
     get_note_by_id,
@@ -142,6 +144,13 @@ async def note_to_response(
             for tn in tag_names
         ]
 
+    # Resolve in_reply_to_account_id
+    in_reply_to_account_id = None
+    if note.in_reply_to_id and db:
+        parent_note = await get_note_by_id(db, note.in_reply_to_id)
+        if parent_note:
+            in_reply_to_account_id = parent_note.actor_id
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -154,6 +163,8 @@ async def note_to_response(
         replies_count=note.replies_count,
         reactions_count=note.reactions_count,
         renotes_count=note.renotes_count,
+        in_reply_to_id=note.in_reply_to_id,
+        in_reply_to_account_id=in_reply_to_account_id,
         actor=NoteActorResponse(
             id=actor.id,
             username=actor.username,
@@ -218,6 +229,68 @@ async def get_status(
 
     reactions = await get_reaction_summary(db, note.id, actor_id)
     return await note_to_response(note, reactions, db=db)
+
+
+@router.get("/{note_id}/context", response_model=ContextResponse)
+async def get_status_context(
+    note_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    actor_id = user.actor_id if user else None
+    if not await check_note_visible(db, note, actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    # Build ancestors by walking up the in_reply_to_id chain
+    ancestors = []
+    current = note
+    seen_ids: set[uuid.UUID] = {note.id}
+    while current.in_reply_to_id and current.in_reply_to_id not in seen_ids:
+        parent = await get_note_by_id(db, current.in_reply_to_id)
+        if not parent:
+            break
+        if not await check_note_visible(db, parent, actor_id):
+            break
+        seen_ids.add(parent.id)
+        ancestors.append(parent)
+        current = parent
+    ancestors.reverse()  # oldest first
+
+    # Build descendants using BFS
+    descendants = []
+    queue = [note.id]
+    visited: set[uuid.UUID] = {note.id}
+    while queue:
+        parent_id = queue.pop(0)
+        result = await db.execute(
+            select(Note)
+            .options(*_note_load_options())
+            .where(
+                Note.in_reply_to_id == parent_id,
+                Note.deleted_at.is_(None),
+            )
+            .order_by(Note.published.asc())
+        )
+        children = list(result.scalars().all())
+        for child in children:
+            if child.id in visited:
+                continue
+            visited.add(child.id)
+            if await check_note_visible(db, child, actor_id):
+                descendants.append(child)
+                queue.append(child.id)
+
+    ancestor_responses = [await note_to_response(n, db=db) for n in ancestors]
+    descendant_responses = [await note_to_response(n, db=db) for n in descendants]
+
+    return ContextResponse(
+        ancestors=ancestor_responses,
+        descendants=descendant_responses,
+    )
 
 
 @router.post("/{note_id}/react/{emoji}")

@@ -299,6 +299,14 @@ export const ja = {
   "lightbox.openExternal": "ブラウザで開く",
   "hashtag.empty": "このハッシュタグの投稿はありません。",
   "hashtag.loadMore": "もっと見る",
+  "thread.title": "スレッド",
+  "thread.ancestors": "前の投稿",
+  "thread.descendants": "返信",
+  "thread.loading": "スレッドを読み込み中...",
+  "thread.notFound": "投稿が見つかりません",
+  "reply.replyingTo": "返信先:",
+  "reply.reply": "返信",
+  "reply.repliesCount": "返信",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

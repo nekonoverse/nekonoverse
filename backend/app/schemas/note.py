@@ -89,6 +89,8 @@ class NoteResponse(BaseModel):
     replies_count: int
     reactions_count: int
     renotes_count: int
+    in_reply_to_id: uuid.UUID | None = None
+    in_reply_to_account_id: uuid.UUID | None = None
     actor: NoteActorResponse
     reactions: list[ReactionSummary] = []
     reblog: "NoteResponse | None" = None
@@ -100,3 +102,8 @@ class NoteResponse(BaseModel):
     tags: list[TagInfo] = []
 
     model_config = {"from_attributes": True}
+
+
+class ContextResponse(BaseModel):
+    ancestors: list[NoteResponse] = []
+    descendants: list[NoteResponse] = []

@@ -301,4 +301,12 @@ export const neko: Dictionary = {
   "lightbox.openExternal": "ブラウザでひらくにゃ",
   "hashtag.empty": "このはっしゅたぐのとうこうにゃいにゃ。",
   "hashtag.loadMore": "もっとみるにゃ",
+  "thread.title": "スレッドにゃ",
+  "thread.ancestors": "まえのとうこうにゃ",
+  "thread.descendants": "へんしんにゃ",
+  "thread.loading": "スレッドよみこみちゅうにゃ...",
+  "thread.notFound": "とうこうみつからにゃいにゃ",
+  "reply.replyingTo": "へんしんさきにゃ:",
+  "reply.reply": "へんしんにゃ",
+  "reply.repliesCount": "へんしんにゃ",
 };

@@ -3873,3 +3873,137 @@ a:hover {
   color: var(--accent-hover);
   text-decoration: underline;
 }
+
+/* Thread / Conversation View */
+.thread-view {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.thread-view h2 {
+  margin-bottom: 16px;
+}
+
+.thread-ancestors {
+  position: relative;
+}
+
+.thread-ancestor-note {
+  position: relative;
+}
+
+.thread-ancestor-note .thread-connector {
+  position: absolute;
+  left: 52px;
+  top: -8px;
+  bottom: 0;
+  width: 2px;
+  background: var(--border);
+  z-index: 1;
+}
+
+.thread-ancestor-note:first-child .thread-connector {
+  top: 50%;
+}
+
+.thread-target-note {
+  position: relative;
+}
+
+.thread-target-note .note-card {
+  border-color: var(--accent);
+  border-width: 2px;
+  box-shadow: 0 0 12px rgba(233, 69, 96, 0.15);
+}
+
+.thread-reply-composer {
+  margin: 8px 0;
+}
+
+.thread-descendants {
+  position: relative;
+}
+
+.thread-descendant-note {
+  position: relative;
+  transition: margin-left 0.2s ease;
+}
+
+.thread-descendant-note .thread-connector {
+  position: absolute;
+  left: 52px;
+  top: -8px;
+  height: 16px;
+  width: 2px;
+  background: var(--border);
+  z-index: 1;
+}
+
+/* Reply indicator in note card */
+.note-reply-indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+  width: 100%;
+}
+
+.note-reply-indicator svg {
+  flex-shrink: 0;
+}
+
+/* Reply button style */
+.note-reply-btn {
+  color: var(--text-secondary);
+}
+
+.note-reply-btn:hover {
+  color: var(--accent);
+}
+
+/* Timestamp link in note footer */
+.note-time-link {
+  text-decoration: none;
+  color: inherit;
+}
+
+.note-time-link:hover {
+  color: var(--accent);
+}
+
+/* Composer reply indicator */
+.composer-reply-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  background: var(--bg-primary);
+  border-radius: var(--radius);
+  margin-bottom: 8px;
+  font-size: 0.85em;
+  color: var(--text-secondary);
+}
+
+.composer-reply-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.composer-reply-close {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.composer-reply-close:hover {
+  background: var(--border);
+  color: var(--text-primary);
+}

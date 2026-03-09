@@ -20,6 +20,7 @@ const Search = lazy(() => import("./pages/Search"));
 const Profile = lazy(() => import("./pages/Profile"));
 const FollowList = lazy(() => import("./pages/FollowList"));
 const TagTimeline = lazy(() => import("./pages/TagTimeline"));
+const NoteThread = lazy(() => import("./pages/NoteThread"));
 
 function Layout(props: ParentProps) {
   onMount(() => {
@@ -49,6 +50,7 @@ export default function App() {
         <Route path="/bookmarks" component={Bookmarks} />
         <Route path="/search" component={Search} />
         <Route path="/tags/:tag" component={TagTimeline} />
+        <Route path="/notes/:id" component={NoteThread} />
         <Route path="/:acct/followers" component={FollowList} />
         <Route path="/:acct/following" component={FollowList} />
         <Route path="/:acct" component={Profile} />
