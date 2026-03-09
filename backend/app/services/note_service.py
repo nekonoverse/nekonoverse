@@ -258,6 +258,8 @@ def _note_load_options():
         selectinload(Note.renote_of).selectinload(Note.attachments),
         selectinload(Note.renote_of).selectinload(Note.quoted_note).selectinload(Note.actor),
         selectinload(Note.renote_of).selectinload(Note.quoted_note).selectinload(Note.attachments),
+        # リプライ先ノートのアクター（in_reply_to_account_id解決用）
+        selectinload(Note.in_reply_to).selectinload(Note.actor),
     ]
 
 
