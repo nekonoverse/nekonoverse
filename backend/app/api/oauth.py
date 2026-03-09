@@ -1,6 +1,7 @@
 """OAuth 2.0 endpoints (Mastodon compatible)."""
 
 import hashlib
+import html as html_mod
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -77,13 +78,20 @@ async def authorize_form(
     # Check if user is logged in
     session_id = request.cookies.get("nekonoverse_session")
     if not session_id:
-        # Return a simple login form
-        return HTMLResponse(f"""
-        <html><body style="font-family:sans-serif;max-width:400px;margin:40px auto">
-        <h2>Authorize {app.name}</h2>
-        <p>Please <a href="/login?redirect=/oauth/authorize?client_id={client_id}&redirect_uri={redirect_uri}&scope={scope}&response_type={response_type}">log in</a> first.</p>
-        </body></html>
-        """)
+        # Return a simple login form (escape all user-controlled values)
+        esc = html_mod.escape
+        return HTMLResponse(
+            "<html><body style='font-family:sans-serif;"
+            "max-width:400px;margin:40px auto'>"
+            f"<h2>Authorize {esc(app.name)}</h2>"
+            "<p>Please <a href=\"/login?redirect=/oauth/authorize"
+            f"?client_id={esc(client_id)}"
+            f"&redirect_uri={esc(redirect_uri)}"
+            f"&scope={esc(scope)}"
+            f"&response_type={esc(response_type)}"
+            "\">log in</a> first.</p>"
+            "</body></html>"
+        )
 
     from app.valkey_client import valkey
 
