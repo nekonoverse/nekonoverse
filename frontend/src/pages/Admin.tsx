@@ -1,29 +1,163 @@
-import { createSignal, createMemo, onMount, Show, For } from "solid-js";
+import {
+  createSignal,
+  createMemo,
+  onMount,
+  onCleanup,
+  Show,
+  For,
+  Switch,
+  Match,
+} from "solid-js";
+import { useParams, A } from "@solidjs/router";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
+import Breadcrumb from "../components/Breadcrumb";
 import {
-  getAdminStats, getServerSettings, updateServerSettings,
-  getAdminUsers, changeUserRole, suspendUser, unsuspendUser, silenceUser, unsilenceUser,
-  getDomainBlocks, createDomainBlock, removeDomainBlock,
-  getReports, resolveReport, rejectReport,
-  getModerationLog, uploadServerIcon, markNoteSensitive,
-  getAdminEmojis, addEmoji, deleteEmoji, importEmojis, getEmojiExportUrl,
-  getRemoteEmojis, getRemoteEmojiDomains, importRemoteEmoji,
-  getServerFiles, uploadServerFile, deleteServerFile,
-  getInviteCodes, createInviteCode, revokeInviteCode,
-  getFederatedServers, getFederatedServerDetail,
-  type AdminStats, type ServerSettings, type AdminUser,
-  type DomainBlock, type Report, type ModerationLogEntry,
-  type AdminEmoji, type RemoteEmoji, type ServerFile,
+  getAdminStats,
+  getServerSettings,
+  updateServerSettings,
+  getAdminUsers,
+  changeUserRole,
+  suspendUser,
+  unsuspendUser,
+  silenceUser,
+  unsilenceUser,
+  getDomainBlocks,
+  createDomainBlock,
+  removeDomainBlock,
+  getReports,
+  resolveReport,
+  rejectReport,
+  getModerationLog,
+  uploadServerIcon,
+  markNoteSensitive,
+  getAdminEmojis,
+  addEmoji,
+  deleteEmoji,
+  importEmojis,
+  getEmojiExportUrl,
+  getRemoteEmojis,
+  getRemoteEmojiDomains,
+  importRemoteEmoji,
+  getServerFiles,
+  uploadServerFile,
+  deleteServerFile,
+  getInviteCodes,
+  createInviteCode,
+  revokeInviteCode,
+  getFederatedServers,
+  getFederatedServerDetail,
+  getQueueStats,
+  getQueueJobs,
+  retryQueueJob,
+  retryAllDeadJobs,
+  purgeDeliveredJobs,
+  getSystemStats,
+  type AdminStats,
+  type ServerSettings,
+  type AdminUser,
+  type DomainBlock,
+  type Report,
+  type ModerationLogEntry,
+  type AdminEmoji,
+  type RemoteEmoji,
+  type ServerFile,
   type InviteCode,
-  type FederatedServer, type FederatedServerDetail, type FederatedServerList,
+  type FederatedServer,
+  type FederatedServerDetail,
+  type FederatedServerList,
+  type QueueStats,
+  type QueueJob,
+  type QueueJobList,
+  type SystemStats,
 } from "../api/admin";
 
-type Tab = "overview" | "settings" | "users" | "domains" | "federation" | "reports" | "log" | "emoji" | "files" | "invites";
+interface AdminSection {
+  key: string;
+  labelKey: string;
+  descKey: string;
+}
+
+interface AdminCategory {
+  labelKey: string;
+  adminOnly: boolean;
+  sections: AdminSection[];
+}
+
+const categories: AdminCategory[] = [
+  {
+    labelKey: "admin.categoryModeration",
+    adminOnly: false,
+    sections: [
+      { key: "users", labelKey: "admin.tabUsers", descKey: "admin.descUsers" },
+      {
+        key: "domains",
+        labelKey: "admin.tabDomains",
+        descKey: "admin.descDomains",
+      },
+      {
+        key: "reports",
+        labelKey: "admin.tabReports",
+        descKey: "admin.descReports",
+      },
+      { key: "log", labelKey: "admin.tabLog", descKey: "admin.descLog" },
+    ],
+  },
+  {
+    labelKey: "admin.categoryFederation",
+    adminOnly: false,
+    sections: [
+      {
+        key: "federation",
+        labelKey: "admin.tabFederation",
+        descKey: "admin.descFederation",
+      },
+    ],
+  },
+  {
+    labelKey: "admin.categoryServer",
+    adminOnly: true,
+    sections: [
+      {
+        key: "settings",
+        labelKey: "admin.tabSettings",
+        descKey: "admin.descSettings",
+      },
+      { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji" },
+      { key: "files", labelKey: "admin.tabFiles", descKey: "admin.descFiles" },
+      {
+        key: "invites",
+        labelKey: "admin.tabInvites",
+        descKey: "admin.descInvites",
+      },
+      {
+        key: "queue",
+        labelKey: "admin.tabQueue",
+        descKey: "admin.descQueue",
+      },
+      {
+        key: "system",
+        labelKey: "admin.tabSystem",
+        descKey: "admin.descSystem",
+      },
+    ],
+  },
+];
+
+function findSectionLabel(t: (key: any) => string, sectionKey: string): string {
+  for (const cat of categories) {
+    for (const s of cat.sections) {
+      if (s.key === sectionKey) return t(s.labelKey as any);
+    }
+  }
+  return "";
+}
 
 export default function Admin() {
   const { t } = useI18n();
-  const [activeTab, setActiveTab] = createSignal<Tab>("overview");
+  const params = useParams<{ section?: string }>();
+
+  const section = () => params.section || "";
 
   const isStaff = () => {
     const u = currentUser();
@@ -34,42 +168,91 @@ export default function Admin() {
 
   return (
     <div class="page-container admin-page">
-      <h1>{t("admin.title")}</h1>
-      <Show when={isStaff()} fallback={<p class="error">{t("admin.noAccess")}</p>}>
-        <div class="settings-tabs">
-          {([
-            { key: "overview" as Tab, label: t("admin.tabOverview") },
-            ...(isAdmin() ? [{ key: "settings" as Tab, label: t("admin.tabSettings") }] : []),
-            { key: "users" as Tab, label: t("admin.tabUsers") },
-            { key: "domains" as Tab, label: t("admin.tabDomains") },
-            { key: "federation" as Tab, label: t("admin.tabFederation") },
-            { key: "reports" as Tab, label: t("admin.tabReports") },
-            { key: "log" as Tab, label: t("admin.tabLog") },
-            ...(isAdmin() ? [
-              { key: "emoji" as Tab, label: t("admin.tabEmoji") },
-              { key: "files" as Tab, label: t("admin.tabFiles") },
-              { key: "invites" as Tab, label: t("admin.tabInvites") },
-            ] : []),
-          ]).map((tab) => (
-            <button
-              class={`settings-tab${activeTab() === tab.key ? " settings-tab-active" : ""}`}
-              onClick={() => setActiveTab(tab.key)}
-            >
-              {tab.label}
-            </button>
-          ))}
-        </div>
-
-        <Show when={activeTab() === "overview"}><OverviewTab /></Show>
-        <Show when={activeTab() === "settings"}><ServerSettingsTab /></Show>
-        <Show when={activeTab() === "users"}><UsersTab /></Show>
-        <Show when={activeTab() === "domains"}><DomainsTab /></Show>
-        <Show when={activeTab() === "federation"}><FederationTab /></Show>
-        <Show when={activeTab() === "reports"}><ReportsTab /></Show>
-        <Show when={activeTab() === "log"}><LogTab /></Show>
-        <Show when={activeTab() === "emoji"}><EmojiTab /></Show>
-        <Show when={activeTab() === "files"}><ServerFilesTab /></Show>
-        <Show when={activeTab() === "invites"}><InvitesTab /></Show>
+      <Show
+        when={isStaff()}
+        fallback={<p class="error">{t("admin.noAccess")}</p>}
+      >
+        <Show
+          when={section()}
+          fallback={
+            <>
+              <h1>{t("admin.title")}</h1>
+              <OverviewTab />
+              <div class="settings-menu">
+                <For each={categories}>
+                  {(cat) => (
+                    <Show when={!cat.adminOnly || isAdmin()}>
+                      <div class="settings-menu-category">
+                        <h3 class="settings-menu-category-title">
+                          {t(cat.labelKey as any)}
+                        </h3>
+                        <div class="settings-menu-grid">
+                          <For each={cat.sections}>
+                            {(s) => (
+                              <A
+                                href={`/admin/${s.key}`}
+                                class="settings-menu-card"
+                              >
+                                <span class="settings-menu-card-title">
+                                  {t(s.labelKey as any)}
+                                </span>
+                                <span class="settings-menu-card-desc">
+                                  {t(s.descKey as any)}
+                                </span>
+                              </A>
+                            )}
+                          </For>
+                        </div>
+                      </div>
+                    </Show>
+                  )}
+                </For>
+              </div>
+            </>
+          }
+        >
+          <Breadcrumb
+            items={[
+              { label: t("admin.title"), href: "/admin" },
+              { label: findSectionLabel(t, section()) },
+            ]}
+          />
+          <Switch>
+            <Match when={section() === "settings"}>
+              <ServerSettingsTab />
+            </Match>
+            <Match when={section() === "users"}>
+              <UsersTab />
+            </Match>
+            <Match when={section() === "domains"}>
+              <DomainsTab />
+            </Match>
+            <Match when={section() === "federation"}>
+              <FederationTab />
+            </Match>
+            <Match when={section() === "reports"}>
+              <ReportsTab />
+            </Match>
+            <Match when={section() === "log"}>
+              <LogTab />
+            </Match>
+            <Match when={section() === "emoji"}>
+              <EmojiTab />
+            </Match>
+            <Match when={section() === "files"}>
+              <ServerFilesTab />
+            </Match>
+            <Match when={section() === "invites"}>
+              <InvitesTab />
+            </Match>
+            <Match when={section() === "queue"}>
+              <QueueTab />
+            </Match>
+            <Match when={section() === "system"}>
+              <SystemTab />
+            </Match>
+          </Switch>
+        </Show>
       </Show>
     </div>
   );
@@ -80,7 +263,9 @@ function OverviewTab() {
   const [stats, setStats] = createSignal<AdminStats | null>(null);
 
   onMount(async () => {
-    try { setStats(await getAdminStats()); } catch {}
+    try {
+      setStats(await getAdminStats());
+    } catch {}
   });
 
   return (
@@ -156,22 +341,39 @@ function ServerSettingsTab() {
     <Show when={settings()} fallback={<p>{t("common.loading")}</p>}>
       <div class="settings-section">
         <h3>{t("admin.serverSettings")}</h3>
-        <Show when={saved()}><p class="settings-success">{t("settings.saved")}</p></Show>
+        <Show when={saved()}>
+          <p class="settings-success">{t("settings.saved")}</p>
+        </Show>
         <div class="settings-form-group">
           <label>{t("admin.serverName")}</label>
-          <input type="text" value={name()} onInput={(e) => setName(e.currentTarget.value)} />
+          <input
+            type="text"
+            value={name()}
+            onInput={(e) => setName(e.currentTarget.value)}
+          />
         </div>
         <div class="settings-form-group">
           <label>{t("admin.serverDesc")}</label>
-          <textarea rows={3} value={desc()} onInput={(e) => setDesc(e.currentTarget.value)} />
+          <textarea
+            rows={3}
+            value={desc()}
+            onInput={(e) => setDesc(e.currentTarget.value)}
+          />
         </div>
         <div class="settings-form-group">
           <label>{t("admin.tosUrl")}</label>
-          <input type="text" value={tos()} onInput={(e) => setTos(e.currentTarget.value)} />
+          <input
+            type="text"
+            value={tos()}
+            onInput={(e) => setTos(e.currentTarget.value)}
+          />
         </div>
         <div class="settings-form-group">
           <label>{t("admin.registrationMode")}</label>
-          <select value={regMode()} onChange={(e) => setRegMode(e.currentTarget.value)}>
+          <select
+            value={regMode()}
+            onChange={(e) => setRegMode(e.currentTarget.value)}
+          >
             <option value="open">{t("admin.regModeOpen")}</option>
             <option value="invite">{t("admin.regModeInvite")}</option>
             <option value="closed">{t("admin.regModeClosed")}</option>
@@ -180,7 +382,10 @@ function ServerSettingsTab() {
         <Show when={regMode() === "invite"}>
           <div class="settings-form-group">
             <label>{t("admin.inviteCreateRole")}</label>
-            <select value={inviteRole()} onChange={(e) => setInviteRole(e.currentTarget.value)}>
+            <select
+              value={inviteRole()}
+              onChange={(e) => setInviteRole(e.currentTarget.value)}
+            >
               <option value="admin">{t("admin.roleAdmin")}</option>
               <option value="moderator">{t("admin.roleModerator")}</option>
               <option value="user">{t("admin.roleUser")}</option>
@@ -195,7 +400,11 @@ function ServerSettingsTab() {
       <div class="settings-section">
         <h3>{t("admin.serverIcon")}</h3>
         <Show when={iconUrl()}>
-          <img src={iconUrl()} alt="Server icon" class="admin-server-icon-preview" />
+          <img
+            src={iconUrl()}
+            alt="Server icon"
+            class="admin-server-icon-preview"
+          />
         </Show>
         <button
           class="btn btn-small"
@@ -247,7 +456,9 @@ function SensitiveMarker() {
   return (
     <div class="settings-section">
       <h3>{t("admin.markSensitive")}</h3>
-      <Show when={marked()}><p class="settings-success">{t("admin.markedSensitive")}</p></Show>
+      <Show when={marked()}>
+        <p class="settings-success">{t("admin.markedSensitive")}</p>
+      </Show>
       <div class="admin-domain-form">
         <input
           type="text"
@@ -255,7 +466,11 @@ function SensitiveMarker() {
           value={noteId()}
           onInput={(e) => setNoteId(e.currentTarget.value)}
         />
-        <button class="btn btn-small" onClick={handleMark} disabled={marking() || !noteId().trim()}>
+        <button
+          class="btn btn-small"
+          onClick={handleMark}
+          disabled={marking() || !noteId().trim()}
+        >
           {t("admin.markSensitive")}
         </button>
       </div>
@@ -271,16 +486,23 @@ function UsersTab() {
   const isSelf = (userId: string) => currentUser()?.id === userId;
 
   onMount(async () => {
-    try { setUsers(await getAdminUsers()); } catch {}
+    try {
+      setUsers(await getAdminUsers());
+    } catch {}
     setLoading(false);
   });
 
   const reload = async () => {
-    try { setUsers(await getAdminUsers()); } catch {}
+    try {
+      setUsers(await getAdminUsers());
+    } catch {}
   };
 
   const handleRoleChange = async (userId: string, role: string) => {
-    try { await changeUserRole(userId, role); await reload(); } catch {}
+    try {
+      await changeUserRole(userId, role);
+      await reload();
+    } catch {}
   };
 
   const [confirmAction, setConfirmAction] = createSignal<{
@@ -291,7 +513,11 @@ function UsersTab() {
   const [confirmInput, setConfirmInput] = createSignal("");
   const [actionLoading, setActionLoading] = createSignal(false);
 
-  const openConfirm = (type: "suspend" | "silence", userId: string, username: string) => {
+  const openConfirm = (
+    type: "suspend" | "silence",
+    userId: string,
+    username: string,
+  ) => {
     setConfirmInput("");
     setConfirmAction({ type, userId, username });
   };
@@ -326,11 +552,17 @@ function UsersTab() {
   };
 
   const handleUnsuspend = async (userId: string) => {
-    try { await unsuspendUser(userId); await reload(); } catch {}
+    try {
+      await unsuspendUser(userId);
+      await reload();
+    } catch {}
   };
 
   const handleUnsilence = async (userId: string) => {
-    try { await unsilenceUser(userId); await reload(); } catch {}
+    try {
+      await unsilenceUser(userId);
+      await reload();
+    } catch {}
   };
 
   return (
@@ -341,20 +573,34 @@ function UsersTab() {
           <div class="admin-user-list">
             <For each={users()}>
               {(u) => (
-                <div class={`admin-user-item${u.suspended ? " suspended" : ""}${u.silenced ? " silenced" : ""}`}>
+                <div
+                  class={`admin-user-item${u.suspended ? " suspended" : ""}${u.silenced ? " silenced" : ""}`}
+                >
                   <div class="admin-user-info">
                     <strong>{u.display_name || u.username}</strong>
                     <span class="admin-user-handle">@{u.username}</span>
-                    <span class={`admin-role-badge role-${u.role}`}>{u.role}</span>
-                    <Show when={u.suspended}><span class="admin-status-badge suspended">{t("admin.suspended")}</span></Show>
-                    <Show when={u.silenced}><span class="admin-status-badge silenced">{t("admin.silenced")}</span></Show>
+                    <span class={`admin-role-badge role-${u.role}`}>
+                      {u.role}
+                    </span>
+                    <Show when={u.suspended}>
+                      <span class="admin-status-badge suspended">
+                        {t("admin.suspended")}
+                      </span>
+                    </Show>
+                    <Show when={u.silenced}>
+                      <span class="admin-status-badge silenced">
+                        {t("admin.silenced")}
+                      </span>
+                    </Show>
                   </div>
                   <Show when={!isSelf(u.id)}>
                     <div class="admin-user-actions">
                       <Show when={isAdmin()}>
                         <select
                           value={u.role}
-                          onChange={(e) => handleRoleChange(u.id, e.currentTarget.value)}
+                          onChange={(e) =>
+                            handleRoleChange(u.id, e.currentTarget.value)
+                          }
                         >
                           <option value="user">user</option>
                           <option value="moderator">moderator</option>
@@ -362,22 +608,34 @@ function UsersTab() {
                         </select>
                       </Show>
                       <Show when={!u.suspended}>
-                        <button class="btn btn-small btn-danger" onClick={() => openConfirm("suspend", u.id, u.username)}>
+                        <button
+                          class="btn btn-small btn-danger"
+                          onClick={() => openConfirm("suspend", u.id, u.username)}
+                        >
                           {t("admin.suspend")}
                         </button>
                       </Show>
                       <Show when={u.suspended}>
-                        <button class="btn btn-small" onClick={() => handleUnsuspend(u.id)}>
+                        <button
+                          class="btn btn-small"
+                          onClick={() => handleUnsuspend(u.id)}
+                        >
                           {t("admin.unsuspend")}
                         </button>
                       </Show>
                       <Show when={!u.silenced}>
-                        <button class="btn btn-small" onClick={() => openConfirm("silence", u.id, u.username)}>
+                        <button
+                          class="btn btn-small"
+                          onClick={() => openConfirm("silence", u.id, u.username)}
+                        >
                           {t("admin.silence")}
                         </button>
                       </Show>
                       <Show when={u.silenced}>
-                        <button class="btn btn-small" onClick={() => handleUnsilence(u.id)}>
+                        <button
+                          class="btn btn-small"
+                          onClick={() => handleUnsilence(u.id)}
+                        >
                           {t("admin.unsilence")}
                         </button>
                       </Show>
@@ -395,18 +653,27 @@ function UsersTab() {
       <Show when={confirmAction()}>
         {(action) => (
           <div class="modal-overlay" onClick={closeConfirm}>
-            <div class="modal-content" style="max-width: 420px" onClick={(e) => e.stopPropagation()}>
+            <div
+              class="modal-content"
+              style="max-width: 420px"
+              onClick={(e) => e.stopPropagation()}
+            >
               <div class="modal-header">
                 <h3>
                   {action().type === "suspend"
                     ? t("admin.confirmSuspendTitle")
                     : t("admin.confirmSilenceTitle")}
                 </h3>
-                <button class="modal-close" onClick={closeConfirm}>✕</button>
+                <button class="modal-close" onClick={closeConfirm}>
+                  ✕
+                </button>
               </div>
               <div style="padding: 16px">
                 <p class="confirm-input-hint">
-                  {t("admin.typeToConfirm").replace("{username}", action().username)}
+                  {t("admin.typeToConfirm").replace(
+                    "{username}",
+                    action().username,
+                  )}
                 </p>
                 <input
                   class="confirm-input"
@@ -448,14 +715,20 @@ function DomainsTab() {
   const [newReason, setNewReason] = createSignal("");
 
   onMount(async () => {
-    try { setBlocks(await getDomainBlocks()); } catch {}
+    try {
+      setBlocks(await getDomainBlocks());
+    } catch {}
     setLoading(false);
   });
 
   const handleAdd = async () => {
     if (!newDomain()) return;
     try {
-      const block = await createDomainBlock(newDomain(), newSeverity(), newReason() || undefined);
+      const block = await createDomainBlock(
+        newDomain(),
+        newSeverity(),
+        newReason() || undefined,
+      );
       setBlocks((prev) => [block, ...prev]);
       setNewDomain("");
       setNewReason("");
@@ -480,7 +753,10 @@ function DomainsTab() {
           value={newDomain()}
           onInput={(e) => setNewDomain(e.currentTarget.value)}
         />
-        <select value={newSeverity()} onChange={(e) => setNewSeverity(e.currentTarget.value)}>
+        <select
+          value={newSeverity()}
+          onChange={(e) => setNewSeverity(e.currentTarget.value)}
+        >
           <option value="suspend">{t("admin.suspend")}</option>
           <option value="silence">{t("admin.silence")}</option>
         </select>
@@ -490,20 +766,32 @@ function DomainsTab() {
           value={newReason()}
           onInput={(e) => setNewReason(e.currentTarget.value)}
         />
-        <button class="btn btn-small" onClick={handleAdd}>{t("admin.addDomainBlock")}</button>
+        <button class="btn btn-small" onClick={handleAdd}>
+          {t("admin.addDomainBlock")}
+        </button>
       </div>
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
-        <Show when={blocks().length > 0} fallback={<p class="empty">{t("admin.noDomainBlocks")}</p>}>
+        <Show
+          when={blocks().length > 0}
+          fallback={<p class="empty">{t("admin.noDomainBlocks")}</p>}
+        >
           <div class="admin-domain-list">
             <For each={blocks()}>
               {(b) => (
                 <div class="admin-domain-item">
                   <div>
                     <strong>{b.domain}</strong>
-                    <span class={`admin-severity-badge ${b.severity}`}>{b.severity}</span>
-                    <Show when={b.reason}><span class="admin-domain-reason">{b.reason}</span></Show>
+                    <span class={`admin-severity-badge ${b.severity}`}>
+                      {b.severity}
+                    </span>
+                    <Show when={b.reason}>
+                      <span class="admin-domain-reason">{b.reason}</span>
+                    </Show>
                   </div>
-                  <button class="btn btn-small btn-danger" onClick={() => handleRemove(b.domain)}>
+                  <button
+                    class="btn btn-small btn-danger"
+                    onClick={() => handleRemove(b.domain)}
+                  >
                     {t("admin.remove")}
                   </button>
                 </div>
@@ -524,49 +812,89 @@ function ReportsTab() {
 
   const load = async () => {
     setLoading(true);
-    try { setReports(await getReports(filter())); } catch {}
+    try {
+      setReports(await getReports(filter()));
+    } catch {}
     setLoading(false);
   };
 
   onMount(load);
 
   const handleResolve = async (id: string) => {
-    try { await resolveReport(id); await load(); } catch {}
+    try {
+      await resolveReport(id);
+      await load();
+    } catch {}
   };
 
   const handleReject = async (id: string) => {
-    try { await rejectReport(id); await load(); } catch {}
+    try {
+      await rejectReport(id);
+      await load();
+    } catch {}
   };
 
   return (
     <div class="settings-section">
       <h3>{t("admin.tabReports")}</h3>
       <div class="admin-report-filter">
-        <button class={`btn btn-small${!filter() ? " btn-active" : ""}`} onClick={() => { setFilter(undefined); load(); }}>
+        <button
+          class={`btn btn-small${!filter() ? " btn-active" : ""}`}
+          onClick={() => {
+            setFilter(undefined);
+            load();
+          }}
+        >
           {t("admin.allReports")}
         </button>
-        <button class={`btn btn-small${filter() === "open" ? " btn-active" : ""}`} onClick={() => { setFilter("open"); load(); }}>
+        <button
+          class={`btn btn-small${filter() === "open" ? " btn-active" : ""}`}
+          onClick={() => {
+            setFilter("open");
+            load();
+          }}
+        >
           {t("admin.openReports")}
         </button>
       </div>
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
-        <Show when={reports().length > 0} fallback={<p class="empty">{t("admin.noReports")}</p>}>
+        <Show
+          when={reports().length > 0}
+          fallback={<p class="empty">{t("admin.noReports")}</p>}
+        >
           <div class="admin-report-list">
             <For each={reports()}>
               {(r) => (
                 <div class={`admin-report-item status-${r.status}`}>
                   <div class="admin-report-info">
                     <div>
-                      <strong>{r.reporter}</strong> → <strong>{r.target}</strong>
+                      <strong>{r.reporter}</strong> →{" "}
+                      <strong>{r.target}</strong>
                     </div>
-                    <Show when={r.comment}><p class="admin-report-comment">{r.comment}</p></Show>
-                    <span class="admin-report-time">{new Date(r.created_at).toLocaleString()}</span>
-                    <span class={`admin-status-badge ${r.status}`}>{r.status}</span>
+                    <Show when={r.comment}>
+                      <p class="admin-report-comment">{r.comment}</p>
+                    </Show>
+                    <span class="admin-report-time">
+                      {new Date(r.created_at).toLocaleString()}
+                    </span>
+                    <span class={`admin-status-badge ${r.status}`}>
+                      {r.status}
+                    </span>
                   </div>
                   <Show when={r.status === "open"}>
                     <div class="admin-report-actions">
-                      <button class="btn btn-small" onClick={() => handleResolve(r.id)}>{t("admin.resolve")}</button>
-                      <button class="btn btn-small" onClick={() => handleReject(r.id)}>{t("admin.reject")}</button>
+                      <button
+                        class="btn btn-small"
+                        onClick={() => handleResolve(r.id)}
+                      >
+                        {t("admin.resolve")}
+                      </button>
+                      <button
+                        class="btn btn-small"
+                        onClick={() => handleReject(r.id)}
+                      >
+                        {t("admin.reject")}
+                      </button>
                     </div>
                   </Show>
                 </div>
@@ -585,7 +913,9 @@ function LogTab() {
   const [loading, setLoading] = createSignal(true);
 
   onMount(async () => {
-    try { setEntries(await getModerationLog()); } catch {}
+    try {
+      setEntries(await getModerationLog());
+    } catch {}
     setLoading(false);
   });
 
@@ -593,16 +923,25 @@ function LogTab() {
     <div class="settings-section">
       <h3>{t("admin.tabLog")}</h3>
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
-        <Show when={entries().length > 0} fallback={<p class="empty">{t("admin.noLogs")}</p>}>
+        <Show
+          when={entries().length > 0}
+          fallback={<p class="empty">{t("admin.noLogs")}</p>}
+        >
           <div class="admin-log-list">
             <For each={entries()}>
               {(e) => (
                 <div class="admin-log-item">
-                  <span class="admin-log-time">{new Date(e.created_at).toLocaleString()}</span>
+                  <span class="admin-log-time">
+                    {new Date(e.created_at).toLocaleString()}
+                  </span>
                   <strong>{e.moderator}</strong>
                   <span class="admin-log-action">{e.action}</span>
-                  <span class="admin-log-target">{e.target_type}:{e.target_id}</span>
-                  <Show when={e.reason}><span class="admin-log-reason">({e.reason})</span></Show>
+                  <span class="admin-log-target">
+                    {e.target_type}:{e.target_id}
+                  </span>
+                  <Show when={e.reason}>
+                    <span class="admin-log-reason">({e.reason})</span>
+                  </Show>
                 </div>
               )}
             </For>
@@ -643,7 +982,9 @@ function EmojiTab() {
   let importInput!: HTMLInputElement;
 
   const load = async () => {
-    try { setEmojis(await getAdminEmojis()); } catch {}
+    try {
+      setEmojis(await getAdminEmojis());
+    } catch {}
     setLoading(false);
   };
 
@@ -657,7 +998,16 @@ function EmojiTab() {
     fd.append("file", file);
     fd.append("shortcode", shortcode().trim());
     if (category()) fd.append("category", category());
-    if (aliases()) fd.append("aliases", JSON.stringify(aliases().split(",").map(a => a.trim()).filter(Boolean)));
+    if (aliases())
+      fd.append(
+        "aliases",
+        JSON.stringify(
+          aliases()
+            .split(",")
+            .map((a) => a.trim())
+            .filter(Boolean),
+        ),
+      );
     if (license()) fd.append("license", license());
     if (author()) fd.append("author", author());
     if (description()) fd.append("description", description());
@@ -666,9 +1016,15 @@ function EmojiTab() {
     fd.append("local_only", String(localOnly()));
     try {
       await addEmoji(fd);
-      setShortcode(""); setCategory(""); setAliases(""); setLicense("");
-      setAuthor(""); setDescription(""); setCopyPermission("");
-      setIsSensitive(false); setLocalOnly(false);
+      setShortcode("");
+      setCategory("");
+      setAliases("");
+      setLicense("");
+      setAuthor("");
+      setDescription("");
+      setCopyPermission("");
+      setIsSensitive(false);
+      setLocalOnly(false);
       fileInput.value = "";
       setShowForm(false);
       await load();
@@ -678,14 +1034,20 @@ function EmojiTab() {
 
   const handleDelete = async (id: string) => {
     if (!confirm(t("admin.confirmDeleteEmoji"))) return;
-    try { await deleteEmoji(id); await load(); } catch {}
+    try {
+      await deleteEmoji(id);
+      await load();
+    } catch {}
   };
 
   const loadRemote = async () => {
     setRemoteLoading(true);
     try {
       const [ems, doms] = await Promise.all([
-        getRemoteEmojis(remoteDomain() || undefined, remoteSearch() || undefined),
+        getRemoteEmojis(
+          remoteDomain() || undefined,
+          remoteSearch() || undefined,
+        ),
         getRemoteEmojiDomains(),
       ]);
       setRemoteEmojis(ems);
@@ -715,9 +1077,15 @@ function EmojiTab() {
     setImportMsg("");
     try {
       const res = await importEmojis(file);
-      setImportMsg(t("admin.importResult").replace("{imported}", String(res.imported)).replace("{skipped}", String(res.skipped)));
+      setImportMsg(
+        t("admin.importResult")
+          .replace("{imported}", String(res.imported))
+          .replace("{skipped}", String(res.skipped)),
+      );
       await load();
-    } catch { setImportMsg("Import failed"); }
+    } catch {
+      setImportMsg("Import failed");
+    }
     setImporting(false);
     (e.currentTarget as HTMLInputElement).value = "";
   };
@@ -726,14 +1094,30 @@ function EmojiTab() {
     <div class="settings-section">
       <h3>{t("admin.tabEmoji")}</h3>
       <div class="admin-emoji-actions">
-        <button class="btn btn-small" onClick={() => setShowForm(!showForm())}>{t("admin.emojiAdd")}</button>
-        <button class="btn btn-small" onClick={() => importInput.click()} disabled={importing()}>
+        <button class="btn btn-small" onClick={() => setShowForm(!showForm())}>
+          {t("admin.emojiAdd")}
+        </button>
+        <button
+          class="btn btn-small"
+          onClick={() => importInput.click()}
+          disabled={importing()}
+        >
           {importing() ? t("common.loading") : t("admin.emojiImport")}
         </button>
-        <a class="btn btn-small" href={getEmojiExportUrl()} download="">{t("admin.emojiExport")}</a>
-        <input ref={importInput} type="file" accept=".zip" style="display:none" onChange={handleImport} />
+        <a class="btn btn-small" href={getEmojiExportUrl()} download="">
+          {t("admin.emojiExport")}
+        </a>
+        <input
+          ref={importInput}
+          type="file"
+          accept=".zip"
+          style="display:none"
+          onChange={handleImport}
+        />
       </div>
-      <Show when={importMsg()}><p class="settings-success">{importMsg()}</p></Show>
+      <Show when={importMsg()}>
+        <p class="settings-success">{importMsg()}</p>
+      </Show>
 
       <Show when={showForm()}>
         <div class="admin-emoji-form">
@@ -743,35 +1127,63 @@ function EmojiTab() {
           </div>
           <div class="settings-form-group">
             <label>{t("admin.emojiShortcode")}</label>
-            <input type="text" value={shortcode()} onInput={(e) => setShortcode(e.currentTarget.value)} placeholder="neko_smile" />
+            <input
+              type="text"
+              value={shortcode()}
+              onInput={(e) => setShortcode(e.currentTarget.value)}
+              placeholder="neko_smile"
+            />
           </div>
           <div class="admin-emoji-form-row">
             <div class="settings-form-group">
               <label>{t("admin.emojiCategory")}</label>
-              <input type="text" value={category()} onInput={(e) => setCategory(e.currentTarget.value)} />
+              <input
+                type="text"
+                value={category()}
+                onInput={(e) => setCategory(e.currentTarget.value)}
+              />
             </div>
             <div class="settings-form-group">
               <label>{t("admin.emojiAliases")}</label>
-              <input type="text" value={aliases()} onInput={(e) => setAliases(e.currentTarget.value)} />
+              <input
+                type="text"
+                value={aliases()}
+                onInput={(e) => setAliases(e.currentTarget.value)}
+              />
             </div>
           </div>
           <div class="admin-emoji-form-row">
             <div class="settings-form-group">
               <label>{t("admin.emojiLicense")}</label>
-              <input type="text" value={license()} onInput={(e) => setLicense(e.currentTarget.value)} />
+              <input
+                type="text"
+                value={license()}
+                onInput={(e) => setLicense(e.currentTarget.value)}
+              />
             </div>
             <div class="settings-form-group">
               <label>{t("admin.emojiAuthor")}</label>
-              <input type="text" value={author()} onInput={(e) => setAuthor(e.currentTarget.value)} />
+              <input
+                type="text"
+                value={author()}
+                onInput={(e) => setAuthor(e.currentTarget.value)}
+              />
             </div>
           </div>
           <div class="settings-form-group">
             <label>{t("admin.emojiDescription")}</label>
-            <input type="text" value={description()} onInput={(e) => setDescription(e.currentTarget.value)} />
+            <input
+              type="text"
+              value={description()}
+              onInput={(e) => setDescription(e.currentTarget.value)}
+            />
           </div>
           <div class="settings-form-group">
             <label>{t("admin.emojiCopyPermission")}</label>
-            <select value={copyPermission()} onChange={(e) => setCopyPermission(e.currentTarget.value)}>
+            <select
+              value={copyPermission()}
+              onChange={(e) => setCopyPermission(e.currentTarget.value)}
+            >
               <option value="">--</option>
               <option value="allow">allow</option>
               <option value="deny">deny</option>
@@ -780,34 +1192,63 @@ function EmojiTab() {
           </div>
           <div class="admin-emoji-form-row">
             <label class="toggle-label">
-              <input type="checkbox" checked={isSensitive()} onChange={(e) => setIsSensitive(e.currentTarget.checked)} />
+              <input
+                type="checkbox"
+                checked={isSensitive()}
+                onChange={(e) => setIsSensitive(e.currentTarget.checked)}
+              />
               {t("admin.emojiSensitive")}
             </label>
             <label class="toggle-label">
-              <input type="checkbox" checked={localOnly()} onChange={(e) => setLocalOnly(e.currentTarget.checked)} />
+              <input
+                type="checkbox"
+                checked={localOnly()}
+                onChange={(e) => setLocalOnly(e.currentTarget.checked)}
+              />
               {t("admin.emojiLocalOnly")}
             </label>
           </div>
-          <button class="btn btn-small" onClick={handleAdd} disabled={adding() || !shortcode().trim()}>
+          <button
+            class="btn btn-small"
+            onClick={handleAdd}
+            disabled={adding() || !shortcode().trim()}
+          >
             {adding() ? t("common.loading") : t("admin.emojiAdd")}
           </button>
         </div>
       </Show>
 
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
-        <Show when={emojis().length > 0} fallback={<p class="empty">{t("admin.noEmoji")}</p>}>
+        <Show
+          when={emojis().length > 0}
+          fallback={<p class="empty">{t("admin.noEmoji")}</p>}
+        >
           <div class="admin-emoji-list">
             <For each={emojis()}>
               {(e) => (
                 <div class="admin-emoji-item">
-                  <img src={e.url} alt={e.shortcode} class="admin-emoji-img" loading="lazy" />
+                  <img
+                    src={e.url}
+                    alt={e.shortcode}
+                    class="admin-emoji-img"
+                    loading="lazy"
+                  />
                   <div class="admin-emoji-info">
                     <strong>:{e.shortcode}:</strong>
-                    <Show when={e.category}><span class="admin-emoji-cat">{e.category}</span></Show>
-                    <Show when={e.license}><span class="admin-emoji-meta">{e.license}</span></Show>
-                    <Show when={e.author}><span class="admin-emoji-meta">{e.author}</span></Show>
+                    <Show when={e.category}>
+                      <span class="admin-emoji-cat">{e.category}</span>
+                    </Show>
+                    <Show when={e.license}>
+                      <span class="admin-emoji-meta">{e.license}</span>
+                    </Show>
+                    <Show when={e.author}>
+                      <span class="admin-emoji-meta">{e.author}</span>
+                    </Show>
                   </div>
-                  <button class="btn btn-small btn-danger" onClick={() => handleDelete(e.id)}>
+                  <button
+                    class="btn btn-small btn-danger"
+                    onClick={() => handleDelete(e.id)}
+                  >
                     {t("admin.remove")}
                   </button>
                 </div>
@@ -821,7 +1262,9 @@ function EmojiTab() {
       <div class="admin-remote-emoji-actions">
         <select
           value={remoteDomain()}
-          onChange={(e) => { setRemoteDomain(e.currentTarget.value); }}
+          onChange={(e) => {
+            setRemoteDomain(e.currentTarget.value);
+          }}
         >
           <option value="">{t("admin.allDomains")}</option>
           <For each={remoteDomains()}>
@@ -834,38 +1277,61 @@ function EmojiTab() {
           onInput={(e) => setRemoteSearch(e.currentTarget.value)}
           placeholder={t("admin.searchEmoji")}
         />
-        <button class="btn btn-small" onClick={loadRemote} disabled={remoteLoading()}>
+        <button
+          class="btn btn-small"
+          onClick={loadRemote}
+          disabled={remoteLoading()}
+        >
           {remoteLoading() ? t("common.loading") : t("admin.search")}
         </button>
       </div>
-      <Show when={remoteMsg()}><p class="settings-success">{remoteMsg()}</p></Show>
+      <Show when={remoteMsg()}>
+        <p class="settings-success">{remoteMsg()}</p>
+      </Show>
 
       <Show when={remoteEmojis().length > 0}>
         <div class="admin-emoji-list">
           <For each={remoteEmojis()}>
             {(e) => (
               <div class="admin-emoji-item">
-                <img src={e.url} alt={e.shortcode} class="admin-emoji-img" loading="lazy" />
+                <img
+                  src={e.url}
+                  alt={e.shortcode}
+                  class="admin-emoji-img"
+                  loading="lazy"
+                />
                 <div class="admin-emoji-info">
                   <strong>:{e.shortcode}:</strong>
                   <span class="admin-emoji-meta">@{e.domain}</span>
                   <Show when={e.copy_permission === "deny"}>
-                    <span class="admin-emoji-meta" style="color: var(--accent)">{t("admin.copyDenied")}</span>
+                    <span class="admin-emoji-meta" style="color: var(--accent)">
+                      {t("admin.copyDenied")}
+                    </span>
                   </Show>
                 </div>
                 <button
                   class="btn btn-small"
                   onClick={() => handleImportRemote(e.id)}
-                  disabled={importingId() === e.id || e.copy_permission === "deny"}
+                  disabled={
+                    importingId() === e.id || e.copy_permission === "deny"
+                  }
                 >
-                  {importingId() === e.id ? t("common.loading") : t("admin.importEmoji")}
+                  {importingId() === e.id
+                    ? t("common.loading")
+                    : t("admin.importEmoji")}
                 </button>
               </div>
             )}
           </For>
         </div>
       </Show>
-      <Show when={!remoteLoading() && remoteEmojis().length === 0 && remoteDomains().length > 0}>
+      <Show
+        when={
+          !remoteLoading() &&
+          remoteEmojis().length === 0 &&
+          remoteDomains().length > 0
+        }
+      >
         <p class="empty">{t("admin.noRemoteEmoji")}</p>
       </Show>
     </div>
@@ -881,7 +1347,9 @@ function ServerFilesTab() {
   let fileInput!: HTMLInputElement;
 
   const load = async () => {
-    try { setFiles(await getServerFiles()); } catch {}
+    try {
+      setFiles(await getServerFiles());
+    } catch {}
     setLoading(false);
   };
 
@@ -901,7 +1369,10 @@ function ServerFilesTab() {
 
   const handleDelete = async (id: string) => {
     if (!confirm(t("admin.confirmDeleteFile"))) return;
-    try { await deleteServerFile(id); await load(); } catch {}
+    try {
+      await deleteServerFile(id);
+      await load();
+    } catch {}
   };
 
   const copyUrl = (url: string) => {
@@ -920,30 +1391,57 @@ function ServerFilesTab() {
     <div class="settings-section">
       <h3>{t("admin.tabFiles")}</h3>
       <div class="admin-emoji-actions">
-        <button class="btn btn-small" onClick={() => fileInput.click()} disabled={uploading()}>
+        <button
+          class="btn btn-small"
+          onClick={() => fileInput.click()}
+          disabled={uploading()}
+        >
           {uploading() ? t("common.loading") : t("admin.uploadFile")}
         </button>
-        <input ref={fileInput} type="file" style="display:none" onChange={handleUpload} />
+        <input
+          ref={fileInput}
+          type="file"
+          style="display:none"
+          onChange={handleUpload}
+        />
       </div>
 
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
-        <Show when={files().length > 0} fallback={<p class="empty">{t("admin.noFiles")}</p>}>
+        <Show
+          when={files().length > 0}
+          fallback={<p class="empty">{t("admin.noFiles")}</p>}
+        >
           <div class="admin-file-list">
             <For each={files()}>
               {(f) => (
                 <div class="admin-file-item">
                   <Show when={f.mime_type.startsWith("image/")}>
-                    <img src={f.url} alt={f.filename} class="admin-file-thumb" loading="lazy" />
+                    <img
+                      src={f.url}
+                      alt={f.filename}
+                      class="admin-file-thumb"
+                      loading="lazy"
+                    />
                   </Show>
                   <div class="admin-file-info">
                     <strong>{f.filename}</strong>
-                    <span class="admin-file-meta">{formatSize(f.size_bytes)}</span>
+                    <span class="admin-file-meta">
+                      {formatSize(f.size_bytes)}
+                    </span>
                   </div>
                   <div class="admin-file-actions">
-                    <button class="btn btn-small" onClick={() => copyUrl(f.url)}>
-                      {copied() === f.url ? t("admin.copied") : t("admin.copyUrl")}
+                    <button
+                      class="btn btn-small"
+                      onClick={() => copyUrl(f.url)}
+                    >
+                      {copied() === f.url
+                        ? t("admin.copied")
+                        : t("admin.copyUrl")}
                     </button>
-                    <button class="btn btn-small btn-danger" onClick={() => handleDelete(f.id)}>
+                    <button
+                      class="btn btn-small btn-danger"
+                      onClick={() => handleDelete(f.id)}
+                    >
                       {t("admin.remove")}
                     </button>
                   </div>
@@ -965,7 +1463,9 @@ function InvitesTab() {
   const [copied, setCopied] = createSignal("");
 
   const load = async () => {
-    try { setInvites(await getInviteCodes()); } catch {}
+    try {
+      setInvites(await getInviteCodes());
+    } catch {}
     setLoading(false);
   };
 
@@ -982,7 +1482,10 @@ function InvitesTab() {
 
   const handleRevoke = async (code: string) => {
     if (!confirm(t("admin.confirmRevokeInvite"))) return;
-    try { await revokeInviteCode(code); await load(); } catch {}
+    try {
+      await revokeInviteCode(code);
+      await load();
+    } catch {}
   };
 
   const copyCode = (code: string) => {
@@ -994,20 +1497,32 @@ function InvitesTab() {
   return (
     <div class="settings-section">
       <h3>{t("admin.tabInvites")}</h3>
-      <button class="btn btn-small" onClick={handleCreate} disabled={creating()}>
+      <button
+        class="btn btn-small"
+        onClick={handleCreate}
+        disabled={creating()}
+      >
         {creating() ? t("common.loading") : t("admin.createInvite")}
       </button>
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
-        <Show when={invites().length > 0} fallback={<p class="empty">{t("admin.noInvites")}</p>}>
+        <Show
+          when={invites().length > 0}
+          fallback={<p class="empty">{t("admin.noInvites")}</p>}
+        >
           <div class="admin-invite-list">
             <For each={invites()}>
               {(inv) => (
                 <div class={`admin-invite-item${inv.used_by ? " used" : ""}`}>
                   <div class="admin-invite-info">
                     <code class="admin-invite-code">{inv.code}</code>
-                    <Show when={inv.used_by} fallback={
-                      <span class="admin-invite-unused">{t("admin.inviteUnused")}</span>
-                    }>
+                    <Show
+                      when={inv.used_by}
+                      fallback={
+                        <span class="admin-invite-unused">
+                          {t("admin.inviteUnused")}
+                        </span>
+                      }
+                    >
                       <span class="admin-invite-used">
                         {t("admin.inviteUsedBy")} @{inv.used_by}
                       </span>
@@ -1018,10 +1533,18 @@ function InvitesTab() {
                   </div>
                   <Show when={!inv.used_by}>
                     <div class="admin-invite-actions">
-                      <button class="btn btn-small" onClick={() => copyCode(inv.code)}>
-                        {copied() === inv.code ? t("admin.copied") : t("admin.copyUrl")}
+                      <button
+                        class="btn btn-small"
+                        onClick={() => copyCode(inv.code)}
+                      >
+                        {copied() === inv.code
+                          ? t("admin.copied")
+                          : t("admin.copyUrl")}
                       </button>
-                      <button class="btn btn-small btn-danger" onClick={() => handleRevoke(inv.code)}>
+                      <button
+                        class="btn btn-small btn-danger"
+                        onClick={() => handleRevoke(inv.code)}
+                      >
                         {t("admin.remove")}
                       </button>
                     </div>
@@ -1116,7 +1639,10 @@ function FederationTab() {
   };
 
   const deliveryRate = (s: FederatedServer) => {
-    const t = s.delivery_stats.success + s.delivery_stats.failure + s.delivery_stats.dead;
+    const t =
+      s.delivery_stats.success +
+      s.delivery_stats.failure +
+      s.delivery_stats.dead;
     if (t === 0) return "-";
     return Math.round((s.delivery_stats.success / t) * 100) + "%";
   };
@@ -1189,16 +1715,23 @@ function FederationTab() {
               <thead>
                 <tr>
                   <th class="sortable" onClick={() => handleSort("domain")}>
-                    {t("admin.federationDomain")}{sortIndicator("domain")}
+                    {t("admin.federationDomain")}
+                    {sortIndicator("domain")}
                   </th>
                   <th class="sortable" onClick={() => handleSort("user_count")}>
-                    {t("admin.federationUsers")}{sortIndicator("user_count")}
+                    {t("admin.federationUsers")}
+                    {sortIndicator("user_count")}
                   </th>
                   <th class="sortable" onClick={() => handleSort("note_count")}>
-                    {t("admin.federationNotes")}{sortIndicator("note_count")}
+                    {t("admin.federationNotes")}
+                    {sortIndicator("note_count")}
                   </th>
-                  <th class="sortable" onClick={() => handleSort("last_activity")}>
-                    {t("admin.federationLastActivity")}{sortIndicator("last_activity")}
+                  <th
+                    class="sortable"
+                    onClick={() => handleSort("last_activity")}
+                  >
+                    {t("admin.federationLastActivity")}
+                    {sortIndicator("last_activity")}
                   </th>
                   <th>{t("admin.federationStatus")}</th>
                   <th>{t("admin.federationDelivery")}</th>
@@ -1269,16 +1802,20 @@ function FederationTab() {
                                     </div>
                                     <Show when={d().first_seen_at}>
                                       <p class="admin-federation-meta">
-                                        {t("admin.federationFirstSeen")}: {formatDate(d().first_seen_at)}
+                                        {t("admin.federationFirstSeen")}:{" "}
+                                        {formatDate(d().first_seen_at)}
                                       </p>
                                     </Show>
                                     <Show when={d().block_reason}>
                                       <p class="admin-federation-meta">
-                                        {t("admin.federationBlockReason")}: {d().block_reason}
+                                        {t("admin.federationBlockReason")}:{" "}
+                                        {d().block_reason}
                                       </p>
                                     </Show>
                                     <Show when={d().recent_actors.length > 0}>
-                                      <h4>{t("admin.federationRecentActors")}</h4>
+                                      <h4>
+                                        {t("admin.federationRecentActors")}
+                                      </h4>
                                       <div class="admin-federation-actors">
                                         <For each={d().recent_actors}>
                                           {(a) => (
@@ -1313,7 +1850,10 @@ function FederationTab() {
               <button
                 class="btn btn-small"
                 disabled={currentPage() <= 1}
-                onClick={() => { setOffset(offset() - limit); load(); }}
+                onClick={() => {
+                  setOffset(offset() - limit);
+                  load();
+                }}
               >
                 \u2190
               </button>
@@ -1323,13 +1863,446 @@ function FederationTab() {
               <button
                 class="btn btn-small"
                 disabled={currentPage() >= totalPages()}
-                onClick={() => { setOffset(offset() + limit); load(); }}
+                onClick={() => {
+                  setOffset(offset() + limit);
+                  load();
+                }}
               >
                 \u2192
               </button>
             </div>
           </Show>
         </Show>
+      </Show>
+    </div>
+  );
+}
+
+function QueueTab() {
+  const { t } = useI18n();
+  const [stats, setStats] = createSignal<QueueStats | null>(null);
+  const [jobs, setJobs] = createSignal<QueueJob[]>([]);
+  const [jobTotal, setJobTotal] = createSignal(0);
+  const [statusFilter, setStatusFilter] = createSignal("");
+  const [domainFilter, setDomainFilter] = createSignal("");
+  const [jobOffset, setJobOffset] = createSignal(0);
+  const [loading, setLoading] = createSignal(false);
+  const [message, setMessage] = createSignal("");
+  const jobLimit = 20;
+
+  const loadStats = async () => {
+    try {
+      setStats(await getQueueStats());
+    } catch {}
+  };
+
+  const loadJobs = async () => {
+    setLoading(true);
+    try {
+      const res = await getQueueJobs({
+        status: statusFilter() || undefined,
+        domain: domainFilter() || undefined,
+        limit: jobLimit,
+        offset: jobOffset(),
+      });
+      setJobs(res.jobs);
+      setJobTotal(res.total);
+    } catch {}
+    setLoading(false);
+  };
+
+  const load = () => {
+    loadStats();
+    loadJobs();
+  };
+
+  // 自動更新: 15秒ごと
+  let interval: ReturnType<typeof setInterval>;
+  onMount(() => {
+    load();
+    interval = setInterval(load, 15000);
+  });
+  onCleanup(() => clearInterval(interval));
+
+  const handleRetry = async (jobId: string) => {
+    try {
+      await retryQueueJob(jobId);
+      load();
+    } catch {}
+  };
+
+  const handleRetryAll = async () => {
+    if (!confirm(t("admin.queueConfirmRetryAll"))) return;
+    try {
+      const res = await retryAllDeadJobs(domainFilter() || undefined);
+      setMessage(
+        t("admin.queueRetried").replace("{count}", String(res.retried)),
+      );
+      load();
+    } catch {}
+  };
+
+  const handlePurge = async () => {
+    if (!confirm(t("admin.queueConfirmPurge"))) return;
+    try {
+      const res = await purgeDeliveredJobs();
+      setMessage(t("admin.queuePurged").replace("{count}", String(res.purged)));
+      load();
+    } catch {}
+  };
+
+  const totalJobPages = () => Math.max(1, Math.ceil(jobTotal() / jobLimit));
+  const currentJobPage = () => Math.floor(jobOffset() / jobLimit) + 1;
+
+  const truncateUrl = (url: string) => {
+    try {
+      const u = new URL(url);
+      return (
+        u.host + u.pathname.slice(0, 30) + (u.pathname.length > 30 ? "..." : "")
+      );
+    } catch {
+      return url.slice(0, 50);
+    }
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.tabQueue")}</h3>
+
+      <Show when={stats()} fallback={<p>{t("common.loading")}</p>}>
+        {(s) => (
+          <>
+            <div class="admin-queue-stats">
+              <div class="admin-queue-stat-card pending">
+                <span class="admin-queue-stat-num">{s().pending}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queuePending")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card processing">
+                <span class="admin-queue-stat-num">{s().processing}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueProcessing")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card delivered">
+                <span class="admin-queue-stat-num">{s().delivered}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueDelivered")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card dead">
+                <span class="admin-queue-stat-num">{s().dead}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueDead")}
+                </span>
+              </div>
+            </div>
+            <div class="admin-queue-stats admin-queue-stats-sub">
+              <div class="admin-queue-stat-card total">
+                <span class="admin-queue-stat-num">{s().total}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueTotal")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card recent">
+                <span class="admin-queue-stat-num">{s().recent_delivered}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueRecentDelivered")}
+                </span>
+              </div>
+              <div class="admin-queue-stat-card recent-dead">
+                <span class="admin-queue-stat-num">{s().recent_dead}</span>
+                <span class="admin-queue-stat-label">
+                  {t("admin.queueRecentDead")}
+                </span>
+              </div>
+            </div>
+          </>
+        )}
+      </Show>
+
+      <div class="admin-queue-controls">
+        <h4>{t("admin.queueJobs")}</h4>
+        <div class="admin-queue-filters">
+          <select
+            value={statusFilter()}
+            onChange={(e) => {
+              setStatusFilter(e.currentTarget.value);
+              setJobOffset(0);
+              loadJobs();
+            }}
+          >
+            <option value="">{t("admin.queueAllStatuses")}</option>
+            <option value="pending">{t("admin.queuePending")}</option>
+            <option value="processing">{t("admin.queueProcessing")}</option>
+            <option value="delivered">{t("admin.queueDelivered")}</option>
+            <option value="dead">{t("admin.queueDead")}</option>
+          </select>
+          <input
+            type="text"
+            placeholder="Domain"
+            value={domainFilter()}
+            onInput={(e) => setDomainFilter(e.currentTarget.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") {
+                setJobOffset(0);
+                loadJobs();
+              }
+            }}
+          />
+          <button class="btn btn-small" onClick={handleRetryAll}>
+            {t("admin.queueRetryAll")}
+          </button>
+          <button class="btn btn-small btn-danger" onClick={handlePurge}>
+            {t("admin.queuePurge")}
+          </button>
+        </div>
+      </div>
+
+      <Show when={message()}>
+        <p class="success-message">{message()}</p>
+      </Show>
+
+      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+        <Show
+          when={jobs().length > 0}
+          fallback={<p class="empty-state">{t("admin.queueNoJobs")}</p>}
+        >
+          <div class="admin-queue-table-wrap">
+            <table class="admin-queue-table">
+              <thead>
+                <tr>
+                  <th>{t("admin.queueTarget")}</th>
+                  <th>{t("common.status")}</th>
+                  <th>{t("admin.queueAttempts")}</th>
+                  <th>{t("admin.queueError")}</th>
+                  <th>{t("admin.queueCreated")}</th>
+                  <th></th>
+                </tr>
+              </thead>
+              <tbody>
+                <For each={jobs()}>
+                  {(job) => (
+                    <tr class={`admin-queue-row ${job.status}`}>
+                      <td
+                        class="admin-queue-target"
+                        title={job.target_inbox_url}
+                      >
+                        {truncateUrl(job.target_inbox_url)}
+                      </td>
+                      <td>
+                        <span class={`admin-queue-badge ${job.status}`}>
+                          {job.status}
+                        </span>
+                      </td>
+                      <td>
+                        {job.attempts}/{job.max_attempts}
+                      </td>
+                      <td
+                        class="admin-queue-error"
+                        title={job.error_message || ""}
+                      >
+                        {job.error_message
+                          ? job.error_message.slice(0, 60) +
+                            (job.error_message.length > 60 ? "..." : "")
+                          : "-"}
+                      </td>
+                      <td>{new Date(job.created_at).toLocaleString()}</td>
+                      <td>
+                        <Show when={job.status === "dead"}>
+                          <button
+                            class="btn btn-small"
+                            onClick={() => handleRetry(job.id)}
+                          >
+                            {t("admin.queueRetry")}
+                          </button>
+                        </Show>
+                      </td>
+                    </tr>
+                  )}
+                </For>
+              </tbody>
+            </table>
+          </div>
+
+          <Show when={totalJobPages() > 1}>
+            <div class="admin-queue-pagination">
+              <button
+                class="btn btn-small"
+                disabled={currentJobPage() <= 1}
+                onClick={() => {
+                  setJobOffset(jobOffset() - jobLimit);
+                  loadJobs();
+                }}
+              >
+                &larr;
+              </button>
+              <span>
+                {currentJobPage()} / {totalJobPages()}
+              </span>
+              <button
+                class="btn btn-small"
+                disabled={currentJobPage() >= totalJobPages()}
+                onClick={() => {
+                  setJobOffset(jobOffset() + jobLimit);
+                  loadJobs();
+                }}
+              >
+                &rarr;
+              </button>
+            </div>
+          </Show>
+        </Show>
+      </Show>
+    </div>
+  );
+}
+
+function SystemTab() {
+  const { t } = useI18n();
+  const [stats, setStats] = createSignal<SystemStats | null>(null);
+
+  const load = async () => {
+    try {
+      setStats(await getSystemStats());
+    } catch {}
+  };
+
+  // 自動更新: 10秒ごと
+  let interval: ReturnType<typeof setInterval>;
+  onMount(() => {
+    load();
+    interval = setInterval(load, 10000);
+  });
+  onCleanup(() => clearInterval(interval));
+
+  const formatUptime = (seconds: number) => {
+    const d = Math.floor(seconds / 86400);
+    const h = Math.floor((seconds % 86400) / 3600);
+    const m = Math.floor((seconds % 3600) / 60);
+    if (d > 0) return `${d}d ${h}h ${m}m`;
+    if (h > 0) return `${h}h ${m}m`;
+    return `${m}m`;
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.tabSystem")}</h3>
+
+      <Show when={stats()} fallback={<p>{t("common.loading")}</p>}>
+        {(s) => (
+          <div class="admin-system-grid">
+            <div class="admin-system-card card-db">
+              <h4>{t("admin.systemDatabase")}</h4>
+              <div class="admin-system-rows">
+                <div class="admin-system-row">
+                  <span>{t("admin.systemPoolSize")}</span>
+                  <strong>{s().db_pool_size}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemPoolCheckedIn")}</span>
+                  <strong>{s().db_pool_checked_in}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemPoolCheckedOut")}</span>
+                  <strong>{s().db_pool_checked_out}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemPoolOverflow")}</span>
+                  <strong>{s().db_pool_overflow}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-system-card card-valkey">
+              <h4>{t("admin.systemValkey")}</h4>
+              <div class="admin-system-rows">
+                <div class="admin-system-row">
+                  <span>{t("admin.systemClients")}</span>
+                  <strong>{s().valkey_connected_clients}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemMemory")}</span>
+                  <strong>{s().valkey_used_memory_human}</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemKeys")}</span>
+                  <strong>{s().valkey_total_keys}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-system-card card-server">
+              <h4>{t("admin.systemServer")}</h4>
+              <div class="admin-system-rows">
+                <div class="admin-system-row">
+                  <span>{t("admin.systemLoadAvg")}</span>
+                  <strong>
+                    {s().load_avg_1m.toFixed(2)} / {s().load_avg_5m.toFixed(2)}{" "}
+                    / {s().load_avg_15m.toFixed(2)}
+                  </strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemMemTotal")}</span>
+                  <strong>{s().memory_total_mb} MB</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemMemAvailable")}</span>
+                  <strong>{s().memory_available_mb} MB</strong>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemMemPercent")}</span>
+                  <div class="admin-system-progress-wrap">
+                    <span
+                      class={`admin-system-usage ${s().memory_percent > 90 ? "critical" : s().memory_percent > 70 ? "warning" : "ok"}`}
+                    >
+                      <strong>{s().memory_percent.toFixed(1)}%</strong>
+                    </span>
+                    <div class="admin-system-progress">
+                      <div
+                        class={`admin-system-progress-bar ${s().memory_percent > 90 ? "critical" : s().memory_percent > 70 ? "warning" : "ok"}`}
+                        style={{
+                          width: `${Math.min(100, s().memory_percent)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
+                </div>
+                <div class="admin-system-row">
+                  <span>{t("admin.systemUptime")}</span>
+                  <strong>{formatUptime(s().uptime_seconds)}</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="admin-system-card card-worker">
+              <h4>{t("admin.systemWorker")}</h4>
+              <div class="admin-system-rows">
+                <div class="admin-system-row">
+                  <span>{t("common.status")}</span>
+                  <strong>
+                    <span
+                      class={`admin-system-worker-status ${s().worker_alive ? "alive" : "dead"}`}
+                    >
+                      {s().worker_alive
+                        ? t("admin.systemWorkerAlive")
+                        : t("admin.systemWorkerDead")}
+                    </span>
+                  </strong>
+                </div>
+                <Show when={s().worker_last_heartbeat}>
+                  <div class="admin-system-row">
+                    <span>{t("admin.systemLastHeartbeat")}</span>
+                    <strong>
+                      {new Date(s().worker_last_heartbeat!).toLocaleString()}
+                    </strong>
+                  </div>
+                </Show>
+              </div>
+            </div>
+          </div>
+        )}
       </Show>
     </div>
   );

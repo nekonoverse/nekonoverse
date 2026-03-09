@@ -7,6 +7,7 @@ export interface NoteActor {
   avatar_url: string | null;
   ap_id: string;
   domain: string | null;
+  emojis: CustomEmoji[];
 }
 
 export interface ReactionSummary {

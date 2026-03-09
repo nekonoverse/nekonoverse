@@ -113,27 +113,54 @@ async def note_to_response(
             if loaded_quote:
                 quote = await note_to_response(loaded_quote, db=db)
 
-    # Resolve custom emoji from content
+    # Resolve custom emoji from content and display_name
     emojis: list[CustomEmojiInfo] = []
-    if db and note.content:
-        shortcodes = set(_SHORTCODE_RE.findall(note.content))
-        if shortcodes:
+    actor_emojis: list[CustomEmojiInfo] = []
+    if db:
+        domain = actor.domain
+        # Collect shortcodes from note content
+        content_shortcodes = set()
+        if note.content:
+            content_shortcodes = set(_SHORTCODE_RE.findall(note.content))
+        # Collect shortcodes from actor display_name
+        actor_shortcodes = set()
+        if actor.display_name:
+            actor_shortcodes = set(_SHORTCODE_RE.findall(actor.display_name))
+        # Resolve all shortcodes together to minimize DB queries
+        all_shortcodes = content_shortcodes | actor_shortcodes
+        if all_shortcodes:
             from app.services.emoji_service import get_emojis_by_shortcodes
 
-            domain = actor.domain
-            emoji_list = await get_emojis_by_shortcodes(db, shortcodes, domain)
+            emoji_list = await get_emojis_by_shortcodes(
+                db, all_shortcodes, domain,
+            )
             if domain is not None:
                 found = {e.shortcode for e in emoji_list}
-                missing = shortcodes - found
+                missing = all_shortcodes - found
                 if missing:
-                    local_emojis = await get_emojis_by_shortcodes(db, missing, None)
+                    local_emojis = await get_emojis_by_shortcodes(
+                        db, missing, None,
+                    )
                     emoji_list.extend(local_emojis)
+            emoji_map: dict[str, CustomEmojiInfo] = {}
             for emoji in emoji_list:
                 url = media_proxy_url(emoji.url)
-                static = media_proxy_url(emoji.static_url) if emoji.static_url else url
-                emojis.append(CustomEmojiInfo(
+                static = (
+                    media_proxy_url(emoji.static_url)
+                    if emoji.static_url else url
+                )
+                info = CustomEmojiInfo(
                     shortcode=emoji.shortcode, url=url, static_url=static,
-                ))
+                )
+                emoji_map[emoji.shortcode] = info
+            emojis = [
+                emoji_map[sc] for sc in content_shortcodes
+                if sc in emoji_map
+            ]
+            actor_emojis = [
+                emoji_map[sc] for sc in actor_shortcodes
+                if sc in emoji_map
+            ]
 
     # Resolve hashtags
     tags: list[TagInfo] = []
@@ -179,6 +206,7 @@ async def note_to_response(
             avatar_url=media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
             ap_id=actor.ap_id,
             domain=actor.domain,
+            emojis=actor_emojis,
         ),
         reactions=[ReactionSummary(**r) for r in (reactions or [])],
         reblog=reblog,

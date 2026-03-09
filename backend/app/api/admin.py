@@ -26,10 +26,14 @@ from app.schemas.admin import (
     ImportByShortcodeRequest,
     ModerationActionRequest,
     ModerationLogResponse,
+    QueueJobListResponse,
+    QueueJobResponse,
+    QueueStatsResponse,
     ReportResponse,
     RoleChangeRequest,
     ServerSettingsResponse,
     ServerSettingsUpdate,
+    SystemStatsResponse,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -947,6 +951,158 @@ async def delete_server_file_endpoint(
     await delete_drive_file(db, drive_file)
     await db.commit()
     return {"ok": True}
+
+
+# --- Queue Management ---
+
+
+@router.get("/queue/stats", response_model=QueueStatsResponse)
+async def get_queue_stats(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import get_queue_stats
+
+    return await get_queue_stats(db)
+
+
+@router.get("/queue/jobs", response_model=QueueJobListResponse)
+async def list_queue_jobs(
+    status: str | None = Query(None),
+    domain: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import get_queue_jobs
+
+    jobs, total = await get_queue_jobs(db, status, domain, limit, offset)
+    return QueueJobListResponse(
+        jobs=[QueueJobResponse.model_validate(j) for j in jobs],
+        total=total,
+    )
+
+
+@router.post("/queue/retry/{job_id}")
+async def retry_queue_job(
+    job_id: uuid.UUID,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import retry_job
+
+    success = await retry_job(db, job_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Job not found or not dead")
+    return {"ok": True}
+
+
+@router.post("/queue/retry-all")
+async def retry_all_dead_jobs(
+    domain: str | None = Query(None),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import retry_all_dead
+
+    count = await retry_all_dead(db, domain)
+    return {"ok": True, "retried": count}
+
+
+@router.delete("/queue/purge")
+async def purge_delivered_jobs(
+    older_than_hours: int = Query(24, ge=1),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import purge_delivered
+
+    count = await purge_delivered(db, older_than_hours)
+    return {"ok": True, "purged": count}
+
+
+# --- System Stats ---
+
+
+@router.get("/system/stats", response_model=SystemStatsResponse)
+async def get_system_stats(
+    user: User = Depends(get_admin_user),
+):
+    from app.database import engine
+    from app.valkey_client import valkey
+
+    data: dict = {}
+
+    # DB pool stats
+    pool = engine.pool
+    data["db_pool_size"] = pool.size()
+    data["db_pool_checked_in"] = pool.checkedin()
+    data["db_pool_checked_out"] = pool.checkedout()
+    data["db_pool_overflow"] = pool.overflow()
+
+    # Valkey stats
+    try:
+        info = await valkey.info()
+        data["valkey_connected_clients"] = info.get("connected_clients", 0)
+        data["valkey_used_memory_human"] = info.get("used_memory_human", "")
+        # キーの合計数
+        total_keys = 0
+        for key, val in info.items():
+            if key.startswith("db") and isinstance(val, dict):
+                total_keys += val.get("keys", 0)
+        data["valkey_total_keys"] = total_keys
+    except Exception:
+        pass
+
+    # System stats (/proc読み取り)
+    try:
+        with open("/proc/loadavg") as f:
+            parts = f.read().split()
+            data["load_avg_1m"] = float(parts[0])
+            data["load_avg_5m"] = float(parts[1])
+            data["load_avg_15m"] = float(parts[2])
+    except Exception:
+        pass
+
+    try:
+        with open("/proc/meminfo") as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    key = parts[0].strip()
+                    val = parts[1].strip().split()[0]
+                    meminfo[key] = int(val)
+            total_kb = meminfo.get("MemTotal", 0)
+            available_kb = meminfo.get("MemAvailable", 0)
+            data["memory_total_mb"] = total_kb // 1024
+            data["memory_available_mb"] = available_kb // 1024
+            if total_kb > 0:
+                data["memory_percent"] = round(
+                    (1 - available_kb / total_kb) * 100, 1
+                )
+    except Exception:
+        pass
+
+    try:
+        with open("/proc/uptime") as f:
+            data["uptime_seconds"] = float(f.read().split()[0])
+    except Exception:
+        pass
+
+    # Worker heartbeat
+    try:
+        heartbeat = await valkey.get("worker:heartbeat")
+        if heartbeat:
+            data["worker_alive"] = True
+            data["worker_last_heartbeat"] = heartbeat
+        else:
+            data["worker_alive"] = False
+    except Exception:
+        pass
+
+    return SystemStatsResponse(**data)
 
 
 # --- Helpers ---

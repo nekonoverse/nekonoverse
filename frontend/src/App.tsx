@@ -3,7 +3,11 @@ import { lazy, onMount, onCleanup, type ParentProps } from "solid-js";
 import { I18nProvider } from "./i18n";
 import { initTheme } from "./stores/theme";
 import { fetchCurrentUser } from "./stores/auth";
-import { fetchInstance, checkClientVersion, startVersionPolling } from "./stores/instance";
+import {
+  fetchInstance,
+  checkClientVersion,
+  startVersionPolling,
+} from "./stores/instance";
 import Navbar from "./components/layout/Navbar";
 import SwipeBack from "./components/SwipeBack";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";
@@ -51,9 +55,9 @@ export default function App() {
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
-        <Route path="/settings" component={Settings} />
+        <Route path="/settings/*section" component={Settings} />
         <Route path="/notifications" component={Notifications} />
-        <Route path="/admin" component={Admin} />
+        <Route path="/admin/*section" component={Admin} />
         <Route path="/drive" component={Drive} />
         <Route path="/bookmarks" component={Bookmarks} />
         <Route path="/search" component={Search} />
