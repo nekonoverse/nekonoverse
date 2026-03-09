@@ -190,7 +190,7 @@ export default function ReactionBar(props: Props) {
                     >
                       <img
                         class="reacted-by-avatar"
-                        src={ru.actor.avatar_url || {defaultAvatar()}}
+                        src={ru.actor.avatar_url || defaultAvatar()}
                         alt=""
                       />
                       <div class="reacted-by-names">

@@ -145,7 +145,7 @@ export default function Navbar() {
               <>
                 <div class="navbar-user-menu">
                   <img
-                    src={user().avatar_url || {defaultAvatar()}}
+                    src={user().avatar_url || defaultAvatar()}
                     alt={user().username}
                     class="navbar-avatar"
                     onClick={() => setMenuOpen(!menuOpen())}

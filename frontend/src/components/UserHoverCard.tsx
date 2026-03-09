@@ -215,7 +215,7 @@ export default function UserHoverCard(props: Props) {
                     <a href={`/@${acc.acct}`} class="hover-card-avatar-link">
                       <img
                         class="hover-card-avatar"
-                        src={acc.avatar || {defaultAvatar()}}
+                        src={acc.avatar || defaultAvatar()}
                         alt=""
                       />
                     </a>

@@ -118,7 +118,7 @@ export default function FollowList() {
                       <A href={`/@${acc.acct}`} class="follow-list-item-link">
                         <img
                           class="follow-list-avatar"
-                          src={acc.avatar || {defaultAvatar()}}
+                          src={acc.avatar || defaultAvatar()}
                           alt=""
                         />
                         <div class="follow-list-item-info">
