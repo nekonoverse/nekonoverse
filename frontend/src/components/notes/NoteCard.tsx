@@ -306,7 +306,6 @@ export default function NoteCard(props: Props) {
             </UserHoverCard>
           </div>
           <div class="note-header-right">
-            <span class="note-time">{formatTime(note().published)}</span>
             <Show when={currentUser()}>
               <div class="note-more-menu">
                 <button
@@ -426,6 +425,9 @@ export default function NoteCard(props: Props) {
             ))}
           </div>
         </Show>
+        <div class="note-footer">
+          <span class="note-time">{formatTime(note().published)}</span>
+        </div>
       </div>
     </div>
   );

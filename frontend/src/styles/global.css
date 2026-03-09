@@ -731,11 +731,15 @@ a:hover {
   color: var(--text-secondary);
 }
 
+.note-footer {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 .note-time {
   font-size: 0.75em;
   color: var(--text-secondary);
-  margin-left: auto;
-  flex-shrink: 0;
 }
 
 .note-content {
