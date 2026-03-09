@@ -15,6 +15,8 @@ from app.schemas.note import (
     CustomEmojiInfo,
     NoteActorResponse,
     NoteCreateRequest,
+    NoteEditHistoryEntry,
+    NoteEditRequest,
     NoteMediaAttachment,
     NoteResponse,
     ReactionSummary,
@@ -151,6 +153,10 @@ async def note_to_response(
         if parent_note:
             in_reply_to_account_id = parent_note.actor_id
 
+    edited_at = None
+    if note.updated_at:
+        edited_at = note.updated_at.isoformat()
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -160,6 +166,7 @@ async def note_to_response(
         sensitive=note.sensitive,
         spoiler_text=note.spoiler_text,
         published=note.published,
+        edited_at=edited_at,
         replies_count=note.replies_count,
         reactions_count=note.reactions_count,
         renotes_count=note.renotes_count,
@@ -229,6 +236,101 @@ async def get_status(
 
     reactions = await get_reaction_summary(db, note.id, actor_id)
     return await note_to_response(note, reactions, db=db)
+
+
+@router.put("/{note_id}", response_model=NoteResponse)
+async def edit_status(
+    note_id: uuid.UUID,
+    body: NoteEditRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if note.actor_id != user.actor_id:
+        raise HTTPException(status_code=403, detail="Not your note")
+
+    # Save current state as edit history
+    from app.models.note_edit import NoteEdit
+
+    edit_record = NoteEdit(
+        note_id=note.id,
+        content=note.content,
+        source=note.source,
+        spoiler_text=note.spoiler_text,
+    )
+    db.add(edit_record)
+
+    # Update the note
+    from app.utils.sanitize import text_to_html
+
+    note.content = text_to_html(body.content)
+    note.source = body.content
+    note.spoiler_text = body.spoiler_text
+    note.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    # Deliver AP Update to followers
+    from app.activitypub.renderer import render_note, render_update_activity
+    from app.services.delivery_service import enqueue_delivery
+    from app.services.follow_service import get_follower_inboxes
+
+    actor = user.actor
+    note_data = render_note(note)
+    update_activity = render_update_activity(
+        activity_id=f"{note.ap_id}/update/{int(note.updated_at.timestamp())}",
+        actor_ap_id=actor_uri(actor),
+        object_data=note_data,
+    )
+    inboxes = await get_follower_inboxes(db, actor.id)
+    for inbox_url in inboxes:
+        await enqueue_delivery(db, actor.id, inbox_url, update_activity)
+
+    # Reload note for response
+    note = await get_note_by_id(db, note_id)
+    return await note_to_response(note, db=db)
+
+
+@router.get("/{note_id}/history", response_model=list[NoteEditHistoryEntry])
+async def get_status_history(
+    note_id: uuid.UUID,
+    db: AsyncSession = Depends(get_db),
+):
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    from app.models.note_edit import NoteEdit
+
+    result = await db.execute(
+        select(NoteEdit)
+        .where(NoteEdit.note_id == note.id)
+        .order_by(NoteEdit.created_at.asc())
+    )
+    edits = result.scalars().all()
+
+    # Build history: past edits + current state
+    history = [
+        NoteEditHistoryEntry(
+            content=e.content,
+            source=e.source,
+            spoiler_text=e.spoiler_text,
+            created_at=e.created_at,
+        )
+        for e in edits
+    ]
+    # Append current version
+    history.append(
+        NoteEditHistoryEntry(
+            content=note.content,
+            source=note.source,
+            spoiler_text=note.spoiler_text,
+            created_at=note.updated_at or note.published,
+        )
+    )
+    return history
 
 
 @router.get("/{note_id}/context", response_model=ContextResponse)

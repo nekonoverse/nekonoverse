@@ -752,6 +752,79 @@ a:hover {
   color: var(--accent);
 }
 
+/* Note editing */
+.note-edit-form {
+  margin-top: 4px;
+}
+
+.note-edit-textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 10px;
+  font-size: 0.95em;
+  font-family: inherit;
+  line-height: 1.5;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  resize: vertical;
+}
+
+.note-edit-textarea:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.note-edit-actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.note-edit-save-btn {
+  background: var(--accent);
+  color: var(--accent-text);
+  border: none;
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85em;
+  font-weight: 600;
+}
+
+.note-edit-save-btn:hover {
+  background: var(--accent-hover);
+}
+
+.note-edit-save-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.note-edit-cancel-btn {
+  background: none;
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  padding: 6px 16px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
+.note-edit-cancel-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+/* Edited label */
+.note-edited-label {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  font-style: italic;
+  margin-right: 8px;
+}
+
 /* Note media */
 .note-media {
   display: grid;

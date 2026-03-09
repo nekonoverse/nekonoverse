@@ -138,6 +138,8 @@ def render_note(note: Note) -> dict:
         "url": f"{settings.server_url}/notes/{note.id}",
     }
 
+    if getattr(note, "updated_at", None):
+        data["updated"] = _iso_z(note.updated_at)
     if note.source:
         data["source"] = {"content": note.source, "mediaType": "text/plain"}
         data["_misskey_content"] = note.source

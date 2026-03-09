@@ -63,6 +63,7 @@ export interface Note {
   sensitive: boolean;
   spoiler_text: string | null;
   published: string;
+  edited_at: string | null;
   replies_count: number;
   reactions_count: number;
   renotes_count: number;
@@ -82,6 +83,13 @@ export interface Note {
 export interface NoteContext {
   ancestors: Note[];
   descendants: Note[];
+}
+
+export interface NoteEditHistoryEntry {
+  content: string;
+  source: string | null;
+  spoiler_text: string | null;
+  created_at: string;
 }
 
 export async function uploadMedia(file: File, description?: string): Promise<MediaAttachment> {
@@ -236,4 +244,19 @@ export interface TrendingTag {
 
 export async function getTrendingTags(limit = 10): Promise<TrendingTag[]> {
   return apiRequest<TrendingTag[]>(`/api/v1/trends/tags?limit=${limit}`);
+}
+
+export async function editNote(
+  noteId: string,
+  content: string,
+  spoilerText?: string | null,
+): Promise<Note> {
+  return apiRequest<Note>(`/api/v1/statuses/${noteId}`, {
+    method: "PUT",
+    body: { content, spoiler_text: spoilerText ?? null },
+  });
+}
+
+export async function getNoteHistory(noteId: string): Promise<NoteEditHistoryEntry[]> {
+  return apiRequest<NoteEditHistoryEntry[]>(`/api/v1/statuses/${noteId}/history`);
 }

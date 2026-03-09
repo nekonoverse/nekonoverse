@@ -10,6 +10,7 @@ from app.models.invitation_code import InvitationCode
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
 from app.models.note_attachment import NoteAttachment
+from app.models.note_edit import NoteEdit
 from app.models.notification import Notification
 from app.models.pinned_note import PinnedNote
 from app.models.poll_vote import PollVote
@@ -35,6 +36,7 @@ __all__ = [
     "ModerationLog",
     "Note",
     "NoteAttachment",
+    "NoteEdit",
     "NoteHashtag",
     "Notification",
     "PinnedNote",
