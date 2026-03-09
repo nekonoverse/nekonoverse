@@ -52,7 +52,11 @@ function QuoteEmbed(props: { note: Note }) {
           alt=""
         />
         <a href={profileUrl(props.note.actor)} class="note-quote-name">
-          <strong>{props.note.actor.display_name || props.note.actor.username}</strong>
+          <strong ref={(el) => {
+            el.textContent = props.note.actor.display_name || props.note.actor.username;
+            emojify(el, props.note.actor.emojis || []);
+            twemojify(el);
+          }} />
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
       </div>
@@ -340,9 +344,11 @@ export default function NoteCard(props: Props) {
           </svg>
         </div>
         <div class="note-reblog-indicator">
-          <a href={profileUrl(props.note.actor)}>
-            {props.note.actor.display_name || props.note.actor.username}
-          </a>
+          <a href={profileUrl(props.note.actor)} ref={(el) => {
+            el.textContent = props.note.actor.display_name || props.note.actor.username;
+            emojify(el, props.note.actor.emojis || []);
+            twemojify(el);
+          }} />
           {" "}{t("boost.boosted")}
         </div>
       </Show>
@@ -369,9 +375,11 @@ export default function NoteCard(props: Props) {
           <div class="note-header-text">
             <UserHoverCard actorId={note().actor.id}>
               <a href={profileUrl(note().actor)} class="note-display-name-link" onClick={(e) => e.preventDefault()}>
-                <strong class="note-display-name">
-                  {note().actor.display_name || note().actor.username}
-                </strong>
+                <strong class="note-display-name" ref={(el) => {
+                  el.textContent = note().actor.display_name || note().actor.username;
+                  emojify(el, note().actor.emojis || []);
+                  twemojify(el);
+                }} />
               </a>
             </UserHoverCard>
           </div>
