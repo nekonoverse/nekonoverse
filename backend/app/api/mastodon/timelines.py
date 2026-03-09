@@ -6,9 +6,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.user import User
 from app.schemas.note import NoteResponse
-from app.services.note_service import get_home_timeline, get_public_timeline, get_reaction_summary
+from app.services.note_service import (
+    get_home_timeline,
+    get_public_timeline,
+    get_reaction_summaries,
+)
 
-from .statuses import note_to_response
+from .statuses import notes_to_responses
 
 router = APIRouter(prefix="/api/v1/timelines", tags=["timelines"])
 
@@ -32,12 +36,12 @@ async def public_timeline(
 ):
     actor_id = user.actor_id if user else None
     notes = await get_public_timeline(
-        db, limit=limit, max_id=max_id, local_only=local, current_actor_id=actor_id
+        db, limit=limit, max_id=max_id, local_only=local,
+        current_actor_id=actor_id,
     )
-    result = []
-    for n in notes:
-        reactions = await get_reaction_summary(db, n.id, actor_id)
-        result.append(await note_to_response(n, reactions, db=db))
+    note_ids = [n.id for n in notes]
+    reactions_map = await get_reaction_summaries(db, note_ids, actor_id)
+    result = await notes_to_responses(notes, reactions_map, db)
     return _deduplicate_timeline(result)
 
 
@@ -49,10 +53,11 @@ async def home_timeline(
     db: AsyncSession = Depends(get_db),
 ):
     notes = await get_home_timeline(db, user=user, limit=limit, max_id=max_id)
-    result = []
-    for n in notes:
-        reactions = await get_reaction_summary(db, n.id, user.actor_id)
-        result.append(await note_to_response(n, reactions, db=db))
+    note_ids = [n.id for n in notes]
+    reactions_map = await get_reaction_summaries(
+        db, note_ids, user.actor_id,
+    )
+    result = await notes_to_responses(notes, reactions_map, db)
     return _deduplicate_timeline(result)
 
 
@@ -70,8 +75,6 @@ async def tag_timeline(
     notes = await get_notes_by_hashtag(
         db, tag_name=tag, limit=limit, max_id=max_id, current_actor_id=actor_id
     )
-    result = []
-    for n in notes:
-        reactions = await get_reaction_summary(db, n.id, actor_id)
-        result.append(await note_to_response(n, reactions, db=db))
-    return result
+    note_ids = [n.id for n in notes]
+    reactions_map = await get_reaction_summaries(db, note_ids, actor_id)
+    return await notes_to_responses(notes, reactions_map, db)

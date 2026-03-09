@@ -74,7 +74,15 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
 
 async def note_to_response(
     note, reactions: list[dict] | None = None, reblog_note=None, db=None,
+    emoji_cache: dict | None = None,
 ) -> NoteResponse:
+    """Convert a Note model to a NoteResponse.
+
+    Args:
+        emoji_cache: Optional pre-resolved emoji cache mapping
+            (shortcode, domain) -> CustomEmoji. When provided, skips per-note
+            emoji DB queries.
+    """
     actor = note.actor
     reblog = None
     # 明示的にreblog_noteが渡されない場合、renote_ofリレーションを使う
@@ -90,7 +98,9 @@ async def note_to_response(
             await db.commit()
             actual_reblog = await get_note_by_id(db, resolved.id)
     if actual_reblog:
-        reblog = await note_to_response(actual_reblog, db=db)
+        reblog = await note_to_response(
+            actual_reblog, db=db, emoji_cache=emoji_cache,
+        )
 
     # Build media attachments
     media_attachments = []
@@ -101,7 +111,9 @@ async def note_to_response(
     # Build quote
     quote = None
     if hasattr(note, 'quoted_note') and note.quoted_note:
-        quote = await note_to_response(note.quoted_note, db=db)
+        quote = await note_to_response(
+            note.quoted_note, db=db, emoji_cache=emoji_cache,
+        )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
     if not quote and db and note.quote_ap_id:
         from app.services.note_service import fetch_remote_note
@@ -111,26 +123,43 @@ async def note_to_response(
             await db.commit()
             loaded_quote = await get_note_by_id(db, resolved_quote.id)
             if loaded_quote:
-                quote = await note_to_response(loaded_quote, db=db)
+                quote = await note_to_response(
+                    loaded_quote, db=db, emoji_cache=emoji_cache,
+                )
 
     # Resolve custom emoji from content
     emojis: list[CustomEmojiInfo] = []
-    if db and note.content:
+    if note.content:
         shortcodes = set(_SHORTCODE_RE.findall(note.content))
         if shortcodes:
-            from app.services.emoji_service import get_emojis_by_shortcodes
+            if emoji_cache is not None:
+                # Use pre-resolved cache — no DB queries needed
+                emoji_list = _resolve_emojis_from_cache(
+                    shortcodes, actor.domain, emoji_cache,
+                )
+            elif db:
+                from app.services.emoji_service import get_emojis_by_shortcodes
 
-            domain = actor.domain
-            emoji_list = await get_emojis_by_shortcodes(db, shortcodes, domain)
-            if domain is not None:
-                found = {e.shortcode for e in emoji_list}
-                missing = shortcodes - found
-                if missing:
-                    local_emojis = await get_emojis_by_shortcodes(db, missing, None)
-                    emoji_list.extend(local_emojis)
+                domain = actor.domain
+                emoji_list = await get_emojis_by_shortcodes(
+                    db, shortcodes, domain,
+                )
+                if domain is not None:
+                    found = {e.shortcode for e in emoji_list}
+                    missing = shortcodes - found
+                    if missing:
+                        local_emojis = await get_emojis_by_shortcodes(
+                            db, missing, None,
+                        )
+                        emoji_list.extend(local_emojis)
+            else:
+                emoji_list = []
             for emoji in emoji_list:
                 url = media_proxy_url(emoji.url)
-                static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+                static = (
+                    media_proxy_url(emoji.static_url)
+                    if emoji.static_url else url
+                )
                 emojis.append(CustomEmojiInfo(
                     shortcode=emoji.shortcode, url=url, static_url=static,
                 ))
@@ -187,6 +216,96 @@ async def note_to_response(
         emojis=emojis,
         tags=tags,
     )
+
+
+def _resolve_emojis_from_cache(
+    shortcodes: set[str],
+    domain: str | None,
+    emoji_cache: dict,
+) -> list:
+    """Resolve emoji shortcodes using a pre-built cache dict.
+
+    The cache maps (shortcode, domain) -> CustomEmoji object.
+    Tries the note's actor domain first, then falls back to local (None).
+    """
+    result = []
+    for sc in shortcodes:
+        emoji = emoji_cache.get((sc, domain))
+        if not emoji:
+            emoji = emoji_cache.get((sc, None))
+        if emoji:
+            result.append(emoji)
+    return result
+
+
+async def _build_emoji_cache(db, notes) -> dict:
+    """Pre-fetch all custom emoji needed for a list of notes.
+
+    Collects shortcodes from note content (and reblog/quote content),
+    then batch-fetches all matching emoji in minimal DB queries.
+
+    Returns a dict mapping (shortcode, domain) -> CustomEmoji.
+    """
+    from app.services.emoji_service import get_emojis_by_shortcodes
+
+    # Collect all (shortcodes, domain) pairs needed
+    shortcodes_by_domain: dict[str | None, set[str]] = {}
+
+    def _collect(note):
+        if not note or not note.content:
+            return
+        scs = set(_SHORTCODE_RE.findall(note.content))
+        if scs:
+            d = note.actor.domain
+            shortcodes_by_domain.setdefault(d, set()).update(scs)
+            # Also always check local (None) for fallback
+            shortcodes_by_domain.setdefault(None, set()).update(scs)
+
+    for n in notes:
+        _collect(n)
+        if hasattr(n, "renote_of") and n.renote_of:
+            _collect(n.renote_of)
+        if hasattr(n, "quoted_note") and n.quoted_note:
+            _collect(n.quoted_note)
+
+    # Batch fetch per domain (typically 1-3 queries total)
+    cache: dict[tuple[str, str | None], object] = {}
+    for domain, scs in shortcodes_by_domain.items():
+        if not scs:
+            continue
+        emoji_list = await get_emojis_by_shortcodes(db, scs, domain)
+        for e in emoji_list:
+            cache[(e.shortcode, e.domain)] = e
+
+    return cache
+
+
+async def notes_to_responses(
+    notes,
+    reactions_map: dict,
+    db,
+) -> list[NoteResponse]:
+    """Convert multiple notes to responses with batched emoji resolution.
+
+    Args:
+        notes: List of Note model objects.
+        reactions_map: Dict mapping note_id -> list of reaction summary dicts,
+            as returned by get_reaction_summaries().
+        db: AsyncSession.
+
+    Returns:
+        List of NoteResponse in the same order as input notes.
+    """
+    emoji_cache = await _build_emoji_cache(db, notes)
+
+    result = []
+    for n in notes:
+        reactions = reactions_map.get(n.id, [])
+        resp = await note_to_response(
+            n, reactions, db=db, emoji_cache=emoji_cache,
+        )
+        result.append(resp)
+    return result
 
 
 @router.post("", response_model=NoteResponse, status_code=201)

@@ -500,7 +500,113 @@ async def get_reaction_summary(
         from app.utils.media_proxy import media_proxy_url
         summaries.append({
             "emoji": emoji, "count": count,
-            "me": me, "emoji_url": media_proxy_url(emoji_url),
+            "me": me,
+            "emoji_url": media_proxy_url(emoji_url),
+        })
+    return summaries
+
+
+async def get_reaction_summaries(
+    db: AsyncSession,
+    note_ids: list[uuid.UUID],
+    current_actor_id: uuid.UUID | None = None,
+) -> dict[uuid.UUID, list[dict]]:
+    """Get aggregated reactions for multiple notes in batch.
+
+    Returns a dict mapping note_id -> list of reaction summary dicts.
+    This avoids N+1 queries by fetching all reaction data in bulk.
+    """
+    from app.models.custom_emoji import CustomEmoji
+    from app.utils.media_proxy import media_proxy_url
+
+    if not note_ids:
+        return {}
+
+    # 1) Fetch all reaction counts grouped by (note_id, emoji) in one query
+    result = await db.execute(
+        select(
+            Reaction.note_id,
+            Reaction.emoji,
+            func.count(Reaction.id).label("count"),
+        )
+        .where(Reaction.note_id.in_(note_ids))
+        .group_by(Reaction.note_id, Reaction.emoji)
+        .order_by(Reaction.note_id, func.count(Reaction.id).desc())
+    )
+    rows = result.all()
+
+    # 2) Fetch "me" reactions in one query (which emojis did the current user react to)
+    me_set: set[tuple[uuid.UUID, str]] = set()
+    if current_actor_id:
+        me_result = await db.execute(
+            select(Reaction.note_id, Reaction.emoji)
+            .where(
+                Reaction.note_id.in_(note_ids),
+                Reaction.actor_id == current_actor_id,
+            )
+        )
+        for note_id_val, emoji_val in me_result.all():
+            me_set.add((note_id_val, emoji_val))
+
+    # 3) Collect all custom emoji shortcodes that need URL resolution
+    custom_emojis_needed: dict[str, str | None] = {}  # shortcode -> domain
+    for _, emoji_str, _ in rows:
+        m = _CUSTOM_EMOJI_REACTION_RE.match(emoji_str)
+        if m:
+            shortcode, domain = m.group(1), m.group(2)
+            # Always try local first, so track shortcode with None domain
+            if shortcode not in custom_emojis_needed:
+                custom_emojis_needed[shortcode] = domain
+
+    # 4) Batch-fetch all needed custom emojis in at most 2 queries
+    emoji_url_map: dict[str, str | None] = {}  # emoji string -> url
+    if custom_emojis_needed:
+        all_shortcodes = set(custom_emojis_needed.keys())
+
+        # Fetch local emojis
+        local_result = await db.execute(
+            select(CustomEmoji).where(
+                CustomEmoji.shortcode.in_(all_shortcodes),
+                CustomEmoji.domain.is_(None),
+            )
+        )
+        local_emojis = {e.shortcode: e for e in local_result.scalars().all()}
+
+        # Collect shortcodes that need remote lookup
+        remote_shortcodes = all_shortcodes - set(local_emojis.keys())
+        remote_emojis: dict[str, CustomEmoji] = {}
+        if remote_shortcodes:
+            remote_result = await db.execute(
+                select(CustomEmoji).where(
+                    CustomEmoji.shortcode.in_(remote_shortcodes),
+                    CustomEmoji.domain.isnot(None),
+                )
+            )
+            for e in remote_result.scalars().all():
+                # Keep first match per shortcode (or match domain if specified)
+                if e.shortcode not in remote_emojis:
+                    remote_emojis[e.shortcode] = e
+
+        # Build the emoji string -> URL map
+        for _, emoji_str, _ in rows:
+            m = _CUSTOM_EMOJI_REACTION_RE.match(emoji_str)
+            if m:
+                shortcode, domain = m.group(1), m.group(2)
+                if shortcode in local_emojis:
+                    emoji_url_map[emoji_str] = local_emojis[shortcode].url
+                elif shortcode in remote_emojis:
+                    emoji_url_map[emoji_str] = remote_emojis[shortcode].url
+
+    # 5) Build the result dict
+    summaries: dict[uuid.UUID, list[dict]] = {nid: [] for nid in note_ids}
+    for note_id_val, emoji_str, count in rows:
+        me = (note_id_val, emoji_str) in me_set
+        emoji_url = emoji_url_map.get(emoji_str)
+        summaries[note_id_val].append({
+            "emoji": emoji_str,
+            "count": count,
+            "me": me,
+            "emoji_url": media_proxy_url(emoji_url),
         })
     return summaries
 
