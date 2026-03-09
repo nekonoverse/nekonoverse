@@ -6,7 +6,7 @@ import {
   defaultVisibility, setDefaultVisibility,
   rememberVisibility, setRememberVisibility,
 } from "../stores/composer";
-import { instance, defaultAvatar } from "../stores/instance";
+import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "../stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "../i18n";
 import { changePassword } from "../api/settings";
@@ -425,14 +425,7 @@ function AboutTab() {
   const handleClearCache = async () => {
     setClearing(true);
     try {
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-      if ("serviceWorker" in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map((r) => r.unregister()));
-      }
+      await clearServiceWorkerAndCaches();
       location.reload();
     } catch {
       setClearing(false);
