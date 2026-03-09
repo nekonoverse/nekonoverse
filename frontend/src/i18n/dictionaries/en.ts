@@ -412,4 +412,6 @@ export const en: Dictionary = {
   "reply.replyingTo": "Replying to",
   "reply.reply": "Reply",
   "reply.repliesCount": "replies",
+  "cw.show": "Show more",
+  "cw.hide": "Hide",
 };

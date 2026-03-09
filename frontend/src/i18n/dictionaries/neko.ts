@@ -412,4 +412,6 @@ export const neko: Dictionary = {
   "reply.replyingTo": "へんしんさきにゃ:",
   "reply.reply": "へんしんにゃ",
   "reply.repliesCount": "へんしんにゃ",
+  "cw.show": "もっとみるにゃ",
+  "cw.hide": "かくすにゃ",
 };

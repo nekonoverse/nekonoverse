@@ -844,6 +844,32 @@ a:hover {
   margin-right: 8px;
 }
 
+/* CW / Spoiler toggle */
+.note-cw-text {
+  font-size: 1em;
+  line-height: 1.5;
+  word-break: break-word;
+  margin-bottom: 6px;
+}
+
+.note-cw-toggle {
+  display: inline-block;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+  margin-bottom: 6px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.note-cw-toggle:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 /* Note media */
 .note-media {
   display: grid;
