@@ -2190,7 +2190,7 @@ function SystemTab() {
       <Show when={stats()} fallback={<p>{t("common.loading")}</p>}>
         {(s) => (
           <div class="admin-system-grid">
-            <div class="admin-system-card">
+            <div class="admin-system-card card-db">
               <h4>{t("admin.systemDatabase")}</h4>
               <div class="admin-system-rows">
                 <div class="admin-system-row">
@@ -2212,7 +2212,7 @@ function SystemTab() {
               </div>
             </div>
 
-            <div class="admin-system-card">
+            <div class="admin-system-card card-valkey">
               <h4>{t("admin.systemValkey")}</h4>
               <div class="admin-system-rows">
                 <div class="admin-system-row">
@@ -2230,7 +2230,7 @@ function SystemTab() {
               </div>
             </div>
 
-            <div class="admin-system-card">
+            <div class="admin-system-card card-server">
               <h4>{t("admin.systemServer")}</h4>
               <div class="admin-system-rows">
                 <div class="admin-system-row">
@@ -2250,13 +2250,21 @@ function SystemTab() {
                 </div>
                 <div class="admin-system-row">
                   <span>{t("admin.systemMemPercent")}</span>
-                  <strong>
+                  <div class="admin-system-progress-wrap">
                     <span
                       class={`admin-system-usage ${s().memory_percent > 90 ? "critical" : s().memory_percent > 70 ? "warning" : "ok"}`}
                     >
-                      {s().memory_percent.toFixed(1)}%
+                      <strong>{s().memory_percent.toFixed(1)}%</strong>
                     </span>
-                  </strong>
+                    <div class="admin-system-progress">
+                      <div
+                        class={`admin-system-progress-bar ${s().memory_percent > 90 ? "critical" : s().memory_percent > 70 ? "warning" : "ok"}`}
+                        style={{
+                          width: `${Math.min(100, s().memory_percent)}%`,
+                        }}
+                      />
+                    </div>
+                  </div>
                 </div>
                 <div class="admin-system-row">
                   <span>{t("admin.systemUptime")}</span>
@@ -2265,7 +2273,7 @@ function SystemTab() {
               </div>
             </div>
 
-            <div class="admin-system-card">
+            <div class="admin-system-card card-worker">
               <h4>{t("admin.systemWorker")}</h4>
               <div class="admin-system-rows">
                 <div class="admin-system-row">

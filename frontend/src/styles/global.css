@@ -3642,21 +3642,27 @@ a:hover {
 .admin-queue-stats {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: 14px;
+  margin-bottom: 14px;
 }
 
 .admin-queue-stats-sub {
   grid-template-columns: repeat(3, 1fr);
-  margin-bottom: 24px;
+  margin-bottom: 28px;
 }
 
 .admin-queue-stat-card {
   background: var(--bg-primary);
   border-radius: var(--radius);
-  padding: 16px 20px;
+  padding: 18px 20px;
   text-align: center;
   border-left: 4px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+  transition: box-shadow 0.15s ease;
+}
+
+.admin-queue-stat-card:hover {
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
 }
 
 .admin-queue-stat-card.pending {
@@ -3691,15 +3697,42 @@ a:hover {
   display: block;
   font-size: 2em;
   font-weight: 700;
-  color: var(--accent);
   line-height: 1.2;
+}
+
+.admin-queue-stat-card.pending .admin-queue-stat-num {
+  color: #3498db;
+}
+
+.admin-queue-stat-card.processing .admin-queue-stat-num {
+  color: #f39c12;
+}
+
+.admin-queue-stat-card.delivered .admin-queue-stat-num {
+  color: #2ecc71;
+}
+
+.admin-queue-stat-card.dead .admin-queue-stat-num {
+  color: #e74c3c;
+}
+
+.admin-queue-stat-card.total .admin-queue-stat-num {
+  color: var(--accent);
+}
+
+.admin-queue-stat-card.recent .admin-queue-stat-num {
+  color: #1abc9c;
+}
+
+.admin-queue-stat-card.recent-dead .admin-queue-stat-num {
+  color: #e67e22;
 }
 
 .admin-queue-stat-label {
   display: block;
   font-size: 0.85em;
   color: var(--text-secondary);
-  margin-top: 4px;
+  margin-top: 6px;
 }
 
 .admin-queue-controls {
@@ -3745,7 +3778,7 @@ a:hover {
 
 .admin-queue-table th,
 .admin-queue-table td {
-  padding: 10px 14px;
+  padding: 12px 16px;
   text-align: left;
 }
 
@@ -3754,6 +3787,7 @@ a:hover {
   font-weight: 600;
   font-size: 0.85em;
   text-transform: uppercase;
+  letter-spacing: 0.03em;
   color: var(--text-secondary);
   border-bottom: 2px solid var(--border);
 }
@@ -3762,8 +3796,12 @@ a:hover {
   border-bottom: 1px solid var(--border);
 }
 
+.admin-queue-table tbody tr:nth-child(even) {
+  background: rgba(128, 128, 128, 0.04);
+}
+
 .admin-queue-table tbody tr:hover {
-  background: var(--bg-primary);
+  background: rgba(128, 128, 128, 0.1);
 }
 
 .admin-queue-target {
@@ -3786,30 +3824,31 @@ a:hover {
 
 .admin-queue-badge {
   display: inline-block;
-  padding: 3px 10px;
+  padding: 4px 12px;
   border-radius: 12px;
   font-size: 0.8em;
   font-weight: 600;
+  letter-spacing: 0.02em;
 }
 
 .admin-queue-badge.pending {
-  background: #3498db22;
-  color: #3498db;
+  background: #3498db30;
+  color: #5dade2;
 }
 
 .admin-queue-badge.processing {
-  background: #f39c1222;
-  color: #f39c12;
+  background: #f39c1230;
+  color: #f5b041;
 }
 
 .admin-queue-badge.delivered {
-  background: #2ecc7122;
-  color: #2ecc71;
+  background: #2ecc7130;
+  color: #58d68d;
 }
 
 .admin-queue-badge.dead {
-  background: #e74c3c22;
-  color: #e74c3c;
+  background: #e74c3c30;
+  color: #ec7063;
 }
 
 .admin-queue-row.dead {
@@ -3834,35 +3873,73 @@ a:hover {
 .admin-system-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
-  gap: 16px;
+  gap: 18px;
 }
 
 .admin-system-card {
   background: var(--bg-primary);
   border-radius: var(--radius);
-  padding: 20px;
+  padding: 22px;
+  border-left: 4px solid var(--border);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.12);
+}
+
+.admin-system-card.card-db {
+  border-left-color: #3498db;
+}
+
+.admin-system-card.card-valkey {
+  border-left-color: #9b59b6;
+}
+
+.admin-system-card.card-server {
+  border-left-color: #2ecc71;
+}
+
+.admin-system-card.card-worker {
+  border-left-color: #e67e22;
 }
 
 .admin-system-card h4 {
-  margin: 0 0 14px 0;
+  margin: 0 0 16px 0;
   font-size: 1em;
   font-weight: 700;
-  color: var(--accent);
-  border-bottom: 2px solid var(--border);
-  padding-bottom: 10px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 12px;
+}
+
+.admin-system-card.card-db h4 {
+  color: #5dade2;
+}
+
+.admin-system-card.card-valkey h4 {
+  color: #bb8fce;
+}
+
+.admin-system-card.card-server h4 {
+  color: #58d68d;
+}
+
+.admin-system-card.card-worker h4 {
+  color: #f0b27a;
 }
 
 .admin-system-rows {
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 0;
 }
 
 .admin-system-row {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 4px 0;
+  padding: 10px 0;
+  border-bottom: 1px solid rgba(128, 128, 128, 0.1);
+}
+
+.admin-system-row:last-child {
+  border-bottom: none;
 }
 
 .admin-system-row span {
@@ -3874,37 +3951,72 @@ a:hover {
   color: var(--text);
   font-weight: 600;
   font-size: 0.95em;
+  font-variant-numeric: tabular-nums;
 }
 
 .admin-system-usage.ok {
-  color: #2ecc71;
+  color: #58d68d;
 }
 
 .admin-system-usage.warning {
-  color: #f39c12;
+  color: #f5b041;
 }
 
 .admin-system-usage.critical {
-  color: #e74c3c;
+  color: #ec7063;
   font-weight: 700;
+}
+
+/* Memory progress bar */
+.admin-system-progress-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 6px;
+}
+
+.admin-system-progress {
+  width: 120px;
+  height: 8px;
+  background: rgba(128, 128, 128, 0.15);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.admin-system-progress-bar {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.4s ease;
+}
+
+.admin-system-progress-bar.ok {
+  background: #2ecc71;
+}
+
+.admin-system-progress-bar.warning {
+  background: #f39c12;
+}
+
+.admin-system-progress-bar.critical {
+  background: #e74c3c;
 }
 
 .admin-system-worker-status {
   display: inline-block;
-  padding: 3px 12px;
+  padding: 4px 14px;
   border-radius: 12px;
   font-size: 0.85em;
   font-weight: 600;
 }
 
 .admin-system-worker-status.alive {
-  background: #2ecc7122;
-  color: #2ecc71;
+  background: #2ecc7130;
+  color: #58d68d;
 }
 
 .admin-system-worker-status.dead {
-  background: #e74c3c22;
-  color: #e74c3c;
+  background: #e74c3c30;
+  color: #ec7063;
 }
 
 @media (max-width: 600px) {
