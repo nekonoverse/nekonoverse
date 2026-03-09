@@ -324,25 +324,7 @@ cloudflared tunnel run nekonoverse
 
 #### Docker Compose で使う場合
 
-nginx サービスを cloudflared に置き換える:
-
-```yaml
-services:
-  # nginx を削除し、cloudflared を追加
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      app:
-        condition: service_healthy
-      frontend:
-        condition: service_started
-      s3proxy-deliverer:
-        condition: service_started
-```
+`docker-compose.yml.example` の末尾にコメントアウトされた `cloudflared` サービスがあります。nginx サービスを削除（またはコメントアウト）し、cloudflared のコメントを外して使います。
 
 Cloudflare Zero Trust ダッシュボードの **Networks > Tunnels** でトンネルを作成し、Public Hostname のルーティングを設定する。`CLOUDFLARE_TUNNEL_TOKEN` は `.env` に記載する。
 

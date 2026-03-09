@@ -93,9 +93,10 @@ docker compose -f docker-compose.federation.yml run --rm --no-deps test-runner
 | ファイル | 用途 |
 |---------|------|
 | `docker-compose.dev.yml.example` | 開発用テンプレート（ホットリロード、ソースマウント、ポート直接公開） |
-| `docker-compose.yml.example` | 本番用テンプレート（nginx リバースプロキシ、ワーカー） |
-| `docker-compose.cloudflared.yml.example` | Cloudflare Tunnel 用テンプレート |
-| `docker-compose.federation.yml` | 連合 E2E テスト用 |
+| `docker-compose.yml.example` | 本番用テンプレート（GHCR イメージ、nginx + Cloudflare Tunnel オプション） |
+| `docker-compose.e2e.yml` | フロントエンド E2E テスト用（CI） |
+| `docker-compose.federation.yml` | Neko↔Neko 連合テスト用（CI） |
+| `docker-compose.misskey-federation.yml` | Neko↔Misskey 連合テスト用（CI） |
 
 開発時は `.example` をコピーして使います。`docker-compose.yml` と `docker-compose.dev.yml` は `.gitignore` 対象です。
 

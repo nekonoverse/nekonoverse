@@ -26,14 +26,35 @@ export async function loginAsAdmin(page: Page) {
 }
 
 /**
- * Navigate to admin page and click a specific tab.
- * Waits for the auth state to resolve and tabs to render.
+ * Tab text to URL section mapping for the admin card menu.
+ */
+const adminSectionMap: Record<string, string> = {
+  "Overview": "",
+  "Server Settings": "settings",
+  "Users": "users",
+  "Domain Blocks": "domains",
+  "Federation": "federation",
+  "Reports": "reports",
+  "Moderation Log": "log",
+  "Emoji": "emoji",
+  "Files": "files",
+  "Invitations": "invites",
+};
+
+/**
+ * Navigate to an admin sub-page by section name.
+ * Uses URL-based routing (card menu pattern).
  */
 export async function goToAdminTab(page: Page, tabText: string) {
-  await page.goto("/admin");
-  // Wait for settings-tabs (appears only after auth state resolves)
-  await page.waitForSelector(".settings-tabs", { timeout: 15_000 });
-  await page.click(`.settings-tab:has-text("${tabText}")`);
+  const section = adminSectionMap[tabText] ?? tabText.toLowerCase();
+  const path = section ? `/admin/${section}` : "/admin";
+  await page.goto(path);
+  // Wait for admin page to render (breadcrumb for sub-pages, menu for landing)
+  if (section) {
+    await page.waitForSelector(".breadcrumb", { timeout: 15_000 });
+  } else {
+    await page.waitForSelector(".settings-menu", { timeout: 15_000 });
+  }
 }
 
 /**

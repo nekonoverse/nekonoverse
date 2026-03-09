@@ -127,42 +127,63 @@ async def note_to_response(
                     loaded_quote, db=db, emoji_cache=emoji_cache,
                 )
 
-    # Resolve custom emoji from content
+    # Resolve custom emoji from content and display_name
     emojis: list[CustomEmojiInfo] = []
+    actor_emojis: list[CustomEmojiInfo] = []
+    # Collect shortcodes from note content and actor display_name
+    content_shortcodes: set[str] = set()
     if note.content:
-        shortcodes = set(_SHORTCODE_RE.findall(note.content))
-        if shortcodes:
-            if emoji_cache is not None:
-                # Use pre-resolved cache — no DB queries needed
-                emoji_list = _resolve_emojis_from_cache(
-                    shortcodes, actor.domain, emoji_cache,
-                )
-            elif db:
-                from app.services.emoji_service import get_emojis_by_shortcodes
+        content_shortcodes = set(_SHORTCODE_RE.findall(note.content))
+    actor_shortcodes: set[str] = set()
+    if actor.display_name:
+        actor_shortcodes = set(
+            _SHORTCODE_RE.findall(actor.display_name)
+        )
+    all_shortcodes = content_shortcodes | actor_shortcodes
+    if all_shortcodes:
+        if emoji_cache is not None:
+            # Use pre-resolved cache — no DB queries needed
+            emoji_list = _resolve_emojis_from_cache(
+                all_shortcodes, actor.domain, emoji_cache,
+            )
+        elif db:
+            from app.services.emoji_service import (
+                get_emojis_by_shortcodes,
+            )
 
-                domain = actor.domain
-                emoji_list = await get_emojis_by_shortcodes(
-                    db, shortcodes, domain,
-                )
-                if domain is not None:
-                    found = {e.shortcode for e in emoji_list}
-                    missing = shortcodes - found
-                    if missing:
-                        local_emojis = await get_emojis_by_shortcodes(
-                            db, missing, None,
-                        )
-                        emoji_list.extend(local_emojis)
-            else:
-                emoji_list = []
-            for emoji in emoji_list:
-                url = media_proxy_url(emoji.url)
-                static = (
-                    media_proxy_url(emoji.static_url)
-                    if emoji.static_url else url
-                )
-                emojis.append(CustomEmojiInfo(
-                    shortcode=emoji.shortcode, url=url, static_url=static,
-                ))
+            domain = actor.domain
+            emoji_list = await get_emojis_by_shortcodes(
+                db, all_shortcodes, domain,
+            )
+            if domain is not None:
+                found = {e.shortcode for e in emoji_list}
+                missing = all_shortcodes - found
+                if missing:
+                    local_emojis = await get_emojis_by_shortcodes(
+                        db, missing, None,
+                    )
+                    emoji_list.extend(local_emojis)
+        else:
+            emoji_list = []
+        emoji_map: dict[str, CustomEmojiInfo] = {}
+        for emoji in emoji_list:
+            url = media_proxy_url(emoji.url)
+            static = (
+                media_proxy_url(emoji.static_url)
+                if emoji.static_url else url
+            )
+            info = CustomEmojiInfo(
+                shortcode=emoji.shortcode, url=url, static_url=static,
+            )
+            emoji_map[emoji.shortcode] = info
+        emojis = [
+            emoji_map[sc] for sc in content_shortcodes
+            if sc in emoji_map
+        ]
+        actor_emojis = [
+            emoji_map[sc] for sc in actor_shortcodes
+            if sc in emoji_map
+        ]
 
     # Resolve hashtags
     tags: list[TagInfo] = []
@@ -208,6 +229,7 @@ async def note_to_response(
             avatar_url=media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
             ap_id=actor.ap_id,
             domain=actor.domain,
+            emojis=actor_emojis,
         ),
         reactions=[ReactionSummary(**r) for r in (reactions or [])],
         reblog=reblog,
@@ -252,13 +274,18 @@ async def _build_emoji_cache(db, notes) -> dict:
     shortcodes_by_domain: dict[str | None, set[str]] = {}
 
     def _collect(note):
-        if not note or not note.content:
+        if not note:
             return
-        scs = set(_SHORTCODE_RE.findall(note.content))
+        scs = set()
+        if note.content:
+            scs.update(_SHORTCODE_RE.findall(note.content))
+        if note.actor and note.actor.display_name:
+            scs.update(
+                _SHORTCODE_RE.findall(note.actor.display_name)
+            )
         if scs:
-            d = note.actor.domain
+            d = note.actor.domain if note.actor else None
             shortcodes_by_domain.setdefault(d, set()).update(scs)
-            # Also always check local (None) for fallback
             shortcodes_by_domain.setdefault(None, set()).update(scs)
 
     for n in notes:
