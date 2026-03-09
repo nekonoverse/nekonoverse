@@ -729,8 +729,9 @@ a:hover {
 
 .note-header-text {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
   min-width: 0;
 }
 
