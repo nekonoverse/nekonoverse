@@ -180,6 +180,11 @@ export default function NoteCard(props: Props) {
   const isReblog = () => !!props.note.reblog;
   const displayNote = () => props.note.reblog || props.note;
 
+  // リノートの場合、内側のノートからシグナルを初期化する
+  setNoteContent(displayNote().content);
+  setNoteSource(displayNote().source);
+  setNoteEditedAt(displayNote().edited_at);
+
   // Initialize boost count from displayNote
   const initBoostCount = () => displayNote().renotes_count;
   if (boostCount() === 0) setBoostCount(initBoostCount());
