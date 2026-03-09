@@ -133,6 +133,7 @@ docker compose logs -f frontend
 - **Visibility**: Notes have `public`/`unlisted`/`followers`/`direct` mapped from AP `to`/`cc`
 - **Federation**: HTTP Signatures for auth, JSON-LD for AP payloads
 - **Linting**: ruff (E, F, I rules, line-length 100)
+- **Testing**: 新しいエンドポイントやサービス関数を追加したら、対応するテストを `tests/` に追加すること
 
 ### Frontend
 - **SolidJS**: Use `createSignal`/`createEffect`, not React hooks. Inside `<Switch>`/`<Match>`, use `createEffect` instead of `onMount` for data fetching (onMount may not fire).
