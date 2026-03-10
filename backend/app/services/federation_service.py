@@ -35,7 +35,8 @@ async def get_federated_servers(
         .group_by(Actor.domain)
     )
     if search:
-        actor_sub = actor_sub.where(Actor.domain.ilike(f"%{search}%"))
+        escaped = search.replace("%", r"\%").replace("_", r"\_")
+        actor_sub = actor_sub.where(Actor.domain.ilike(f"%{escaped}%"))
 
     actor_sub = actor_sub.subquery("actor_agg")
 
@@ -53,25 +54,19 @@ async def get_federated_servers(
 
     # delivery_queueからドメイン別の配信統計を集約
     # target_inbox_urlからドメインを抽出するためにSQLのsplit_part/substringを使う
-    delivery_domain = func.substring(
-        DeliveryJob.target_inbox_url, r'https?://([^/]+)'
-    ).label("domain")
+    delivery_domain = func.substring(DeliveryJob.target_inbox_url, r"https?://([^/]+)").label(
+        "domain"
+    )
 
     delivery_sub = (
         select(
             delivery_domain,
-            func.count(DeliveryJob.id).filter(
-                DeliveryJob.status == "delivered"
-            ).label("d_success"),
-            func.count(DeliveryJob.id).filter(
-                DeliveryJob.status.in_(["failed", "processing"])
-            ).label("d_failure"),
-            func.count(DeliveryJob.id).filter(
-                DeliveryJob.status == "pending"
-            ).label("d_pending"),
-            func.count(DeliveryJob.id).filter(
-                DeliveryJob.status == "dead"
-            ).label("d_dead"),
+            func.count(DeliveryJob.id).filter(DeliveryJob.status == "delivered").label("d_success"),
+            func.count(DeliveryJob.id)
+            .filter(DeliveryJob.status.in_(["failed", "processing"]))
+            .label("d_failure"),
+            func.count(DeliveryJob.id).filter(DeliveryJob.status == "pending").label("d_pending"),
+            func.count(DeliveryJob.id).filter(DeliveryJob.status == "dead").label("d_dead"),
         )
         .group_by(delivery_domain)
         .subquery("delivery_agg")
@@ -136,21 +131,23 @@ async def get_federated_servers(
         else:
             srv_status = "active"
 
-        servers.append({
-            "domain": row.domain,
-            "user_count": row.user_count,
-            "note_count": row.note_count,
-            "last_activity_at": row.last_activity_at,
-            "first_seen_at": row.first_seen_at,
-            "status": srv_status,
-            "block_severity": block_sev,
-            "delivery_stats": {
-                "success": row.d_success,
-                "failure": row.d_failure,
-                "pending": row.d_pending,
-                "dead": row.d_dead,
-            },
-        })
+        servers.append(
+            {
+                "domain": row.domain,
+                "user_count": row.user_count,
+                "note_count": row.note_count,
+                "last_activity_at": row.last_activity_at,
+                "first_seen_at": row.first_seen_at,
+                "status": srv_status,
+                "block_severity": block_sev,
+                "delivery_stats": {
+                    "success": row.d_success,
+                    "failure": row.d_failure,
+                    "pending": row.d_pending,
+                    "dead": row.d_dead,
+                },
+            }
+        )
 
     return servers, total
 
@@ -166,8 +163,7 @@ async def get_federated_server_detail(
             func.count(Actor.id).label("user_count"),
             func.max(Actor.last_fetched_at).label("last_activity_at"),
             func.min(Actor.created_at).label("first_seen_at"),
-        )
-        .where(Actor.domain == domain)
+        ).where(Actor.domain == domain)
     )
     agg = actor_agg.one_or_none()
     if not agg or agg.user_count == 0:
@@ -182,32 +178,21 @@ async def get_federated_server_detail(
     note_count = note_count_result.scalar() or 0
 
     # 配信統計
-    delivery_domain = func.substring(
-        DeliveryJob.target_inbox_url, r'https?://([^/]+)'
-    )
+    delivery_domain = func.substring(DeliveryJob.target_inbox_url, r"https?://([^/]+)")
     delivery_result = await db.execute(
         select(
-            func.count(DeliveryJob.id).filter(
-                DeliveryJob.status == "delivered"
-            ).label("d_success"),
-            func.count(DeliveryJob.id).filter(
-                DeliveryJob.status.in_(["failed", "processing"])
-            ).label("d_failure"),
-            func.count(DeliveryJob.id).filter(
-                DeliveryJob.status == "pending"
-            ).label("d_pending"),
-            func.count(DeliveryJob.id).filter(
-                DeliveryJob.status == "dead"
-            ).label("d_dead"),
-        )
-        .where(delivery_domain == domain)
+            func.count(DeliveryJob.id).filter(DeliveryJob.status == "delivered").label("d_success"),
+            func.count(DeliveryJob.id)
+            .filter(DeliveryJob.status.in_(["failed", "processing"]))
+            .label("d_failure"),
+            func.count(DeliveryJob.id).filter(DeliveryJob.status == "pending").label("d_pending"),
+            func.count(DeliveryJob.id).filter(DeliveryJob.status == "dead").label("d_dead"),
+        ).where(delivery_domain == domain)
     )
     d = delivery_result.one()
 
     # ドメインブロック情報
-    block_result = await db.execute(
-        select(DomainBlock).where(DomainBlock.domain == domain)
-    )
+    block_result = await db.execute(select(DomainBlock).where(DomainBlock.domain == domain))
     block = block_result.scalar_one_or_none()
 
     block_sev = block.severity if block else None

@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     valkey_url: str = "valkey://localhost:6379/0"
     domain: str = "localhost"
     secret_key: str = "change-this-to-a-random-secret-key"
-    debug: bool = True
+    debug: bool = False
     registration_open: bool = False
     frontend_url: str = "http://localhost:3000"
     s3_endpoint_url: str = "http://nekono3s:8080"

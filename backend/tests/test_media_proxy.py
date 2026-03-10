@@ -16,6 +16,7 @@ def test_proxy_url_local_passthrough():
 def test_proxy_url_server_url_passthrough():
     """URLs starting with server_url should be returned as-is."""
     from app.config import settings
+
     local = f"{settings.server_url}/media/file.jpg"
     assert media_proxy_url(local) == local
 
@@ -32,7 +33,7 @@ def test_proxy_url_remote_signed():
     assert "&h=" in result
     # Extract h param
     h = result.split("&h=")[1]
-    assert len(h) == 16
+    assert len(h) == 32
 
 
 def test_verify_hmac_valid():
@@ -68,6 +69,7 @@ async def test_proxy_valid_hmac(app_client, mock_valkey):
     proxy = media_proxy_url(url)
     # Extract query params
     from urllib.parse import parse_qs, urlparse
+
     parsed = urlparse(proxy)
     params = parse_qs(parsed.query)
 
@@ -77,8 +79,10 @@ async def test_proxy_valid_hmac(app_client, mock_valkey):
         headers={"content-type": "image/png"},
     )
 
-    with patch("app.api.mastodon.media_proxy.httpx.AsyncClient") as MockClient, \
-         patch("app.api.mastodon.media_proxy._is_private_host", return_value=False):
+    with (
+        patch("app.api.mastodon.media_proxy.httpx.AsyncClient") as MockClient,
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+    ):
         instance = AsyncMock()
         instance.get = AsyncMock(return_value=fake_response)
         instance.__aenter__ = AsyncMock(return_value=instance)
@@ -99,6 +103,7 @@ async def test_proxy_blocks_non_media_content_type(app_client, mock_valkey):
     url = "https://remote.example/page.html"
     proxy = media_proxy_url(url)
     from urllib.parse import parse_qs, urlparse
+
     parsed = urlparse(proxy)
     params = parse_qs(parsed.query)
 
@@ -108,8 +113,10 @@ async def test_proxy_blocks_non_media_content_type(app_client, mock_valkey):
         headers={"content-type": "text/html"},
     )
 
-    with patch("app.api.mastodon.media_proxy.httpx.AsyncClient") as MockClient, \
-         patch("app.api.mastodon.media_proxy._is_private_host", return_value=False):
+    with (
+        patch("app.api.mastodon.media_proxy.httpx.AsyncClient") as MockClient,
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+    ):
         instance = AsyncMock()
         instance.get = AsyncMock(return_value=fake_response)
         instance.__aenter__ = AsyncMock(return_value=instance)

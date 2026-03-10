@@ -28,8 +28,7 @@ async def generate_registration_options(user, session_id: str) -> dict:
     actor = user.actor
 
     existing = [
-        PublicKeyCredentialDescriptor(id=cred.credential_id)
-        for cred in user.passkey_credentials
+        PublicKeyCredentialDescriptor(id=cred.credential_id) for cred in user.passkey_credentials
     ]
 
     options = webauthn.generate_registration_options(
@@ -156,6 +155,10 @@ async def verify_authentication_response(
     user = await get_user_by_id(db, passkey.user_id)
     if not user or not user.is_active:
         raise ValueError("User not found or inactive")
+
+    # 承認待ちユーザーはPasskeyログイン不可
+    if user.approval_status == "pending":
+        raise ValueError("Your registration is pending approval")
 
     return user
 
