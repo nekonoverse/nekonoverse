@@ -7,6 +7,7 @@ export const neko: Dictionary = {
   "common.login": "にゃグイン",
   "common.register": "にゃう規登録",
   "common.cancel": "やめるにゃ",
+  "common.close": "とじるにゃ",
   "common.status": "にゃテータス",
   "auth.username": "にゃまえ",
   "auth.email": "にゃールアドレス",

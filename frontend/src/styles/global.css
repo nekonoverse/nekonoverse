@@ -5414,6 +5414,21 @@ a:hover {
   padding: 2px 6px;
 }
 
+.search-modal-close {
+  display: none;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 0;
+}
+
+.search-modal-close:hover {
+  color: var(--text-primary);
+}
+
 .search-modal-body {
   overflow-y: auto;
   flex: 1;
@@ -5499,5 +5514,9 @@ a:hover {
 
   .search-modal-hint {
     display: none;
+  }
+
+  .search-modal-close {
+    display: block;
   }
 }
