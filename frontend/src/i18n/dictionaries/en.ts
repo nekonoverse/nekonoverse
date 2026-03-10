@@ -226,6 +226,8 @@ export const en: Dictionary = {
   "search.search": "Search",
   "search.placeholder": "Username or user@example.com",
   "search.noResults": "No results found",
+  "search.closeHint": "Press Esc to close",
+  "search.resolving": "Looking up remote user...",
   "migration.title": "Account Migration",
   "migration.description":
     "Move your account to another server. This action cannot be undone.",

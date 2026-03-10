@@ -1,4 +1,12 @@
-import { createSignal, createMemo, onMount, onCleanup, Show, For, type JSX } from "solid-js";
+import {
+  createSignal,
+  createMemo,
+  onMount,
+  onCleanup,
+  Show,
+  For,
+  type JSX,
+} from "solid-js";
 import { getCustomEmojis, type CustomEmoji } from "../../api/emoji";
 import {
   UNICODE_EMOJIS,
@@ -40,9 +48,7 @@ function LazyCategory(props: {
     <div ref={sentinel}>
       <Show
         when={visible()}
-        fallback={
-          <div style={{ height: `${props.estimatedHeight}px` }} />
-        }
+        fallback={<div style={{ height: `${props.estimatedHeight}px` }} />}
       >
         {props.children}
       </Show>
@@ -62,15 +68,20 @@ export default function EmojiPicker(props: Props) {
   let searchRef: HTMLInputElement | undefined;
   const [query, setQuery] = createSignal("");
   const [customEmojis, setCustomEmojis] = createSignal<CustomEmoji[]>([]);
-  const [recentEmojis, setRecentEmojis] = createSignal<RecentEmoji[]>(
-    getRecentEmojis()
-  );
+  const [recentEmojis, setRecentEmojis] =
+    createSignal<RecentEmoji[]>(getRecentEmojis());
 
-  // Guard against ghost-tap on iOS: ignore clicks for 300ms after opening
-  const [ready, setReady] = createSignal(false);
-  const readyTimer = setTimeout(() => setReady(true), 300);
-  onCleanup(() => clearTimeout(readyTimer));
-
+  // iOSのゴーストタップ防止: タッチデバイスでのみ300ms間クリックをブロック
+  const isTouchDevice =
+    typeof window !== "undefined" &&
+    ("ontouchstart" in window || navigator.maxTouchPoints > 0);
+  const [ready, setReady] = createSignal(!isTouchDevice);
+  const readyTimer = isTouchDevice
+    ? setTimeout(() => setReady(true), 300)
+    : undefined;
+  onCleanup(() => {
+    if (readyTimer !== undefined) clearTimeout(readyTimer);
+  });
 
   const isUsed = (emoji: string) => props.usedEmojis?.includes(emoji) ?? false;
 
@@ -111,7 +122,7 @@ export default function EmojiPicker(props: Props) {
       (e) =>
         e.shortcode.includes(q) ||
         e.keywords.some((k) => k.includes(q)) ||
-        e.emoji === q
+        e.emoji === q,
     );
   });
 
@@ -122,7 +133,7 @@ export default function EmojiPicker(props: Props) {
       (e) =>
         e.shortcode.toLowerCase().includes(q) ||
         e.aliases?.some((a) => a.toLowerCase().includes(q)) ||
-        e.category?.toLowerCase().includes(q)
+        e.category?.toLowerCase().includes(q),
     );
   });
 
@@ -291,9 +302,7 @@ export default function EmojiPicker(props: Props) {
                   <LazyCategory estimatedHeight={estimatedHeight}>
                     <div class="emoji-category-label">{cat.label}</div>
                     <div class="emoji-grid">
-                      <For each={emojis}>
-                        {(def) => renderUnicodeBtn(def)}
-                      </For>
+                      <For each={emojis}>{(def) => renderUnicodeBtn(def)}</For>
                     </div>
                   </LazyCategory>
                 </Show>

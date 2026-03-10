@@ -7,6 +7,7 @@ import { defaultAvatar } from "../../stores/instance";
 import type { Dictionary } from "../../i18n/dictionaries/ja";
 import { getNotifications, type Notification } from "../../api/notifications";
 import Emoji from "../Emoji";
+import SearchModal from "../SearchModal";
 
 const PREVIEW_COUNT = 5;
 
@@ -25,6 +26,7 @@ export default function Navbar() {
   const { t } = useI18n();
   const location = useLocation();
   const [menuOpen, setMenuOpen] = createSignal(false);
+  const [searchOpen, setSearchOpen] = createSignal(false);
 
   // Notification preview state
   const [notifOpen, setNotifOpen] = createSignal(false);
@@ -121,16 +123,16 @@ export default function Navbar() {
               </svg>
             </a>
           </Show>
-          <a
-            href="/search"
-            class={`navbar-icon${isActive("/search") ? " active" : ""}`}
+          <button
+            class="navbar-icon"
             title={t("search.title")}
+            onClick={() => setSearchOpen(true)}
           >
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <circle cx="11" cy="11" r="8" />
               <line x1="21" y1="21" x2="16.65" y2="16.65" />
             </svg>
-          </a>
+          </button>
         </div>
         <div class="navbar-right">
           <Show
@@ -273,6 +275,9 @@ export default function Navbar() {
           </Show>
         </div>
       </div>
+      <Show when={searchOpen()}>
+        <SearchModal onClose={() => setSearchOpen(false)} />
+      </Show>
     </nav>
   );
 }
