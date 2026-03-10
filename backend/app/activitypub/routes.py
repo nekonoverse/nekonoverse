@@ -184,7 +184,7 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
         raise HTTPException(status_code=404, detail="Note not found")
 
     if not is_ap_request(request):
-        return Response(status_code=302, headers={"Location": f"/notes/{note_id}"})
+        raise HTTPException(status_code=404, detail="Not found")
 
     return Response(
         content=json.dumps(render_note(note)),
