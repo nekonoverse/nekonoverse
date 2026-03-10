@@ -1,5 +1,6 @@
 """Moderation actions: suspend, silence, delete, force-sensitive."""
 
+import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import update
@@ -31,6 +32,30 @@ async def log_action(
     return entry
 
 
+async def invalidate_user_sessions(user_id: uuid.UUID) -> int:
+    """Delete all Valkey sessions belonging to a specific user.
+
+    Scans all ``session:*`` keys and removes those whose value matches
+    *user_id*.  Returns the number of sessions deleted.
+    """
+    from app.valkey_client import valkey
+
+    user_id_str = str(user_id)
+    deleted = 0
+    cursor = 0
+    while True:
+        cursor, keys = await valkey.scan(cursor, match="session:*", count=100)
+        if keys:
+            for key in keys:
+                val = await valkey.get(key)
+                if val == user_id_str:
+                    await valkey.delete(key)
+                    deleted += 1
+        if cursor == 0:
+            break
+    return deleted
+
+
 async def suspend_actor(
     db: AsyncSession, actor: Actor, moderator: User, reason: str | None = None
 ) -> None:
@@ -46,6 +71,10 @@ async def suspend_actor(
     await db.flush()
 
     await log_action(db, moderator, "suspend", "actor", str(actor.id), reason)
+
+    # Invalidate all active sessions for the suspended user
+    if actor.is_local and actor.local_user:
+        await invalidate_user_sessions(actor.local_user.id)
 
     # Deliver Delete(Person) to followers
     if actor.is_local:

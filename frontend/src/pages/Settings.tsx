@@ -1,4 +1,5 @@
-import { createSignal, onMount, Show, For, Switch, Match } from "solid-js";
+import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "solid-js";
+import QRCode from "qrcode";
 import { useNavigate, useParams, A } from "@solidjs/router";
 import { currentUser, authLoading, logout } from "../stores/auth";
 import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
@@ -246,6 +247,21 @@ function SecurityTab(props: { onLogout: () => void }) {
   const [totpError, setTotpError] = createSignal("");
   const [totpProcessing, setTotpProcessing] = createSignal(false);
   const [disablePw, setDisablePw] = createSignal("");
+  const [qrDataUrl, setQrDataUrl] = createSignal("");
+
+  createEffect(async () => {
+    const uri = totpUri();
+    if (uri) {
+      try {
+        const dataUrl = await QRCode.toDataURL(uri, { width: 200, margin: 2 });
+        setQrDataUrl(dataUrl);
+      } catch {
+        setQrDataUrl("");
+      }
+    } else {
+      setQrDataUrl("");
+    }
+  });
 
   onMount(async () => {
     try {
@@ -388,13 +404,15 @@ function SecurityTab(props: { onLogout: () => void }) {
             <Match when={totpStep() === "qr"}>
               <p>{t("totp.scanQr")}</p>
               <div class="totp-qr-section">
-                <img
-                  src={`https://api.qrserver.com/v1/create-qr-code/?data=${encodeURIComponent(totpUri())}&size=200x200`}
-                  alt="TOTP QR Code"
-                  class="totp-qr-image"
-                  width="200"
-                  height="200"
-                />
+                <Show when={qrDataUrl()}>
+                  <img
+                    src={qrDataUrl()}
+                    alt="TOTP QR Code"
+                    class="totp-qr-image"
+                    width="200"
+                    height="200"
+                  />
+                </Show>
                 <div class="totp-secret-display">
                   <code>{totpSecret()}</code>
                   <button

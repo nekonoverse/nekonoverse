@@ -191,6 +191,24 @@ async def test_login_with_totp_enabled(app_client, test_user, db, mock_valkey):
     mock_valkey.set.assert_called()
 
 
+# ── TOTP verify tests (with brute-force protection) ──
+
+
+def _totp_verify_get_side_effect(user_id_str):
+    """Return a side_effect for mock_valkey.get that handles TOTP verify flow.
+
+    First call (totp_attempts:*) returns None (no lockout).
+    Second call (totp_pending:*) returns user_id_str.
+    """
+    async def side_effect(key):
+        if key.startswith("totp_attempts:"):
+            return None
+        if key.startswith("totp_pending:"):
+            return user_id_str
+        return None
+    return side_effect
+
+
 async def test_totp_verify_success(app_client, test_user, db, mock_valkey):
     from app.services.totp_service import encrypt_secret
 
@@ -200,7 +218,9 @@ async def test_totp_verify_success(app_client, test_user, db, mock_valkey):
     await db.commit()
 
     totp_token = uuid.uuid4().hex
-    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    mock_valkey.get = AsyncMock(
+        side_effect=_totp_verify_get_side_effect(str(test_user.id)),
+    )
 
     totp = pyotp.TOTP(secret)
     code = totp.now()
@@ -211,6 +231,8 @@ async def test_totp_verify_success(app_client, test_user, db, mock_valkey):
     )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+    # Attempt counter should be deleted on success
+    mock_valkey.delete.assert_any_call(f"totp_attempts:{totp_token}")
 
 
 async def test_totp_verify_invalid_code(app_client, test_user, db, mock_valkey):
@@ -221,13 +243,18 @@ async def test_totp_verify_invalid_code(app_client, test_user, db, mock_valkey):
     await db.commit()
 
     totp_token = uuid.uuid4().hex
-    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    mock_valkey.get = AsyncMock(
+        side_effect=_totp_verify_get_side_effect(str(test_user.id)),
+    )
 
     resp = await app_client.post(
         "/api/v1/auth/totp/verify",
         json={"totp_token": totp_token, "code": "000000"},
     )
     assert resp.status_code == 401
+    # Attempt counter should be incremented on failure
+    mock_valkey.incr.assert_called_with(f"totp_attempts:{totp_token}")
+    mock_valkey.expire.assert_called_with(f"totp_attempts:{totp_token}", 300)
 
 
 async def test_totp_verify_expired_token(app_client, mock_valkey):
@@ -258,7 +285,9 @@ async def test_totp_verify_with_recovery_code(
     await db.commit()
 
     totp_token = uuid.uuid4().hex
-    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    mock_valkey.get = AsyncMock(
+        side_effect=_totp_verify_get_side_effect(str(test_user.id)),
+    )
 
     resp = await app_client.post(
         "/api/v1/auth/totp/verify",
@@ -266,6 +295,130 @@ async def test_totp_verify_with_recovery_code(
     )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
+
+
+# ── Brute-force protection tests ──
+
+
+async def test_totp_verify_lockout_after_max_attempts(
+    app_client, test_user, db, mock_valkey,
+):
+    """After 5 failed attempts, return 429 Too Many Requests."""
+    from app.services.totp_service import encrypt_secret
+
+    test_user.totp_enabled = True
+    test_user.totp_secret = encrypt_secret("JBSWY3DPEHPK3PXP")
+    await db.commit()
+
+    totp_token = uuid.uuid4().hex
+
+    # Simulate that 5 attempts have already been made
+    async def side_effect(key):
+        if key.startswith("totp_attempts:"):
+            return "5"
+        if key.startswith("totp_pending:"):
+            return str(test_user.id)
+        return None
+
+    mock_valkey.get = AsyncMock(side_effect=side_effect)
+
+    resp = await app_client.post(
+        "/api/v1/auth/totp/verify",
+        json={"totp_token": totp_token, "code": "000000"},
+    )
+    assert resp.status_code == 429
+    assert "Too many TOTP attempts" in resp.json()["detail"]
+
+
+async def test_totp_verify_lockout_blocks_valid_code(
+    app_client, test_user, db, mock_valkey,
+):
+    """Even a valid code should be rejected when locked out."""
+    from app.services.totp_service import encrypt_secret
+
+    secret = "JBSWY3DPEHPK3PXP"
+    test_user.totp_enabled = True
+    test_user.totp_secret = encrypt_secret(secret)
+    await db.commit()
+
+    totp_token = uuid.uuid4().hex
+    totp = pyotp.TOTP(secret)
+    code = totp.now()
+
+    # Simulate lockout (>= 5 attempts)
+    async def side_effect(key):
+        if key.startswith("totp_attempts:"):
+            return "7"
+        if key.startswith("totp_pending:"):
+            return str(test_user.id)
+        return None
+
+    mock_valkey.get = AsyncMock(side_effect=side_effect)
+
+    resp = await app_client.post(
+        "/api/v1/auth/totp/verify",
+        json={"totp_token": totp_token, "code": code},
+    )
+    assert resp.status_code == 429
+
+
+async def test_totp_verify_attempts_below_limit_allowed(
+    app_client, test_user, db, mock_valkey,
+):
+    """With fewer than 5 attempts, verification should proceed normally."""
+    from app.services.totp_service import encrypt_secret
+
+    secret = "JBSWY3DPEHPK3PXP"
+    test_user.totp_enabled = True
+    test_user.totp_secret = encrypt_secret(secret)
+    await db.commit()
+
+    totp_token = uuid.uuid4().hex
+    totp = pyotp.TOTP(secret)
+    code = totp.now()
+
+    # Simulate 4 previous attempts (just under the limit)
+    async def side_effect(key):
+        if key.startswith("totp_attempts:"):
+            return "4"
+        if key.startswith("totp_pending:"):
+            return str(test_user.id)
+        return None
+
+    mock_valkey.get = AsyncMock(side_effect=side_effect)
+
+    resp = await app_client.post(
+        "/api/v1/auth/totp/verify",
+        json={"totp_token": totp_token, "code": code},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+async def test_totp_verify_failed_recovery_code_increments_counter(
+    app_client, test_user, db, mock_valkey,
+):
+    """A failed recovery code attempt should increment the counter."""
+    from app.services.totp_service import encrypt_secret, hash_recovery_codes
+
+    secret = "JBSWY3DPEHPK3PXP"
+    test_user.totp_enabled = True
+    test_user.totp_secret = encrypt_secret(secret)
+    test_user.totp_recovery_codes = hash_recovery_codes(["abc12-xyz34"])
+    await db.commit()
+
+    totp_token = uuid.uuid4().hex
+    mock_valkey.get = AsyncMock(
+        side_effect=_totp_verify_get_side_effect(str(test_user.id)),
+    )
+
+    resp = await app_client.post(
+        "/api/v1/auth/totp/verify",
+        json={"totp_token": totp_token, "code": "wrong-code0"},
+    )
+    assert resp.status_code == 401
+    mock_valkey.incr.assert_called_with(f"totp_attempts:{totp_token}")
+    mock_valkey.expire.assert_called_with(f"totp_attempts:{totp_token}", 300)
 
 
 async def test_totp_status_enabled(authed_client, test_user, db):

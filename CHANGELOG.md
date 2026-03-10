@@ -1,3 +1,18 @@
+## [v0.8.1](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.8.1) — 2026-03-10
+
+### セキュリティ修正
+
+- **TOTP QRコードをクライアントサイド生成に変更** — 外部サービスへの秘密鍵送信を排除
+- **MFM XSS脆弱性修正** — `javascript:` / `data:` プロトコルをリンクからブロック
+- **凍結ユーザーのセッション無効化** — 凍結時に既存セッションを即時削除、認証時の凍結チェック追加
+- **TOTPブルートフォース保護** — 5回失敗で5分間ロックアウト
+
+### 変更
+
+- **CLAUDE.md** — セキュリティチェックのルールを追加
+
+---
+
 ## [v0.7.0](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.7.0) — 2026-03-10
 
 ### 追加

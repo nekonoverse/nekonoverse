@@ -169,6 +169,7 @@ docker compose logs -f frontend
 1. **Plan Issue を作成する** — 作業開始前に `nekonoverse/nekonoverse` にIssueを立てる (`gh issue create -R nekonoverse/nekonoverse`)。タイトルに `[Plan]` プレフィックスを付け、自分にアサインする。
 2. **重複チェック** — Issue作成前に `gh issue list -R nekonoverse/nekonoverse -l plan` や検索で、同じ内容の既存Planが進行中でないか確認する。進行中の重複があればそちらに合流する。
 3. **作業完了後** — `origin` (fork) に push → `upstream` に PR またはマージ。Plan Issue を閉じる。
+4. **セキュリティチェック** — セキュリティ監査はIssueを立てずに実施する。脆弱性の詳細を公開Issueに書かない。修正はPRのみで行い、PRタイトル・本文にも攻撃手法の詳細を含めない。
 
 ### リリース手順
 
