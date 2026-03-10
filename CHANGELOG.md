@@ -1,3 +1,12 @@
+## [20260311-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260311-2) — 2026-03-11
+
+### 修正
+
+- **Docker publish ワークフロー** — semver (`v*`) から日付ベース (`yyyymmdd-x`) タグ形式に修正
+- **main/develop ブランチ整合** — main に直接コミットされた変更を develop に統合し、ブランチを再同期
+
+---
+
 ## [20260311-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260311-1) — 2026-03-11
 
 ### 追加
