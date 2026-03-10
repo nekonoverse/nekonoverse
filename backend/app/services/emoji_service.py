@@ -57,6 +57,7 @@ async def create_local_emoji(
     )
     db.add(emoji)
     await db.flush()
+    await _invalidate_emoji_cache()
     return emoji
 
 
@@ -74,6 +75,16 @@ _EMOJI_UPDATABLE_FIELDS = {
 }
 
 
+async def _invalidate_emoji_cache() -> None:
+    """Invalidate the Valkey emoji list cache."""
+    try:
+        from app.valkey_client import valkey as valkey_client
+
+        await valkey_client.delete("perf:custom_emojis")
+    except Exception:
+        pass
+
+
 async def update_emoji(db: AsyncSession, emoji_id: uuid.UUID, updates: dict) -> CustomEmoji | None:
     emoji = await get_emoji_by_id(db, emoji_id)
     if not emoji:
@@ -82,6 +93,7 @@ async def update_emoji(db: AsyncSession, emoji_id: uuid.UUID, updates: dict) -> 
         if key in _EMOJI_UPDATABLE_FIELDS:
             setattr(emoji, key, value)
     await db.flush()
+    await _invalidate_emoji_cache()
     return emoji
 
 
@@ -91,6 +103,7 @@ async def delete_emoji(db: AsyncSession, emoji_id: uuid.UUID) -> bool:
         return False
     await db.delete(emoji)
     await db.flush()
+    await _invalidate_emoji_cache()
     return True
 
 

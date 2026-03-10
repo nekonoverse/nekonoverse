@@ -67,6 +67,7 @@ async def _normalize_emoji_to_local(db: AsyncSession, emoji: str) -> str:
     if not m or not m.group(2):
         return emoji
     from app.services.emoji_service import get_custom_emoji
+
     local = await get_custom_emoji(db, m.group(1), None)
     return f":{m.group(1)}:" if local else emoji
 
@@ -121,14 +122,20 @@ async def _save_reaction(
     # Notify local note author
     if note.actor and note.actor.is_local:
         from app.services.notification_service import create_notification
+
         await create_notification(
-            db, "reaction", note.actor_id, actor.id, note.id,
+            db,
+            "reaction",
+            note.actor_id,
+            actor.id,
+            note.id,
             reaction_emoji=emoji,
         )
 
     await db.commit()
 
     from app.services.reaction_service import _publish_reaction_event
+
     await _publish_reaction_event(db, note)
 
     logger.info("Saved reaction %s from %s on %s", emoji, actor_ap_id, note_ap_id)
@@ -147,8 +154,11 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
     if isinstance(tags, dict):
         tags = [tags]
     for tag in tags:
-        if (isinstance(tag, dict) and tag.get("type") == "Emoji"
-                and tag.get("name", "").strip(":") == shortcode):
+        if (
+            isinstance(tag, dict)
+            and tag.get("type") == "Emoji"
+            and tag.get("name", "").strip(":") == shortcode
+        ):
             icon = tag.get("icon", {})
             url = icon.get("url") if isinstance(icon, dict) else None
             if url:
@@ -156,9 +166,11 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
                 if not domain:
                     actor_ap_id = activity.get("actor", "")
                     from urllib.parse import urlparse
+
                     domain = urlparse(actor_ap_id).hostname
                 if domain:
                     from app.services.emoji_service import upsert_remote_emoji
+
                     # Extract extended fields (Misskey + CherryPick)
                     static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
                     _ml = tag.get("_misskey_license")
@@ -166,7 +178,10 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
                         _ml.get("freeText") if isinstance(_ml, dict) else None
                     )
                     await upsert_remote_emoji(
-                        db, shortcode, domain, url,
+                        db,
+                        shortcode,
+                        domain,
+                        url,
                         static_url=static_url,
                         aliases=tag.get("keywords"),
                         license=license_text,

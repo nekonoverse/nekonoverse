@@ -27,6 +27,7 @@ async def create_domain_block(
     await db.flush()
 
     from app.valkey_client import valkey
+
     await valkey.delete(f"domain_block:{domain}")
 
     logger.info("Domain blocked: %s (severity=%s) by %s", domain, severity, user.actor.username)
@@ -35,9 +36,7 @@ async def create_domain_block(
 
 async def remove_domain_block(db: AsyncSession, domain: str) -> bool:
     domain = domain.lower().strip()
-    result = await db.execute(
-        select(DomainBlock).where(DomainBlock.domain == domain)
-    )
+    result = await db.execute(select(DomainBlock).where(DomainBlock.domain == domain))
     block = result.scalar_one_or_none()
     if not block:
         return False
@@ -45,14 +44,13 @@ async def remove_domain_block(db: AsyncSession, domain: str) -> bool:
     await db.flush()
 
     from app.valkey_client import valkey
+
     await valkey.delete(f"domain_block:{domain}")
     return True
 
 
 async def list_domain_blocks(db: AsyncSession) -> list[DomainBlock]:
-    result = await db.execute(
-        select(DomainBlock).order_by(DomainBlock.created_at.desc())
-    )
+    result = await db.execute(select(DomainBlock).order_by(DomainBlock.created_at.desc()))
     return list(result.scalars().all())
 
 
@@ -62,13 +60,12 @@ async def is_domain_blocked(db: AsyncSession, domain: str) -> bool:
     domain = domain.lower().strip()
 
     from app.valkey_client import valkey
+
     cached = await valkey.get(f"domain_block:{domain}")
     if cached is not None:
         return cached == "1"
 
-    result = await db.execute(
-        select(DomainBlock.id).where(DomainBlock.domain == domain)
-    )
+    result = await db.execute(select(DomainBlock.id).where(DomainBlock.domain == domain))
     blocked = result.scalar_one_or_none() is not None
     await valkey.set(f"domain_block:{domain}", "1" if blocked else "0", ex=CACHE_TTL)
     return blocked

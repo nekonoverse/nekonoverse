@@ -10,16 +10,12 @@ from app.models.base import Base
 class NoteAttachment(Base):
     __tablename__ = "note_attachments"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     note_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("notes.id", ondelete="CASCADE"),
-        nullable=False, index=True
+        UUID(as_uuid=True), ForeignKey("notes.id", ondelete="CASCADE"), nullable=False, index=True
     )
     drive_file_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("drive_files.id", ondelete="SET NULL"),
-        nullable=True
+        UUID(as_uuid=True), ForeignKey("drive_files.id", ondelete="SET NULL"), nullable=True
     )
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     # For remote attachments where we don't download the file

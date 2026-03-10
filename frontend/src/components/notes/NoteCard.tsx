@@ -197,16 +197,14 @@ export default function NoteCard(props: Props) {
   const displayNote = () => props.note.reblog || props.note;
 
   // リノートの場合、内側のノートからシグナルを初期化する
-  setNoteContent(displayNote().content);
-  setNoteSource(displayNote().source);
-  setNoteEditedAt(displayNote().edited_at);
-
-  // Initialize boost count from displayNote
   const initBoostCount = () => displayNote().renotes_count;
-  if (boostCount() === 0) setBoostCount(initBoostCount());
-
-  // Initialize pinned state
-  if (displayNote().pinned) setPinned(true);
+  batch(() => {
+    setNoteContent(displayNote().content);
+    setNoteSource(displayNote().source);
+    setNoteEditedAt(displayNote().edited_at);
+    if (boostCount() === 0) setBoostCount(initBoostCount());
+    if (displayNote().pinned) setPinned(true);
+  });
 
   const isOwnNote = () => {
     const user = currentUser();
@@ -506,6 +504,8 @@ export default function NoteCard(props: Props) {
                       src={media.preview_url || media.url}
                       alt={media.description || ""}
                       loading="lazy"
+                      width={media.meta?.original?.width}
+                      height={media.meta?.original?.height}
                       style={{
                         "object-position": focalPointToObjectPosition(media.meta?.focus),
                       }}

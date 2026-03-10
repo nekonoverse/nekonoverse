@@ -52,13 +52,24 @@ async def upsert_hashtags(
 
     now = datetime.now(timezone.utc)
 
-    for name in hashtag_names:
-        # Try to find existing hashtag
-        result = await db.execute(
-            select(Hashtag).where(Hashtag.name == name)
-        )
-        hashtag = result.scalar_one_or_none()
+    # 既存ハッシュタグを一括取得
+    result = await db.execute(select(Hashtag).where(Hashtag.name.in_(hashtag_names)))
+    existing_tags = {h.name: h for h in result.scalars().all()}
 
+    # 既存の関連を一括チェック
+    tag_ids = [h.id for h in existing_tags.values()]
+    existing_links: set[uuid.UUID] = set()
+    if tag_ids:
+        link_result = await db.execute(
+            select(NoteHashtag.hashtag_id).where(
+                NoteHashtag.note_id == note_id,
+                NoteHashtag.hashtag_id.in_(tag_ids),
+            )
+        )
+        existing_links = set(link_result.scalars().all())
+
+    for name in hashtag_names:
+        hashtag = existing_tags.get(name)
         if hashtag:
             hashtag.usage_count = hashtag.usage_count + 1
             hashtag.last_used_at = now
@@ -71,14 +82,7 @@ async def upsert_hashtags(
             db.add(hashtag)
             await db.flush()
 
-        # Check if association already exists
-        existing = await db.execute(
-            select(NoteHashtag).where(
-                NoteHashtag.note_id == note_id,
-                NoteHashtag.hashtag_id == hashtag.id,
-            )
-        )
-        if not existing.scalar_one_or_none():
+        if hashtag.id not in existing_links:
             db.add(NoteHashtag(note_id=note_id, hashtag_id=hashtag.id))
 
     await db.flush()
@@ -89,11 +93,7 @@ async def get_trending_tags(
     limit: int = 10,
 ) -> list[Hashtag]:
     """Return the most-used hashtags, ordered by usage_count descending."""
-    result = await db.execute(
-        select(Hashtag)
-        .order_by(Hashtag.usage_count.desc())
-        .limit(limit)
-    )
+    result = await db.execute(select(Hashtag).order_by(Hashtag.usage_count.desc()).limit(limit))
     return list(result.scalars().all())
 
 

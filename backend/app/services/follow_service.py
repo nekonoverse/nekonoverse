@@ -11,6 +11,17 @@ from app.services.actor_service import actor_uri
 from app.services.delivery_service import enqueue_delivery
 
 
+async def _invalidate_follow_counts(*actor_ids: uuid.UUID) -> None:
+    """Invalidate follow count caches for given actors."""
+    from app.valkey_client import valkey
+
+    try:
+        keys = [f"perf:follow_counts:{aid}" for aid in actor_ids]
+        await valkey.delete(*keys)
+    except Exception:
+        pass
+
+
 async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Follow:
     """Create a follow request from local user to target actor."""
     actor = user.actor
@@ -37,6 +48,8 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
     )
     db.add(follow)
     await db.commit()
+
+    await _invalidate_follow_counts(actor.id, target_actor.id)
 
     # Send follow notification to local target
     if target_actor.is_local:
@@ -71,6 +84,8 @@ async def unfollow_actor(db: AsyncSession, user: User, target_actor: Actor):
 
     await db.delete(follow)
     await db.commit()
+
+    await _invalidate_follow_counts(actor.id, target_actor.id)
 
     # Send Undo(Follow) to remote server
     if not target_actor.is_local:
@@ -133,7 +148,23 @@ async def get_following(db: AsyncSession, actor_id: uuid.UUID, limit: int = 40) 
 
 
 async def get_follow_counts(db: AsyncSession, actor_id: uuid.UUID) -> tuple[int, int]:
-    """Return (followers_count, following_count) for the given actor."""
+    """Return (followers_count, following_count) for the given actor.
+
+    Cached in Valkey for 5 minutes.
+    """
+    import json
+
+    from app.valkey_client import valkey
+
+    cache_key = f"perf:follow_counts:{actor_id}"
+    try:
+        cached = await valkey.get(cache_key)
+        if cached:
+            data = json.loads(cached)
+            return data[0], data[1]
+    except Exception:
+        pass
+
     from sqlalchemy import func
 
     followers = await db.execute(
@@ -146,7 +177,15 @@ async def get_follow_counts(db: AsyncSession, actor_id: uuid.UUID) -> tuple[int,
         .select_from(Follow)
         .where(Follow.follower_id == actor_id, Follow.accepted.is_(True))
     )
-    return followers.scalar() or 0, following.scalar() or 0
+    fc = followers.scalar() or 0
+    fic = following.scalar() or 0
+
+    try:
+        await valkey.set(cache_key, json.dumps([fc, fic]), ex=300)
+    except Exception:
+        pass
+
+    return fc, fic
 
 
 async def get_follower_inboxes(db: AsyncSession, actor_id: uuid.UUID) -> list[str]:

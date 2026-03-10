@@ -14,8 +14,17 @@ interface Props {
   children: any;
 }
 
-// Simple in-memory cache
+// LRU cache with max size to prevent memory leaks
+const MAX_CACHE_SIZE = 100;
 const cache = new Map<string, Account>();
+function cacheSet(key: string, value: Account) {
+  if (cache.size >= MAX_CACHE_SIZE) {
+    // Mapのイテレーション順は挿入順なので、最初のキーを削除
+    const firstKey = cache.keys().next().value;
+    if (firstKey !== undefined) cache.delete(firstKey);
+  }
+  cache.set(key, value);
+}
 
 // Detect touch-primary device (no hover capability)
 const isTouchDevice = () =>
@@ -44,7 +53,7 @@ export default function UserHoverCard(props: Props) {
     }
     try {
       const acc = await getAccount(props.actorId);
-      cache.set(props.actorId, acc);
+      cacheSet(props.actorId, acc);
       setAccount(acc);
     } catch {}
   };

@@ -19,10 +19,12 @@ async def _publish_reaction_event(db: AsyncSession, note: Note) -> None:
         from app.services.follow_service import get_follower_ids
         from app.valkey_client import valkey as valkey_client
 
-        event = json.dumps({
-            "event": "status.reaction",
-            "payload": {"id": str(note.id)},
-        })
+        event = json.dumps(
+            {
+                "event": "status.reaction",
+                "payload": {"id": str(note.id)},
+            }
+        )
 
         if note.visibility in ("public", "unlisted"):
             await valkey_client.publish("timeline:public", event)
@@ -36,9 +38,7 @@ async def _publish_reaction_event(db: AsyncSession, note: Note) -> None:
         pass
 
 
-async def add_reaction(
-    db: AsyncSession, user: User, note: Note, emoji: str
-) -> Reaction:
+async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> Reaction:
     """Add a reaction to a note."""
     if not is_single_emoji(emoji) and not is_custom_emoji_shortcode(emoji):
         raise ValueError("Invalid emoji")
@@ -82,29 +82,31 @@ async def add_reaction(
         # Attach emoji tag for custom emoji so remote server can display it
         if is_custom_emoji_shortcode(emoji):
             import re
+
             sc_match = re.match(r"^:([a-zA-Z0-9_]+):", emoji)
             if sc_match:
                 from app.services.emoji_service import get_custom_emoji
+
                 local_emoji = await get_custom_emoji(db, sc_match.group(1), None)
                 if local_emoji:
-                    activity["tag"] = [{
-                        "type": "Emoji",
-                        "name": f":{local_emoji.shortcode}:",
-                        "icon": {
-                            "type": "Image",
-                            "mediaType": "image/png",
-                            "url": local_emoji.url,
-                        },
-                    }]
+                    activity["tag"] = [
+                        {
+                            "type": "Emoji",
+                            "name": f":{local_emoji.shortcode}:",
+                            "icon": {
+                                "type": "Image",
+                                "mediaType": "image/png",
+                                "url": local_emoji.url,
+                            },
+                        }
+                    ]
 
         await enqueue_delivery(db, actor.id, note.actor.inbox_url, activity)
 
     return reaction
 
 
-async def remove_reaction(
-    db: AsyncSession, user: User, note: Note, emoji: str
-):
+async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
     """Remove a reaction from a note."""
     actor = user.actor
 
@@ -132,9 +134,7 @@ async def remove_reaction(
         from app.activitypub.renderer import render_like_activity, render_undo_activity
         from app.services.delivery_service import enqueue_delivery
 
-        like_activity = render_like_activity(
-            reaction_ap_id, actor_uri(actor), note.ap_id, emoji
-        )
+        like_activity = render_like_activity(reaction_ap_id, actor_uri(actor), note.ap_id, emoji)
         undo_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
         undo_activity = render_undo_activity(undo_id, actor_uri(actor), like_activity)
         await enqueue_delivery(db, actor.id, note.actor.inbox_url, undo_activity)

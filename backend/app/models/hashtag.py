@@ -11,9 +11,7 @@ from app.models.base import Base
 class Hashtag(Base):
     __tablename__ = "hashtags"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
     usage_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     last_used_at: Mapped[datetime] = mapped_column(
@@ -29,16 +27,16 @@ class NoteHashtag(Base):
     __tablename__ = "note_hashtags"
 
     note_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("notes.id", ondelete="CASCADE"),
+        UUID(as_uuid=True),
+        ForeignKey("notes.id", ondelete="CASCADE"),
         primary_key=True,
     )
     hashtag_id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("hashtags.id", ondelete="CASCADE"),
+        UUID(as_uuid=True),
+        ForeignKey("hashtags.id", ondelete="CASCADE"),
         primary_key=True,
     )
 
     hashtag = relationship("Hashtag", back_populates="note_hashtags")
 
-    __table_args__ = (
-        Index("ix_note_hashtags_hashtag_id", "hashtag_id"),
-    )
+    __table_args__ = (Index("ix_note_hashtags_hashtag_id", "hashtag_id"),)

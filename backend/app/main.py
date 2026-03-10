@@ -31,12 +31,27 @@ from app.dependencies import get_db
 async def lifespan(app: FastAPI):
     import logging
 
+    import httpx
+
     from app.storage import ensure_bucket
+
     try:
         await ensure_bucket()
     except Exception as e:
         logging.getLogger(__name__).warning("Could not ensure S3 bucket: %s", e)
-    yield
+
+    from app.config import settings as app_settings
+
+    app.state.http_client = httpx.AsyncClient(
+        timeout=30.0,
+        verify=not app_settings.skip_ssl_verify,
+        follow_redirects=True,
+        limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
+    )
+    try:
+        yield
+    finally:
+        await app.state.http_client.aclose()
 
 
 app = FastAPI(
@@ -130,8 +145,10 @@ async def manifest(db: AsyncSession = Depends(get_db)):
             {"src": icon_url, "sizes": "192x192", "type": "image/png"},
             {"src": icon_url, "sizes": "512x512", "type": "image/png"},
             {
-                "src": icon_url, "sizes": "512x512",
-                "type": "image/png", "purpose": "maskable",
+                "src": icon_url,
+                "sizes": "512x512",
+                "type": "image/png",
+                "purpose": "maskable",
             },
         ]
     else:
@@ -139,8 +156,10 @@ async def manifest(db: AsyncSession = Depends(get_db)):
             {"src": "/pwa-192x192.svg", "sizes": "192x192", "type": "image/svg+xml"},
             {"src": "/pwa-512x512.svg", "sizes": "512x512", "type": "image/svg+xml"},
             {
-                "src": "/pwa-512x512.svg", "sizes": "512x512",
-                "type": "image/svg+xml", "purpose": "maskable",
+                "src": "/pwa-512x512.svg",
+                "sizes": "512x512",
+                "type": "image/svg+xml",
+                "purpose": "maskable",
             },
         ]
 
@@ -162,10 +181,23 @@ async def manifest(db: AsyncSession = Depends(get_db)):
 
 @app.get("/api/v1/custom_emojis")
 async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
+    import json
+
+    from app.valkey_client import valkey as valkey_client
+
+    # Valkeyキャッシュ (絵文字リストは頻繁に変わらない)
+    cache_key = "perf:custom_emojis"
+    try:
+        cached = await valkey_client.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
     from app.services.emoji_service import list_local_emojis
 
     emojis = await list_local_emojis(db)
-    return [
+    result = [
         {
             "shortcode": e.shortcode,
             "url": e.url,
@@ -178,6 +210,13 @@ async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
         }
         for e in emojis
     ]
+
+    try:
+        await valkey_client.set(cache_key, json.dumps(result), ex=300)
+    except Exception:
+        pass
+
+    return result
 
 
 @app.get("/api/v1/trends/tags")

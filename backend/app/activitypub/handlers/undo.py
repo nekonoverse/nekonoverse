@@ -94,6 +94,7 @@ async def _undo_reaction(db: AsyncSession, activity: dict, inner: dict):
         await db.commit()
 
         from app.services.reaction_service import _publish_reaction_event
+
         await _publish_reaction_event(db, note)
 
         logger.info("Undo reaction from %s on %s", actor_ap_id, note_ap_id)
@@ -122,9 +123,7 @@ async def _undo_announce(db: AsyncSession, activity: dict, inner: dict):
 
     # Decrement original note's renotes_count
     if announce_note.renote_of_id:
-        result = await db.execute(
-            select(Note).where(Note.id == announce_note.renote_of_id)
-        )
+        result = await db.execute(select(Note).where(Note.id == announce_note.renote_of_id))
         original = result.scalar_one_or_none()
         if original:
             original.renotes_count = max(0, original.renotes_count - 1)

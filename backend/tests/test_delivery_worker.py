@@ -118,7 +118,7 @@ async def test_get_actor_with_key_nonexistent(db, mock_valkey):
 
 
 def _mock_httpx_client(status_code=202, side_effect=None):
-    """Helper to create a mocked httpx.AsyncClient context manager."""
+    """Helper to create a mocked httpx client for _get_http_client."""
     mock_client = AsyncMock()
     if side_effect:
         mock_client.post = AsyncMock(side_effect=side_effect)
@@ -126,8 +126,6 @@ def _mock_httpx_client(status_code=202, side_effect=None):
         mock_response = MagicMock()
         mock_response.status_code = status_code
         mock_client.post = AsyncMock(return_value=mock_response)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
     return mock_client
 
 
@@ -135,7 +133,7 @@ async def test_deliver_activity_success(db, test_user, pending_job, mock_valkey)
     actor = test_user.actor
     mock_client = _mock_httpx_client(202)
 
-    with patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client):
+    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
         result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     assert result is True
@@ -146,7 +144,7 @@ async def test_deliver_activity_failure_500(db, test_user, pending_job, mock_val
     actor = test_user.actor
     mock_client = _mock_httpx_client(500)
 
-    with patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client):
+    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
         result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     assert result is False
@@ -156,7 +154,7 @@ async def test_deliver_activity_accepts_200(db, test_user, pending_job, mock_val
     actor = test_user.actor
     mock_client = _mock_httpx_client(200)
 
-    with patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client):
+    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
         result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     assert result is True
@@ -166,7 +164,7 @@ async def test_deliver_activity_accepts_204(db, test_user, pending_job, mock_val
     actor = test_user.actor
     mock_client = _mock_httpx_client(204)
 
-    with patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client):
+    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
         result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     assert result is True
@@ -176,7 +174,7 @@ async def test_deliver_activity_sends_signed_headers(db, test_user, pending_job,
     actor = test_user.actor
     mock_client = _mock_httpx_client(202)
 
-    with patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client):
+    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
         await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     call_kwargs = mock_client.post.call_args
@@ -210,7 +208,7 @@ async def test_process_jobs_successful_delivery(db, test_user, pending_job, mock
 
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
-        patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client),
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -227,7 +225,7 @@ async def test_process_jobs_failed_delivery_retries(db, test_user, pending_job, 
 
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
-        patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client),
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -249,7 +247,7 @@ async def test_process_jobs_max_attempts_marks_dead(db, test_user, pending_job, 
 
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
-        patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client),
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -292,7 +290,7 @@ async def test_process_jobs_exponential_backoff(db, test_user, pending_job, mock
 
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
-        patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client),
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -314,7 +312,7 @@ async def test_process_jobs_backoff_capped_at_6_hours(db, test_user, pending_job
 
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
-        patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client),
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -332,7 +330,7 @@ async def test_process_jobs_network_error_retries(db, test_user, pending_job, mo
 
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
-        patch("app.worker.delivery_worker.httpx.AsyncClient", return_value=mock_client),
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)

@@ -198,11 +198,21 @@ export default function Home() {
     }
   });
 
+  // リアクション更新のデバウンス (同一Noteへの連続更新を集約)
+  const pendingReactionRefresh = new Map<string, ReturnType<typeof setTimeout>>();
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
     if (notes().some((n) => n.id === id || n.reblog?.id === id)) {
-      await refreshNote(id);
+      const existing = pendingReactionRefresh.get(id);
+      if (existing) clearTimeout(existing);
+      pendingReactionRefresh.set(
+        id,
+        setTimeout(async () => {
+          pendingReactionRefresh.delete(id);
+          await refreshNote(id);
+        }, 500),
+      );
     }
   });
 
@@ -227,6 +237,8 @@ export default function Home() {
   onCleanup(() => {
     unsub();
     unsubReaction();
+    pendingReactionRefresh.forEach((timer) => clearTimeout(timer));
+    pendingReactionRefresh.clear();
     window.removeEventListener("scroll", handleScroll);
     if (observer) {
       observer.disconnect();

@@ -33,9 +33,7 @@ async def create_report(
     return report
 
 
-async def list_reports(
-    db: AsyncSession, status_filter: str | None = None
-) -> list[Report]:
+async def list_reports(db: AsyncSession, status_filter: str | None = None) -> list[Report]:
     query = (
         select(Report)
         .options(
@@ -62,9 +60,7 @@ async def get_report_by_id(db: AsyncSession, report_id: uuid.UUID) -> Report | N
     return result.scalar_one_or_none()
 
 
-async def resolve_report(
-    db: AsyncSession, report: Report, moderator: User
-) -> Report:
+async def resolve_report(db: AsyncSession, report: Report, moderator: User) -> Report:
     report.status = "resolved"
     report.resolved_by_id = moderator.id
     report.resolved_at = datetime.now(timezone.utc)
@@ -72,9 +68,7 @@ async def resolve_report(
     return report
 
 
-async def reject_report(
-    db: AsyncSession, report: Report, moderator: User
-) -> Report:
+async def reject_report(db: AsyncSession, report: Report, moderator: User) -> Report:
     report.status = "rejected"
     report.resolved_by_id = moderator.id
     report.resolved_at = datetime.now(timezone.utc)

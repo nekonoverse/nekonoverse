@@ -36,7 +36,10 @@ async def public_timeline(
 ):
     actor_id = user.actor_id if user else None
     notes = await get_public_timeline(
-        db, limit=limit, max_id=max_id, local_only=local,
+        db,
+        limit=limit,
+        max_id=max_id,
+        local_only=local,
         current_actor_id=actor_id,
     )
     note_ids = [n.id for n in notes]
@@ -55,7 +58,9 @@ async def home_timeline(
     notes = await get_home_timeline(db, user=user, limit=limit, max_id=max_id)
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(
-        db, note_ids, user.actor_id,
+        db,
+        note_ids,
+        user.actor_id,
     )
     result = await notes_to_responses(notes, reactions_map, db)
     return _deduplicate_timeline(result)

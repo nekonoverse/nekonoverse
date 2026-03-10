@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class MediaAttachment(BaseModel):
     """Mastodon-compatible MediaAttachment response."""
+
     id: str
     type: str
     url: str
