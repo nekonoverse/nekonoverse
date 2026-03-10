@@ -5,6 +5,7 @@ import math
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.note import Note
 from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
 from app.services.note_service import fetch_remote_note, get_note_by_ap_id
@@ -286,3 +287,27 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             await valkey_client.publish(f"timeline:home:{fid}", event)
     except Exception:
         logger.exception("Failed to publish remote note to streaming")
+
+    # Background focal point detection for remote image attachments
+    if settings.face_detect_url:
+        from sqlalchemy import select as sel
+
+        from app.models.note_attachment import NoteAttachment as NA
+
+        att_rows = await db.execute(
+            sel(NA.id).where(
+                NA.note_id == note.id,
+                NA.remote_url.isnot(None),
+                NA.remote_focal_x.is_(None),
+                NA.remote_mime_type.in_(
+                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
+                ),
+            )
+        )
+        att_ids = [row[0] for row in att_rows.all()]
+        if att_ids:
+            import asyncio
+
+            from app.services.focal_point_service import detect_remote_focal_points
+
+            asyncio.create_task(detect_remote_focal_points(note.id, att_ids))
