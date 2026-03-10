@@ -1,5 +1,6 @@
 """Media upload/download and drive API."""
 
+import math
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
@@ -30,9 +31,11 @@ def _parse_focus(focus: str | None) -> tuple[float | None, float | None]:
     if len(parts) != 2:
         return None, None
     try:
-        x = max(-1.0, min(1.0, float(parts[0])))
-        y = max(-1.0, min(1.0, float(parts[1])))
-        return x, y
+        x = float(parts[0])
+        y = float(parts[1])
+        if not (math.isfinite(x) and math.isfinite(y)):
+            return None, None
+        return max(-1.0, min(1.0, x)), max(-1.0, min(1.0, y))
     except ValueError:
         return None, None
 
@@ -125,10 +128,8 @@ async def update_media(
     db: AsyncSession = Depends(get_db),
 ):
     drive_file = await get_drive_file(db, file_id)
-    if not drive_file:
+    if not drive_file or (drive_file.owner_id != user.id and not user.is_admin):
         raise HTTPException(status_code=404, detail="Media not found")
-    if drive_file.owner_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="Not allowed")
 
     focal_x, focal_y = _parse_focus(focus)
     await update_drive_file_meta(
@@ -152,10 +153,8 @@ async def delete_media(
     db: AsyncSession = Depends(get_db),
 ):
     drive_file = await get_drive_file(db, file_id)
-    if not drive_file:
+    if not drive_file or (drive_file.owner_id != user.id and not user.is_admin):
         raise HTTPException(status_code=404, detail="Media not found")
-    if drive_file.owner_id != user.id and not user.is_admin:
-        raise HTTPException(status_code=403, detail="Not allowed")
     await delete_drive_file(db, drive_file)
     return {"ok": True}
 

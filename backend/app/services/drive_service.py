@@ -2,7 +2,9 @@
 
 import base64
 import logging
+import math
 import uuid
+from urllib.parse import urlparse
 
 import httpx
 from sqlalchemy import select
@@ -98,9 +100,9 @@ async def update_drive_file_meta(
     """Update description and/or focal point of a drive file."""
     if description is not None:
         drive_file.description = description
-    if focal_x is not None:
+    if focal_x is not None and math.isfinite(focal_x):
         drive_file.focal_x = max(-1.0, min(1.0, focal_x))
-    if focal_y is not None:
+    if focal_y is not None and math.isfinite(focal_y):
         drive_file.focal_y = max(-1.0, min(1.0, focal_y))
     await db.commit()
     await db.refresh(drive_file)
@@ -110,6 +112,10 @@ async def update_drive_file_meta(
 async def auto_detect_focal_point(db: AsyncSession, drive_file: DriveFile) -> None:
     """Call face detection service to auto-set focal point. Fails silently."""
     if not settings.face_detect_url:
+        return
+    parsed = urlparse(settings.face_detect_url)
+    if parsed.scheme not in ("http", "https"):
+        logger.warning("Invalid face_detect_url scheme: %s", parsed.scheme)
         return
     if drive_file.focal_x is not None:
         return  # Already set manually
