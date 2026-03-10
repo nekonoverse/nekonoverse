@@ -24,6 +24,12 @@ export interface CurrentUser {
   role: string;
 }
 
+export interface LoginResponse {
+  ok?: boolean;
+  requires_totp?: boolean;
+  totp_token?: string;
+}
+
 const [currentUser, setCurrentUser] = createSignal<CurrentUser | null>(null);
 const [authLoading, setAuthLoading] = createSignal(true);
 
@@ -32,7 +38,9 @@ export { currentUser, authLoading };
 export async function fetchCurrentUser() {
   setAuthLoading(true);
   try {
-    const user = await apiRequest<CurrentUser>("/api/v1/accounts/verify_credentials");
+    const user = await apiRequest<CurrentUser>(
+      "/api/v1/accounts/verify_credentials",
+    );
     setCurrentUser(user);
     fetchFollowedIds();
   } catch {
@@ -42,10 +50,28 @@ export async function fetchCurrentUser() {
   }
 }
 
-export async function login(username: string, password: string) {
-  await apiRequest("/api/v1/auth/login", {
+export async function login(
+  username: string,
+  password: string,
+): Promise<LoginResponse> {
+  const resp = await apiRequest<LoginResponse>("/api/v1/auth/login", {
     method: "POST",
     body: { username, password },
+  });
+  if (resp.requires_totp) {
+    return resp;
+  }
+  await fetchCurrentUser();
+  return resp;
+}
+
+export async function completeTotpLogin(
+  code: string,
+  totpToken: string,
+): Promise<void> {
+  await apiRequest("/api/v1/auth/totp/verify", {
+    method: "POST",
+    body: { code, totp_token: totpToken },
   });
   await fetchCurrentUser();
 }
@@ -60,12 +86,26 @@ export async function loginWithPasskey() {
   await fetchCurrentUser();
 }
 
-export async function register(username: string, email: string, password: string, inviteCode?: string) {
+export async function register(
+  username: string,
+  email: string,
+  password: string,
+  inviteCode?: string,
+  reason?: string,
+): Promise<{ pending?: boolean }> {
   const body: Record<string, string> = { username, email, password };
   if (inviteCode) body.invite_code = inviteCode;
+  if (reason) body.reason = reason;
   await apiRequest("/api/v1/accounts", {
     method: "POST",
     body,
   });
-  await login(username, password);
+  // 承認制モードではログインせず、pendingフラグを返す
+  try {
+    await login(username, password);
+    return {};
+  } catch {
+    // ログイン失敗 = 承認待ち
+    return { pending: true };
+  }
 }

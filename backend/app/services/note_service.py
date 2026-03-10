@@ -1,3 +1,4 @@
+import math
 import re
 import uuid
 from datetime import datetime, timezone
@@ -60,18 +61,22 @@ async def create_note(
     mention_data = []
     for username, domain in mentions:
         from app.services.actor_service import actor_uri, get_actor_by_username
+
         mentioned_actor = await get_actor_by_username(db, username, domain)
         # リモートユーザーがDBに未登録の場合、WebFingerで解決
         if not mentioned_actor and domain:
             from app.services.actor_service import resolve_webfinger
+
             mentioned_actor = await resolve_webfinger(db, username, domain)
         if mentioned_actor:
             mentioned_uri = actor_uri(mentioned_actor)
-            mention_data.append({
-                "ap_id": mentioned_uri,
-                "username": mentioned_actor.username,
-                "domain": mentioned_actor.domain,
-            })
+            mention_data.append(
+                {
+                    "ap_id": mentioned_uri,
+                    "username": mentioned_actor.username,
+                    "domain": mentioned_actor.domain,
+                }
+            )
             if visibility == "direct":
                 if mentioned_uri not in to_list:
                     to_list.append(mentioned_uri)
@@ -111,6 +116,7 @@ async def create_note(
     # Poll support
     if poll_options:
         from datetime import datetime, timedelta, timezone
+
         note.is_poll = True
         note.poll_options = [{"title": opt, "votes_count": 0} for opt in poll_options]
         note.poll_multiple = poll_multiple
@@ -118,10 +124,17 @@ async def create_note(
             note.poll_expires_at = datetime.now(timezone.utc) + timedelta(seconds=poll_expires_in)
     db.add(note)
 
+    # Increment parent's replies_count
+    if in_reply_to_id:
+        parent = await get_note_by_id(db, in_reply_to_id)
+        if parent:
+            parent.replies_count = parent.replies_count + 1
+
     # Attach media files
     if media_ids:
         from app.models.note_attachment import NoteAttachment
         from app.services.drive_service import get_drive_file
+
         for position, file_id in enumerate(media_ids[:4]):
             drive_file = await get_drive_file(db, file_id)
             if drive_file and drive_file.owner_id == user.id:
@@ -137,27 +150,39 @@ async def create_note(
     # Reload note with all relationships for rendering and response
     note = await get_note_by_id(db, note_id)
 
+    # Extract and upsert hashtags
+    from app.services.hashtag_service import extract_hashtags
+    from app.services.hashtag_service import upsert_hashtags as upsert_ht
+
+    hashtag_names = extract_hashtags(content)
+    if hashtag_names:
+        await upsert_ht(db, note_id, hashtag_names)
+        note._hashtag_names = hashtag_names
+
     # Extract custom emoji shortcodes for AP federation tags
     shortcodes = set(_EMOJI_SHORTCODE_RE.findall(content))
     if shortcodes:
         from app.services.emoji_service import get_custom_emoji
+
         emoji_tags = []
         for sc in shortcodes:
             emoji = await get_custom_emoji(db, sc, None)
             if emoji and not emoji.local_only:
-                emoji_tags.append({
-                    "shortcode": emoji.shortcode,
-                    "url": emoji.url,
-                    "aliases": emoji.aliases,
-                    "license": emoji.license,
-                    "is_sensitive": emoji.is_sensitive,
-                    "author": emoji.author,
-                    "description": emoji.description,
-                    "copy_permission": emoji.copy_permission,
-                    "usage_info": emoji.usage_info,
-                    "is_based_on": emoji.is_based_on,
-                    "category": emoji.category,
-                })
+                emoji_tags.append(
+                    {
+                        "shortcode": emoji.shortcode,
+                        "url": emoji.url,
+                        "aliases": emoji.aliases,
+                        "license": emoji.license,
+                        "is_sensitive": emoji.is_sensitive,
+                        "author": emoji.author,
+                        "description": emoji.description,
+                        "copy_permission": emoji.copy_permission,
+                        "usage_info": emoji.usage_info,
+                        "is_based_on": emoji.is_based_on,
+                        "category": emoji.category,
+                    }
+                )
         if emoji_tags:
             note._emoji_tags = emoji_tags
 
@@ -195,10 +220,15 @@ async def create_note(
     for m in mention_data:
         if not m.get("domain"):  # local actor
             from app.services.actor_service import get_actor_by_username
+
             mentioned = await get_actor_by_username(db, m["username"], None)
             if mentioned:
                 await create_notification(
-                    db, "mention", mentioned.id, actor.id, note_id,
+                    db,
+                    "mention",
+                    mentioned.id,
+                    actor.id,
+                    note_id,
                 )
 
     # Reply notification
@@ -206,7 +236,11 @@ async def create_note(
         parent = await get_note_by_id(db, in_reply_to_id)
         if parent and parent.actor.is_local:
             await create_notification(
-                db, "reply", parent.actor_id, actor.id, note_id,
+                db,
+                "reply",
+                parent.actor_id,
+                actor.id,
+                note_id,
             )
 
     await db.commit()
@@ -244,6 +278,8 @@ def _note_load_options():
         selectinload(Note.renote_of).selectinload(Note.attachments),
         selectinload(Note.renote_of).selectinload(Note.quoted_note).selectinload(Note.actor),
         selectinload(Note.renote_of).selectinload(Note.quoted_note).selectinload(Note.attachments),
+        # リプライ先ノートのアクター（in_reply_to_account_id解決用）
+        selectinload(Note.in_reply_to).selectinload(Note.actor),
     ]
 
 
@@ -276,17 +312,23 @@ async def check_note_visible(
 
     # Misskey: make_notes_followers_only_before — treat old notes as followers-only
     if getattr(actor, "make_notes_followers_only_before", None) and note.published:
-        threshold = datetime.fromtimestamp(actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc)
+        threshold = datetime.fromtimestamp(
+            actor.make_notes_followers_only_before / 1000.0,
+            tz=timezone.utc,
+        )
         if note.published < threshold:
             if not current_actor_id:
                 return False
             from app.models.follow import Follow as FollowModel
+
             result = await db.execute(
-                select(FollowModel.id).where(
+                select(FollowModel.id)
+                .where(
                     FollowModel.following_id == note.actor_id,
                     FollowModel.follower_id == current_actor_id,
                     FollowModel.accepted.is_(True),
-                ).limit(1)
+                )
+                .limit(1)
             )
             if result.scalar_one_or_none() is None:
                 return False
@@ -297,19 +339,21 @@ async def check_note_visible(
         return False
     if note.visibility == "followers":
         from app.models.follow import Follow
+
         result = await db.execute(
-            select(Follow.id).where(
+            select(Follow.id)
+            .where(
                 Follow.following_id == note.actor_id,
                 Follow.follower_id == current_actor_id,
                 Follow.accepted.is_(True),
-            ).limit(1)
+            )
+            .limit(1)
         )
         return result.scalar_one_or_none() is not None
     if note.visibility == "direct":
         from app.models.actor import Actor
-        result = await db.execute(
-            select(Actor.ap_id).where(Actor.id == current_actor_id)
-        )
+
+        result = await db.execute(select(Actor.ap_id).where(Actor.id == current_actor_id))
         actor_ap_id = result.scalar_one_or_none()
         if not actor_ap_id:
             return False
@@ -460,6 +504,7 @@ async def get_reaction_summary(
         if m:
             from app.models.custom_emoji import CustomEmoji
             from app.services.emoji_service import get_custom_emoji
+
             shortcode, domain = m.group(1), m.group(2)
             local = await get_custom_emoji(db, shortcode, None)
             if local:
@@ -472,17 +517,133 @@ async def get_reaction_summary(
                 # No domain in reaction string (e.g. Misskey sends ":blobcat:"
                 # without domain) — search any remote emoji with this shortcode
                 result2 = await db.execute(
-                    select(CustomEmoji).where(
+                    select(CustomEmoji)
+                    .where(
                         CustomEmoji.shortcode == shortcode,
                         CustomEmoji.domain.isnot(None),
-                    ).limit(1)
+                    )
+                    .limit(1)
                 )
                 remote = result2.scalar_one_or_none()
                 if remote:
                     emoji_url = remote.url
 
         from app.utils.media_proxy import media_proxy_url
-        summaries.append({"emoji": emoji, "count": count, "me": me, "emoji_url": media_proxy_url(emoji_url)})
+
+        summaries.append(
+            {
+                "emoji": emoji,
+                "count": count,
+                "me": me,
+                "emoji_url": media_proxy_url(emoji_url),
+            }
+        )
+    return summaries
+
+
+async def get_reaction_summaries(
+    db: AsyncSession,
+    note_ids: list[uuid.UUID],
+    current_actor_id: uuid.UUID | None = None,
+) -> dict[uuid.UUID, list[dict]]:
+    """Get aggregated reactions for multiple notes in batch.
+
+    Returns a dict mapping note_id -> list of reaction summary dicts.
+    This avoids N+1 queries by fetching all reaction data in bulk.
+    """
+    from app.models.custom_emoji import CustomEmoji
+    from app.utils.media_proxy import media_proxy_url
+
+    if not note_ids:
+        return {}
+
+    # 1) Fetch all reaction counts grouped by (note_id, emoji) in one query
+    result = await db.execute(
+        select(
+            Reaction.note_id,
+            Reaction.emoji,
+            func.count(Reaction.id).label("count"),
+        )
+        .where(Reaction.note_id.in_(note_ids))
+        .group_by(Reaction.note_id, Reaction.emoji)
+        .order_by(Reaction.note_id, func.count(Reaction.id).desc())
+    )
+    rows = result.all()
+
+    # 2) Fetch "me" reactions in one query (which emojis did the current user react to)
+    me_set: set[tuple[uuid.UUID, str]] = set()
+    if current_actor_id:
+        me_result = await db.execute(
+            select(Reaction.note_id, Reaction.emoji).where(
+                Reaction.note_id.in_(note_ids),
+                Reaction.actor_id == current_actor_id,
+            )
+        )
+        for note_id_val, emoji_val in me_result.all():
+            me_set.add((note_id_val, emoji_val))
+
+    # 3) Collect all custom emoji shortcodes that need URL resolution
+    custom_emojis_needed: dict[str, str | None] = {}  # shortcode -> domain
+    for _, emoji_str, _ in rows:
+        m = _CUSTOM_EMOJI_REACTION_RE.match(emoji_str)
+        if m:
+            shortcode, domain = m.group(1), m.group(2)
+            # Always try local first, so track shortcode with None domain
+            if shortcode not in custom_emojis_needed:
+                custom_emojis_needed[shortcode] = domain
+
+    # 4) Batch-fetch all needed custom emojis in at most 2 queries
+    emoji_url_map: dict[str, str | None] = {}  # emoji string -> url
+    if custom_emojis_needed:
+        all_shortcodes = set(custom_emojis_needed.keys())
+
+        # Fetch local emojis
+        local_result = await db.execute(
+            select(CustomEmoji).where(
+                CustomEmoji.shortcode.in_(all_shortcodes),
+                CustomEmoji.domain.is_(None),
+            )
+        )
+        local_emojis = {e.shortcode: e for e in local_result.scalars().all()}
+
+        # Collect shortcodes that need remote lookup
+        remote_shortcodes = all_shortcodes - set(local_emojis.keys())
+        remote_emojis: dict[str, CustomEmoji] = {}
+        if remote_shortcodes:
+            remote_result = await db.execute(
+                select(CustomEmoji).where(
+                    CustomEmoji.shortcode.in_(remote_shortcodes),
+                    CustomEmoji.domain.isnot(None),
+                )
+            )
+            for e in remote_result.scalars().all():
+                # Keep first match per shortcode (or match domain if specified)
+                if e.shortcode not in remote_emojis:
+                    remote_emojis[e.shortcode] = e
+
+        # Build the emoji string -> URL map
+        for _, emoji_str, _ in rows:
+            m = _CUSTOM_EMOJI_REACTION_RE.match(emoji_str)
+            if m:
+                shortcode, domain = m.group(1), m.group(2)
+                if shortcode in local_emojis:
+                    emoji_url_map[emoji_str] = local_emojis[shortcode].url
+                elif shortcode in remote_emojis:
+                    emoji_url_map[emoji_str] = remote_emojis[shortcode].url
+
+    # 5) Build the result dict
+    summaries: dict[uuid.UUID, list[dict]] = {nid: [] for nid in note_ids}
+    for note_id_val, emoji_str, count in rows:
+        me = (note_id_val, emoji_str) in me_set
+        emoji_url = emoji_url_map.get(emoji_str)
+        summaries[note_id_val].append(
+            {
+                "emoji": emoji_str,
+                "count": count,
+                "me": me,
+                "emoji_url": media_proxy_url(emoji_url),
+            }
+        )
     return summaries
 
 
@@ -507,6 +668,7 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
 
     try:
         from app.services.actor_service import _signed_get
+
         resp = await _signed_get(db, ap_id)
         if not resp or resp.status_code != 200:
             status = getattr(resp, "status_code", "no response")
@@ -574,11 +736,7 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             in_reply_to_id = reply_note.id
 
     # 引用解決 (再帰fetchはしない)
-    quote_ap_id = (
-        data.get("_misskey_quote")
-        or data.get("quoteUrl")
-        or data.get("quoteUri")
-    )
+    quote_ap_id = data.get("_misskey_quote") or data.get("quoteUrl") or data.get("quoteUri")
     quote_id = None
     if quote_ap_id:
         quoted_note = await get_note_by_ap_id(db, quote_ap_id)
@@ -601,13 +759,17 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             emoji_name = tag.get("name", "").strip(":")
             if emoji_name and emoji_url and actor.domain:
                 from app.services.emoji_service import upsert_remote_emoji
+
                 static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
                 _ml = tag.get("_misskey_license")
                 license_text = tag.get("license") or (
-                    (_ml.get("freeText") if isinstance(_ml, dict) else None)
+                    _ml.get("freeText") if isinstance(_ml, dict) else None
                 )
                 await upsert_remote_emoji(
-                    db, shortcode=emoji_name, domain=actor.domain, url=emoji_url,
+                    db,
+                    shortcode=emoji_name,
+                    domain=actor.domain,
+                    url=emoji_url,
                     static_url=static_url,
                     aliases=tag.get("keywords"),
                     license=license_text,
@@ -640,6 +802,7 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
         end_time = data.get("endTime")
         if end_time:
             from datetime import datetime as dt
+
             try:
                 poll_expires_at = dt.fromisoformat(end_time.replace("Z", "+00:00"))
             except ValueError:
@@ -670,6 +833,7 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
     published = data.get("published")
     if published:
         from datetime import datetime as dt
+
         try:
             note.published = dt.fromisoformat(published.replace("Z", "+00:00"))
         except ValueError:
@@ -697,6 +861,18 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             )
         if not att_url or not isinstance(att_url, str):
             continue
+        # Parse focalPoint [x, y]
+        focal_x, focal_y = None, None
+        fp = att_data.get("focalPoint")
+        if isinstance(fp, list) and len(fp) >= 2:
+            try:
+                fx, fy = float(fp[0]), float(fp[1])
+                if math.isfinite(fx) and math.isfinite(fy):
+                    focal_x = max(-1.0, min(1.0, fx))
+                    focal_y = max(-1.0, min(1.0, fy))
+            except (ValueError, TypeError):
+                pass
+
         attachment = NoteAttachment(
             note_id=note.id,
             position=position,
@@ -707,8 +883,22 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             remote_width=att_data.get("width"),
             remote_height=att_data.get("height"),
             remote_description=att_data.get("name"),
+            remote_focal_x=focal_x,
+            remote_focal_y=focal_y,
         )
         db.add(attachment)
+
+    # Extract and upsert hashtags from AP tags
+    from app.services.hashtag_service import (
+        extract_hashtags_from_ap_tags,
+    )
+    from app.services.hashtag_service import (
+        upsert_hashtags as upsert_ht,
+    )
+
+    hashtag_names = extract_hashtags_from_ap_tags(tags)
+    if hashtag_names:
+        await upsert_ht(db, note.id, hashtag_names)
 
     logger.info("Fetched and stored remote note %s from %s", note_ap_id, actor_ap_id)
     return note

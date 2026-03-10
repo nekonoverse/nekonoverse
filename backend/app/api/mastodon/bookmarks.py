@@ -19,11 +19,15 @@ async def get_bookmarks(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.api.mastodon.statuses import note_to_response
+    from app.api.mastodon.statuses import notes_to_responses
     from app.services.bookmark_service import get_bookmarks as _get
+    from app.services.note_service import get_reaction_summaries
 
     notes = await _get(db, user.actor_id, limit=limit, max_id=max_id)
-    result = []
-    for note in notes:
-        result.append(await note_to_response(note, db=db))
-    return result
+    note_ids = [n.id for n in notes]
+    reactions_map = await get_reaction_summaries(
+        db,
+        note_ids,
+        user.actor_id,
+    )
+    return await notes_to_responses(notes, reactions_map, db)

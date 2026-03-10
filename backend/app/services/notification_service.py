@@ -46,15 +46,18 @@ async def create_notification(
     # Publish real-time notification event
     try:
         import json
+
         from app.valkey_client import valkey
 
-        event = json.dumps({
-            "event": "notification",
-            "payload": {
-                "id": str(notification.id),
-                "type": notification.type,
-            },
-        })
+        event = json.dumps(
+            {
+                "event": "notification",
+                "payload": {
+                    "id": str(notification.id),
+                    "type": notification.type,
+                },
+            }
+        )
         await valkey.publish(f"notifications:{recipient_id}", event)
     except Exception:
         pass  # Don't fail notification creation if pub/sub fails
@@ -84,9 +87,7 @@ async def get_notifications(
     return list(result.scalars().all())
 
 
-async def mark_as_read(
-    db: AsyncSession, notification_id: uuid.UUID, actor_id: uuid.UUID
-) -> bool:
+async def mark_as_read(db: AsyncSession, notification_id: uuid.UUID, actor_id: uuid.UUID) -> bool:
     result = await db.execute(
         select(Notification).where(
             Notification.id == notification_id,
@@ -113,7 +114,5 @@ async def mark_all_as_read(db: AsyncSession, actor_id: uuid.UUID) -> None:
 async def clear_notifications(db: AsyncSession, actor_id: uuid.UUID) -> None:
     from sqlalchemy import delete
 
-    await db.execute(
-        delete(Notification).where(Notification.recipient_id == actor_id)
-    )
+    await db.execute(delete(Notification).where(Notification.recipient_id == actor_id))
     await db.flush()

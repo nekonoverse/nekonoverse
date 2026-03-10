@@ -32,6 +32,17 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    # Deny access if the user's actor has been suspended
+    if user.actor and user.actor.is_suspended:
+        # Invalidate this session so the client does not retry
+        await valkey.delete(f"session:{session_id}")
+        raise HTTPException(status_code=403, detail="Account is suspended")
+
+    # 承認待ちユーザーはアクセス不可
+    if user.approval_status == "pending":
+        await valkey.delete(f"session:{session_id}")
+        raise HTTPException(status_code=403, detail="Your registration is pending approval")
+
     return user
 
 
@@ -69,4 +80,12 @@ async def get_optional_user(
     if not user_id_str:
         return None
 
-    return await get_user_by_id(db, uuid.UUID(user_id_str))
+    user = await get_user_by_id(db, uuid.UUID(user_id_str))
+    if user and user.actor and user.actor.is_suspended:
+        await valkey.delete(f"session:{session_id}")
+        return None
+    if user and user.approval_status == "pending":
+        await valkey.delete(f"session:{session_id}")
+        return None
+
+    return user

@@ -65,6 +65,7 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     open_registrations = settings.registration_open
     try:
         from app.services.server_settings_service import get_setting
+
         mode = await get_setting(db, "registration_mode")
         if mode is not None:
             open_registrations = mode != "closed"
@@ -78,16 +79,35 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     # Load server settings
     node_name = "Nekonoverse"
     node_description = "A cat-friendly ActivityPub server"
+    node_icon_url = None
+    node_theme_color = None
     try:
         from app.services.server_settings_service import get_setting
+
         name = await get_setting(db, "server_name")
         if name:
             node_name = name
         desc = await get_setting(db, "server_description")
         if desc:
             node_description = desc
+        icon_url = await get_setting(db, "server_icon_url")
+        if icon_url:
+            node_icon_url = icon_url
+        theme_color = await get_setting(db, "server_theme_color")
+        if theme_color:
+            node_theme_color = theme_color
     except Exception:
         pass
+
+    metadata = {
+        "nodeName": node_name,
+        "nodeDescription": node_description,
+        "features": ["emoji_reactions"],
+    }
+    if node_icon_url:
+        metadata["iconUrl"] = node_icon_url
+    if node_theme_color:
+        metadata["themeColor"] = node_theme_color
 
     return {
         "version": "2.0",
@@ -103,9 +123,5 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
             },
             "localPosts": post_count,
         },
-        "metadata": {
-            "nodeName": node_name,
-            "nodeDescription": node_description,
-            "features": ["emoji_reactions"],
-        },
+        "metadata": metadata,
     }

@@ -147,9 +147,9 @@ jobs:
         run: |
           npm ci
           if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
-            npx playwright install --with-deps firefox
+            npx playwright install --with-deps firefox chromium
           else
-            npx playwright install-deps firefox
+            npx playwright install-deps firefox chromium
           fi
 
       - name: Run E2E tests (shard ${{ matrix.shard }}/3)

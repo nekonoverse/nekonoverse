@@ -1,14 +1,18 @@
-import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
+import { createSignal, createMemo, onMount, onCleanup, Show, For } from "solid-js";
 import { getCustomEmojis, type CustomEmoji } from "../../api/emoji";
+import {
+  UNICODE_EMOJIS,
+  EMOJI_CATEGORIES,
+  UNICODE_BY_CATEGORY,
+  type UnicodeEmojiDef,
+} from "../../data/unicode-emojis";
+import {
+  getRecentEmojis,
+  addRecentEmoji,
+  type RecentEmoji,
+} from "../../utils/recentEmojis";
 import Emoji from "../Emoji";
 import { useI18n } from "../../i18n";
-
-const EMOJI_LIST = [
-  "\u{1F44D}", "\u2764\uFE0F", "\u{1F602}", "\u{1F60D}", "\u{1F62E}",
-  "\u{1F622}", "\u{1F621}", "\u{1F44F}", "\u{1F525}", "\u{1F389}",
-  "\u{1F914}", "\u{1F60E}", "\u{1F631}", "\u{1F4AF}", "\u{1F440}",
-  "\u{1F64F}", "\u{1F680}", "\u{1F31F}", "\u{1F43E}", "\u{1F431}",
-];
 
 interface Props {
   onSelect: (emoji: string) => void;
@@ -22,7 +26,14 @@ export default function EmojiPicker(props: Props) {
   let searchRef: HTMLInputElement | undefined;
   const [query, setQuery] = createSignal("");
   const [customEmojis, setCustomEmojis] = createSignal<CustomEmoji[]>([]);
-  const [tab, setTab] = createSignal<"unicode" | "custom">("unicode");
+  const [recentEmojis, setRecentEmojis] = createSignal<RecentEmoji[]>(
+    getRecentEmojis()
+  );
+
+  // Guard against ghost-tap on iOS: ignore clicks for 300ms after opening
+  const [ready, setReady] = createSignal(false);
+  const readyTimer = setTimeout(() => setReady(true), 300);
+  onCleanup(() => clearTimeout(readyTimer));
 
   const isUsed = (emoji: string) => props.usedEmojis?.includes(emoji) ?? false;
 
@@ -35,119 +46,210 @@ export default function EmojiPicker(props: Props) {
     document.addEventListener("mousedown", handleClick);
     onCleanup(() => document.removeEventListener("mousedown", handleClick));
 
-    getCustomEmojis().then((emojis) => setCustomEmojis(emojis)).catch(() => {});
+    getCustomEmojis()
+      .then((emojis) => setCustomEmojis(emojis))
+      .catch(() => {});
 
-    // Auto-focus search when switching to custom tab
-    searchRef?.focus();
+    setTimeout(() => searchRef?.focus(), 0);
   });
 
-  const filteredCustom = () => {
-    const q = query().toLowerCase();
-    if (!q) return customEmojis();
-    return customEmojis().filter((e) =>
-      e.shortcode.toLowerCase().includes(q) ||
-      e.aliases?.some((a) => a.toLowerCase().includes(q)) ||
-      e.category?.toLowerCase().includes(q)
-    );
-  };
+  // --- Searching ---
 
-  // Group filtered custom emojis by category
-  const groupedCustom = () => {
-    const emojis = filteredCustom();
+  const isSearching = () => query().trim().length > 0;
+
+  const filteredUnicode = createMemo(() => {
+    const q = query().toLowerCase().trim();
+    if (!q) return [];
+    return UNICODE_EMOJIS.filter(
+      (e) =>
+        e.shortcode.includes(q) ||
+        e.keywords.some((k) => k.includes(q)) ||
+        e.emoji === q
+    );
+  });
+
+  const filteredCustom = createMemo(() => {
+    const q = query().toLowerCase().trim();
+    if (!q) return [];
+    return customEmojis().filter(
+      (e) =>
+        e.shortcode.toLowerCase().includes(q) ||
+        e.aliases?.some((a) => a.toLowerCase().includes(q)) ||
+        e.category?.toLowerCase().includes(q)
+    );
+  });
+
+  // Group custom emojis by category (for browse mode)
+  const groupedCustom = createMemo(() => {
+    const emojis = customEmojis();
     const groups = new Map<string, CustomEmoji[]>();
     for (const e of emojis) {
-      const cat = e.category || "";
+      const cat = e.category || t("reactions.custom");
       if (!groups.has(cat)) groups.set(cat, []);
       groups.get(cat)!.push(e);
     }
     return groups;
-  };
+  });
 
-  const selectCustom = (emoji: CustomEmoji) => {
-    props.onSelect(`:${emoji.shortcode}:`);
+  // --- Selection handlers ---
+
+  const selectUnicode = (def: UnicodeEmojiDef) => {
+    if (!ready()) return;
+    addRecentEmoji({
+      emoji: def.emoji,
+      isCustom: false,
+      shortcode: def.shortcode,
+    });
+    setRecentEmojis(getRecentEmojis());
+    props.onSelect(def.emoji);
     props.onClose();
   };
 
+  const selectCustom = (emoji: CustomEmoji) => {
+    if (!ready()) return;
+    const emojiStr = `:${emoji.shortcode}:`;
+    addRecentEmoji({
+      emoji: emojiStr,
+      isCustom: true,
+      url: emoji.url,
+      shortcode: emoji.shortcode,
+    });
+    setRecentEmojis(getRecentEmojis());
+    props.onSelect(emojiStr);
+    props.onClose();
+  };
+
+  const selectRecent = (recent: RecentEmoji) => {
+    if (!ready()) return;
+    addRecentEmoji(recent);
+    setRecentEmojis(getRecentEmojis());
+    props.onSelect(recent.emoji);
+    props.onClose();
+  };
+
+  // --- Render helpers ---
+
+  const renderUnicodeBtn = (def: UnicodeEmojiDef) => (
+    <button
+      class={`emoji-btn${isUsed(def.emoji) ? " emoji-used" : ""}`}
+      disabled={isUsed(def.emoji)}
+      onClick={() => selectUnicode(def)}
+      title={`:${def.shortcode}:`}
+    >
+      <Emoji emoji={def.emoji} />
+    </button>
+  );
+
+  const renderCustomBtn = (emoji: CustomEmoji) => (
+    <button
+      class={`emoji-btn${isUsed(`:${emoji.shortcode}:`) ? " emoji-used" : ""}`}
+      disabled={isUsed(`:${emoji.shortcode}:`)}
+      onClick={() => selectCustom(emoji)}
+      title={`:${emoji.shortcode}:`}
+    >
+      <img
+        class="custom-emoji"
+        src={emoji.url}
+        alt={`:${emoji.shortcode}:`}
+        draggable={false}
+      />
+    </button>
+  );
+
+  const renderRecentBtn = (recent: RecentEmoji) => (
+    <button
+      class={`emoji-btn${isUsed(recent.emoji) ? " emoji-used" : ""}`}
+      disabled={isUsed(recent.emoji)}
+      onClick={() => selectRecent(recent)}
+      title={recent.shortcode ? `:${recent.shortcode}:` : recent.emoji}
+    >
+      {recent.isCustom && recent.url ? (
+        <img
+          class="custom-emoji"
+          src={recent.url}
+          alt={recent.emoji}
+          draggable={false}
+        />
+      ) : (
+        <Emoji emoji={recent.emoji} />
+      )}
+    </button>
+  );
+
   return (
     <div class="emoji-picker" ref={ref}>
-      <div class="emoji-picker-tabs">
-        <button
-          class={`emoji-picker-tab${tab() === "unicode" ? " active" : ""}`}
-          onClick={() => setTab("unicode")}
-        >
-          {t("reactions.unicode")}
-        </button>
-        <button
-          class={`emoji-picker-tab${tab() === "custom" ? " active" : ""}`}
-          onClick={() => { setTab("custom"); setTimeout(() => searchRef?.focus(), 0); }}
-        >
-          {t("reactions.custom")}
-        </button>
-      </div>
+      {/* Search bar — always visible */}
+      <input
+        ref={searchRef}
+        class="emoji-search"
+        type="text"
+        placeholder={t("reactions.searchEmoji")}
+        value={query()}
+        onInput={(e) => setQuery(e.currentTarget.value)}
+      />
 
-      <Show when={tab() === "unicode"}>
-        <div class="emoji-grid">
-          {EMOJI_LIST.map((emoji) => (
-            <button
-              class={`emoji-btn${isUsed(emoji) ? " emoji-used" : ""}`}
-              disabled={isUsed(emoji)}
-              onClick={() => {
-                props.onSelect(emoji);
-                props.onClose();
-              }}
-            >
-              <Emoji emoji={emoji} />
-            </button>
-          ))}
-        </div>
-      </Show>
-
-      <Show when={tab() === "custom"}>
-        <input
-          ref={searchRef}
-          class="emoji-search"
-          type="text"
-          placeholder={t("reactions.searchEmoji")}
-          value={query()}
-          onInput={(e) => setQuery(e.currentTarget.value)}
-        />
-        <div class="emoji-custom-list">
+      <div class="emoji-scroll-area">
+        {/* --- Search results mode --- */}
+        <Show when={isSearching()}>
           <Show
-            when={filteredCustom().length > 0}
+            when={filteredUnicode().length > 0 || filteredCustom().length > 0}
             fallback={
-              <div class="emoji-custom-empty">
-                {customEmojis().length === 0
-                  ? t("reactions.noCustomEmoji")
-                  : t("reactions.noResults")}
-              </div>
+              <div class="emoji-custom-empty">{t("reactions.noResults")}</div>
             }
           >
+            <div class="emoji-grid">
+              <For each={filteredCustom()}>{(e) => renderCustomBtn(e)}</For>
+              <For each={filteredUnicode()}>{(e) => renderUnicodeBtn(e)}</For>
+            </div>
+          </Show>
+        </Show>
+
+        {/* --- Browse mode --- */}
+        <Show when={!isSearching()}>
+          {/* Recently used */}
+          <Show when={recentEmojis().length > 0}>
+            <div class="emoji-category-label">
+              {t("reactions.recentlyUsed")}
+            </div>
+            <div class="emoji-grid">
+              <For each={recentEmojis()}>
+                {(recent) => renderRecentBtn(recent)}
+              </For>
+            </div>
+          </Show>
+
+          {/* Custom emojis by category */}
+          <Show when={customEmojis().length > 0}>
             <For each={[...groupedCustom().entries()]}>
               {([category, emojis]) => (
                 <>
-                  <Show when={category}>
-                    <div class="emoji-category-label">{category}</div>
-                  </Show>
+                  <div class="emoji-category-label">{category}</div>
                   <div class="emoji-grid">
-                    <For each={emojis}>
-                      {(emoji) => (
-                        <button
-                          class={`emoji-btn${isUsed(`:${emoji.shortcode}:`) ? " emoji-used" : ""}`}
-                          disabled={isUsed(`:${emoji.shortcode}:`)}
-                          onClick={() => selectCustom(emoji)}
-                          title={`:${emoji.shortcode}:`}
-                        >
-                          <img class="custom-emoji" src={emoji.url} alt={`:${emoji.shortcode}:`} draggable={false} />
-                        </button>
-                      )}
-                    </For>
+                    <For each={emojis}>{(emoji) => renderCustomBtn(emoji)}</For>
                   </div>
                 </>
               )}
             </For>
           </Show>
-        </div>
-      </Show>
+
+          {/* Unicode emoji categories */}
+          <For each={EMOJI_CATEGORIES}>
+            {(cat) => {
+              const emojis = UNICODE_BY_CATEGORY.get(cat.id) ?? [];
+              return (
+                <Show when={emojis.length > 0}>
+                  <div class="emoji-category-label">{cat.label}</div>
+                  <div class="emoji-grid">
+                    <For each={emojis}>
+                      {(def) => renderUnicodeBtn(def)}
+                    </For>
+                  </div>
+                </Show>
+              );
+            }}
+          </For>
+        </Show>
+      </div>
     </div>
   );
 }

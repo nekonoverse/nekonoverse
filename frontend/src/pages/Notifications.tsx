@@ -159,7 +159,7 @@ export default function Notifications() {
                         </span>
                         <Show when={notif.type === "reaction" && notif.emoji}>
                           <span class="notification-emoji">
-                            <Emoji emoji={notif.emoji!} />
+                            <Emoji emoji={notif.emoji!} url={notif.emoji_url} />
                           </span>
                         </Show>
                         <Show when={!notif.read}>

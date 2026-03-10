@@ -1,9 +1,10 @@
-import { createSignal, onMount, Show } from "solid-js";
+import { createSignal, onMount, Show, createMemo } from "solid-js";
 import { useI18n } from "../i18n";
+import { versionUpdateReady, applyUpdate } from "../stores/instance";
 
 export default function PWAUpdateBanner() {
   const { t } = useI18n();
-  const [needRefresh, setNeedRefresh] = createSignal(false);
+  const [swNeedRefresh, setSwNeedRefresh] = createSignal(false);
   let updateSW: ((reloadPage?: boolean) => Promise<void>) | undefined;
 
   onMount(async () => {
@@ -11,7 +12,7 @@ export default function PWAUpdateBanner() {
       const { registerSW } = await import("virtual:pwa-register");
       updateSW = registerSW({
         onNeedRefresh() {
-          setNeedRefresh(true);
+          setSwNeedRefresh(true);
         },
       });
     } catch {
@@ -19,12 +20,18 @@ export default function PWAUpdateBanner() {
     }
   });
 
-  const handleUpdate = () => {
-    updateSW?.(true);
+  const showBanner = createMemo(() => swNeedRefresh() || versionUpdateReady());
+
+  const handleUpdate = async () => {
+    if (swNeedRefresh()) {
+      updateSW?.(true);
+    } else {
+      await applyUpdate();
+    }
   };
 
   return (
-    <Show when={needRefresh()}>
+    <Show when={showBanner()}>
       <div class="pwa-update-banner">
         <span>{t("pwa.updateAvailable")}</span>
         <button onClick={handleUpdate}>{t("pwa.reload")}</button>

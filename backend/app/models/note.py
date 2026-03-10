@@ -11,9 +11,7 @@ from app.models.base import Base
 class Note(Base):
     __tablename__ = "notes"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ap_id: Mapped[str] = mapped_column(String(2048), unique=True, nullable=False, index=True)
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actors.id"), nullable=False, index=True
@@ -56,14 +54,28 @@ class Note(Base):
     actor = relationship("Actor", back_populates="notes")
     reactions = relationship("Reaction", back_populates="note")
     attachments = relationship(
-        "NoteAttachment", back_populates="note",
-        order_by="NoteAttachment.position", lazy="selectin",
+        "NoteAttachment",
+        back_populates="note",
+        order_by="NoteAttachment.position",
+        lazy="selectin",
     )
     quoted_note = relationship(
-        "Note", foreign_keys=[quote_id], remote_side="Note.id", lazy="noload",
+        "Note",
+        foreign_keys=[quote_id],
+        remote_side="Note.id",
+        lazy="noload",
     )
     renote_of = relationship(
-        "Note", foreign_keys=[renote_of_id], remote_side="Note.id", lazy="noload",
+        "Note",
+        foreign_keys=[renote_of_id],
+        remote_side="Note.id",
+        lazy="noload",
+    )
+    in_reply_to = relationship(
+        "Note",
+        foreign_keys=[in_reply_to_id],
+        remote_side="Note.id",
+        lazy="noload",
     )
 
     __table_args__ = (

@@ -18,9 +18,7 @@ async def pin_note(db: AsyncSession, user: User, note_id: uuid.UUID) -> PinnedNo
     actor = user.actor
 
     # Verify the note exists and belongs to the user
-    result = await db.execute(
-        select(Note).where(Note.id == note_id, Note.deleted_at.is_(None))
-    )
+    result = await db.execute(select(Note).where(Note.id == note_id, Note.deleted_at.is_(None)))
     note = result.scalar_one_or_none()
     if not note:
         raise ValueError("Note not found")
@@ -29,18 +27,14 @@ async def pin_note(db: AsyncSession, user: User, note_id: uuid.UUID) -> PinnedNo
 
     # Check if already pinned
     existing = await db.execute(
-        select(PinnedNote).where(
-            PinnedNote.actor_id == actor.id, PinnedNote.note_id == note_id
-        )
+        select(PinnedNote).where(PinnedNote.actor_id == actor.id, PinnedNote.note_id == note_id)
     )
     if existing.scalar_one_or_none():
         raise ValueError("Already pinned")
 
     # Check pin count
     count_result = await db.execute(
-        select(func.count()).select_from(PinnedNote).where(
-            PinnedNote.actor_id == actor.id
-        )
+        select(func.count()).select_from(PinnedNote).where(PinnedNote.actor_id == actor.id)
     )
     count = count_result.scalar() or 0
     if count >= MAX_PINS:
@@ -61,9 +55,7 @@ async def unpin_note(db: AsyncSession, user: User, note_id: uuid.UUID) -> None:
     actor = user.actor
 
     result = await db.execute(
-        select(PinnedNote).where(
-            PinnedNote.actor_id == actor.id, PinnedNote.note_id == note_id
-        )
+        select(PinnedNote).where(PinnedNote.actor_id == actor.id, PinnedNote.note_id == note_id)
     )
     pin = result.scalar_one_or_none()
     if not pin:
@@ -77,7 +69,18 @@ async def get_pinned_notes(db: AsyncSession, actor_id: uuid.UUID) -> list[Pinned
     """Get pinned notes for an actor, ordered by position."""
     result = await db.execute(
         select(PinnedNote)
-        .options(selectinload(PinnedNote.note).selectinload(Note.actor))
+        .options(
+            selectinload(PinnedNote.note).selectinload(Note.actor),
+            selectinload(PinnedNote.note).selectinload(Note.attachments),
+            selectinload(PinnedNote.note).selectinload(Note.quoted_note).selectinload(Note.actor),
+            selectinload(PinnedNote.note)
+            .selectinload(Note.quoted_note)
+            .selectinload(Note.attachments),
+            selectinload(PinnedNote.note).selectinload(Note.renote_of).selectinload(Note.actor),
+            selectinload(PinnedNote.note)
+            .selectinload(Note.renote_of)
+            .selectinload(Note.attachments),
+        )
         .where(PinnedNote.actor_id == actor_id)
         .order_by(PinnedNote.position)
     )

@@ -82,7 +82,8 @@ async def unblock_actor(db: AsyncSession, user: User, target_actor: Actor) -> No
 
         block_activity = render_block_activity(
             f"{settings.server_url}/activities/{uuid.uuid4()}",
-            actor_uri(actor), target_actor.ap_id,
+            actor_uri(actor),
+            target_actor.ap_id,
         )
         undo_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
         undo_activity = render_undo_activity(undo_id, actor_uri(actor), block_activity)
@@ -90,9 +91,7 @@ async def unblock_actor(db: AsyncSession, user: User, target_actor: Actor) -> No
 
 
 async def get_blocked_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
-    result = await db.execute(
-        select(UserBlock.target_id).where(UserBlock.actor_id == actor_id)
-    )
+    result = await db.execute(select(UserBlock.target_id).where(UserBlock.actor_id == actor_id))
     return [row[0] for row in result.all()]
 
 

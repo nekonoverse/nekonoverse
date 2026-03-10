@@ -11,9 +11,7 @@ from app.models.base import Base
 class ModerationLog(Base):
     __tablename__ = "moderation_log"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     moderator_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("users.id"), nullable=False
     )
@@ -27,6 +25,4 @@ class ModerationLog(Base):
 
     moderator = relationship("User", lazy="selectin")
 
-    __table_args__ = (
-        Index("ix_moderation_log_created", "created_at"),
-    )
+    __table_args__ = (Index("ix_moderation_log_created", "created_at"),)

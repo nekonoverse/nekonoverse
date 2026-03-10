@@ -60,7 +60,9 @@ function doConnect(path: string) {
     es?.close();
     es = null;
     if (!intentionalClose) {
-      retryTimer = setTimeout(() => doConnect(path), retryMs);
+      // ジッターを追加してサンダリングハード問題を防止
+      const jitter = Math.random() * retryMs * 0.3;
+      retryTimer = setTimeout(() => doConnect(path), retryMs + jitter);
       retryMs = Math.min(retryMs * 2, 30000);
     }
   };

@@ -1,6 +1,6 @@
-import { Show, For, createSignal, onCleanup } from "solid-js";
+import { Show, For, createSignal, onCleanup, batch } from "solid-js";
 import type { Note, Poll, MediaAttachment } from "../../api/statuses";
-import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll } from "../../api/statuses";
+import { reblogNote, unreblogNote, deleteNote, bookmarkNote, unbookmarkNote, pinNote, unpinNote, votePoll, editNote } from "../../api/statuses";
 import { blockAccount, muteAccount } from "../../api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
@@ -8,6 +8,7 @@ import ImageLightbox from "../ImageLightbox";
 import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "../../i18n";
+import { focalPointToObjectPosition } from "../../utils/focalPoint";
 import { twemojify } from "../../utils/twemojify";
 import { emojify } from "../../utils/emojify";
 import { useNavigate } from "@solidjs/router";
@@ -21,6 +22,8 @@ interface Props {
   onReactionUpdate?: () => void;
   onQuote?: (note: Note) => void;
   onDelete?: (noteId: string) => void;
+  onReply?: (note: Note) => void;
+  inReplyToActor?: { username: string; domain: string | null } | null;
 }
 
 function formatTime(iso: string): string {
@@ -41,16 +44,30 @@ function profileUrl(actor: Note["actor"]): string {
 
 function QuoteEmbed(props: { note: Note }) {
   const navigate = useNavigate();
+  const handleClick = (e: MouseEvent) => {
+    // Don't navigate if clicking a link inside the quote
+    if ((e.target as HTMLElement).closest("a")) return;
+    e.preventDefault();
+    navigate(`/notes/${props.note.id}`);
+  };
   return (
-    <div class="note-quote-embed">
+    <div class="note-quote-embed" onClick={handleClick}>
       <div class="note-quote-header">
         <img
           class="note-quote-avatar"
           src={props.note.actor.avatar_url || defaultAvatar()}
           alt=""
         />
-        <a href={profileUrl(props.note.actor)} class="note-quote-name">
-          <strong>{props.note.actor.display_name || props.note.actor.username}</strong>
+        <a
+          href={profileUrl(props.note.actor)}
+          class="note-quote-name"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <strong ref={(el) => {
+            el.textContent = props.note.actor.display_name || props.note.actor.username;
+            emojify(el, props.note.actor.emojis || []);
+            twemojify(el);
+          }} />
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
       </div>
@@ -167,17 +184,27 @@ export default function NoteCard(props: Props) {
   const [bookmarked, setBookmarked] = createSignal(false);
   const [pinned, setPinned] = createSignal(false);
   const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
+  const [cwExpanded, setCwExpanded] = createSignal(false);
+  const [editing, setEditing] = createSignal(false);
+  const [editContent, setEditContent] = createSignal("");
+  const [editSaving, setEditSaving] = createSignal(false);
+  const [noteContent, setNoteContent] = createSignal(props.note.content);
+  const [noteSource, setNoteSource] = createSignal(props.note.source);
+  const [noteEditedAt, setNoteEditedAt] = createSignal(props.note.edited_at);
 
   // If this is a reblog, the displayed note is the inner one
   const isReblog = () => !!props.note.reblog;
   const displayNote = () => props.note.reblog || props.note;
 
-  // Initialize boost count from displayNote
+  // リノートの場合、内側のノートからシグナルを初期化する
   const initBoostCount = () => displayNote().renotes_count;
-  if (boostCount() === 0) setBoostCount(initBoostCount());
-
-  // Initialize pinned state
-  if (displayNote().pinned) setPinned(true);
+  batch(() => {
+    setNoteContent(displayNote().content);
+    setNoteSource(displayNote().source);
+    setNoteEditedAt(displayNote().edited_at);
+    if (boostCount() === 0) setBoostCount(initBoostCount());
+    if (displayNote().pinned) setPinned(true);
+  });
 
   const isOwnNote = () => {
     const user = currentUser();
@@ -236,6 +263,32 @@ export default function NoteCard(props: Props) {
     } catch {}
   };
 
+  const handleEdit = () => {
+    batch(() => {
+      setMoreOpen(false);
+      const source = noteSource() ?? "";
+      setEditContent(source);
+      setEditing(true);
+    });
+  };
+
+  const handleEditSave = async () => {
+    if (editSaving()) return;
+    setEditSaving(true);
+    try {
+      const updated = await editNote(displayNote().id, editContent());
+      setNoteContent(updated.content);
+      setNoteSource(updated.source);
+      setNoteEditedAt(updated.edited_at);
+      setEditing(false);
+    } catch {}
+    setEditSaving(false);
+  };
+
+  const handleEditCancel = () => {
+    setEditing(false);
+  };
+
   const handleBookmark = async () => {
     try {
       if (bookmarked()) {
@@ -269,7 +322,21 @@ export default function NoteCard(props: Props) {
     props.onQuote?.(displayNote());
   };
 
+  const handleReply = () => {
+    if (props.onReply) {
+      props.onReply(displayNote());
+    } else {
+      navigate(`/notes/${displayNote().id}`);
+    }
+  };
+
   const note = displayNote;
+
+  // Determine the reply-to actor display
+  const replyToDisplay = () => {
+    if (props.inReplyToActor) return props.inReplyToActor;
+    return null;
+  };
 
   return (
     <div class={`note-card${pinned() ? " note-pinned" : ""}`}>
@@ -292,11 +359,24 @@ export default function NoteCard(props: Props) {
           </svg>
         </div>
         <div class="note-reblog-indicator">
-          <a href={profileUrl(props.note.actor)}>
-            {props.note.actor.display_name || props.note.actor.username}
-          </a>
+          <a href={profileUrl(props.note.actor)} ref={(el) => {
+            el.textContent = props.note.actor.display_name || props.note.actor.username;
+            emojify(el, props.note.actor.emojis || []);
+            twemojify(el);
+          }} />
           {" "}{t("boost.boosted")}
         </div>
+      </Show>
+      <Show when={replyToDisplay()}>
+        {(actor) => (
+          <div class="note-reply-indicator">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="9 17 4 12 9 7" />
+              <path d="M20 18v-2a4 4 0 0 0-4-4H4" />
+            </svg>
+            {t("reply.replyingTo")} @{actor().username}{actor().domain ? `@${actor().domain}` : ""}
+          </div>
+        )}
       </Show>
       <a href={profileUrl(note().actor)} class="note-avatar-link">
         <img
@@ -310,9 +390,11 @@ export default function NoteCard(props: Props) {
           <div class="note-header-text">
             <UserHoverCard actorId={note().actor.id}>
               <a href={profileUrl(note().actor)} class="note-display-name-link" onClick={(e) => e.preventDefault()}>
-                <strong class="note-display-name">
-                  {note().actor.display_name || note().actor.username}
-                </strong>
+                <strong class="note-display-name" ref={(el) => {
+                  el.textContent = note().actor.display_name || note().actor.username;
+                  emojify(el, note().actor.emojis || []);
+                  twemojify(el);
+                }} />
               </a>
             </UserHoverCard>
           </div>
@@ -328,6 +410,9 @@ export default function NoteCard(props: Props) {
                 <Show when={moreOpen()}>
                   <div class="note-more-dropdown">
                     <Show when={isOwnNote()}>
+                      <button class="note-more-item" onClick={handleEdit}>
+                        {t("note.edit")}
+                      </button>
                       <button class="note-more-item" onClick={handlePin}>
                         {pinned() ? t("note.unpin") : t("note.pin")}
                       </button>
@@ -349,50 +434,109 @@ export default function NoteCard(props: Props) {
             </Show>
           </div>
         </div>
-        <div class="note-content" ref={(el) => {
-          if (note().source !== null && note().source !== undefined) {
-            renderMfm(el, note().source, note().emojis, navigate);
-          } else {
-            el.innerHTML = sanitizeHtml(note().content);
-            mentionify(el, navigate);
+        <Show when={note().spoiler_text}>
+          <div class="note-cw-text" ref={(el) => {
+            el.textContent = note().spoiler_text!;
             emojify(el, note().emojis);
             twemojify(el);
-          }
-        }} />
-        <Show when={note().poll}>
-          <PollDisplay poll={note().poll!} noteId={note().id} />
+          }} />
+          <button
+            class="note-cw-toggle"
+            onClick={() => setCwExpanded(!cwExpanded())}
+          >
+            {cwExpanded() ? t("cw.hide") : t("cw.show")}
+          </button>
         </Show>
-        <Show when={note().quote}>
-          <QuoteEmbed note={note().quote!} />
-        </Show>
-        <Show when={note().media_attachments?.length > 0}>
-          <div class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}>
-            <For each={note().media_attachments}>
-              {(media, i) => (
+        <Show when={!note().spoiler_text || cwExpanded()}>
+          <Show when={editing()} fallback={
+            <div class="note-content" ref={(el) => {
+              const src = noteSource();
+              if (src !== null && src !== undefined) {
+                renderMfm(el, src, note().emojis, navigate);
+              } else {
+                el.innerHTML = sanitizeHtml(noteContent());
+                mentionify(el, navigate);
+                emojify(el, note().emojis);
+                twemojify(el);
+              }
+            }} />
+          }>
+            <div class="note-edit-form">
+              <textarea
+                class="note-edit-textarea"
+                value={editContent()}
+                onInput={(e) => setEditContent(e.currentTarget.value)}
+                rows={4}
+              />
+              <div class="note-edit-actions">
                 <button
-                  class="note-media-item"
-                  onClick={() => setLightboxIndex(i())}
-                  type="button"
+                  class="btn btn-small note-edit-save-btn"
+                  onClick={handleEditSave}
+                  disabled={editSaving()}
                 >
-                  <img
-                    src={media.preview_url || media.url}
-                    alt={media.description || ""}
-                    loading="lazy"
-                  />
+                  {editSaving() ? t("note.editing") : t("note.save")}
                 </button>
-              )}
-            </For>
-          </div>
-          <Show when={lightboxIndex() !== null}>
-            <ImageLightbox
-              media={note().media_attachments}
-              initialIndex={lightboxIndex()!}
-              onClose={() => setLightboxIndex(null)}
-            />
+                <button
+                  class="btn btn-small note-edit-cancel-btn"
+                  onClick={handleEditCancel}
+                >
+                  {t("note.cancel")}
+                </button>
+              </div>
+            </div>
+          </Show>
+          <Show when={note().poll}>
+            <PollDisplay poll={note().poll!} noteId={note().id} />
+          </Show>
+          <Show when={note().quote}>
+            <QuoteEmbed note={note().quote!} />
+          </Show>
+          <Show when={note().media_attachments?.length > 0}>
+            <div class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}>
+              <For each={note().media_attachments}>
+                {(media, i) => (
+                  <button
+                    class="note-media-item"
+                    onClick={() => setLightboxIndex(i())}
+                    type="button"
+                  >
+                    <img
+                      src={media.preview_url || media.url}
+                      alt={media.description || ""}
+                      loading="lazy"
+                      width={media.meta?.original?.width}
+                      height={media.meta?.original?.height}
+                      style={{
+                        "object-position": focalPointToObjectPosition(media.meta?.focus),
+                      }}
+                    />
+                  </button>
+                )}
+              </For>
+            </div>
+            <Show when={lightboxIndex() !== null}>
+              <ImageLightbox
+                media={note().media_attachments}
+                initialIndex={lightboxIndex()!}
+                onClose={() => setLightboxIndex(null)}
+              />
+            </Show>
           </Show>
         </Show>
         <Show when={currentUser()}>
           <div class="note-actions">
+            <button
+              class="note-action-btn note-reply-btn"
+              onClick={handleReply}
+              title={t("reply.reply")}
+            >
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+              </svg>
+              <Show when={note().replies_count > 0}>
+                <span class="note-action-count">{note().replies_count}</span>
+              </Show>
+            </button>
             <button
               class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}`}
               onClick={handleBoost}
@@ -446,7 +590,50 @@ export default function NoteCard(props: Props) {
           </div>
         </Show>
         <div class="note-footer">
-          <span class="note-time">{formatTime(note().published)}</span>
+          <Show when={note().visibility && note().visibility !== "public"}>
+            <span class="note-visibility-indicator" title={t(`visibility.${note().visibility}` as any)}>
+              {note().visibility === "unlisted" && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 9.9-1" />
+                </svg>
+              )}
+              {note().visibility === "followers" && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                </svg>
+              )}
+              {note().visibility === "direct" && (
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z" />
+                  <polyline points="22,6 12,13 2,6" />
+                </svg>
+              )}
+            </span>
+          </Show>
+          <Show when={noteEditedAt()}>
+            <span class="note-edited-label">{t("note.edited")}</span>
+          </Show>
+          <Show when={note().actor.domain && note().ap_id}>
+            <a
+              class="remote-view-link"
+              href={note().ap_id}
+              target="_blank"
+              rel="noopener noreferrer"
+              title={t("remote.viewOnRemote")}
+            >
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                <polyline points="15 3 21 3 21 9" />
+                <line x1="10" y1="14" x2="21" y2="3" />
+              </svg>
+              {t("remote.viewOnRemote")}
+            </a>
+          </Show>
+          <a href={`/notes/${note().id}`} class="note-time-link">
+            <span class="note-time">{formatTime(note().published)}</span>
+          </a>
         </div>
       </div>
     </div>

@@ -10,13 +10,12 @@ CACHE_TTL = 300  # 5 minutes
 
 async def get_setting(db: AsyncSession, key: str) -> str | None:
     from app.valkey_client import valkey
+
     cached = await valkey.get(f"setting:{key}")
     if cached is not None:
         return cached if cached != "__NULL__" else None
 
-    result = await db.execute(
-        select(ServerSetting).where(ServerSetting.key == key)
-    )
+    result = await db.execute(select(ServerSetting).where(ServerSetting.key == key))
     setting = result.scalar_one_or_none()
     value = setting.value if setting else None
     await valkey.set(f"setting:{key}", value or "__NULL__", ex=CACHE_TTL)
@@ -26,9 +25,7 @@ async def get_setting(db: AsyncSession, key: str) -> str | None:
 async def set_setting(db: AsyncSession, key: str, value: str | None) -> None:
     from app.valkey_client import valkey
 
-    result = await db.execute(
-        select(ServerSetting).where(ServerSetting.key == key)
-    )
+    result = await db.execute(select(ServerSetting).where(ServerSetting.key == key))
     setting = result.scalar_one_or_none()
     if setting:
         setting.value = value

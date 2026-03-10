@@ -7,7 +7,7 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_admin_user, get_current_user, get_db, get_staff_user
+from app.dependencies import get_admin_user, get_db, get_staff_user
 from app.models.actor import Actor
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
@@ -18,15 +18,23 @@ from app.schemas.admin import (
     AdminRemoteEmojiResponse,
     AdminStatsResponse,
     AdminUserResponse,
-    ImportByShortcodeRequest,
     DomainBlockRequest,
     DomainBlockResponse,
+    FederatedServerDetailResponse,
+    FederatedServerListResponse,
+    FederatedServerResponse,
+    ImportByShortcodeRequest,
     ModerationActionRequest,
     ModerationLogResponse,
+    PendingRegistrationResponse,
+    QueueJobListResponse,
+    QueueJobResponse,
+    QueueStatsResponse,
     ReportResponse,
     RoleChangeRequest,
     ServerSettingsResponse,
     ServerSettingsUpdate,
+    SystemStatsResponse,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -46,7 +54,9 @@ async def upload_server_icon(
     data = await file.read()
     try:
         drive_file = await upload_drive_file(
-            db=db, owner=None, data=data,
+            db=db,
+            owner=None,
+            data=data,
             filename=file.filename or "server-icon",
             mime_type=file.content_type or "image/png",
             server_file=True,
@@ -57,6 +67,7 @@ async def upload_server_icon(
     url = file_to_url(drive_file)
 
     from app.services.server_settings_service import set_setting
+
     await set_setting(db, "server_icon_url", url)
     await db.commit()
 
@@ -86,6 +97,7 @@ async def get_server_settings(
         registration_mode=mode,
         invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
+        server_theme_color=settings.get("server_theme_color"),
     )
 
 
@@ -106,6 +118,9 @@ async def update_server_settings(
             await set_setting(db, key, value)
             # Sync legacy registration_open for backward compat
             await set_setting(db, "registration_open", "true" if value != "closed" else "false")
+            # 承認制から別モードへ変更時: pendingユーザーを自動処理
+            if value != "approval":
+                await _resolve_pending_users(db, user, value)
         elif key == "invite_create_role":
             await set_setting(db, key, value)
         else:
@@ -128,6 +143,7 @@ async def update_server_settings(
         registration_mode=mode,
         invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
+        server_theme_color=settings.get("server_theme_color"),
     )
 
 
@@ -140,12 +156,14 @@ async def get_admin_stats(
     db: AsyncSession = Depends(get_db),
 ):
     user_count = (await db.execute(select(func.count(User.id)))).scalar() or 0
-    note_count = (await db.execute(
-        select(func.count(Note.id)).where(Note.deleted_at.is_(None))
-    )).scalar() or 0
-    domain_count = (await db.execute(
-        select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
-    )).scalar() or 0
+    note_count = (
+        await db.execute(select(func.count(Note.id)).where(Note.deleted_at.is_(None)))
+    ).scalar() or 0
+    domain_count = (
+        await db.execute(
+            select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
+        )
+    ).scalar() or 0
     return AdminStatsResponse(
         user_count=user_count,
         note_count=note_count,
@@ -202,8 +220,9 @@ async def change_user_role(
 
     old_role = target.role
     target.role = body.role
-    await log_action(db, user, "role_change", "actor", str(target.actor_id),
-                     f"{old_role} -> {body.role}")
+    await log_action(
+        db, user, "role_change", "actor", str(target.actor_id), f"{old_role} -> {body.role}"
+    )
     await db.commit()
     return {"ok": True, "role": body.role}
 
@@ -259,6 +278,8 @@ async def silence_user(
     target = await _get_user(db, user_id)
     if target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Already silenced")
+    if target.id == user.id:
+        raise HTTPException(status_code=422, detail="Cannot silence self")
     _check_moderation_permission(user, target)
 
     await silence_actor(db, target.actor, user, body.reason)
@@ -282,6 +303,55 @@ async def unsilence_user(
     await unsilence_actor(db, target.actor, user)
     await db.commit()
     return {"ok": True}
+
+
+# --- Federation ---
+
+
+@router.get("/federation", response_model=FederatedServerListResponse)
+async def list_federated_servers(
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = Query(default=40, le=200, ge=1),
+    offset: int = Query(default=0, ge=0),
+    sort: str = Query(
+        default="user_count",
+        pattern=r"^(domain|user_count|note_count|last_activity)$",
+    ),
+    order: str = Query(default="desc", pattern=r"^(asc|desc)$"),
+    search: str | None = Query(default=None, max_length=255),
+    status: str | None = Query(default=None, pattern=r"^(all|active|suspended|silenced)$"),
+):
+    from app.services.federation_service import get_federated_servers
+
+    effective_status = None if status in (None, "all") else status
+    servers, total = await get_federated_servers(
+        db,
+        limit=limit,
+        offset=offset,
+        sort=sort,
+        order=order,
+        search=search,
+        status=effective_status,
+    )
+    return FederatedServerListResponse(
+        servers=[FederatedServerResponse(**s) for s in servers],
+        total=total,
+    )
+
+
+@router.get("/federation/{domain:path}", response_model=FederatedServerDetailResponse)
+async def get_federated_server_detail_endpoint(
+    domain: str,
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.federation_service import get_federated_server_detail
+
+    detail = await get_federated_server_detail(db, domain)
+    if not detail:
+        raise HTTPException(status_code=404, detail="Server not found")
+    return FederatedServerDetailResponse(**detail)
 
 
 # --- Domain Blocks ---
@@ -350,8 +420,10 @@ async def get_reports(
     return [
         ReportResponse(
             id=r.id,
-            reporter=r.reporter_actor.username + ("@" + r.reporter_actor.domain if r.reporter_actor.domain else ""),
-            target=r.target_actor.username + ("@" + r.target_actor.domain if r.target_actor.domain else ""),
+            reporter=r.reporter_actor.username
+            + ("@" + r.reporter_actor.domain if r.reporter_actor.domain else ""),
+            target=r.target_actor.username
+            + ("@" + r.target_actor.domain if r.target_actor.domain else ""),
             target_note_id=r.target_note_id,
             comment=r.comment,
             status=r.status,
@@ -369,7 +441,8 @@ async def resolve_report(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
-    from app.services.report_service import get_report_by_id, resolve_report as _resolve
+    from app.services.report_service import get_report_by_id
+    from app.services.report_service import resolve_report as _resolve
 
     report = await get_report_by_id(db, report_id)
     if not report:
@@ -390,7 +463,8 @@ async def reject_report(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
-    from app.services.report_service import get_report_by_id, reject_report as _reject
+    from app.services.report_service import get_report_by_id
+    from app.services.report_service import reject_report as _reject
 
     report = await get_report_by_id(db, report_id)
     if not report:
@@ -467,7 +541,9 @@ async def get_moderation_log(
     return [
         ModerationLogResponse(
             id=e.id,
-            moderator=e.moderator.actor.username if e.moderator and e.moderator.actor else "unknown",
+            moderator=(
+                e.moderator.actor.username if e.moderator and e.moderator.actor else "unknown"
+            ),
             action=e.action,
             target_type=e.target_type,
             target_id=e.target_id,
@@ -487,6 +563,7 @@ async def list_emojis(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_all_local_emojis
+
     emojis = await list_all_local_emojis(db)
     return [AdminEmojiResponse.model_validate(e) for e in emojis]
 
@@ -501,6 +578,7 @@ async def list_remote_emojis_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_remote_emojis
+
     emojis = await list_remote_emojis(db, domain=domain, search=search, limit=limit, offset=offset)
     return [AdminRemoteEmojiResponse.model_validate(e) for e in emojis]
 
@@ -511,6 +589,7 @@ async def list_remote_emoji_domains_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_remote_emoji_domains
+
     return await list_remote_emoji_domains(db)
 
 
@@ -521,6 +600,7 @@ async def import_remote_emoji(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import import_remote_emoji_to_local
+
     try:
         emoji = await import_remote_emoji_to_local(db, emoji_id)
         await db.commit()
@@ -536,6 +616,7 @@ async def import_remote_emoji_by_shortcode(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local
+
     remote = await get_custom_emoji(db, body.shortcode, body.domain)
     if not remote:
         raise HTTPException(status_code=404, detail="Remote emoji not found")
@@ -565,6 +646,7 @@ async def add_emoji(
     db: AsyncSession = Depends(get_db),
 ):
     import json as json_mod
+
     from app.services.drive_service import file_to_url, upload_drive_file
     from app.services.emoji_service import create_local_emoji, get_custom_emoji
 
@@ -575,7 +657,9 @@ async def add_emoji(
     data = await file.read()
     try:
         drive_file = await upload_drive_file(
-            db=db, owner=None, data=data,
+            db=db,
+            owner=None,
+            data=data,
             filename=f"emoji_{shortcode}",
             mime_type=file.content_type or "image/png",
             server_file=True,
@@ -587,11 +671,19 @@ async def add_emoji(
     parsed_aliases = json_mod.loads(aliases) if aliases else None
 
     emoji = await create_local_emoji(
-        db, shortcode=shortcode, url=url, drive_file_id=drive_file.id,
-        category=category, aliases=parsed_aliases, license=license,
-        is_sensitive=is_sensitive, local_only=local_only,
-        author=author, description=description,
-        copy_permission=copy_permission, usage_info=usage_info,
+        db,
+        shortcode=shortcode,
+        url=url,
+        drive_file_id=drive_file.id,
+        category=category,
+        aliases=parsed_aliases,
+        license=license,
+        is_sensitive=is_sensitive,
+        local_only=local_only,
+        author=author,
+        description=description,
+        copy_permission=copy_permission,
+        usage_info=usage_info,
         is_based_on=is_based_on,
     )
     await db.commit()
@@ -606,6 +698,7 @@ async def update_emoji_endpoint(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import update_emoji
+
     updates = body.model_dump(exclude_unset=True)
     emoji = await update_emoji(db, emoji_id, updates)
     if not emoji:
@@ -620,7 +713,7 @@ async def delete_emoji_endpoint(
     user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.emoji_service import get_emoji_by_id, delete_emoji
+    from app.services.emoji_service import delete_emoji, get_emoji_by_id
 
     emoji = await get_emoji_by_id(db, emoji_id)
     if not emoji:
@@ -628,6 +721,7 @@ async def delete_emoji_endpoint(
 
     if emoji.drive_file_id:
         from app.services.drive_service import delete_drive_file, get_drive_file
+
         df = await get_drive_file(db, emoji.drive_file_id)
         if df:
             await delete_drive_file(db, df)
@@ -666,6 +760,7 @@ async def export_emojis(
             image_data = None
             if e.drive_file_id:
                 from app.services.drive_service import get_drive_file
+
                 df = await get_drive_file(db, e.drive_file_id)
                 if df:
                     try:
@@ -682,23 +777,25 @@ async def export_emojis(
             else:
                 continue
 
-            meta_emojis.append({
-                "downloaded": True,
-                "fileName": filename,
-                "emoji": {
-                    "name": e.shortcode,
-                    "category": e.category,
-                    "aliases": e.aliases or [],
-                    "license": e.license,
-                    "isSensitive": e.is_sensitive,
-                    "localOnly": e.local_only,
-                    "author": e.author,
-                    "description": e.description,
-                    "copyPermission": e.copy_permission,
-                    "usageInfo": e.usage_info,
-                    "isBasedOn": e.is_based_on,
-                },
-            })
+            meta_emojis.append(
+                {
+                    "downloaded": True,
+                    "fileName": filename,
+                    "emoji": {
+                        "name": e.shortcode,
+                        "category": e.category,
+                        "aliases": e.aliases or [],
+                        "license": e.license,
+                        "isSensitive": e.is_sensitive,
+                        "localOnly": e.local_only,
+                        "author": e.author,
+                        "description": e.description,
+                        "copyPermission": e.copy_permission,
+                        "usageInfo": e.usage_info,
+                        "isBasedOn": e.is_based_on,
+                    },
+                }
+            )
 
         meta = {
             "metaVersion": 2,
@@ -771,21 +868,30 @@ async def import_emojis(
 
             ext = filename.rsplit(".", 1)[-1].lower() if "." in filename else "png"
             mime_map = {
-                "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "gif": "image/gif", "webp": "image/webp", "avif": "image/avif",
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "gif": "image/gif",
+                "webp": "image/webp",
+                "avif": "image/avif",
             }
             mime_type = mime_map.get(ext, "image/png")
 
             try:
                 drive_file = await upload_drive_file(
-                    db=db, owner=None, data=image_data,
+                    db=db,
+                    owner=None,
+                    data=image_data,
                     filename=f"emoji_{shortcode}",
-                    mime_type=mime_type, server_file=True,
+                    mime_type=mime_type,
+                    server_file=True,
                 )
                 url = file_to_url(drive_file)
 
                 await create_local_emoji(
-                    db, shortcode=shortcode, url=url,
+                    db,
+                    shortcode=shortcode,
+                    url=url,
                     drive_file_id=drive_file.id,
                     category=emoji_data.get("category"),
                     aliases=emoji_data.get("aliases"),
@@ -848,7 +954,9 @@ async def upload_server_file(
     data = await file.read()
     try:
         drive_file = await upload_drive_file(
-            db=db, owner=None, data=data,
+            db=db,
+            owner=None,
+            data=data,
             filename=file.filename or "server-file",
             mime_type=file.content_type or "application/octet-stream",
             server_file=True,
@@ -884,7 +992,250 @@ async def delete_server_file_endpoint(
     return {"ok": True}
 
 
+# --- Queue Management ---
+
+
+@router.get("/queue/stats", response_model=QueueStatsResponse)
+async def get_queue_stats(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import get_queue_stats
+
+    return await get_queue_stats(db)
+
+
+@router.get("/queue/jobs", response_model=QueueJobListResponse)
+async def list_queue_jobs(
+    status: str | None = Query(None),
+    domain: str | None = Query(None),
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import get_queue_jobs
+
+    jobs, total = await get_queue_jobs(db, status, domain, limit, offset)
+    return QueueJobListResponse(
+        jobs=[QueueJobResponse.model_validate(j) for j in jobs],
+        total=total,
+    )
+
+
+@router.post("/queue/retry/{job_id}")
+async def retry_queue_job(
+    job_id: uuid.UUID,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import retry_job
+
+    success = await retry_job(db, job_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Job not found or not dead")
+    return {"ok": True}
+
+
+@router.post("/queue/retry-all")
+async def retry_all_dead_jobs(
+    domain: str | None = Query(None),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import retry_all_dead
+
+    count = await retry_all_dead(db, domain)
+    return {"ok": True, "retried": count}
+
+
+@router.delete("/queue/purge")
+async def purge_delivered_jobs(
+    older_than_hours: int = Query(24, ge=1),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.queue_service import purge_delivered
+
+    count = await purge_delivered(db, older_than_hours)
+    return {"ok": True, "purged": count}
+
+
+# --- System Stats ---
+
+
+@router.get("/system/stats", response_model=SystemStatsResponse)
+async def get_system_stats(
+    user: User = Depends(get_admin_user),
+):
+    from app.database import engine
+    from app.valkey_client import valkey
+
+    data: dict = {}
+
+    # DB pool stats
+    pool = engine.pool
+    data["db_pool_size"] = pool.size()
+    data["db_pool_checked_in"] = pool.checkedin()
+    data["db_pool_checked_out"] = pool.checkedout()
+    data["db_pool_overflow"] = pool.overflow()
+
+    # Valkey stats
+    try:
+        info = await valkey.info()
+        data["valkey_connected_clients"] = info.get("connected_clients", 0)
+        data["valkey_used_memory_human"] = info.get("used_memory_human", "")
+        # キーの合計数
+        total_keys = 0
+        for key, val in info.items():
+            if key.startswith("db") and isinstance(val, dict):
+                total_keys += val.get("keys", 0)
+        data["valkey_total_keys"] = total_keys
+    except Exception:
+        pass
+
+    # System stats (/proc読み取り)
+    try:
+        with open("/proc/loadavg") as f:
+            parts = f.read().split()
+            data["load_avg_1m"] = float(parts[0])
+            data["load_avg_5m"] = float(parts[1])
+            data["load_avg_15m"] = float(parts[2])
+    except Exception:
+        pass
+
+    try:
+        with open("/proc/meminfo") as f:
+            meminfo = {}
+            for line in f:
+                parts = line.split(":")
+                if len(parts) == 2:
+                    key = parts[0].strip()
+                    val = parts[1].strip().split()[0]
+                    meminfo[key] = int(val)
+            total_kb = meminfo.get("MemTotal", 0)
+            available_kb = meminfo.get("MemAvailable", 0)
+            data["memory_total_mb"] = total_kb // 1024
+            data["memory_available_mb"] = available_kb // 1024
+            if total_kb > 0:
+                data["memory_percent"] = round((1 - available_kb / total_kb) * 100, 1)
+    except Exception:
+        pass
+
+    try:
+        with open("/proc/uptime") as f:
+            data["uptime_seconds"] = float(f.read().split()[0])
+    except Exception:
+        pass
+
+    # Worker heartbeat
+    try:
+        heartbeat = await valkey.get("worker:heartbeat")
+        if heartbeat:
+            data["worker_alive"] = True
+            data["worker_last_heartbeat"] = heartbeat
+        else:
+            data["worker_alive"] = False
+    except Exception:
+        pass
+
+    return SystemStatsResponse(**data)
+
+
+# --- Pending Registrations ---
+
+
+@router.get("/registrations", response_model=list[PendingRegistrationResponse])
+async def list_pending_registrations(
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List users awaiting approval."""
+    result = await db.execute(
+        select(User)
+        .options(selectinload(User.actor))
+        .where(User.approval_status == "pending")
+        .order_by(User.created_at.asc())
+    )
+    users = result.scalars().all()
+    return [
+        PendingRegistrationResponse(
+            id=u.id,
+            username=u.actor.username,
+            email=u.email,
+            reason=u.registration_reason,
+            created_at=u.created_at,
+        )
+        for u in users
+    ]
+
+
+@router.post("/registrations/{user_id}/approve")
+async def approve_registration(
+    user_id: uuid.UUID,
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Approve a pending registration."""
+    from app.services.moderation_service import log_action
+
+    target = await _get_user(db, user_id)
+    if target.approval_status != "pending":
+        raise HTTPException(status_code=422, detail="User is not pending approval")
+
+    target.approval_status = "approved"
+    await log_action(db, user, "approve_registration", "user", str(target.id))
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/registrations/{user_id}/reject")
+async def reject_registration(
+    user_id: uuid.UUID,
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Reject a pending registration and delete the user."""
+    from app.services.moderation_service import log_action
+
+    target = await _get_user(db, user_id)
+    if target.approval_status != "pending":
+        raise HTTPException(status_code=422, detail="User is not pending approval")
+
+    actor = target.actor
+    await log_action(db, user, "reject_registration", "user", str(target.id))
+    await db.delete(target)
+    await db.delete(actor)
+    await db.commit()
+    return {"ok": True}
+
+
 # --- Helpers ---
+
+
+async def _resolve_pending_users(db: AsyncSession, admin: User, new_mode: str):
+    """Auto-resolve pending users when leaving approval mode.
+
+    open -> approve all, closed/invite -> reject (delete) all.
+    """
+    from app.services.moderation_service import log_action
+
+    result = await db.execute(
+        select(User).options(selectinload(User.actor)).where(User.approval_status == "pending")
+    )
+    pending_users = result.scalars().all()
+
+    if new_mode == "open":
+        # 公開モード: 全員承認
+        for u in pending_users:
+            u.approval_status = "approved"
+            await log_action(db, admin, "approve_registration", "user", str(u.id))
+    else:
+        # 非公開/招待制: 全員却下(削除)
+        for u in pending_users:
+            await log_action(db, admin, "reject_registration", "user", str(u.id))
+            await db.delete(u)
+            await db.delete(u.actor)
 
 
 def _check_moderation_permission(actor: User, target: User):

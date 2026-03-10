@@ -1,7 +1,8 @@
-import { createSignal, Show, For, onCleanup } from "solid-js";
-import { createNote, uploadMedia, type Note, type MediaAttachment } from "../../api/statuses";
+import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
+import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment } from "../../api/statuses";
 import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
+import FocalPointPicker from "../FocalPointPicker";
 import { sanitizeHtml } from "../../utils/sanitize";
 import type { DriveFile } from "../../api/drive";
 import {
@@ -25,6 +26,8 @@ interface Props {
   onPost?: (note: Note) => void;
   quoteNote?: Note | null;
   onClearQuote?: () => void;
+  replyTo?: Note | null;
+  onClearReply?: () => void;
 }
 
 export default function NoteComposer(props: Props) {
@@ -37,8 +40,19 @@ export default function NoteComposer(props: Props) {
   const [uploading, setUploading] = createSignal(false);
   const [visMenuOpen, setVisMenuOpen] = createSignal(false);
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
+  const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
 
   let fileInput!: HTMLInputElement;
+
+  // Auto-set visibility to match parent note when replying
+  createEffect(() => {
+    if (props.replyTo) {
+      const parentVis = props.replyTo.visibility as Visibility;
+      if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
+        setVisibility(parentVis);
+      }
+    }
+  });
 
   const visEmoji = () => VISIBILITY_OPTIONS.find((o) => o.key === visibility())?.emoji || "\u{1F310}";
 
@@ -79,19 +93,41 @@ export default function NoteComposer(props: Props) {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
+  const handleFocalSave = async (x: number, y: number) => {
+    const media = focalPickerMedia();
+    if (!media) return;
+    try {
+      const updated = await updateMedia(media.id, undefined, `${x},${y}`);
+      setAttachments((prev) => prev.map((a) => a.id === media.id ? updated : a));
+    } catch {
+      // silent — focal point is optional
+    }
+    setFocalPickerMedia(null);
+  };
+
   const handleDriveSelect = (driveFiles: DriveFile[]) => {
     setDrivePickerOpen(false);
     const remaining = MAX_FILES - attachments().length;
     const toAdd = driveFiles.slice(0, remaining);
-    const newAttachments: MediaAttachment[] = toAdd.map((f) => ({
-      id: f.id,
-      type: f.mime_type.startsWith("image/") ? "image" : "unknown",
-      url: f.url,
-      preview_url: f.url,
-      description: f.description,
-      blurhash: f.blurhash,
-      meta: f.width && f.height ? { original: { width: f.width, height: f.height } } : null,
-    }));
+    const newAttachments: MediaAttachment[] = toAdd.map((f) => {
+      const meta: MediaAttachment["meta"] = f.width && f.height
+        ? { original: { width: f.width, height: f.height } }
+        : null;
+      if (f.focal_x != null && f.focal_y != null) {
+        const m = meta || {};
+        m.focus = { x: f.focal_x, y: f.focal_y };
+        return {
+          id: f.id, type: f.mime_type.startsWith("image/") ? "image" : "unknown",
+          url: f.url, preview_url: f.url, description: f.description,
+          blurhash: f.blurhash, meta: m,
+        };
+      }
+      return {
+        id: f.id, type: f.mime_type.startsWith("image/") ? "image" : "unknown",
+        url: f.url, preview_url: f.url, description: f.description,
+        blurhash: f.blurhash, meta,
+      };
+    });
     setAttachments((prev) => [...prev, ...newAttachments]);
   };
 
@@ -103,10 +139,18 @@ export default function NoteComposer(props: Props) {
     try {
       const mediaIds = attachments().map((a) => a.id);
       const quoteId = props.quoteNote?.id;
-      const note = await createNote(content(), visibility(), mediaIds.length > 0 ? mediaIds : undefined, quoteId);
+      const replyToId = props.replyTo?.id;
+      const note = await createNote(
+        content(),
+        visibility(),
+        mediaIds.length > 0 ? mediaIds : undefined,
+        quoteId,
+        replyToId,
+      );
       setContent("");
       setAttachments([]);
       props.onClearQuote?.();
+      props.onClearReply?.();
 
       if (rememberVisibility()) {
         setLastVisibility(visibility());
@@ -140,9 +184,29 @@ export default function NoteComposer(props: Props) {
     }
   };
 
+  const replyToActor = () => {
+    const rt = props.replyTo;
+    if (!rt) return null;
+    return rt.actor;
+  };
+
   return (
     <form onSubmit={handleSubmit} class="note-composer">
       {error() && <div class="error">{error()}</div>}
+      <Show when={replyToActor()}>
+        {(actor) => (
+          <div class="composer-reply-indicator">
+            <span class="composer-reply-label">
+              {t("reply.replyingTo")} @{actor().username}{actor().domain ? `@${actor().domain}` : ""}
+            </span>
+            <Show when={props.onClearReply}>
+              <button type="button" class="composer-reply-close" onClick={() => props.onClearReply?.()}>
+                ✕
+              </button>
+            </Show>
+          </div>
+        )}
+      </Show>
       <Show when={props.quoteNote}>
         {(qn) => (
           <div class="composer-quote-preview">
@@ -160,8 +224,13 @@ export default function NoteComposer(props: Props) {
       <textarea
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            handleSubmit(e);
+          }
+        }}
         onPaste={handlePaste}
-        placeholder={t("composer.placeholder")}
+        placeholder={props.replyTo ? t("reply.reply") + "..." : t("composer.placeholder")}
         rows={3}
         maxLength={5000}
       />
@@ -171,6 +240,20 @@ export default function NoteComposer(props: Props) {
             {(media) => (
               <div class="composer-media-item">
                 <img src={media.preview_url} alt={media.description || ""} />
+                <button
+                  type="button"
+                  class="composer-media-focal-btn"
+                  onClick={() => setFocalPickerMedia(media)}
+                  title={t("composer.setFocalPoint")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3" />
+                    <line x1="12" y1="2" x2="12" y2="6" />
+                    <line x1="12" y1="18" x2="12" y2="22" />
+                    <line x1="2" y1="12" x2="6" y2="12" />
+                    <line x1="18" y1="12" x2="22" y2="12" />
+                  </svg>
+                </button>
                 <button
                   type="button"
                   class="composer-media-remove"
@@ -230,7 +313,7 @@ export default function NoteComposer(props: Props) {
                 class="composer-post-btn"
                 disabled={loading() || (!content().trim() && attachments().length === 0)}
               >
-                {loading() ? t("composer.posting") : t("composer.post")}
+                {loading() ? t("composer.posting") : (props.replyTo ? t("reply.reply") : t("composer.post"))}
                 <span class="composer-vis-icon">{visEmoji()}</span>
               </button>
               <button
@@ -265,6 +348,17 @@ export default function NoteComposer(props: Props) {
           onSelect={handleDriveSelect}
           onClose={() => setDrivePickerOpen(false)}
         />
+      </Show>
+      <Show when={focalPickerMedia()}>
+        {(media) => (
+          <FocalPointPicker
+            imageUrl={media().url}
+            initialX={media().meta?.focus?.x}
+            initialY={media().meta?.focus?.y}
+            onSave={handleFocalSave}
+            onClose={() => setFocalPickerMedia(null)}
+          />
+        )}
       </Show>
     </form>
   );

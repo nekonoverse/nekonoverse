@@ -536,3 +536,57 @@ async def test_admin_endpoints_require_auth(app_client):
     for method, url in endpoints:
         resp = await app_client.request(method, url)
         assert resp.status_code == 401, f"{method} {url} should require auth"
+
+
+# ── Suspended user session invalidation ──────────────────────────────────────
+
+
+@pytest.mark.anyio
+async def test_suspend_user_invalidates_sessions(db, app_client, mock_valkey, test_user):
+    """Suspending a user should call valkey.scan to find and delete their sessions."""
+    admin = await make_admin_user(db)
+    client = authed_client_for(app_client, mock_valkey, admin)
+
+    # Mock scan to return a session key for the target user
+    target_session_key = "session:abc123"
+    mock_valkey.scan = AsyncMock(return_value=(0, [target_session_key]))
+    # When get is called for the session key, return the target user's id
+    original_get = mock_valkey.get
+
+    async def get_side_effect(key):
+        if key == target_session_key:
+            return str(test_user.id)
+        # For admin's session lookup, delegate to original
+        return await original_get(key)
+
+    mock_valkey.get = AsyncMock(side_effect=get_side_effect)
+
+    resp = await client.post(f"/api/v1/admin/users/{test_user.id}/suspend",
+                             json={"reason": "spam"})
+    assert resp.status_code == 200
+
+    # Verify scan was called with session:* pattern
+    mock_valkey.scan.assert_called()
+    # Verify the target user's session was deleted
+    mock_valkey.delete.assert_any_call(target_session_key)
+
+
+@pytest.mark.anyio
+async def test_suspended_user_gets_403(db, app_client, mock_valkey, test_user):
+    """A suspended user should get 403 when trying to access authenticated endpoints."""
+    admin = await make_admin_user(db)
+
+    # First: suspend the user (as admin)
+    admin_client = authed_client_for(app_client, mock_valkey, admin)
+    # Need scan mock for the suspension
+    mock_valkey.scan = AsyncMock(return_value=(0, []))
+
+    resp = await admin_client.post(f"/api/v1/admin/users/{test_user.id}/suspend")
+    assert resp.status_code == 200
+
+    # Now: try to access an endpoint as the suspended user
+    suspended_client = authed_client_for(app_client, mock_valkey, test_user)
+
+    resp = await suspended_client.get("/api/v1/accounts/verify_credentials")
+    assert resp.status_code == 403
+    assert "suspended" in resp.json()["detail"].lower()

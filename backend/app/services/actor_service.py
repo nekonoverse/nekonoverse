@@ -1,4 +1,3 @@
-import json
 import logging
 from datetime import datetime, timezone
 
@@ -22,6 +21,7 @@ def actor_uri(actor: Actor) -> str:
     if actor.domain is None:
         return f"{settings.server_url}/users/{actor.username}"
     return actor.ap_id
+
 
 AP_ACCEPT = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
 AP_CONTENT_TYPES = {"application/activity+json", "application/ld+json"}
@@ -47,29 +47,37 @@ async def get_actor_by_ap_id(db: AsyncSession, ap_id: str) -> Actor | None:
 
 
 async def get_actor_by_username(
-    db: AsyncSession, username: str, domain: str | None = None
+    db: AsyncSession,
+    username: str,
+    domain: str | None = None,
 ) -> Actor | None:
     lookup = username.lower() if domain is None else username
-    result = await db.execute(
-        select(Actor).where(Actor.username == lookup, Actor.domain == domain)
-    )
+    result = await db.execute(select(Actor).where(Actor.username == lookup, Actor.domain == domain))
     return result.scalar_one_or_none()
+
+
+# 署名鍵キャッシュ (server_url変更がない限り不変)
+_signing_key_cache: tuple[str, str] | None | bool = False
 
 
 async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
     """Get a local actor's key_id and private_key_pem for signed fetches."""
+    global _signing_key_cache
+    if _signing_key_cache is not False:
+        return _signing_key_cache  # type: ignore[return-value]
+
     from app.models.user import User
 
-    result = await db.execute(
-        select(User).options(selectinload(User.actor)).limit(1)
-    )
+    result = await db.execute(select(User).options(selectinload(User.actor)).limit(1))
     user = result.scalar_one_or_none()
     if not user or not user.actor:
+        _signing_key_cache = None
         return None
     # Use dynamic URL for local actor to ensure correct scheme
     actor_url = f"{settings.server_url}/users/{user.actor.username}"
     key_id = f"{actor_url}#main-key"
-    return key_id, user.private_key_pem
+    _signing_key_cache = (key_id, user.private_key_pem)
+    return _signing_key_cache
 
 
 async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
@@ -108,7 +116,11 @@ async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
     try:
         resp = await _signed_get(db, ap_id)
         if not resp or resp.status_code != 200:
-            logger.warning("Failed to fetch actor %s: HTTP %s", ap_id, resp.status_code if resp else "no response")
+            logger.warning(
+                "Failed to fetch actor %s: HTTP %s",
+                ap_id,
+                resp.status_code if resp else "no response",
+            )
             return existing
 
         data = resp.json()
@@ -149,6 +161,7 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
 
     # Parse profile fields from PropertyValue attachments
     from app.utils.sanitize import sanitize_html
+
     attachments = data.get("attachment", [])
     fields = None
     if isinstance(attachments, list):
@@ -166,6 +179,7 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     bday = data.get("vcard:bday")
     if bday:
         from datetime import date
+
         try:
             parsed_birthday = date.fromisoformat(bday)
         except (ValueError, TypeError):
@@ -193,7 +207,10 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
                     _ml.get("freeText") if isinstance(_ml, dict) else None
                 )
                 await upsert_remote_emoji(
-                    db, shortcode=emoji_name, domain=domain, url=emoji_url,
+                    db,
+                    shortcode=emoji_name,
+                    domain=domain,
+                    url=emoji_url,
                     static_url=static_url,
                     aliases=tag.get("keywords"),
                     license=license_text,
@@ -226,10 +243,17 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
             existing.header_url = image.get("url")
         existing.is_cat = data.get("isCat", False)
         existing.is_bot = is_bot
-        existing.require_signin_to_view = bool(data.get("_misskey_requireSigninToViewContents", False))
-        existing.make_notes_followers_only_before = data.get("_misskey_makeNotesFollowersOnlyBefore")
+        existing.require_signin_to_view = bool(
+            data.get("_misskey_requireSigninToViewContents", False)
+        )
+        existing.make_notes_followers_only_before = data.get(
+            "_misskey_makeNotesFollowersOnlyBefore"
+        )
         existing.make_notes_hidden_before = data.get("_misskey_makeNotesHiddenBefore")
-        existing.manually_approves_followers = data.get("manuallyApprovesFollowers", existing.manually_approves_followers)
+        existing.manually_approves_followers = data.get(
+            "manuallyApprovesFollowers",
+            existing.manually_approves_followers,
+        )
         existing.discoverable = data.get("discoverable", existing.discoverable)
         if fields is not None:
             existing.fields = fields
@@ -298,7 +322,12 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
         async with httpx.AsyncClient(timeout=10.0, verify=not settings.skip_ssl_verify) as client:
             resp = await client.get(webfinger_url, follow_redirects=True)
         if resp.status_code != 200:
-            logger.warning("WebFinger failed for %s@%s: HTTP %s", username, domain, resp.status_code)
+            logger.warning(
+                "WebFinger failed for %s@%s: HTTP %s",
+                username,
+                domain,
+                resp.status_code,
+            )
             return None
 
         data = resp.json()

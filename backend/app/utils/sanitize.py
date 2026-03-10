@@ -60,7 +60,16 @@ def text_to_html(text: str) -> str:
     return f"<p>{escaped}</p>"
 
 
+ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
+
+
 def sanitize_html(html: str) -> str:
     """Sanitize HTML from remote sources."""
     html = EMOJI_IMG_RE.sub(r"\1", html)
-    return bleach.clean(html, tags=ALLOWED_TAGS, attributes=ALLOWED_ATTRIBUTES, strip=True)
+    return bleach.clean(
+        html,
+        tags=ALLOWED_TAGS,
+        attributes=ALLOWED_ATTRIBUTES,
+        protocols=ALLOWED_PROTOCOLS,
+        strip=True,
+    )

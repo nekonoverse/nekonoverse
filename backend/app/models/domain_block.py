@@ -11,9 +11,7 @@ from app.models.base import Base
 class DomainBlock(Base):
     __tablename__ = "domain_blocks"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     domain: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     severity: Mapped[str] = mapped_column(String(20), default="suspend", nullable=False)
     reason: Mapped[str | None] = mapped_column(Text, nullable=True)

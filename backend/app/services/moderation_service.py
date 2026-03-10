@@ -3,7 +3,7 @@
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.actor import Actor
@@ -32,6 +32,34 @@ async def log_action(
     return entry
 
 
+async def invalidate_user_sessions(user_id: uuid.UUID, exclude_session: str | None = None) -> int:
+    """Delete all Valkey sessions belonging to a specific user.
+
+    Scans all ``session:*`` keys and removes those whose value matches
+    *user_id*.  Optionally keeps the session identified by *exclude_session*.
+    Returns the number of sessions deleted.
+    """
+    from app.valkey_client import valkey
+
+    user_id_str = str(user_id)
+    exclude_key = f"session:{exclude_session}" if exclude_session else None
+    deleted = 0
+    cursor = 0
+    while True:
+        cursor, keys = await valkey.scan(cursor, match="session:*", count=100)
+        if keys:
+            for key in keys:
+                if exclude_key and key == exclude_key:
+                    continue
+                val = await valkey.get(key)
+                if val == user_id_str:
+                    await valkey.delete(key)
+                    deleted += 1
+        if cursor == 0:
+            break
+    return deleted
+
+
 async def suspend_actor(
     db: AsyncSession, actor: Actor, moderator: User, reason: str | None = None
 ) -> None:
@@ -48,13 +76,16 @@ async def suspend_actor(
 
     await log_action(db, moderator, "suspend", "actor", str(actor.id), reason)
 
+    # Invalidate all active sessions for the suspended user
+    if actor.is_local and actor.local_user:
+        await invalidate_user_sessions(actor.local_user.id)
+
     # Deliver Delete(Person) to followers
     if actor.is_local:
         from app.activitypub.renderer import render_delete_activity
+        from app.services.actor_service import actor_uri
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
-
-        from app.services.actor_service import actor_uri
 
         actor_url = actor_uri(actor)
         delete_activity = render_delete_activity(
@@ -67,9 +98,7 @@ async def suspend_actor(
             await enqueue_delivery(db, actor.id, inbox_url, delete_activity)
 
 
-async def unsuspend_actor(
-    db: AsyncSession, actor: Actor, moderator: User
-) -> None:
+async def unsuspend_actor(db: AsyncSession, actor: Actor, moderator: User) -> None:
     actor.suspended_at = None
     await db.flush()
     await log_action(db, moderator, "unsuspend", "actor", str(actor.id))
@@ -83,9 +112,7 @@ async def silence_actor(
     await log_action(db, moderator, "silence", "actor", str(actor.id), reason)
 
 
-async def unsilence_actor(
-    db: AsyncSession, actor: Actor, moderator: User
-) -> None:
+async def unsilence_actor(db: AsyncSession, actor: Actor, moderator: User) -> None:
     actor.silenced_at = None
     await db.flush()
     await log_action(db, moderator, "unsilence", "actor", str(actor.id))
@@ -102,10 +129,9 @@ async def admin_delete_note(
     # Deliver Delete(Tombstone) to followers
     if note.local:
         from app.activitypub.renderer import render_delete_activity
+        from app.services.actor_service import actor_uri
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
-
-        from app.services.actor_service import actor_uri
 
         delete_activity = render_delete_activity(
             activity_id=f"{note.ap_id}/delete",
@@ -117,9 +143,7 @@ async def admin_delete_note(
             await enqueue_delivery(db, note.actor_id, inbox_url, delete_activity)
 
 
-async def force_sensitive(
-    db: AsyncSession, note: Note, moderator: User
-) -> None:
+async def force_sensitive(db: AsyncSession, note: Note, moderator: User) -> None:
     note.sensitive = True
     await db.flush()
     await log_action(db, moderator, "force_sensitive", "note", str(note.id))

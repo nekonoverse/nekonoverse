@@ -11,9 +11,7 @@ from app.models.base import Base
 class PinnedNote(Base):
     __tablename__ = "pinned_notes"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actors.id"), nullable=False, index=True
     )
@@ -27,6 +25,4 @@ class PinnedNote(Base):
 
     note = relationship("Note", lazy="selectin")
 
-    __table_args__ = (
-        UniqueConstraint("actor_id", "note_id", name="uq_pinned_notes_actor_note"),
-    )
+    __table_args__ = (UniqueConstraint("actor_id", "note_id", name="uq_pinned_notes_actor_note"),)

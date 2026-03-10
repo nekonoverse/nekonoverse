@@ -4,7 +4,6 @@ import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import selectinload
 
 from app.models.bookmark import Bookmark
 from app.models.note import Note
@@ -57,9 +56,7 @@ async def get_bookmarks(
         )
     )
     if max_id:
-        sub = select(Bookmark.created_at).where(
-            Bookmark.id == max_id
-        ).scalar_subquery()
+        sub = select(Bookmark.created_at).where(Bookmark.id == max_id).scalar_subquery()
         query = query.where(Bookmark.created_at < sub)
     query = query.order_by(Bookmark.created_at.desc()).limit(limit)
     result = await db.execute(query)

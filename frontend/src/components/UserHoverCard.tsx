@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, Show } from "solid-js";
+import { useNavigate } from "@solidjs/router";
 import { getAccount, followAccount, unfollowAccount, type Account } from "../api/accounts";
 import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { currentUser } from "../stores/auth";
@@ -13,8 +14,17 @@ interface Props {
   children: any;
 }
 
-// Simple in-memory cache
+// LRU cache with max size to prevent memory leaks
+const MAX_CACHE_SIZE = 100;
 const cache = new Map<string, Account>();
+function cacheSet(key: string, value: Account) {
+  if (cache.size >= MAX_CACHE_SIZE) {
+    // Mapのイテレーション順は挿入順なので、最初のキーを削除
+    const firstKey = cache.keys().next().value;
+    if (firstKey !== undefined) cache.delete(firstKey);
+  }
+  cache.set(key, value);
+}
 
 // Detect touch-primary device (no hover capability)
 const isTouchDevice = () =>
@@ -23,6 +33,7 @@ const isTouchDevice = () =>
 
 export default function UserHoverCard(props: Props) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [visible, setVisible] = createSignal(false);
   const [account, setAccount] = createSignal<Account | null>(null);
   const [followLoading, setFollowLoading] = createSignal(false);
@@ -42,7 +53,7 @@ export default function UserHoverCard(props: Props) {
     }
     try {
       const acc = await getAccount(props.actorId);
-      cache.set(props.actorId, acc);
+      cacheSet(props.actorId, acc);
       setAccount(acc);
     } catch {}
   };
@@ -214,7 +225,12 @@ export default function UserHoverCard(props: Props) {
               return (
                 <>
                   <div class="hover-card-header">
-                    <a href={`/@${acc.acct}`} class="hover-card-avatar-link">
+                    <a href={`/@${acc.acct}`} class="hover-card-avatar-link" onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setVisible(false);
+                      navigate(`/@${acc.acct}`);
+                    }}>
                       <img
                         class="hover-card-avatar"
                         src={acc.avatar || defaultAvatar()}
@@ -222,7 +238,12 @@ export default function UserHoverCard(props: Props) {
                       />
                     </a>
                     <div class="hover-card-names">
-                      <a href={`/@${acc.acct}`} class="hover-card-name-link">
+                      <a href={`/@${acc.acct}`} class="hover-card-name-link" onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setVisible(false);
+                        navigate(`/@${acc.acct}`);
+                      }}>
                         <strong class="hover-card-display-name" ref={(el) => {
                           el.textContent = acc.display_name || acc.username;
                           if (acc.emojis) emojify(el, acc.emojis);

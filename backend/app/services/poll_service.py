@@ -6,7 +6,6 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.note import Note
 from app.models.poll_vote import PollVote
 from app.models.user import User
 from app.services.note_service import get_note_by_id
@@ -67,6 +66,7 @@ async def vote_on_poll(
 
     # Force JSONB update detection
     from sqlalchemy.orm.attributes import flag_modified
+
     note.poll_options = list(options)
     flag_modified(note, "poll_options")
     await db.flush()
@@ -87,10 +87,9 @@ async def get_poll_data(
 
     # Count unique voters
     from sqlalchemy import func
+
     voters_result = await db.execute(
-        select(func.count(func.distinct(PollVote.actor_id))).where(
-            PollVote.note_id == note_id
-        )
+        select(func.count(func.distinct(PollVote.actor_id))).where(PollVote.note_id == note_id)
     )
     voters_count = voters_result.scalar() or 0
 

@@ -1,14 +1,13 @@
-import { readFileSync } from "node:fs";
 import { defineConfig } from "vite";
 import solidPlugin from "vite-plugin-solid";
 import { VitePWA } from "vite-plugin-pwa";
+import packageJson from "./package.json" with { type: "json" };
 
 const backendUrl = process.env.VITE_BACKEND_URL || "http://localhost:8000";
-const pkg = JSON.parse(readFileSync("./package.json", "utf-8"));
 
 export default defineConfig({
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_VERSION__: JSON.stringify(packageJson.version),
   },
   plugins: [
     solidPlugin(),
@@ -23,7 +22,7 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,woff,woff2}"],
         runtimeCaching: [
           {
-            urlPattern: /^\/api\/(?!v1\/streaming)/,
+            urlPattern: /^\/api\/(?!v1\/streaming|v1\/instance)/,
             handler: "NetworkFirst",
             options: {
               cacheName: "api-cache",

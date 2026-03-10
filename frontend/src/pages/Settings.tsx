@@ -1,28 +1,74 @@
-import { createSignal, onMount, Show, For } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "solid-js";
+import QRCode from "qrcode";
+import { useNavigate, useParams, A } from "@solidjs/router";
 import { currentUser, authLoading, logout } from "../stores/auth";
 import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
   rememberVisibility, setRememberVisibility,
 } from "../stores/composer";
-import { instance, defaultAvatar } from "../stores/instance";
+import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "../stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "../i18n";
 import { changePassword } from "../api/settings";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "../api/accounts";
+import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "../api/totp";
 import PasskeyManager from "../components/PasskeyManager";
+import Breadcrumb from "../components/Breadcrumb";
 
 declare const __APP_VERSION__: string;
 
-type Tab = "posting" | "appearance" | "security" | "blocks" | "mutes" | "migration" | "about";
+interface SettingsSection {
+  key: string;
+  labelKey: string;
+  descKey: string;
+}
+
+interface SettingsCategory {
+  labelKey: string;
+  sections: SettingsSection[];
+}
+
+const categories: SettingsCategory[] = [
+  {
+    labelKey: "settings.categoryGeneral",
+    sections: [
+      { key: "posting", labelKey: "settings.tabPosting", descKey: "settings.descPosting" },
+      { key: "appearance", labelKey: "settings.tabAppearance", descKey: "settings.descAppearance" },
+    ],
+  },
+  {
+    labelKey: "settings.categoryAccount",
+    sections: [
+      { key: "security", labelKey: "settings.tabSecurity", descKey: "settings.descSecurity" },
+      { key: "blocks", labelKey: "settings.tabBlocks", descKey: "settings.descBlocks" },
+      { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
+      { key: "migration", labelKey: "settings.tabMigration", descKey: "settings.descMigration" },
+    ],
+  },
+  {
+    labelKey: "settings.categorySystem",
+    sections: [
+      { key: "about", labelKey: "settings.tabAbout", descKey: "settings.descAbout" },
+    ],
+  },
+];
+
+function findSectionLabel(t: (key: any) => string, sectionKey: string): string {
+  for (const cat of categories) {
+    for (const s of cat.sections) {
+      if (s.key === sectionKey) return t(s.labelKey as any);
+    }
+  }
+  return "";
+}
 
 export default function Settings() {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const [activeTab, setActiveTab] = createSignal<Tab>("posting");
+  const params = useParams<{ section?: string }>();
 
-  // Auth is handled by App.tsx Layout
+  const section = () => params.section || "";
 
   const handleLogout = async () => {
     await logout();
@@ -31,47 +77,43 @@ export default function Settings() {
 
   return (
     <div class="page-container">
-      <h1>{t("settings.title")}</h1>
-
-      <div class="settings-tabs">
-        {([
-          { key: "posting" as Tab, label: t("settings.tabPosting") },
-          { key: "appearance" as Tab, label: t("settings.tabAppearance") },
-          { key: "security" as Tab, label: t("settings.tabSecurity") },
-          { key: "blocks" as Tab, label: t("settings.tabBlocks") },
-          { key: "mutes" as Tab, label: t("settings.tabMutes") },
-          { key: "migration" as Tab, label: t("settings.tabMigration") },
-          { key: "about" as Tab, label: t("settings.tabAbout") },
-        ]).map((tab) => (
-          <button
-            class={`settings-tab${activeTab() === tab.key ? " settings-tab-active" : ""}`}
-            onClick={() => setActiveTab(tab.key)}
-          >
-            {tab.label}
-          </button>
-        ))}
-      </div>
-
-      <Show when={activeTab() === "posting"}>
-        <PostingTab />
-      </Show>
-      <Show when={activeTab() === "appearance"}>
-        <AppearanceTab />
-      </Show>
-      <Show when={activeTab() === "security"}>
-        <SecurityTab onLogout={handleLogout} />
-      </Show>
-      <Show when={activeTab() === "blocks"}>
-        <BlocksTab />
-      </Show>
-      <Show when={activeTab() === "mutes"}>
-        <MutesTab />
-      </Show>
-      <Show when={activeTab() === "migration"}>
-        <MigrationTab />
-      </Show>
-      <Show when={activeTab() === "about"}>
-        <AboutTab />
+      <Show when={section()} fallback={
+        <>
+          <h1>{t("settings.title")}</h1>
+          <div class="settings-menu">
+            <For each={categories}>
+              {(cat) => (
+                <div class="settings-menu-category">
+                  <h3 class="settings-menu-category-title">{t(cat.labelKey as any)}</h3>
+                  <div class="settings-menu-grid">
+                    <For each={cat.sections}>
+                      {(s) => (
+                        <A href={`/settings/${s.key}`} class="settings-menu-card">
+                          <span class="settings-menu-card-title">{t(s.labelKey as any)}</span>
+                          <span class="settings-menu-card-desc">{t(s.descKey as any)}</span>
+                        </A>
+                      )}
+                    </For>
+                  </div>
+                </div>
+              )}
+            </For>
+          </div>
+        </>
+      }>
+        <Breadcrumb items={[
+          { label: t("settings.title"), href: "/settings" },
+          { label: findSectionLabel(t, section()) },
+        ]} />
+        <Switch>
+          <Match when={section() === "posting"}><PostingTab /></Match>
+          <Match when={section() === "appearance"}><AppearanceTab /></Match>
+          <Match when={section() === "security"}><SecurityTab onLogout={handleLogout} /></Match>
+          <Match when={section() === "blocks"}><BlocksTab /></Match>
+          <Match when={section() === "mutes"}><MutesTab /></Match>
+          <Match when={section() === "migration"}><MigrationTab /></Match>
+          <Match when={section() === "about"}><AboutTab /></Match>
+        </Switch>
       </Show>
     </div>
   );
@@ -192,6 +234,43 @@ function SecurityTab(props: { onLogout: () => void }) {
   const [pwMsg, setPwMsg] = createSignal("");
   const [pwError, setPwError] = createSignal("");
 
+  // TOTP state
+  const [totpEnabled, setTotpEnabled] = createSignal(false);
+  const [totpLoading, setTotpLoading] = createSignal(true);
+  const [totpStep, setTotpStep] = createSignal<
+    "idle" | "qr" | "verify" | "recovery" | "disable"
+  >("idle");
+  const [totpSecret, setTotpSecret] = createSignal("");
+  const [totpUri, setTotpUri] = createSignal("");
+  const [totpCode, setTotpCode] = createSignal("");
+  const [recoveryCodes, setRecoveryCodes] = createSignal<string[]>([]);
+  const [totpError, setTotpError] = createSignal("");
+  const [totpProcessing, setTotpProcessing] = createSignal(false);
+  const [disablePw, setDisablePw] = createSignal("");
+  const [qrDataUrl, setQrDataUrl] = createSignal("");
+
+  createEffect(async () => {
+    const uri = totpUri();
+    if (uri) {
+      try {
+        const dataUrl = await QRCode.toDataURL(uri, { width: 200, margin: 2 });
+        setQrDataUrl(dataUrl);
+      } catch {
+        setQrDataUrl("");
+      }
+    } else {
+      setQrDataUrl("");
+    }
+  });
+
+  onMount(async () => {
+    try {
+      const status = await getTotpStatus();
+      setTotpEnabled(status.totp_enabled);
+    } catch {}
+    setTotpLoading(false);
+  });
+
   const handleChangePassword = async () => {
     setPwMsg("");
     setPwError("");
@@ -211,6 +290,59 @@ function SecurityTab(props: { onLogout: () => void }) {
     } finally {
       setChangingPw(false);
     }
+  };
+
+  const handleSetupTotp = async () => {
+    setTotpError("");
+    setTotpProcessing(true);
+    try {
+      const data = await setupTotp();
+      setTotpSecret(data.secret);
+      setTotpUri(data.provisioning_uri);
+      setTotpStep("qr");
+    } catch (e: any) {
+      setTotpError(e.message);
+    } finally {
+      setTotpProcessing(false);
+    }
+  };
+
+  const handleEnableTotp = async () => {
+    setTotpError("");
+    setTotpProcessing(true);
+    try {
+      const data = await enableTotp(totpCode());
+      setRecoveryCodes(data.recovery_codes);
+      setTotpStep("recovery");
+      setTotpEnabled(true);
+    } catch (e: any) {
+      setTotpError(e.message);
+    } finally {
+      setTotpProcessing(false);
+    }
+  };
+
+  const handleDisableTotp = async () => {
+    setTotpError("");
+    setTotpProcessing(true);
+    try {
+      await disableTotp(disablePw());
+      setTotpEnabled(false);
+      setTotpStep("idle");
+      setDisablePw("");
+    } catch (e: any) {
+      setTotpError(e.message);
+    } finally {
+      setTotpProcessing(false);
+    }
+  };
+
+  const handleCopySecret = () => {
+    navigator.clipboard.writeText(totpSecret());
+  };
+
+  const handleCopyRecovery = () => {
+    navigator.clipboard.writeText(recoveryCodes().join("\n"));
   };
 
   return (
@@ -250,6 +382,142 @@ function SecurityTab(props: { onLogout: () => void }) {
         >
           {t("settings.changePassword")}
         </button>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("totp.title")}</h3>
+        <Show when={!totpLoading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={totpError()}><p class="error">{totpError()}</p></Show>
+
+          <Switch>
+            <Match when={totpStep() === "idle" && !totpEnabled()}>
+              <p class="settings-desc">{t("totp.description")}</p>
+              <button
+                class="btn btn-small"
+                onClick={handleSetupTotp}
+                disabled={totpProcessing()}
+              >
+                {t("totp.enable")}
+              </button>
+            </Match>
+
+            <Match when={totpStep() === "qr"}>
+              <p>{t("totp.scanQr")}</p>
+              <div class="totp-qr-section">
+                <Show when={qrDataUrl()}>
+                  <img
+                    src={qrDataUrl()}
+                    alt="TOTP QR Code"
+                    class="totp-qr-image"
+                    width="200"
+                    height="200"
+                  />
+                </Show>
+                <div class="totp-secret-display">
+                  <code>{totpSecret()}</code>
+                  <button
+                    class="btn btn-small"
+                    onClick={handleCopySecret}
+                  >
+                    {t("totp.copySecret")}
+                  </button>
+                </div>
+              </div>
+              <div class="settings-form-group">
+                <label>{t("totp.enterCode")}</label>
+                <input
+                  type="text"
+                  inputMode="numeric"
+                  maxLength={6}
+                  value={totpCode()}
+                  onInput={(e) => setTotpCode(e.currentTarget.value)}
+                  placeholder="000000"
+                />
+              </div>
+              <div class="totp-actions">
+                <button
+                  class="btn btn-small"
+                  onClick={handleEnableTotp}
+                  disabled={totpProcessing() || totpCode().length < 6}
+                >
+                  {t("totp.verify")}
+                </button>
+                <button
+                  class="btn btn-small"
+                  onClick={() => { setTotpStep("idle"); setTotpError(""); }}
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </Match>
+
+            <Match when={totpStep() === "recovery"}>
+              <p class="totp-recovery-warning">{t("totp.recoveryWarning")}</p>
+              <div class="totp-recovery-codes">
+                <For each={recoveryCodes()}>
+                  {(code) => <code class="totp-recovery-code">{code}</code>}
+                </For>
+              </div>
+              <div class="totp-actions">
+                <button class="btn btn-small" onClick={handleCopyRecovery}>
+                  {t("totp.copyCodes")}
+                </button>
+                <button
+                  class="btn btn-small"
+                  onClick={() => {
+                    setTotpStep("idle");
+                    setRecoveryCodes([]);
+                    setTotpCode("");
+                    setTotpError("");
+                  }}
+                >
+                  {t("totp.saved")}
+                </button>
+              </div>
+            </Match>
+
+            <Match when={totpStep() === "idle" && totpEnabled()}>
+              <p class="settings-success">{t("totp.enabled")}</p>
+              <button
+                class="btn btn-small btn-danger"
+                onClick={() => setTotpStep("disable")}
+              >
+                {t("totp.disable")}
+              </button>
+            </Match>
+
+            <Match when={totpStep() === "disable"}>
+              <p>{t("totp.disableConfirm")}</p>
+              <div class="settings-form-group">
+                <label>{t("auth.password")}</label>
+                <input
+                  type="password"
+                  value={disablePw()}
+                  onInput={(e) => setDisablePw(e.currentTarget.value)}
+                />
+              </div>
+              <div class="totp-actions">
+                <button
+                  class="btn btn-small btn-danger"
+                  onClick={handleDisableTotp}
+                  disabled={totpProcessing() || !disablePw()}
+                >
+                  {t("totp.disable")}
+                </button>
+                <button
+                  class="btn btn-small"
+                  onClick={() => {
+                    setTotpStep("idle");
+                    setDisablePw("");
+                    setTotpError("");
+                  }}
+                >
+                  {t("common.cancel")}
+                </button>
+              </div>
+            </Match>
+          </Switch>
+        </Show>
       </div>
 
       <div class="settings-section">
@@ -425,14 +693,7 @@ function AboutTab() {
   const handleClearCache = async () => {
     setClearing(true);
     try {
-      if ("caches" in window) {
-        const keys = await caches.keys();
-        await Promise.all(keys.map((k) => caches.delete(k)));
-      }
-      if ("serviceWorker" in navigator) {
-        const regs = await navigator.serviceWorker.getRegistrations();
-        await Promise.all(regs.map((r) => r.unregister()));
-      }
+      await clearServiceWorkerAndCaches();
       location.reload();
     } catch {
       setClearing(false);

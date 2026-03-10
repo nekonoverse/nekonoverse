@@ -324,27 +324,137 @@ cloudflared tunnel run nekonoverse
 
 #### Docker Compose で使う場合
 
-nginx サービスを cloudflared に置き換える:
-
-```yaml
-services:
-  # nginx を削除し、cloudflared を追加
-  cloudflared:
-    image: cloudflare/cloudflared:latest
-    restart: unless-stopped
-    command: tunnel run
-    environment:
-      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN}
-    depends_on:
-      app:
-        condition: service_healthy
-      frontend:
-        condition: service_started
-      s3proxy-deliverer:
-        condition: service_started
-```
+`docker-compose.yml.example` の末尾にコメントアウトされた `cloudflared` サービスがあります。nginx サービスを削除（またはコメントアウト）し、cloudflared のコメントを外して使います。
 
 Cloudflare Zero Trust ダッシュボードの **Networks > Tunnels** でトンネルを作成し、Public Hostname のルーティングを設定する。`CLOUDFLARE_TUNNEL_TOKEN` は `.env` に記載する。
 
 !!! note "環境変数"
     Cloudflared を使う場合、バックエンドの `DEBUG=false` を設定すること。Cloudflare が HTTPS を終端し `X-Forwarded-Proto: https` をセットするため、バックエンドは HTTPS 前提で動作する。
+
+---
+
+## 顔検出サーバーを別マシンに分離する
+
+[`face-detect/`](https://github.com/nekonoverse/face-detect)（git submodule）は顔検出マイクロサービスで、アップロードされた画像から顔の位置を検出し、フォーカルポイントを自動設定する。GPU マシンに分離することで、メインサーバーの負荷を分散できる。
+
+検出は2段階で行われる（`DETECTION_MODE` で変更可能）:
+
+1. **アニメ顔検出** (`deepghs/anime_face_detection` YOLO ONNX, GPU) — F1 0.97、VRAM ~50MB
+2. **実写顔検出** (MTCNN, PyTorch, GPU) — アニメ顔が見つからない場合のフォールバック、VRAM ~200MB
+
+| モード | 環境変数 `DETECTION_MODE` | 動作 | VRAM |
+|--------|--------------------------|------|------|
+| 自動 (デフォルト) | `auto` | アニメ→実写フォールバック | ~250MB |
+| アニメのみ | `anime` | アニメ顔のみ検出 | ~50MB |
+| 実写のみ | `real` | 実写顔のみ検出 | ~200MB |
+
+!!! note "オプション機能"
+    顔検出は `FACE_DETECT_URL` が未設定なら完全にスキップされる。サービスがダウンしていてもアップロードは正常に動作する（silent fail）。ユーザーはフロントエンドの FocalPointPicker から手動設定も可能。
+
+### 構成図
+
+```
+Client → メインサーバー (backend) → GPU サーバー (face-detect)
+                                     POST /object-detection
+```
+
+### GPU サーバー側のセットアップ
+
+#### 直接実行
+
+```bash
+# face-detect/ ディレクトリをコピー
+scp -r face-detect/ gpu-server:/opt/face-detect/
+
+# GPU マシンで起動
+cd /opt/face-detect
+pip install -r requirements.txt   # torch, facenet-pytorch, onnxruntime-gpu, huggingface-hub, etc.
+
+# 検出モードを指定して起動 (デフォルト: auto)
+DETECTION_MODE=auto uvicorn main:app --host 0.0.0.0 --port 8100
+
+# アニメのみモード (MTCNNをロードしない、VRAM節約)
+DETECTION_MODE=anime uvicorn main:app --host 0.0.0.0 --port 8100
+```
+
+#### Docker
+
+```dockerfile
+FROM pytorch/pytorch:2.x-cuda12.x-runtime
+COPY . /app
+WORKDIR /app
+RUN pip install -r requirements.txt
+CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8100"]
+```
+
+#### systemd サービス例
+
+```ini
+# /etc/systemd/system/face-detect.service
+[Unit]
+Description=Nekonoverse Face Detection
+After=network.target
+
+[Service]
+Type=exec
+User=nekonoverse
+WorkingDirectory=/opt/face-detect
+Environment=DETECTION_MODE=auto
+ExecStart=/opt/face-detect/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8100
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### メインサーバー側の設定
+
+`.env` に追加:
+
+```bash
+FACE_DETECT_URL=http://<GPUマシンのIP>:8100
+```
+
+Docker Compose の場合は `docker-compose.yml` の `app` サービスの `environment` に追加する。
+
+### ネットワーク
+
+| 方式 | 設定例 | 備考 |
+|------|--------|------|
+| Tailscale (推奨) | `http://100.x.x.x:8100` | 設定不要で暗号化 |
+| VPN / プライベートネットワーク | `http://192.168.x.x:8100` | ファイアウォールで 8100 を制限 |
+
+!!! warning "セキュリティ"
+    顔検出 API は認証なしのため、公開ネットワークに露出させないこと。Tailscale やファイアウォールでメインサーバーからのアクセスのみ許可する。
+
+### 動作確認
+
+```bash
+# GPU マシンのヘルスチェック
+curl http://<GPU_IP>:8100/health
+# → {"status":"ok","device":"cuda","detection_mode":"auto","models":{"anime":true,"real":true}}
+
+# メインサーバーからの疎通確認
+curl http://<GPU_IP>:8100/health
+```
+
+### API 仕様
+
+| エンドポイント | メソッド | 説明 |
+|---------------|---------|------|
+| `/health` | GET | ヘルスチェック。`models` でアニメ/実写の有効状況を返す |
+| `/object-detection` | POST | 顔検出（アニメ優先→実写フォールバック）。HF Inference API 互換 |
+
+レスポンス例 (`/object-detection`):
+
+```json
+[
+  {
+    "label": "anime_face",
+    "score": 0.8,
+    "box": { "xmin": 30, "ymin": 20, "xmax": 70, "ymax": 60 }
+  }
+]
+```
+
+`label` は `anime_face`（アニメ検出）または `face`（実写検出）。バックエンドはバウンディングボックスの中心座標を正規化 `[-1, 1]` のフォーカルポイントに変換して `drive_files.focal_x` / `focal_y` に保存する（`label` は参照しない）。

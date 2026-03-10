@@ -1,0 +1,51 @@
+name: Discord PR Notification
+
+on:
+  pull_request_target:
+    types: [opened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          PR_USER: ${{ github.event.pull_request.user.login }}
+          PR_AVATAR: ${{ github.event.pull_request.user.avatar_url }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_REPO: ${{ github.repository }}
+        run: |
+          if [ -z "$DISCORD_WEBHOOK" ]; then
+            echo "DISCORD_WEBHOOK_URL secret not set, skipping"
+            exit 0
+          fi
+
+          BODY_TRUNCATED=$(echo "$PR_BODY" | head -c 200)
+
+          jq -n \
+            --arg title "$PR_TITLE" \
+            --arg url "$PR_URL" \
+            --arg user "$PR_USER" \
+            --arg avatar "$PR_AVATAR" \
+            --arg body "$BODY_TRUNCATED" \
+            --arg repo "$PR_REPO" \
+            --argjson number "$PR_NUMBER" \
+            '{
+              embeds: [{
+                title: ("[PR #" + ($number | tostring) + "] " + $title),
+                url: $url,
+                description: $body,
+                color: 5025616,
+                author: {
+                  name: $user,
+                  icon_url: $avatar
+                },
+                footer: {
+                  text: $repo
+                }
+              }]
+            }' | curl -s -X POST -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"

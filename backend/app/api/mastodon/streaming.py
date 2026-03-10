@@ -6,7 +6,7 @@ import json
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
 
-from app.dependencies import get_current_user, get_optional_user
+from app.dependencies import get_current_user
 from app.models.user import User
 from app.valkey_client import valkey
 
@@ -24,9 +24,7 @@ async def _event_stream(request: Request, channels: list[str]):
         while True:
             if await request.is_disconnected():
                 break
-            msg = await pubsub.get_message(
-                ignore_subscribe_messages=True, timeout=1.0
-            )
+            msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
             if msg and msg["type"] == "message":
                 data = json.loads(msg["data"])
                 event_type = data.get("event", "update")
@@ -60,11 +58,14 @@ def _sse_response(request: Request, channels: list[str]):
 async def stream_user(request: Request, user: User = Depends(get_current_user)):
     """SSE stream for authenticated user: home timeline + notifications."""
     actor_id = str(user.actor_id)
-    return _sse_response(request, [
-        f"timeline:home:{actor_id}",
-        f"notifications:{actor_id}",
-        "timeline:public",
-    ])
+    return _sse_response(
+        request,
+        [
+            f"timeline:home:{actor_id}",
+            f"notifications:{actor_id}",
+            "timeline:public",
+        ],
+    )
 
 
 @router.get("/public")

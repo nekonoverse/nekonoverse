@@ -30,7 +30,7 @@ def _is_private_host(hostname: str) -> bool:
 @router.get("/proxy")
 async def proxy_media(
     url: str = Query(..., min_length=1),
-    h: str = Query(..., min_length=16, max_length=16),
+    h: str = Query(..., min_length=16, max_length=32),
 ):
     if not verify_proxy_hmac(url, h):
         raise HTTPException(status_code=403, detail="Invalid signature")

@@ -1,4 +1,4 @@
-import { createSignal, createEffect, on, onCleanup, Show, For, Index } from "solid-js";
+import { createSignal, createEffect, on, onCleanup, Show, For, Index, batch } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
 import { updateAvatar, updateHeader, updateProfile } from "../api/settings";
@@ -79,17 +79,19 @@ export default function Profile() {
   };
 
   createEffect(on(() => params.acct, () => {
-    setAccount(null);
-    setNotes([]);
-    setLoading(true);
-    setError("");
-    setIsFollowing(false);
-    setIsRequested(false);
-    setIsBlocking(false);
-    setIsMuting(false);
-    setEditing(false);
-    setMoreOpen(false);
-    setShowUnfollowModal(false);
+    batch(() => {
+      setAccount(null);
+      setNotes([]);
+      setLoading(true);
+      setError("");
+      setIsFollowing(false);
+      setIsRequested(false);
+      setIsBlocking(false);
+      setIsMuting(false);
+      setEditing(false);
+      setMoreOpen(false);
+      setShowUnfollowModal(false);
+    });
     loadProfile();
   }));
 
@@ -434,6 +436,21 @@ export default function Profile() {
                     </Show>
                   </div>
                   <span class="profile-handle">@{acc.acct}</span>
+                  <Show when={acc.acct.includes("@") && acc.url}>
+                    <a
+                      class="remote-view-link"
+                      href={acc.url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    >
+                      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+                        <polyline points="15 3 21 3 21 9" />
+                        <line x1="10" y1="14" x2="21" y2="3" />
+                      </svg>
+                      {t("remote.viewOnRemote")}
+                    </a>
+                  </Show>
 
                   <Show when={acc.followers_count != null || acc.following_count != null}>
                     <div class="profile-follow-counts">

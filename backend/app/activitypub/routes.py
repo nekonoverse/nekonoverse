@@ -1,5 +1,7 @@
 """ActivityPub core routes: Actor endpoint, Inbox, Outbox."""
 
+import base64
+import hashlib
 import json
 import logging
 import uuid
@@ -27,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
-AP_CONTENT_TYPE = 'application/activity+json; charset=utf-8'
+AP_CONTENT_TYPE = "application/activity+json; charset=utf-8"
 
 
 def is_ap_request(request: Request) -> bool:
@@ -184,7 +186,7 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
         raise HTTPException(status_code=404, detail="Note not found")
 
     if not is_ap_request(request):
-        return Response(status_code=302, headers={"Location": f"/notes/{note_id}"})
+        raise HTTPException(status_code=404, detail="Not found")
 
     return Response(
         content=json.dumps(render_note(note)),
@@ -192,9 +194,7 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
     )
 
 
-async def verify_inbox_signature(
-    request: Request, db: AsyncSession
-) -> tuple[bool, str]:
+async def verify_inbox_signature(request: Request, db: AsyncSession) -> tuple[bool, str]:
     """Verify HTTP Signature on an inbox request. Returns (valid, key_id)."""
     sig_header = request.headers.get("signature")
     if not sig_header:
@@ -224,6 +224,18 @@ async def verify_inbox_signature(
     return valid, key_id
 
 
+def _verify_digest(body: bytes, digest_header: str | None) -> bool:
+    """Verify that the Digest header matches the actual request body hash."""
+    if not digest_header:
+        return False
+    # SHA-256=<base64> 形式をパース
+    if not digest_header.startswith("SHA-256="):
+        return False
+    expected_b64 = digest_header[len("SHA-256=") :]
+    actual_hash = base64.b64encode(hashlib.sha256(body).digest()).decode()
+    return actual_hash == expected_b64
+
+
 @router.post("/users/{username}/inbox")
 async def user_inbox(username: str, request: Request, db: AsyncSession = Depends(get_db)):
     actor = await get_actor_by_username(db, username, domain=None)
@@ -231,6 +243,12 @@ async def user_inbox(username: str, request: Request, db: AsyncSession = Depends
         raise HTTPException(status_code=404, detail="Actor not found")
 
     body = await request.body()
+
+    # Digestヘッダーの検証
+    digest_header = request.headers.get("digest")
+    if not _verify_digest(body, digest_header):
+        logger.warning("Invalid or missing Digest header")
+        raise HTTPException(status_code=400, detail="Invalid Digest header")
 
     # Verify HTTP Signature
     valid, key_id = await verify_inbox_signature(request, db)
@@ -250,6 +268,12 @@ async def user_inbox(username: str, request: Request, db: AsyncSession = Depends
 @router.post("/inbox")
 async def shared_inbox(request: Request, db: AsyncSession = Depends(get_db)):
     body = await request.body()
+
+    # Digestヘッダーの検証
+    digest_header = request.headers.get("digest")
+    if not _verify_digest(body, digest_header):
+        logger.warning("Invalid or missing Digest header on shared inbox")
+        raise HTTPException(status_code=400, detail="Invalid Digest header")
 
     valid, key_id = await verify_inbox_signature(request, db)
     if not valid:
@@ -287,14 +311,23 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
     if activity_id:
         from app.valkey_client import valkey
 
-        already_seen = await valkey.set(
-            f"seen_activity:{activity_id}", "1", nx=True, ex=86400
-        )
+        already_seen = await valkey.set(f"seen_activity:{activity_id}", "1", nx=True, ex=86400)
         if not already_seen:
             logger.info("Duplicate activity %s, skipping", activity_id)
             return
 
-    from app.activitypub.handlers import announce, block, create, delete, flag, follow, like, move, undo, update
+    from app.activitypub.handlers import (
+        announce,
+        block,
+        create,
+        delete,
+        flag,
+        follow,
+        like,
+        move,
+        undo,
+        update,
+    )
 
     handler_map = {
         "Create": create.handle_create,
