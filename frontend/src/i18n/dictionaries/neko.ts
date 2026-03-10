@@ -226,6 +226,8 @@ export const neko: Dictionary = {
   "search.search": "けんさくにゃ",
   "search.placeholder": "にゃんこめい または user@example.com",
   "search.noResults": "みつからにゃかったにゃ",
+  "search.closeHint": "Escでとじるにゃ",
+  "search.resolving": "りもーとにゃんこをしらべてるにゃ...",
   "migration.title": "おひっこしにゃ",
   "migration.description":
     "べつのサーバーにおひっこしするにゃ。もどせにゃいにゃ。",

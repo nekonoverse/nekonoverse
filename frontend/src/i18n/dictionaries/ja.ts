@@ -224,6 +224,8 @@ export const ja = {
   "search.search": "検索",
   "search.placeholder": "ユーザー名 または user@example.com",
   "search.noResults": "見つかりませんでした",
+  "search.closeHint": "Escで閉じる",
+  "search.resolving": "リモートユーザーを照会中...",
   "migration.title": "アカウント移行",
   "migration.description":
     "別のサーバーへアカウントを移行します。この操作は取り消せません。",
