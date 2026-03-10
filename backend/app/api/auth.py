@@ -16,7 +16,6 @@ from app.services.user_service import (
     authenticate_user,
     change_password,
     create_user,
-    get_user_by_id,
     update_display_name,
 )
 
@@ -119,23 +118,8 @@ async def logout(request: Request, response: Response):
 
 @router.get("/accounts/verify_credentials", response_model=UserResponse)
 async def verify_credentials(
-    request: Request,
-    db: AsyncSession = Depends(get_db),
+    user: User = Depends(get_current_user),
 ):
-    session_id = get_session_id(request)
-    if not session_id:
-        raise HTTPException(status_code=401, detail="Not authenticated")
-
-    from app.valkey_client import valkey
-
-    user_id_str = await valkey.get(f"session:{session_id}")
-    if not user_id_str:
-        raise HTTPException(status_code=401, detail="Session expired")
-
-    user = await get_user_by_id(db, uuid.UUID(user_id_str))
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
-
     return _user_response(user)
 
 
