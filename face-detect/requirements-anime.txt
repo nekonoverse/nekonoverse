@@ -1,6 +1,0 @@
-fastapi>=0.115
-uvicorn[standard]>=0.34
-onnxruntime-gpu>=1.17
-huggingface-hub>=0.20
-numpy>=1.24
-Pillow>=10.0
