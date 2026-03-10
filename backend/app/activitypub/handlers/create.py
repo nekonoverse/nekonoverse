@@ -1,6 +1,7 @@
 """Handle incoming Create activities (mainly Create Note)."""
 
 import logging
+import math
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -229,8 +230,10 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         fp = att_data.get("focalPoint")
         if isinstance(fp, list) and len(fp) >= 2:
             try:
-                focal_x = max(-1.0, min(1.0, float(fp[0])))
-                focal_y = max(-1.0, min(1.0, float(fp[1])))
+                fx, fy = float(fp[0]), float(fp[1])
+                if math.isfinite(fx) and math.isfinite(fy):
+                    focal_x = max(-1.0, min(1.0, fx))
+                    focal_y = max(-1.0, min(1.0, fy))
             except (ValueError, TypeError):
                 pass
 
