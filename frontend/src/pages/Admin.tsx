@@ -11,6 +11,7 @@ import {
 import { useParams, A } from "@solidjs/router";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
+import { registrationMode } from "../stores/instance";
 import Breadcrumb from "../components/Breadcrumb";
 import {
   getAdminStats,
@@ -53,6 +54,9 @@ import {
   retryAllDeadJobs,
   purgeDeliveredJobs,
   getSystemStats,
+  getPendingRegistrations,
+  approveRegistration,
+  rejectRegistration,
   type AdminStats,
   type ServerSettings,
   type AdminUser,
@@ -70,6 +74,7 @@ import {
   type QueueJob,
   type QueueJobList,
   type SystemStats,
+  type PendingRegistration,
 } from "../api/admin";
 
 interface AdminSection {
@@ -90,6 +95,11 @@ const categories: AdminCategory[] = [
     adminOnly: false,
     sections: [
       { key: "users", labelKey: "admin.tabUsers", descKey: "admin.descUsers" },
+      {
+        key: "registrations",
+        labelKey: "admin.tabRegistrations",
+        descKey: "admin.descRegistrations",
+      },
       {
         key: "domains",
         labelKey: "admin.tabDomains",
@@ -187,7 +197,9 @@ export default function Admin() {
                           {t(cat.labelKey as any)}
                         </h3>
                         <div class="settings-menu-grid">
-                          <For each={cat.sections}>
+                          <For each={cat.sections.filter(
+                            (s) => s.key !== "registrations" || registrationMode() === "approval"
+                          )}>
                             {(s) => (
                               <A
                                 href={`/admin/${s.key}`}
@@ -223,6 +235,9 @@ export default function Admin() {
             </Match>
             <Match when={section() === "users"}>
               <UsersTab />
+            </Match>
+            <Match when={section() === "registrations"}>
+              <RegistrationsTab />
             </Match>
             <Match when={section() === "domains"}>
               <DomainsTab />
@@ -394,6 +409,7 @@ function ServerSettingsTab() {
           >
             <option value="open">{t("admin.regModeOpen")}</option>
             <option value="invite">{t("admin.regModeInvite")}</option>
+            <option value="approval">{t("admin.regModeApproval")}</option>
             <option value="closed">{t("admin.regModeClosed")}</option>
           </select>
         </div>
@@ -493,6 +509,103 @@ function SensitiveMarker() {
         </button>
       </div>
     </div>
+  );
+}
+
+function RegistrationsTab() {
+  const { t } = useI18n();
+  const [registrations, setRegistrations] = createSignal<PendingRegistration[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal("");
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      setRegistrations(await getPendingRegistrations());
+      setError("");
+    } catch {
+      setError(t("common.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  createEffect(() => {
+    reload();
+  });
+
+  const handleApprove = async (userId: string) => {
+    try {
+      await approveRegistration(userId);
+      await reload();
+    } catch {}
+  };
+
+  const handleReject = async (userId: string) => {
+    if (!confirm(t("admin.confirmRejectRegistration"))) return;
+    try {
+      await rejectRegistration(userId);
+      await reload();
+    } catch {}
+  };
+
+  return (
+    <>
+      <div class="settings-section">
+        <h3>{t("admin.tabRegistrations")}</h3>
+        <Show when={error()}>
+          <div class="error">{error()}</div>
+        </Show>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show
+            when={registrations().length > 0}
+            fallback={<p class="admin-empty">{t("admin.noRegistrations")}</p>}
+          >
+            <div class="admin-table-container">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>{t("auth.username")}</th>
+                    <th>{t("auth.email")}</th>
+                    <th>{t("auth.reason")}</th>
+                    <th>{t("admin.createdAt")}</th>
+                    <th>{t("admin.actions")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={registrations()}>
+                    {(reg) => (
+                      <tr>
+                        <td>{reg.username}</td>
+                        <td>{reg.email}</td>
+                        <td class="admin-registration-reason">
+                          {reg.reason || "-"}
+                        </td>
+                        <td>{new Date(reg.created_at).toLocaleString()}</td>
+                        <td class="admin-actions">
+                          <button
+                            class="btn btn-small btn-primary"
+                            onClick={() => handleApprove(reg.id)}
+                          >
+                            {t("admin.approve")}
+                          </button>
+                          <button
+                            class="btn btn-small btn-danger"
+                            onClick={() => handleReject(reg.id)}
+                          >
+                            {t("admin.reject")}
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
+        </Show>
+      </div>
+    </>
   );
 }
 

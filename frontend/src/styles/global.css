@@ -352,7 +352,8 @@ a:hover {
   font-size: 0.875em;
 }
 
-.auth-form input {
+.auth-form input,
+.auth-form textarea {
   width: 100%;
   padding: 10px 12px;
   background: var(--bg-primary);
@@ -360,11 +361,17 @@ a:hover {
   border-radius: var(--radius);
   color: var(--text-primary);
   font-size: 1em;
+  font-family: inherit;
 }
 
-.auth-form input:focus {
+.auth-form input:focus,
+.auth-form textarea:focus {
   outline: none;
   border-color: var(--accent);
+}
+
+.auth-form textarea {
+  resize: vertical;
 }
 
 .auth-form button {
@@ -5203,4 +5210,32 @@ a:hover {
   background: var(--bg-secondary);
   color: var(--text);
   font-size: 0.9em;
+}
+
+/* --- Pending Registrations --- */
+.admin-registration-reason {
+  max-width: 300px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.admin-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.admin-empty {
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 16px 0;
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+  border: none;
+}
+
+.btn-primary:hover {
+  opacity: 0.85;
 }

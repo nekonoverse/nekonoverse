@@ -47,8 +47,7 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
         # Fallback to legacy registration_open setting
         reg_setting = await get_setting(db, "registration_open")
         reg_open = (
-            (reg_setting == "true") if reg_setting is not None
-            else settings.registration_open
+            (reg_setting == "true") if reg_setting is not None else settings.registration_open
         )
         mode = "open" if reg_open else "closed"
 
@@ -60,15 +59,24 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     if mode == "invite":
         if not body.invite_code:
             raise HTTPException(
-                status_code=422, detail="Invitation code is required",
+                status_code=422,
+                detail="Invitation code is required",
             )
         from app.services.invitation_service import validate_invitation_code
+
         invite = await validate_invitation_code(db, body.invite_code)
         if invite is None:
             raise HTTPException(
                 status_code=422,
                 detail="Invalid or expired invitation code",
             )
+
+    # 承認制モードでは理由が必須
+    if mode == "approval" and not body.reason:
+        raise HTTPException(
+            status_code=422,
+            detail="A motivation message is required for registration",
+        )
 
     try:
         user = await create_user(
@@ -77,6 +85,8 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
             email=body.email,
             password=body.password,
             display_name=body.display_name,
+            approval_status="pending" if mode == "approval" else "approved",
+            registration_reason=body.reason if mode == "approval" else None,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -84,6 +94,7 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
     # Redeem invite code after successful user creation
     if invite:
         from app.services.invitation_service import redeem_invitation
+
         await redeem_invitation(db, invite, user)
         await db.commit()
 
@@ -99,7 +110,15 @@ async def login(
     user = await authenticate_user(db, body.username, body.password)
     if user is None:
         raise HTTPException(
-            status_code=401, detail="Invalid username or password",
+            status_code=401,
+            detail="Invalid username or password",
+        )
+
+    # 承認待ちユーザーはログイン不可
+    if user.approval_status == "pending":
+        raise HTTPException(
+            status_code=403,
+            detail="Your registration is pending approval",
         )
 
     # If TOTP is enabled, return a temporary token instead of a session
@@ -194,6 +213,7 @@ async def update_credentials(
 
     if summary is not None:
         from app.utils.sanitize import text_to_html
+
         user.actor.summary = text_to_html(summary) if summary else None
         changed = True
 
@@ -201,15 +221,18 @@ async def update_credentials(
         import json as _json
 
         import bleach as _bleach
+
         try:
             fields_list = _json.loads(fields_attributes)
         except (ValueError, TypeError):
             raise HTTPException(
-                status_code=422, detail="Invalid fields JSON",
+                status_code=422,
+                detail="Invalid fields JSON",
             )
         if not isinstance(fields_list, list) or len(fields_list) > 4:
             raise HTTPException(
-                status_code=422, detail="Maximum 4 fields allowed",
+                status_code=422,
+                detail="Maximum 4 fields allowed",
             )
         validated = []
         for f in fields_list:
@@ -227,11 +250,13 @@ async def update_credentials(
             user.actor.birthday = None
         else:
             import datetime as _dt
+
             try:
                 user.actor.birthday = _dt.date.fromisoformat(birthday)
             except ValueError:
                 raise HTTPException(
-                    status_code=422, detail="Invalid date format",
+                    status_code=422,
+                    detail="Invalid date format",
                 )
         changed = True
 
@@ -258,7 +283,9 @@ async def update_credentials(
         data = await avatar.read()
         try:
             drive_file = await upload_drive_file(
-                db=db, owner=user, data=data,
+                db=db,
+                owner=user,
+                data=data,
                 filename=avatar.filename or "avatar",
                 mime_type=avatar.content_type or "image/png",
             )
@@ -275,7 +302,9 @@ async def update_credentials(
         data = await header.read()
         try:
             drive_file = await upload_drive_file(
-                db=db, owner=user, data=data,
+                db=db,
+                owner=user,
+                data=data,
                 filename=header.filename or "header",
                 mime_type=header.content_type or "image/png",
             )
@@ -322,7 +351,10 @@ async def change_password_endpoint(
 ):
     try:
         await change_password(
-            db, user, body.current_password, body.new_password,
+            db,
+            user,
+            body.current_password,
+            body.new_password,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
@@ -358,7 +390,8 @@ async def totp_setup(
 
     if user.totp_enabled:
         raise HTTPException(
-            status_code=400, detail="TOTP is already enabled",
+            status_code=400,
+            detail="TOTP is already enabled",
         )
 
     secret = generate_totp_secret()
@@ -384,17 +417,20 @@ async def totp_enable(
 
     if user.totp_enabled:
         raise HTTPException(
-            status_code=400, detail="TOTP is already enabled",
+            status_code=400,
+            detail="TOTP is already enabled",
         )
     if not user.totp_secret:
         raise HTTPException(
-            status_code=400, detail="Call /auth/totp/setup first",
+            status_code=400,
+            detail="Call /auth/totp/setup first",
         )
 
     secret = decrypt_secret(user.totp_secret)
     if not verify_totp_code(secret, body.code):
         raise HTTPException(
-            status_code=400, detail="Invalid TOTP code",
+            status_code=400,
+            detail="Invalid TOTP code",
         )
 
     recovery_codes = generate_recovery_codes()
@@ -417,7 +453,8 @@ async def totp_disable(
 
     if not user.totp_enabled:
         raise HTTPException(
-            status_code=400, detail="TOTP is not enabled",
+            status_code=400,
+            detail="TOTP is not enabled",
         )
 
     valid = await asyncio.to_thread(
@@ -456,7 +493,8 @@ async def totp_verify(
     user_id_str = await valkey.get(f"totp_pending:{body.totp_token}")
     if not user_id_str:
         raise HTTPException(
-            status_code=401, detail="Invalid or expired TOTP token",
+            status_code=401,
+            detail="Invalid or expired TOTP token",
         )
 
     user = await get_user_by_id(db, uuid.UUID(user_id_str))
@@ -476,14 +514,17 @@ async def totp_verify(
         from app.services.totp_service import verify_recovery_code
 
         valid, remaining = await asyncio.to_thread(
-            verify_recovery_code, body.code.strip(), user.totp_recovery_codes,
+            verify_recovery_code,
+            body.code.strip(),
+            user.totp_recovery_codes,
         )
         if not valid:
             # Increment attempt counter on failure
             await valkey.incr(attempts_key)
             await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
             raise HTTPException(
-                status_code=401, detail="Invalid TOTP code",
+                status_code=401,
+                detail="Invalid TOTP code",
             )
         user.totp_recovery_codes = remaining
         await db.commit()

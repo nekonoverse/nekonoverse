@@ -12,28 +12,32 @@ from app.models.base import Base
 class User(Base):
     __tablename__ = "users"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     email: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     password_hash: Mapped[str] = mapped_column(String(255), nullable=False)
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actors.id"), unique=True, nullable=False
     )
     role: Mapped[str] = mapped_column(
-        String(20), default="user", server_default="user", nullable=False,
+        String(20),
+        default="user",
+        server_default="user",
+        nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     private_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
-    totp_secret: Mapped[Optional[str]] = mapped_column(
-        Text, nullable=True, default=None
-    )
+    totp_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     totp_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )
-    totp_recovery_codes: Mapped[Optional[list]] = mapped_column(
-        JSON, nullable=True, default=None
+    totp_recovery_codes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=None)
+    approval_status: Mapped[str] = mapped_column(
+        String(20),
+        default="approved",
+        server_default="approved",
+        nullable=False,
     )
+    registration_reason: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

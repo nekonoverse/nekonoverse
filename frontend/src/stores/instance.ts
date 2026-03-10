@@ -24,6 +24,10 @@ export function inviteRequired(): boolean {
   return registrationMode() === "invite";
 }
 
+export function approvalRequired(): boolean {
+  return registrationMode() === "approval";
+}
+
 export function defaultAvatar(): string {
   return instance()?.thumbnail?.url || "/default-avatar.svg";
 }

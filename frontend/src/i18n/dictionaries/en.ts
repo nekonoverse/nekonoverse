@@ -450,4 +450,17 @@ export const en: Dictionary = {
     "Enter your password to disable two-factor authentication",
   "totp.recoveryHint":
     "If you cannot use your authenticator app, enter a recovery code",
+  "admin.regModeApproval": "Approval",
+  "admin.tabRegistrations": "Registrations",
+  "admin.descRegistrations": "Manage pending registration requests",
+  "admin.noRegistrations": "No pending registrations",
+  "admin.approve": "Approve",
+  "admin.reject": "Reject",
+  "admin.confirmRejectRegistration": "Reject this registration? The user data will be deleted.",
+  "auth.approvalNotice": "Registration requires administrator approval.",
+  "auth.reason": "Motivation",
+  "auth.reasonPlaceholder": "Share your enthusiasm for joining",
+  "auth.registrationPending": "Registration submitted",
+  "auth.registrationPendingDesc": "Please wait for an administrator to approve your request. You will be able to log in once approved.",
+  "auth.pendingApproval": "Pending approval",
 };

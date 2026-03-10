@@ -445,6 +445,19 @@ export const ja = {
   "totp.copyCodes": "コードをコピー",
   "totp.disableConfirm": "二要素認証を無効にするにはパスワードを入力してください",
   "totp.recoveryHint": "認証アプリが使えない場合はリカバリーコードを入力してください",
+  "admin.regModeApproval": "承認制",
+  "admin.tabRegistrations": "登録申請",
+  "admin.descRegistrations": "承認待ちの登録申請の管理",
+  "admin.noRegistrations": "承認待ちの登録申請はありません",
+  "admin.approve": "承認",
+  "admin.reject": "却下",
+  "admin.confirmRejectRegistration": "この登録申請を却下しますか？ユーザーデータは削除されます。",
+  "auth.approvalNotice": "この登録は管理者の承認が必要です。",
+  "auth.reason": "意気込み",
+  "auth.reasonPlaceholder": "参加への意気込みを教えてください",
+  "auth.registrationPending": "登録申請を受け付けました",
+  "auth.registrationPendingDesc": "管理者が承認するまでお待ちください。承認されるとログインできるようになります。",
+  "auth.pendingApproval": "承認待ちです",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;
