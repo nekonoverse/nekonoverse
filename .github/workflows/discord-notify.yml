@@ -1,0 +1,37 @@
+name: Discord PR Notification
+
+on:
+  pull_request:
+    types: [opened]
+
+jobs:
+  notify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Discord notification
+        env:
+          DISCORD_WEBHOOK: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          jq -n \
+            --arg title "${{ github.event.pull_request.title }}" \
+            --arg url "${{ github.event.pull_request.html_url }}" \
+            --arg user "${{ github.event.pull_request.user.login }}" \
+            --arg avatar "${{ github.event.pull_request.user.avatar_url }}" \
+            --arg body "$(echo "${{ github.event.pull_request.body }}" | head -c 200)" \
+            --arg repo "${{ github.repository }}" \
+            --argjson number "${{ github.event.pull_request.number }}" \
+            '{
+              embeds: [{
+                title: ("[PR #" + ($number | tostring) + "] " + $title),
+                url: $url,
+                description: $body,
+                color: 5025616,
+                author: {
+                  name: $user,
+                  icon_url: $avatar
+                },
+                footer: {
+                  text: $repo
+                }
+              }]
+            }' | curl -s -X POST -H "Content-Type: application/json" -d @- "$DISCORD_WEBHOOK"
