@@ -81,6 +81,9 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
     )
     actor = result.scalar_one_or_none()
     if actor is None or actor.local_user is None:
+        # タイミング差によるユーザー列挙を防ぐためダミーbcrypt比較を実行
+        _dummy_hash = b"$2b$12$LJ3m4ys3Lg2VEqGOAOPMb.5Q9MQhRr0vIIfSCpOIYXJDkJp0wqvN6"
+        await asyncio.to_thread(_bcrypt.checkpw, password.encode(), _dummy_hash)
         return None
     user = actor.local_user
     valid = await asyncio.to_thread(_bcrypt.checkpw, password.encode(), user.password_hash.encode())

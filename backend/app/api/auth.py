@@ -28,6 +28,8 @@ SESSION_COOKIE = "nekonoverse_session"
 TOTP_TOKEN_TTL = 300  # 5 minutes
 TOTP_MAX_ATTEMPTS = 5
 TOTP_LOCKOUT_TTL = 300  # 5 minutes
+LOGIN_MAX_ATTEMPTS = 10
+LOGIN_LOCKOUT_TTL = 300  # 5 minutes
 
 
 def get_session_id(request: Request) -> str | None:
@@ -104,11 +106,26 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
 @router.post("/auth/login")
 async def login(
     body: UserLoginRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
+    from app.valkey_client import valkey
+
+    # IPベースのレートリミット
+    client_ip = request.client.host if request.client else "unknown"
+    attempts_key = f"login_attempts:{client_ip}"
+    attempts = await valkey.get(attempts_key)
+    if attempts is not None and int(attempts) >= LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Please wait 5 minutes and try again.",
+        )
+
     user = await authenticate_user(db, body.username, body.password)
     if user is None:
+        await valkey.incr(attempts_key)
+        await valkey.expire(attempts_key, LOGIN_LOCKOUT_TTL)
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password",
@@ -346,6 +363,7 @@ async def update_credentials(
 @router.post("/auth/change_password")
 async def change_password_endpoint(
     body: ChangePasswordRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -358,6 +376,13 @@ async def change_password_endpoint(
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # パスワード変更後、現在のセッション以外を全て無効化
+    from app.services.moderation_service import invalidate_user_sessions
+
+    current_session_id = get_session_id(request)
+    await invalidate_user_sessions(user.id, exclude_session=current_session_id)
+
     return {"ok": True}
 
 

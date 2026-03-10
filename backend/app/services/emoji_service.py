@@ -36,9 +36,7 @@ async def get_emojis_by_shortcodes(
 
 
 async def get_emoji_by_id(db: AsyncSession, emoji_id: uuid.UUID) -> CustomEmoji | None:
-    result = await db.execute(
-        select(CustomEmoji).where(CustomEmoji.id == emoji_id)
-    )
+    result = await db.execute(select(CustomEmoji).where(CustomEmoji.id == emoji_id))
     return result.scalar_one_or_none()
 
 
@@ -62,14 +60,26 @@ async def create_local_emoji(
     return emoji
 
 
-async def update_emoji(
-    db: AsyncSession, emoji_id: uuid.UUID, updates: dict
-) -> CustomEmoji | None:
+_EMOJI_UPDATABLE_FIELDS = {
+    "shortcode",
+    "category",
+    "visible_in_picker",
+    "aliases",
+    "license",
+    "is_sensitive",
+    "local_only",
+    "author",
+    "description",
+    "copy_permission",
+}
+
+
+async def update_emoji(db: AsyncSession, emoji_id: uuid.UUID, updates: dict) -> CustomEmoji | None:
     emoji = await get_emoji_by_id(db, emoji_id)
     if not emoji:
         return None
     for key, value in updates.items():
-        if hasattr(emoji, key):
+        if key in _EMOJI_UPDATABLE_FIELDS:
             setattr(emoji, key, value)
     await db.flush()
     return emoji
@@ -148,19 +158,23 @@ async def upsert_remote_emoji(
 
 async def list_local_emojis(db: AsyncSession) -> list[CustomEmoji]:
     result = await db.execute(
-        select(CustomEmoji).where(
+        select(CustomEmoji)
+        .where(
             CustomEmoji.domain.is_(None),
             CustomEmoji.visible_in_picker.is_(True),
-        ).order_by(CustomEmoji.shortcode)
+        )
+        .order_by(CustomEmoji.shortcode)
     )
     return list(result.scalars().all())
 
 
 async def list_all_local_emojis(db: AsyncSession) -> list[CustomEmoji]:
     result = await db.execute(
-        select(CustomEmoji).where(
+        select(CustomEmoji)
+        .where(
             CustomEmoji.domain.is_(None),
-        ).order_by(CustomEmoji.category, CustomEmoji.shortcode)
+        )
+        .order_by(CustomEmoji.category, CustomEmoji.shortcode)
     )
     return list(result.scalars().all())
 
@@ -177,7 +191,8 @@ async def list_remote_emojis(
     if domain:
         query = query.where(CustomEmoji.domain == domain)
     if search:
-        query = query.where(CustomEmoji.shortcode.ilike(f"%{search}%"))
+        escaped = search.replace("%", r"\%").replace("_", r"\_")
+        query = query.where(CustomEmoji.shortcode.ilike(f"%{escaped}%"))
     query = query.order_by(CustomEmoji.domain, CustomEmoji.shortcode).limit(limit).offset(offset)
     result = await db.execute(query)
     return list(result.scalars().all())
@@ -194,9 +209,7 @@ async def list_remote_emoji_domains(db: AsyncSession) -> list[str]:
     return [row[0] for row in result.all()]
 
 
-async def import_remote_emoji_to_local(
-    db: AsyncSession, emoji_id: uuid.UUID
-) -> CustomEmoji:
+async def import_remote_emoji_to_local(db: AsyncSession, emoji_id: uuid.UUID) -> CustomEmoji:
     """Download a remote emoji image and create a local copy."""
     remote = await get_emoji_by_id(db, emoji_id)
     if not remote or remote.domain is None:
@@ -211,6 +224,7 @@ async def import_remote_emoji_to_local(
 
     # Download image from remote URL
     import httpx
+
     async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         resp = await client.get(remote.url)
         resp.raise_for_status()
@@ -219,19 +233,26 @@ async def import_remote_emoji_to_local(
     data = resp.content
 
     from app.services.drive_service import ALLOWED_IMAGE_TYPES
+
     if mime_type not in ALLOWED_IMAGE_TYPES:
         raise ValueError(f"Unsupported image type: {mime_type}")
 
     from app.services.drive_service import file_to_url, upload_drive_file
+
     drive_file = await upload_drive_file(
-        db=db, owner=None, data=data,
+        db=db,
+        owner=None,
+        data=data,
         filename=f"emoji_{remote.shortcode}",
-        mime_type=mime_type, server_file=True,
+        mime_type=mime_type,
+        server_file=True,
     )
     url = file_to_url(drive_file)
 
     local = await create_local_emoji(
-        db, shortcode=remote.shortcode, url=url,
+        db,
+        shortcode=remote.shortcode,
+        url=url,
         drive_file_id=drive_file.id,
         category=remote.category,
         aliases=remote.aliases,
