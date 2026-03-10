@@ -2,7 +2,7 @@
 
 import io
 import uuid
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -332,17 +332,18 @@ async def test_auto_detect_happy_path(db, test_user, mock_s3):
     drive_file.height = 100
     await db.commit()
 
-    mock_response = AsyncMock()
+    mock_response = MagicMock()
     mock_response.status_code = 200
-    mock_response.raise_for_status = lambda: None
+    mock_response.raise_for_status = MagicMock()
     mock_response.json.return_value = [
         {"label": "face", "score": 0.95, "box": {"xmin": 30, "ymin": 20, "xmax": 70, "ymax": 60}}
     ]
 
+    mock_post = AsyncMock(return_value=mock_response)
     with (
         patch("app.services.drive_service.settings") as mock_settings,
         patch("app.storage.download_file", new_callable=AsyncMock, return_value=TINY_PNG),
-        patch("httpx.AsyncClient.post", return_value=mock_response),
+        patch("httpx.AsyncClient.post", mock_post),
     ):
         mock_settings.face_detect_url = "http://gpu-host:8001/object-detection"
         await auto_detect_focal_point(db, drive_file)
