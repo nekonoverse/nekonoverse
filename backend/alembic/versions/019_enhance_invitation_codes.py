@@ -1,14 +1,14 @@
 """Add max_uses and use_count to invitation_codes.
 
-Revision ID: 018
-Revises: 017
+Revision ID: 019
+Revises: 018
 """
 
 from alembic import op
 import sqlalchemy as sa
 
-revision = "018"
-down_revision = "017"
+revision = "019"
+down_revision = "018"
 
 
 def upgrade() -> None:
