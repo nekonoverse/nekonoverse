@@ -558,32 +558,50 @@ async def get_status_context(
     if not await check_note_visible(db, note, actor_id):
         raise HTTPException(status_code=404, detail="Note not found")
 
-    # Build ancestors by walking up the in_reply_to_id chain
-    ancestors = []
+    # 祖先ノードのIDを先に収集してバッチ取得
+    MAX_ANCESTORS = 40
+    MAX_DESCENDANTS = 200
+    ancestor_ids: list[uuid.UUID] = []
     current = note
     seen_ids: set[uuid.UUID] = {note.id}
-    while current.in_reply_to_id and current.in_reply_to_id not in seen_ids:
+    while (
+        current.in_reply_to_id
+        and current.in_reply_to_id not in seen_ids
+        and len(ancestor_ids) < MAX_ANCESTORS
+    ):
         parent = await get_note_by_id(db, current.in_reply_to_id)
         if not parent:
             break
         if not await check_note_visible(db, parent, actor_id):
             break
         seen_ids.add(parent.id)
-        ancestors.append(parent)
+        ancestor_ids.append(parent.id)
         current = parent
-    ancestors.reverse()  # oldest first
+    ancestor_ids.reverse()
 
-    # Build descendants using BFS
+    # バッチ取得した祖先をID順で復元
+    ancestors = []
+    if ancestor_ids:
+        result = await db.execute(
+            select(Note)
+            .options(*_note_load_options())
+            .where(Note.id.in_(ancestor_ids), Note.deleted_at.is_(None))
+        )
+        ancestor_map = {n.id: n for n in result.scalars().all()}
+        ancestors = [ancestor_map[aid] for aid in ancestor_ids if aid in ancestor_map]
+
+    # 子孫ノードをBFSで取得(深さ/件数制限付き)
     descendants = []
     queue = [note.id]
     visited: set[uuid.UUID] = {note.id}
-    while queue:
-        parent_id = queue.pop(0)
+    while queue and len(descendants) < MAX_DESCENDANTS:
+        batch_parent_ids = queue[:50]
+        queue = queue[50:]
         result = await db.execute(
             select(Note)
             .options(*_note_load_options())
             .where(
-                Note.in_reply_to_id == parent_id,
+                Note.in_reply_to_id.in_(batch_parent_ids),
                 Note.deleted_at.is_(None),
             )
             .order_by(Note.published.asc())
@@ -593,12 +611,22 @@ async def get_status_context(
             if child.id in visited:
                 continue
             visited.add(child.id)
+            if len(descendants) >= MAX_DESCENDANTS:
+                break
             if await check_note_visible(db, child, actor_id):
                 descendants.append(child)
                 queue.append(child.id)
 
-    ancestor_responses = [await note_to_response(n, db=db) for n in ancestors]
-    descendant_responses = [await note_to_response(n, db=db) for n in descendants]
+    # バッチで絵文字キャッシュを構築
+    all_context_notes = ancestors + descendants
+    emoji_cache = await _build_emoji_cache(db, all_context_notes) if all_context_notes else {}
+
+    ancestor_responses = [
+        await note_to_response(n, db=db, emoji_cache=emoji_cache) for n in ancestors
+    ]
+    descendant_responses = [
+        await note_to_response(n, db=db, emoji_cache=emoji_cache) for n in descendants
+    ]
 
     return ContextResponse(
         ancestors=ancestor_responses,

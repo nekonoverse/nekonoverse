@@ -89,7 +89,9 @@ async def upload_media_v1(
     data = await file.read()
     try:
         drive_file = await upload_drive_file(
-            db=db, owner=user, data=data,
+            db=db,
+            owner=user,
+            data=data,
             filename=file.filename or "upload",
             mime_type=file.content_type or "application/octet-stream",
             description=description,
@@ -115,7 +117,11 @@ async def upload_media_v2(
     db: AsyncSession = Depends(get_db),
 ):
     return await upload_media_v1(
-        file=file, description=description, focus=focus, user=user, db=db,
+        file=file,
+        description=description,
+        focus=focus,
+        user=user,
+        db=db,
     )
 
 
@@ -133,7 +139,11 @@ async def update_media(
 
     focal_x, focal_y = _parse_focus(focus)
     await update_drive_file_meta(
-        db, drive_file, description=description, focal_x=focal_x, focal_y=focal_y,
+        db,
+        drive_file,
+        description=description,
+        focal_x=focal_x,
+        focal_y=focal_y,
     )
     return _to_media_attachment(drive_file)
 

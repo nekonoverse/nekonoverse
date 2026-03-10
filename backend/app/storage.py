@@ -27,7 +27,9 @@ def _endpoint_host() -> str:
 
 
 def _auth_headers(
-    method: str, path: str, content_sha256: str,
+    method: str,
+    path: str,
+    content_sha256: str,
     extra_headers: dict[str, str] | None = None,
 ) -> dict[str, str]:
     now = datetime.now(timezone.utc)
@@ -46,19 +48,31 @@ def _auth_headers(
     signed_headers_str = ";".join(signed_headers_list)
     canonical_headers = "".join(f"{k}:{headers[k]}\n" for k in signed_headers_list)
 
-    canonical_request = "\n".join([
-        method, quote(path, safe="/"), "",
-        canonical_headers, signed_headers_str, content_sha256,
-    ])
+    canonical_request = "\n".join(
+        [
+            method,
+            quote(path, safe="/"),
+            "",
+            canonical_headers,
+            signed_headers_str,
+            content_sha256,
+        ]
+    )
 
     credential_scope = f"{date_str}/{settings.s3_region}/s3/aws4_request"
-    string_to_sign = "\n".join([
-        "AWS4-HMAC-SHA256", amz_date, credential_scope,
-        hashlib.sha256(canonical_request.encode()).hexdigest(),
-    ])
+    string_to_sign = "\n".join(
+        [
+            "AWS4-HMAC-SHA256",
+            amz_date,
+            credential_scope,
+            hashlib.sha256(canonical_request.encode()).hexdigest(),
+        ]
+    )
 
     signature = hmac.new(
-        _signing_key(date_str), string_to_sign.encode(), hashlib.sha256,
+        _signing_key(date_str),
+        string_to_sign.encode(),
+        hashlib.sha256,
     ).hexdigest()
 
     headers["Authorization"] = (

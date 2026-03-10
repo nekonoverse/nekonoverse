@@ -153,7 +153,7 @@ async def _actor_to_account(
     if db:
         shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
         texts = [data["display_name"] or "", data["note"]]
-        for f in (actor.fields or []):
+        for f in actor.fields or []:
             texts.append(f.get("name", ""))
             texts.append(f.get("value", ""))
         shortcodes = set()
@@ -167,15 +167,14 @@ async def _actor_to_account(
                 found = {e.shortcode for e in emoji_list}
                 missing = shortcodes - found
                 if missing:
-                    local_emojis = await get_emojis_by_shortcodes(
-                        db, missing, None
-                    )
+                    local_emojis = await get_emojis_by_shortcodes(db, missing, None)
                     emoji_list.extend(local_emojis)
             data["emojis"] = [
                 {
                     "shortcode": e.shortcode,
                     "url": media_proxy_url(e.url),
-                    "static_url": media_proxy_url(e.static_url) if e.static_url
+                    "static_url": media_proxy_url(e.static_url)
+                    if e.static_url
                     else media_proxy_url(e.url),
                 }
                 for e in emoji_list
@@ -333,7 +332,8 @@ async def get_account_statuses(
     # Filter notes hidden before threshold
     if actor.make_notes_hidden_before:
         threshold = datetime.fromtimestamp(
-            actor.make_notes_hidden_before / 1000.0, tz=timezone.utc,
+            actor.make_notes_hidden_before / 1000.0,
+            tz=timezone.utc,
         )
         query = query.where(Note.published > threshold)
 
@@ -353,6 +353,79 @@ async def get_account_statuses(
     return await notes_to_responses(notes, reactions_map, db)
 
 
+async def _batch_resolve_actor_emojis(
+    db: AsyncSession,
+    actors: list[Actor],
+) -> dict[uuid.UUID, list[dict]]:
+    """Batch-resolve custom emoji for multiple actors in 2 queries max."""
+    import re
+
+    shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
+
+    # アクターごとのshortcode収集
+    actor_shortcodes: dict[uuid.UUID, set[str]] = {}
+    all_shortcodes: set[str] = set()
+    for actor in actors:
+        texts = [actor.display_name or "", actor.summary or ""]
+        for f in actor.fields or []:
+            texts.append(f.get("name", ""))
+            texts.append(f.get("value", ""))
+        codes = set()
+        for text in texts:
+            codes.update(shortcode_re.findall(text))
+        actor_shortcodes[actor.id] = codes
+        all_shortcodes.update(codes)
+
+    if not all_shortcodes:
+        return {}
+
+    from app.services.emoji_service import get_emojis_by_shortcodes
+
+    # ローカル絵文字を一括取得
+    local_emojis = await get_emojis_by_shortcodes(db, all_shortcodes, None)
+    local_map = {e.shortcode: e for e in local_emojis}
+
+    # リモート絵文字(ローカルにないもの)を一括取得
+    missing = all_shortcodes - set(local_map.keys())
+    remote_map: dict[str, "CustomEmoji"] = {}
+    if missing:
+        from app.models.custom_emoji import CustomEmoji
+
+        result = await db.execute(
+            select(CustomEmoji).where(
+                CustomEmoji.shortcode.in_(missing),
+                CustomEmoji.domain.isnot(None),
+            )
+        )
+        for e in result.scalars().all():
+            if e.shortcode not in remote_map:
+                remote_map[e.shortcode] = e
+
+    # アクターごとの絵文字リスト構築
+    emoji_map: dict[uuid.UUID, list[dict]] = {}
+    for actor in actors:
+        codes = actor_shortcodes.get(actor.id, set())
+        if not codes:
+            continue
+        emojis = []
+        for sc in codes:
+            e = local_map.get(sc) or remote_map.get(sc)
+            if e:
+                emojis.append(
+                    {
+                        "shortcode": e.shortcode,
+                        "url": media_proxy_url(e.url),
+                        "static_url": media_proxy_url(e.static_url)
+                        if e.static_url
+                        else media_proxy_url(e.url),
+                    }
+                )
+        if emojis:
+            emoji_map[actor.id] = emojis
+
+    return emoji_map
+
+
 @router.get("/{actor_id}/followers")
 async def list_followers(
     actor_id: uuid.UUID,
@@ -367,7 +440,14 @@ async def list_followers(
         raise HTTPException(status_code=404, detail="Actor not found")
 
     actors = await get_followers(db, actor_id, min(limit, 80))
-    return [await _actor_to_account(a, db=db) for a in actors]
+    emoji_map = await _batch_resolve_actor_emojis(db, actors)
+    results = []
+    for a in actors:
+        account = await _actor_to_account(a)
+        if a.id in emoji_map:
+            account["emojis"] = emoji_map[a.id]
+        results.append(account)
+    return results
 
 
 @router.get("/{actor_id}/following")
@@ -384,7 +464,14 @@ async def list_following(
         raise HTTPException(status_code=404, detail="Actor not found")
 
     actors = await get_following(db, actor_id, min(limit, 80))
-    return [await _actor_to_account(a, db=db) for a in actors]
+    emoji_map = await _batch_resolve_actor_emojis(db, actors)
+    results = []
+    for a in actors:
+        account = await _actor_to_account(a)
+        if a.id in emoji_map:
+            account["emojis"] = emoji_map[a.id]
+        results.append(account)
+    return results
 
 
 @router.get("/{actor_id}")

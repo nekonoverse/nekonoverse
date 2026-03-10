@@ -12,16 +12,12 @@ from app.models.delivery import DeliveryJob
 async def get_queue_stats(db: AsyncSession) -> dict:
     """Get overall queue statistics."""
     result = await db.execute(
-        select(DeliveryJob.status, func.count(DeliveryJob.id)).group_by(
-            DeliveryJob.status
-        )
+        select(DeliveryJob.status, func.count(DeliveryJob.id)).group_by(DeliveryJob.status)
     )
     counts = {row[0]: row[1] for row in result.all()}
 
     # 直近1時間の配信成功・失敗数
-    one_hour_ago = datetime.now(timezone.utc).replace(
-        minute=0, second=0, microsecond=0
-    )
+    one_hour_ago = datetime.now(timezone.utc).replace(minute=0, second=0, microsecond=0)
     recent_result = await db.execute(
         select(DeliveryJob.status, func.count(DeliveryJob.id))
         .where(DeliveryJob.last_attempted_at >= one_hour_ago)
@@ -63,9 +59,7 @@ async def get_queue_jobs(
     if domain:
         pattern = f"%://{domain}/%"
         query = query.where(DeliveryJob.target_inbox_url.ilike(pattern))
-        count_query = count_query.where(
-            DeliveryJob.target_inbox_url.ilike(pattern)
-        )
+        count_query = count_query.where(DeliveryJob.target_inbox_url.ilike(pattern))
 
     total_result = await db.execute(count_query)
     total = total_result.scalar() or 0
@@ -119,9 +113,7 @@ async def purge_delivered(db: AsyncSession, older_than_hours: int = 24) -> int:
     """Purge delivered jobs older than specified hours."""
     from datetime import timedelta
 
-    cutoff = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(
-        hours=older_than_hours
-    )
+    cutoff = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(hours=older_than_hours)
 
     result = await db.execute(
         delete(DeliveryJob).where(

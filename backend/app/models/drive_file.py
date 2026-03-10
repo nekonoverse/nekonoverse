@@ -11,12 +11,12 @@ from app.models.base import Base
 class DriveFile(Base):
     __tablename__ = "drive_files"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     owner_id: Mapped[uuid.UUID | None] = mapped_column(
-        UUID(as_uuid=True), ForeignKey("users.id", ondelete="SET NULL"),
-        nullable=True, index=True,
+        UUID(as_uuid=True),
+        ForeignKey("users.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     s3_key: Mapped[str] = mapped_column(String(1024), unique=True, nullable=False)
     filename: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -35,6 +35,4 @@ class DriveFile(Base):
 
     owner = relationship("User", back_populates="drive_files", lazy="selectin")
 
-    __table_args__ = (
-        Index("ix_drive_files_owner_created", "owner_id", "created_at"),
-    )
+    __table_args__ = (Index("ix_drive_files_owner_created", "owner_id", "created_at"),)

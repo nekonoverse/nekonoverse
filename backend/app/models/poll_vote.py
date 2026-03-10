@@ -11,9 +11,7 @@ from app.models.base import Base
 class PollVote(Base):
     __tablename__ = "poll_votes"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     note_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("notes.id"), nullable=False, index=True
     )
@@ -26,6 +24,7 @@ class PollVote(Base):
     )
 
     __table_args__ = (
-        UniqueConstraint("note_id", "actor_id", "choice_index",
-                         name="uq_poll_votes_note_actor_choice"),
+        UniqueConstraint(
+            "note_id", "actor_id", "choice_index", name="uq_poll_votes_note_actor_choice"
+        ),
     )

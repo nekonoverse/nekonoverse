@@ -65,6 +65,7 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     open_registrations = settings.registration_open
     try:
         from app.services.server_settings_service import get_setting
+
         mode = await get_setting(db, "registration_mode")
         if mode is not None:
             open_registrations = mode != "closed"
@@ -82,6 +83,7 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     node_theme_color = None
     try:
         from app.services.server_settings_service import get_setting
+
         name = await get_setting(db, "server_name")
         if name:
             node_name = name

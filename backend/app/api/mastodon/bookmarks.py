@@ -26,6 +26,8 @@ async def get_bookmarks(
     notes = await _get(db, user.actor_id, limit=limit, max_id=max_id)
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(
-        db, note_ids, user.actor_id,
+        db,
+        note_ids,
+        user.actor_id,
     )
     return await notes_to_responses(notes, reactions_map, db)

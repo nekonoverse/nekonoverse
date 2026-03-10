@@ -11,9 +11,7 @@ from app.config import settings
 
 
 def _get_fernet() -> Fernet:
-    key = base64.urlsafe_b64encode(
-        hashlib.sha256(settings.secret_key.encode()).digest()
-    )
+    key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode()).digest())
     return Fernet(key)
 
 
@@ -30,7 +28,9 @@ def generate_totp_secret() -> str:
 
 
 def generate_provisioning_uri(
-    secret: str, username: str, issuer: str | None = None,
+    secret: str,
+    username: str,
+    issuer: str | None = None,
 ) -> str:
     if issuer is None:
         issuer = f"Nekonoverse ({settings.domain})"
@@ -62,10 +62,11 @@ def hash_recovery_codes(codes: list[str]) -> list[str]:
 
 
 def verify_recovery_code(
-    code: str, hashed_codes: list[str],
+    code: str,
+    hashed_codes: list[str],
 ) -> tuple[bool, list[str]]:
     for i, hashed in enumerate(hashed_codes):
         if _bcrypt.checkpw(code.encode(), hashed.encode()):
-            remaining = hashed_codes[:i] + hashed_codes[i + 1:]
+            remaining = hashed_codes[:i] + hashed_codes[i + 1 :]
             return True, remaining
     return False, hashed_codes

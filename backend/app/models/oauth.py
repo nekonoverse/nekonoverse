@@ -11,9 +11,7 @@ from app.models.base import Base
 class OAuthApplication(Base):
     __tablename__ = "oauth_applications"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     client_id: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     client_secret: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -30,9 +28,7 @@ class OAuthApplication(Base):
 class OAuthAuthorizationCode(Base):
     __tablename__ = "oauth_authorization_codes"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     code: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     application_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("oauth_applications.id"), nullable=False
@@ -53,12 +49,8 @@ class OAuthAuthorizationCode(Base):
 class OAuthToken(Base):
     __tablename__ = "oauth_tokens"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
-    access_token: Mapped[str] = mapped_column(
-        String(255), unique=True, nullable=False, index=True
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    access_token: Mapped[str] = mapped_column(String(255), unique=True, nullable=False, index=True)
     token_type: Mapped[str] = mapped_column(String(50), default="Bearer", nullable=False)
     scopes: Mapped[str] = mapped_column(String(1024), nullable=False)
     application_id: Mapped[uuid.UUID] = mapped_column(

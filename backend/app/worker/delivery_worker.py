@@ -20,6 +20,24 @@ logger = logging.getLogger(__name__)
 
 AP_CONTENT_TYPE = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
 
+# 署名鍵キャッシュ (actor_id -> (Actor, private_key_pem))
+_signing_key_cache: dict[uuid.UUID, tuple[Actor, str]] = {}
+
+# ワーカー用の共有HTTPクライアント
+_http_client: httpx.AsyncClient | None = None
+
+
+def _get_http_client(settings) -> httpx.AsyncClient:
+    """Get or create a shared HTTP client for the delivery worker."""
+    global _http_client
+    if _http_client is None:
+        _http_client = httpx.AsyncClient(
+            timeout=30.0,
+            verify=not settings.skip_ssl_verify,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+        )
+    return _http_client
+
 
 async def get_next_job(db: AsyncSession) -> DeliveryJob | None:
     """Get the next deliverable job from the queue."""
@@ -37,14 +55,21 @@ async def get_next_job(db: AsyncSession) -> DeliveryJob | None:
 
 
 async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Actor | None, str]:
-    """Get actor and its private key for signing."""
+    """Get actor and its private key for signing. Uses in-memory cache."""
+    cached = _signing_key_cache.get(actor_id)
+    if cached:
+        return cached
+
     result = await db.execute(
         select(Actor).options(selectinload(Actor.local_user)).where(Actor.id == actor_id)
     )
     actor = result.scalar_one_or_none()
     if not actor or not actor.local_user:
         return actor, ""
-    return actor, actor.local_user.private_key_pem
+
+    pair = (actor, actor.local_user.private_key_pem)
+    _signing_key_cache[actor_id] = pair
+    return pair
 
 
 async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:
@@ -69,9 +94,12 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
 
     from app.config import settings
 
-    async with httpx.AsyncClient(timeout=30.0, verify=not settings.skip_ssl_verify) as client:
-        resp = await client.post(job.target_inbox_url, content=body, headers=headers)
-        return resp.status_code in (200, 202, 204)
+    resp = await _get_http_client(settings).post(
+        job.target_inbox_url,
+        content=body,
+        headers=headers,
+    )
+    return resp.status_code in (200, 202, 204)
 
 
 async def process_jobs():
@@ -140,7 +168,7 @@ async def run_delivery_loop():
             if not had_work:
                 # Wait for notification from Valkey
                 await valkey_client.brpop("delivery:queue", timeout=5)
-                    # result is discarded -- we just use it as a wake-up signal
+                # result is discarded -- we just use it as a wake-up signal
         except Exception:
             logger.exception("Error in delivery worker loop")
             import asyncio

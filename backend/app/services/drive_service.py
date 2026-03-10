@@ -18,7 +18,11 @@ from app.storage import delete_file, get_public_url, upload_file
 logger = logging.getLogger(__name__)
 
 ALLOWED_IMAGE_TYPES = {
-    "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/avif",
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -78,7 +82,10 @@ async def delete_drive_file(db: AsyncSession, drive_file: DriveFile) -> None:
 
 
 async def list_user_files(
-    db: AsyncSession, user: User, limit: int = 50, offset: int = 0,
+    db: AsyncSession,
+    user: User,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[DriveFile]:
     result = await db.execute(
         select(DriveFile)
@@ -158,6 +165,7 @@ async def _read_file_data(drive_file: DriveFile) -> bytes | None:
     """Read file data from S3 for face detection."""
     try:
         from app.storage import download_file
+
         return await download_file(drive_file.s3_key)
     except Exception:
         logger.debug("Could not read file %s for face detection", drive_file.s3_key)
@@ -170,8 +178,11 @@ def file_to_url(drive_file: DriveFile) -> str:
 
 def _extension_for_mime(mime_type: str) -> str:
     return {
-        "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
-        "image/webp": ".webp", "image/avif": ".avif",
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/avif": ".avif",
     }.get(mime_type, "")
 
 
@@ -186,16 +197,18 @@ def _get_image_dimensions(data: bytes, mime_type: str) -> tuple[int | None, int 
                     break
                 marker = data[i + 1]
                 if marker in (0xC0, 0xC1, 0xC2):
-                    w = int.from_bytes(data[i + 7:i + 9], "big")
-                    h = int.from_bytes(data[i + 5:i + 7], "big")
+                    w = int.from_bytes(data[i + 7 : i + 9], "big")
+                    h = int.from_bytes(data[i + 5 : i + 7], "big")
                     return w, h
-                length = int.from_bytes(data[i + 2:i + 4], "big")
+                length = int.from_bytes(data[i + 2 : i + 4], "big")
                 i += 2 + length
         elif mime_type == "image/gif" and len(data) >= 10 and data[:3] == b"GIF":
             return int.from_bytes(data[6:8], "little"), int.from_bytes(data[8:10], "little")
         elif (
-            mime_type == "image/webp" and len(data) >= 30
-            and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+            mime_type == "image/webp"
+            and len(data) >= 30
+            and data[:4] == b"RIFF"
+            and data[8:12] == b"WEBP"
         ):
             if data[12:16] == b"VP8 ":
                 w = int.from_bytes(data[26:28], "little") & 0x3FFF

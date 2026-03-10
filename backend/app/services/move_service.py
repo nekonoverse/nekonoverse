@@ -68,8 +68,12 @@ async def handle_incoming_move(
         db.add(new_follow)
 
     await db.commit()
-    logger.info("Processed Move from %s to %s, migrated %d followers",
-                source_actor.ap_id, target_ap_id, len(follows))
+    logger.info(
+        "Processed Move from %s to %s, migrated %d followers",
+        source_actor.ap_id,
+        target_ap_id,
+        len(follows),
+    )
     return True
 
 
