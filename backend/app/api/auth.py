@@ -26,6 +26,8 @@ router = APIRouter(prefix="/api/v1", tags=["auth"])
 
 SESSION_COOKIE = "nekonoverse_session"
 TOTP_TOKEN_TTL = 300  # 5 minutes
+TOTP_MAX_ATTEMPTS = 5
+TOTP_LOCKOUT_TTL = 300  # 5 minutes
 
 
 def get_session_id(request: Request) -> str | None:
@@ -457,6 +459,15 @@ async def totp_verify(
 ):
     from app.valkey_client import valkey
 
+    # Check brute-force lockout before doing anything else
+    attempts_key = f"totp_attempts:{body.totp_token}"
+    attempts = await valkey.get(attempts_key)
+    if attempts is not None and int(attempts) >= TOTP_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many TOTP attempts. Please wait 5 minutes and try again.",
+        )
+
     user_id_str = await valkey.get(f"totp_pending:{body.totp_token}")
     if not user_id_str:
         raise HTTPException(
@@ -483,15 +494,22 @@ async def totp_verify(
             verify_recovery_code, body.code.strip(), user.totp_recovery_codes,
         )
         if not valid:
+            # Increment attempt counter on failure
+            await valkey.incr(attempts_key)
+            await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
             raise HTTPException(
                 status_code=401, detail="Invalid TOTP code",
             )
         user.totp_recovery_codes = remaining
         await db.commit()
     else:
+        # Increment attempt counter on failure
+        await valkey.incr(attempts_key)
+        await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
         raise HTTPException(status_code=401, detail="Invalid TOTP code")
 
-    # Delete the pending token
+    # Successful verification — clean up attempt counter and pending token
+    await valkey.delete(attempts_key)
     await valkey.delete(f"totp_pending:{body.totp_token}")
 
     # Create session
