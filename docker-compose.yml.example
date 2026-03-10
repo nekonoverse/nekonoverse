@@ -45,6 +45,11 @@ services:
   s3proxy-deliverer:
     image: ghcr.io/nananek/s3proxy-deliverer:latest
     restart: unless-stopped
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - chown 101:101 /var/run/s3proxy-deliverer && exec setpriv --reuid=101 --regid=101 --init-groups python main.py
     environment:
       STORAGE_ROOT: /data
     volumes:
