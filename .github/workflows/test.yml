@@ -58,7 +58,7 @@ jobs:
           SECRET_KEY: test-secret-key
           DEBUG: "true"
           REGISTRATION_OPEN: "true"
-        run: python -m pytest tests/ -v
+        run: python -m pytest tests/ -v -n auto
 
   frontend-build:
     runs-on: ubuntu-latest
