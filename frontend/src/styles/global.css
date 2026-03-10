@@ -1804,8 +1804,8 @@ a:hover {
 }
 
 .emoji-btn .custom-emoji {
-  height: 1.3em;
-  width: 1.3em;
+  height: 24px;
+  width: 24px;
   object-fit: contain;
 }
 
@@ -1827,13 +1827,13 @@ a:hover {
 }
 
 .emoji-btn .twemoji {
-  height: 1.3em;
-  width: 1.3em;
+  height: 24px;
+  width: 24px;
 }
 
 .emoji-btn {
-  width: 2em;
-  height: 2em;
+  width: 36px;
+  height: 36px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1841,7 +1841,7 @@ a:hover {
   border: none;
   border-radius: var(--radius);
   cursor: pointer;
-  font-size: 1.15em;
+  font-size: 18px;
   padding: 0;
 }
 
