@@ -5,6 +5,7 @@ export const ja = {
   "common.login": "ログイン",
   "common.register": "新規登録",
   "common.cancel": "キャンセル",
+  "common.close": "閉じる",
   "common.status": "ステータス",
   "auth.username": "ユーザー名",
   "auth.email": "メールアドレス",

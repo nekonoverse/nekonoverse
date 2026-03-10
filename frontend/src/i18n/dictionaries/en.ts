@@ -7,6 +7,7 @@ export const en: Dictionary = {
   "common.login": "Login",
   "common.register": "Register",
   "common.cancel": "Cancel",
+  "common.close": "Close",
   "common.status": "Status",
   "auth.username": "Username",
   "auth.email": "Email",
