@@ -849,6 +849,56 @@ a:hover {
   height: 1px;
 }
 
+/* Scroll-to-top button */
+.scroll-to-top {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 900;
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: var(--accent);
+  color: var(--accent-text);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: background 0.2s, opacity 0.2s, transform 0.2s;
+  animation: scroll-top-fade-in 0.25s ease-out;
+}
+
+.scroll-to-top:hover {
+  background: var(--accent-hover);
+  transform: scale(1.1);
+}
+
+.scroll-to-top:active {
+  transform: scale(0.95);
+}
+
+@keyframes scroll-top-fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@media (max-width: 600px) {
+  .scroll-to-top {
+    bottom: 16px;
+    right: 16px;
+    width: 44px;
+    height: 44px;
+  }
+}
+
 /* Note Card */
 .note-card {
   position: relative;
