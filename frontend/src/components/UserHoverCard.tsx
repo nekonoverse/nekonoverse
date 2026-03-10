@@ -1,4 +1,5 @@
 import { createSignal, onCleanup, Show } from "solid-js";
+import { useNavigate } from "@solidjs/router";
 import { getAccount, followAccount, unfollowAccount, type Account } from "../api/accounts";
 import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { currentUser } from "../stores/auth";
@@ -23,6 +24,7 @@ const isTouchDevice = () =>
 
 export default function UserHoverCard(props: Props) {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [visible, setVisible] = createSignal(false);
   const [account, setAccount] = createSignal<Account | null>(null);
   const [followLoading, setFollowLoading] = createSignal(false);
@@ -214,7 +216,12 @@ export default function UserHoverCard(props: Props) {
               return (
                 <>
                   <div class="hover-card-header">
-                    <a href={`/@${acc.acct}`} class="hover-card-avatar-link">
+                    <a href={`/@${acc.acct}`} class="hover-card-avatar-link" onClick={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setVisible(false);
+                      navigate(`/@${acc.acct}`);
+                    }}>
                       <img
                         class="hover-card-avatar"
                         src={acc.avatar || defaultAvatar()}
@@ -222,7 +229,12 @@ export default function UserHoverCard(props: Props) {
                       />
                     </a>
                     <div class="hover-card-names">
-                      <a href={`/@${acc.acct}`} class="hover-card-name-link">
+                      <a href={`/@${acc.acct}`} class="hover-card-name-link" onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        setVisible(false);
+                        navigate(`/@${acc.acct}`);
+                      }}>
                         <strong class="hover-card-display-name" ref={(el) => {
                           el.textContent = acc.display_name || acc.username;
                           if (acc.emojis) emojify(el, acc.emojis);
