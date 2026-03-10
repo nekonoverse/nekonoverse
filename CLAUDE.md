@@ -210,3 +210,9 @@ Set in `.env` at project root:
 | `S3_SECRET_ACCESS_KEY` | S3 storage secret |
 | `S3_BUCKET` | S3 bucket name |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflare tunnel token (optional) |
+
+## Change Log
+
+| Date | Files | Changes |
+|------|-------|---------|
+| 2026-03-11 | `CONTRIBUTING.md` | Created contribution guide covering setup, coding conventions, branch strategy, testing, PR format, i18n, and security reporting |
