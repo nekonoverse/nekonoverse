@@ -4,8 +4,6 @@ export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
   retries: process.env.CI ? 0 : 1,
-  workers: process.env.CI ? 2 : undefined,
-  fullyParallel: true,
   expect: {
     toHaveScreenshot: { maxDiffPixelRatio: 0.01 },
   },
