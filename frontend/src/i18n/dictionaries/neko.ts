@@ -454,7 +454,6 @@ export const neko: Dictionary = {
   "admin.descRegistrations": "しょうにんまちのとうろくかんりにゃ",
   "admin.noRegistrations": "しょうにんまちのしんせいはにゃいにゃ",
   "admin.approve": "しょうにんにゃ",
-  "admin.reject": "きゃっかにゃ",
   "admin.confirmRejectRegistration": "このしんせいをきゃっかするにゃ？ユーザーデータはさくじょされるにゃ。",
   "auth.approvalNotice": "このとうろくはかんりしゃのしょうにんがひつようにゃ。",
   "auth.reason": "いきごみにゃ",
