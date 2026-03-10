@@ -128,6 +128,7 @@ export default function ReactionBar(props: Props) {
           +
         </button>
         <Show when={showPicker()}>
+          <div class="reaction-emoji-backdrop" onClick={() => setShowPicker(false)} />
           <EmojiPicker
             onSelect={(emoji) => toggleReaction(emoji)}
             onClose={() => setShowPicker(false)}
