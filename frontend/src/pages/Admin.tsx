@@ -1546,6 +1546,8 @@ function InvitesTab() {
   const [loading, setLoading] = createSignal(true);
   const [creating, setCreating] = createSignal(false);
   const [copied, setCopied] = createSignal("");
+  const [maxUses, setMaxUses] = createSignal<string>("1");
+  const [expiresInDays, setExpiresInDays] = createSignal<string>("");
 
   const load = async () => {
     try {
@@ -1568,7 +1570,12 @@ function InvitesTab() {
   const handleCreate = async () => {
     setCreating(true);
     try {
-      await createInviteCode();
+      const mu = maxUses();
+      const ed = expiresInDays();
+      await createInviteCode({
+        max_uses: mu === "" ? null : parseInt(mu, 10),
+        expires_in_days: ed ? parseInt(ed, 10) : null,
+      });
       await load();
     } catch {}
     setCreating(false);
@@ -1588,16 +1595,62 @@ function InvitesTab() {
     setTimeout(() => setCopied(""), 2000);
   };
 
+  const isExhausted = (inv: InviteCode) =>
+    inv.max_uses !== null && inv.use_count >= inv.max_uses;
+
+  const isExpired = (inv: InviteCode) =>
+    inv.expires_at !== null && new Date(inv.expires_at) < new Date();
+
+  const isAvailable = (inv: InviteCode) => !isExhausted(inv) && !isExpired(inv);
+
+  const usageLabel = (inv: InviteCode) => {
+    if (inv.max_uses === null) return `${inv.use_count}/${t("admin.inviteUnlimited")}`;
+    return `${inv.use_count}/${inv.max_uses}`;
+  };
+
   return (
     <div class="settings-section">
       <h3>{t("admin.tabInvites")}</h3>
-      <button
-        class="btn btn-small"
-        onClick={handleCreate}
-        disabled={creating()}
-      >
-        {creating() ? t("common.loading") : t("admin.createInvite")}
-      </button>
+      <div class="admin-invite-create-form">
+        <div class="admin-invite-create-fields">
+          <div class="field">
+            <label>{t("admin.inviteMaxUses")}</label>
+            <select
+              value={maxUses()}
+              onChange={(e) => setMaxUses(e.currentTarget.value)}
+            >
+              <option value="1">{t("admin.inviteSingleUse")}</option>
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="">{t("admin.inviteUnlimited")}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>{t("admin.inviteExpiry")}</label>
+            <select
+              value={expiresInDays()}
+              onChange={(e) => setExpiresInDays(e.currentTarget.value)}
+            >
+              <option value="">{t("admin.inviteNoExpiry")}</option>
+              <option value="1">1{t("admin.inviteDays")}</option>
+              <option value="7">7{t("admin.inviteDays")}</option>
+              <option value="30">30{t("admin.inviteDays")}</option>
+              <option value="90">90{t("admin.inviteDays")}</option>
+              <option value="365">365{t("admin.inviteDays")}</option>
+            </select>
+          </div>
+        </div>
+        <button
+          class="btn btn-small"
+          onClick={handleCreate}
+          disabled={creating()}
+        >
+          {creating() ? t("common.loading") : t("admin.createInvite")}
+        </button>
+      </div>
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
         <Show
           when={invites().length > 0}
@@ -1606,26 +1659,24 @@ function InvitesTab() {
           <div class="admin-invite-list">
             <For each={invites()}>
               {(inv) => (
-                <div class={`admin-invite-item${inv.used_by ? " used" : ""}`}>
+                <div class={`admin-invite-item${!isAvailable(inv) ? " used" : ""}`}>
                   <div class="admin-invite-info">
                     <code class="admin-invite-code">{inv.code}</code>
-                    <Show
-                      when={inv.used_by}
-                      fallback={
-                        <span class="admin-invite-unused">
-                          {t("admin.inviteUnused")}
-                        </span>
-                      }
-                    >
-                      <span class="admin-invite-used">
-                        {t("admin.inviteUsedBy")} @{inv.used_by}
+                    <span class={isAvailable(inv) ? "admin-invite-unused" : "admin-invite-used"}>
+                      {t("admin.inviteUsage")}: {usageLabel(inv)}
+                    </span>
+                    <Show when={inv.expires_at}>
+                      <span class={isExpired(inv) ? "admin-invite-used" : "admin-invite-unused"}>
+                        {isExpired(inv)
+                          ? t("admin.inviteExpired")
+                          : `${t("admin.inviteExpiresAt")} ${new Date(inv.expires_at!).toLocaleDateString()}`}
                       </span>
                     </Show>
                     <span class="admin-invite-time">
                       {new Date(inv.created_at).toLocaleString()}
                     </span>
                   </div>
-                  <Show when={!inv.used_by}>
+                  <Show when={isAvailable(inv)}>
                     <div class="admin-invite-actions">
                       <button
                         class="btn btn-small"
