@@ -144,8 +144,8 @@ test.describe("Swipe-back gesture", () => {
     await page.goto("/@admin");
     await expect(page.locator(".profile-info")).toBeVisible({ timeout: 10_000 });
 
-    // Start at x=50 — outside the 25px edge zone
-    await swipe(page, 50, 400, 200, 400);
+    // Start at x=80 — outside the 50px edge zone
+    await swipe(page, 80, 400, 230, 400);
 
     // Should stay on profile, no navigation
     await expect(page).toHaveURL(/\/@admin/, { timeout: 2_000 });
