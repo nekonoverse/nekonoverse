@@ -18,6 +18,7 @@ from app.services.user_service import (
     authenticate_user,
     change_password,
     create_user,
+    get_user_by_id,
     update_display_name,
 )
 
