@@ -22,8 +22,6 @@ from contextlib import asynccontextmanager
 
 import numpy as np
 import onnxruntime as ort
-import torch
-from facenet_pytorch import MTCNN
 from fastapi import FastAPI, HTTPException
 from huggingface_hub import hf_hub_download
 from PIL import Image
@@ -35,11 +33,31 @@ DETECTION_MODE = os.environ.get("DETECTION_MODE", "auto")  # auto | anime | real
 ANIME_MODEL_REPO = "deepghs/anime_face_detection"
 ANIME_MODEL_DIR = "face_detect_v0_n"
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-mtcnn: MTCNN | None = None
+mtcnn = None
 anime_session: ort.InferenceSession | None = None
 anime_input_size: tuple[int, int] = (640, 640)
 anime_threshold_default: float = 0.5
+
+_cuda_available: bool | None = None
+
+
+def _check_cuda() -> bool:
+    """Check CUDA availability via onnxruntime or torch."""
+    global _cuda_available
+    if _cuda_available is not None:
+        return _cuda_available
+    # Try onnxruntime providers first (no torch needed)
+    available_providers = ort.get_available_providers()
+    if "CUDAExecutionProvider" in available_providers:
+        _cuda_available = True
+        return True
+    # Fallback to torch check if torch is available
+    try:
+        import torch
+        _cuda_available = torch.cuda.is_available()
+    except ImportError:
+        _cuda_available = False
+    return _cuda_available
 
 
 def _load_anime_model() -> ort.InferenceSession | None:
@@ -56,7 +74,7 @@ def _load_anime_model() -> ort.InferenceSession | None:
             anime_threshold_default = thresholds.get("threshold", 0.5)
 
         providers = []
-        if torch.cuda.is_available():
+        if _check_cuda():
             providers.append("CUDAExecutionProvider")
         providers.append("CPUExecutionProvider")
 
@@ -69,12 +87,25 @@ def _load_anime_model() -> ort.InferenceSession | None:
         return None
 
 
+def _load_mtcnn():
+    """Load MTCNN model (requires torch + facenet-pytorch)."""
+    try:
+        import torch
+        from facenet_pytorch import MTCNN
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model = MTCNN(keep_all=True, device=device)
+        logger.info("MTCNN loaded on %s", device)
+        return model
+    except ImportError:
+        logger.warning("torch/facenet-pytorch not installed; real face detection unavailable")
+        return None
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global mtcnn, anime_session
     if DETECTION_MODE in ("auto", "real"):
-        mtcnn = MTCNN(keep_all=True, device=device)
-        logger.info("MTCNN loaded on %s", device)
+        mtcnn = _load_mtcnn()
     if DETECTION_MODE in ("auto", "anime"):
         anime_session = _load_anime_model()
         logger.info("Anime model loaded: %s", anime_session is not None)
@@ -278,8 +309,7 @@ async def detect_faces(request: DetectionRequest):
 async def health():
     return {
         "status": "ok",
-        "device": str(device),
-        "cuda_available": torch.cuda.is_available(),
+        "cuda_available": _check_cuda(),
         "detection_mode": DETECTION_MODE,
         "models": {
             "anime": anime_session is not None,
