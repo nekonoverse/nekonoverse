@@ -5,7 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.schemas.invitation import InvitationCodeResponse
+from app.schemas.invitation import InvitationCodeCreate, InvitationCodeResponse
 from app.services.invitation_service import (
     create_invitation,
     delete_invitation,
@@ -36,6 +36,8 @@ def _invite_response(invite) -> InvitationCodeResponse:
         created_by=created_by_name,
         used_by=used_by_name,
         used_at=invite.used_at,
+        max_uses=invite.max_uses,
+        use_count=invite.use_count,
         expires_at=invite.expires_at,
         created_at=invite.created_at,
     )
@@ -43,6 +45,7 @@ def _invite_response(invite) -> InvitationCodeResponse:
 
 @router.post("", response_model=InvitationCodeResponse, status_code=201)
 async def create_invite(
+    body: InvitationCodeCreate | None = None,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -54,7 +57,13 @@ async def create_invite(
     if not _can_create_invites(user, required_role):
         raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-    invite = await create_invitation(db, user)
+    params = body or InvitationCodeCreate()
+    invite = await create_invitation(
+        db,
+        user,
+        max_uses=params.max_uses,
+        expires_in_days=params.expires_in_days,
+    )
     await db.commit()
 
     return InvitationCodeResponse(
@@ -62,6 +71,8 @@ async def create_invite(
         created_by=user.actor.username,
         used_by=None,
         used_at=None,
+        max_uses=invite.max_uses,
+        use_count=0,
         expires_at=invite.expires_at,
         created_at=invite.created_at,
     )

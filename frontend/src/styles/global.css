@@ -5177,3 +5177,30 @@ a:hover {
   color: var(--text-secondary);
   margin-top: 8px;
 }
+
+/* Invite creation form */
+.admin-invite-create-form {
+  margin-bottom: 16px;
+}
+
+.admin-invite-create-fields {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+.admin-invite-create-fields .field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.admin-invite-create-fields select {
+  padding: 6px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 0.9em;
+}

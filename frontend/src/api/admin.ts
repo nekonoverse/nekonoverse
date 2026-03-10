@@ -282,16 +282,28 @@ export interface InviteCode {
   created_by: string;
   used_by: string | null;
   used_at: string | null;
+  max_uses: number | null;
+  use_count: number;
   expires_at: string | null;
   created_at: string;
+}
+
+export interface InviteCodeCreateParams {
+  max_uses?: number | null;
+  expires_in_days?: number | null;
 }
 
 export async function getInviteCodes(): Promise<InviteCode[]> {
   return apiRequest<InviteCode[]>("/api/v1/invites");
 }
 
-export async function createInviteCode(): Promise<InviteCode> {
-  return apiRequest<InviteCode>("/api/v1/invites", { method: "POST" });
+export async function createInviteCode(
+  params?: InviteCodeCreateParams,
+): Promise<InviteCode> {
+  return apiRequest<InviteCode>("/api/v1/invites", {
+    method: "POST",
+    body: params ?? {},
+  });
 }
 
 export async function revokeInviteCode(code: string): Promise<void> {
