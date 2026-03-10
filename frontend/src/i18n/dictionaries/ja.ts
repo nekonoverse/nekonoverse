@@ -44,6 +44,7 @@ export const ja = {
   "composer.setFocalPoint": "焦点を設定",
   "composer.focalPoint": "焦点の設定",
   "composer.saveFocalPoint": "保存",
+  "composer.emoji": "絵文字を挿入",
   "lang.ja": "日本語",
   "lang.en": "English",
   "auth.or": "または",

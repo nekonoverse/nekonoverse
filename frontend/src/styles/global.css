@@ -696,6 +696,38 @@ a:hover {
   gap: 8px;
 }
 
+.composer-emoji-wrap {
+  position: relative;
+}
+
+.composer-emoji-wrap .emoji-picker {
+  bottom: 36px;
+  left: 0;
+}
+
+@media (max-width: 600px) {
+  .composer-emoji-wrap .emoji-picker {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    top: auto;
+    min-width: unset;
+    max-width: unset;
+    width: 100%;
+    max-height: 50vh;
+    border-radius: var(--radius) var(--radius) 0 0;
+    z-index: 200;
+  }
+
+  .composer-emoji-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 199;
+  }
+}
+
 .composer-footer {
   display: flex;
   justify-content: space-between;
