@@ -1,3 +1,6 @@
 [submodule "face-detect"]
 	path = face-detect
 	url = https://github.com/nekonoverse/face-detect.git
+[submodule "claude-md"]
+	path = claude-md
+	url = https://github.com/nekonoverse/claude-md.git
