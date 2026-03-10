@@ -105,6 +105,17 @@ async def delete_file(key: str) -> None:
             resp.raise_for_status()
 
 
+async def download_file(key: str) -> bytes:
+    """Download a file from S3 and return its contents."""
+    path = f"/{settings.s3_bucket}/{key}"
+    content_sha256 = "UNSIGNED-PAYLOAD"
+    headers = _auth_headers("GET", path, content_sha256)
+    async with httpx.AsyncClient(base_url=settings.s3_endpoint_url) as client:
+        resp = await client.get(path, headers=headers)
+        resp.raise_for_status()
+    return resp.content
+
+
 async def get_file_stream(key: str) -> tuple[AsyncIterator[bytes], str, int]:
     """Get a file from S3 as a stream. Returns (stream, content_type, size)."""
     path = f"/{settings.s3_bucket}/{key}"

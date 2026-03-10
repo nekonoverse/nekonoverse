@@ -1,6 +1,6 @@
 import uuid
 
-from sqlalchemy import ForeignKey, Integer, String
+from sqlalchemy import Float, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -30,6 +30,8 @@ class NoteAttachment(Base):
     remote_width: Mapped[int | None] = mapped_column(Integer, nullable=True)
     remote_height: Mapped[int | None] = mapped_column(Integer, nullable=True)
     remote_description: Mapped[str | None] = mapped_column(String(1500), nullable=True)
+    remote_focal_x: Mapped[float | None] = mapped_column(Float, nullable=True)
+    remote_focal_y: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     note = relationship("Note", back_populates="attachments")
     drive_file = relationship("DriveFile", lazy="selectin")

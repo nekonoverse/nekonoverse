@@ -24,7 +24,10 @@ export interface MediaAttachment {
   preview_url: string;
   description: string | null;
   blurhash: string | null;
-  meta: { original?: { width: number; height: number } } | null;
+  meta: {
+    original?: { width: number; height: number };
+    focus?: { x: number; y: number };
+  } | null;
 }
 
 export interface PollOption {
@@ -93,12 +96,27 @@ export interface NoteEditHistoryEntry {
   created_at: string;
 }
 
-export async function uploadMedia(file: File, description?: string): Promise<MediaAttachment> {
+export async function uploadMedia(
+  file: File, description?: string, focus?: string,
+): Promise<MediaAttachment> {
   const formData = new FormData();
   formData.append("file", file);
   if (description) formData.append("description", description);
+  if (focus) formData.append("focus", focus);
   return apiRequest<MediaAttachment>("/api/v1/media", {
     method: "POST",
+    formData,
+  });
+}
+
+export async function updateMedia(
+  id: string, description?: string, focus?: string,
+): Promise<MediaAttachment> {
+  const formData = new FormData();
+  if (description !== undefined) formData.append("description", description);
+  if (focus) formData.append("focus", focus);
+  return apiRequest<MediaAttachment>(`/api/v1/media/${id}`, {
+    method: "PUT",
     formData,
   });
 }

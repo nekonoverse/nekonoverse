@@ -8,6 +8,7 @@ import ImageLightbox from "../ImageLightbox";
 import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "../../i18n";
+import { focalPointToObjectPosition } from "../../utils/focalPoint";
 import { twemojify } from "../../utils/twemojify";
 import { emojify } from "../../utils/emojify";
 import { useNavigate } from "@solidjs/router";
@@ -505,6 +506,9 @@ export default function NoteCard(props: Props) {
                       src={media.preview_url || media.url}
                       alt={media.description || ""}
                       loading="lazy"
+                      style={{
+                        "object-position": focalPointToObjectPosition(media.meta?.focus),
+                      }}
                     />
                   </button>
                 )}

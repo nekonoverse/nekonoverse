@@ -46,6 +46,10 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
         meta = None
         if att.drive_file.width and att.drive_file.height:
             meta = {"original": {"width": att.drive_file.width, "height": att.drive_file.height}}
+        if att.drive_file.focal_x is not None and att.drive_file.focal_y is not None:
+            if meta is None:
+                meta = {}
+            meta["focus"] = {"x": att.drive_file.focal_x, "y": att.drive_file.focal_y}
         return NoteMediaAttachment(
             id=str(att.id),
             type="image" if mime.startswith("image/") else "unknown",
@@ -60,6 +64,10 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
     meta = None
     if att.remote_width and att.remote_height:
         meta = {"original": {"width": att.remote_width, "height": att.remote_height}}
+    if att.remote_focal_x is not None and att.remote_focal_y is not None:
+        if meta is None:
+            meta = {}
+        meta["focus"] = {"x": att.remote_focal_x, "y": att.remote_focal_y}
     proxied = media_proxy_url(att.remote_url)
     return NoteMediaAttachment(
         id=str(att.id),

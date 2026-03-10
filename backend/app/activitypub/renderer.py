@@ -173,6 +173,8 @@ def render_note(note: Note) -> dict:
                     doc["height"] = att.drive_file.height
                 if att.drive_file.blurhash:
                     doc["blurhash"] = att.drive_file.blurhash
+                if att.drive_file.focal_x is not None and att.drive_file.focal_y is not None:
+                    doc["focalPoint"] = [att.drive_file.focal_x, att.drive_file.focal_y]
                 attachment_list.append(doc)
             elif att.remote_url:
                 attachment_list.append({

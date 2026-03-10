@@ -125,6 +125,23 @@ services:
       - frontend
       - s3proxy-deliverer
 
+  # Optional: GPU face detection service (uncomment to use)
+  # Requires NVIDIA GPU + nvidia-container-toolkit.
+  # Set FACE_DETECT_URL=http://face-detect:8001/object-detection in app environment.
+  # If running on a separate machine, set FACE_DETECT_URL to that machine's URL instead.
+  # face-detect:
+  #   build: ./face-detect
+  #   restart: unless-stopped
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+  #   expose:
+  #     - "8001"
+
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cloudflared:
   #   image: cloudflare/cloudflared:latest
