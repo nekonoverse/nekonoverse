@@ -55,6 +55,7 @@ async def handle_follow(db: AsyncSession, activity: dict):
 
         # Notify the local target about the new follower
         from app.services.notification_service import create_notification
+
         await create_notification(db, "follow", target.id, follower.id)
         await db.commit()
 

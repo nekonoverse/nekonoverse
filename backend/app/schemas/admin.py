@@ -12,6 +12,7 @@ class ServerSettingsResponse(BaseModel):
     registration_mode: str = "open"
     invite_create_role: str = "admin"
     server_icon_url: str | None = None
+    server_theme_color: str | None = None
 
 
 class ServerSettingsUpdate(BaseModel):
@@ -19,8 +20,11 @@ class ServerSettingsUpdate(BaseModel):
     server_description: str | None = Field(None, max_length=2000)
     tos_url: str | None = Field(None, max_length=2048)
     registration_open: bool | None = None
-    registration_mode: str | None = Field(None, pattern=r"^(open|invite|closed)$")
+    registration_mode: str | None = Field(None, pattern=r"^(open|invite|closed|approval)$")
     invite_create_role: str | None = Field(None, pattern=r"^(admin|moderator|user)$")
+    server_theme_color: str | None = Field(
+        None, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$"
+    )
 
 
 class AdminUserResponse(BaseModel):
@@ -32,6 +36,18 @@ class AdminUserResponse(BaseModel):
     is_active: bool
     suspended: bool = False
     silenced: bool = False
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class PendingRegistrationResponse(BaseModel):
+    """Pending registration awaiting admin approval."""
+
+    id: uuid.UUID
+    username: str
+    email: str
+    reason: str | None = None
     created_at: datetime
 
     model_config = {"from_attributes": True}

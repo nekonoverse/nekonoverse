@@ -85,12 +85,12 @@ async def authorize_form(
             "<html><body style='font-family:sans-serif;"
             "max-width:400px;margin:40px auto'>"
             f"<h2>Authorize {esc(app.name)}</h2>"
-            "<p>Please <a href=\"/login?redirect=/oauth/authorize"
+            '<p>Please <a href="/login?redirect=/oauth/authorize'
             f"?client_id={esc(client_id)}"
             f"&redirect_uri={esc(redirect_uri)}"
             f"&scope={esc(scope)}"
             f"&response_type={esc(response_type)}"
-            "\">log in</a> first.</p>"
+            '">log in</a> first.</p>'
             "</body></html>"
         )
 
@@ -99,6 +99,19 @@ async def authorize_form(
     user_id_str = await valkey.get(f"session:{session_id}")
     if not user_id_str:
         raise HTTPException(status_code=401, detail="Session expired")
+
+    # ユーザーの状態を検証(停止・承認待ちチェック)
+    from app.services.user_service import get_user_by_id
+
+    user = await get_user_by_id(db, uuid.UUID(user_id_str))
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+    if user.actor and user.actor.is_suspended:
+        await valkey.delete(f"session:{session_id}")
+        raise HTTPException(status_code=403, detail="Account is suspended")
+    if user.approval_status == "pending":
+        await valkey.delete(f"session:{session_id}")
+        raise HTTPException(status_code=403, detail="Your registration is pending approval")
 
     # Generate authorization code
     code = secrets.token_urlsafe(32)
@@ -168,10 +181,7 @@ async def token(
         if auth_code.code_challenge and auth_code.code_challenge_method == "S256":
             if not code_verifier:
                 raise HTTPException(status_code=400, detail="Missing code_verifier")
-            challenge = (
-                hashlib.sha256(code_verifier.encode())
-                .digest()
-            )
+            challenge = hashlib.sha256(code_verifier.encode()).digest()
             import base64
 
             expected = base64.urlsafe_b64encode(challenge).rstrip(b"=").decode()
@@ -229,9 +239,7 @@ async def revoke_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Revoke an access token."""
-    result = await db.execute(
-        select(OAuthToken).where(OAuthToken.access_token == token)
-    )
+    result = await db.execute(select(OAuthToken).where(OAuthToken.access_token == token))
     token_obj = result.scalar_one_or_none()
     if token_obj:
         token_obj.revoked_at = datetime.now(timezone.utc)

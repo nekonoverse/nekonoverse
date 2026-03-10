@@ -41,11 +41,16 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
     """Convert a NoteAttachment to NoteMediaAttachment for API response."""
     if att.drive_file:
         from app.services.drive_service import file_to_url
+
         url = file_to_url(att.drive_file)
         mime = att.drive_file.mime_type or ""
         meta = None
         if att.drive_file.width and att.drive_file.height:
             meta = {"original": {"width": att.drive_file.width, "height": att.drive_file.height}}
+        if att.drive_file.focal_x is not None and att.drive_file.focal_y is not None:
+            if meta is None:
+                meta = {}
+            meta["focus"] = {"x": att.drive_file.focal_x, "y": att.drive_file.focal_y}
         return NoteMediaAttachment(
             id=str(att.id),
             type="image" if mime.startswith("image/") else "unknown",
@@ -60,6 +65,10 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
     meta = None
     if att.remote_width and att.remote_height:
         meta = {"original": {"width": att.remote_width, "height": att.remote_height}}
+    if att.remote_focal_x is not None and att.remote_focal_y is not None:
+        if meta is None:
+            meta = {}
+        meta["focus"] = {"x": att.remote_focal_x, "y": att.remote_focal_y}
     proxied = media_proxy_url(att.remote_url)
     return NoteMediaAttachment(
         id=str(att.id),
@@ -73,7 +82,10 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
 
 
 async def note_to_response(
-    note, reactions: list[dict] | None = None, reblog_note=None, db=None,
+    note,
+    reactions: list[dict] | None = None,
+    reblog_note=None,
+    db=None,
     emoji_cache: dict | None = None,
     hashtags_cache: dict | None = None,
 ) -> NoteResponse:
@@ -96,6 +108,7 @@ async def note_to_response(
     # リレーション未解決だがrenote_of_ap_idがある場合、遅延解決
     if not actual_reblog and db and note.renote_of_ap_id:
         from app.services.note_service import fetch_remote_note
+
         resolved = await fetch_remote_note(db, note.renote_of_ap_id)
         if resolved:
             note.renote_of_id = resolved.id
@@ -103,21 +116,25 @@ async def note_to_response(
             actual_reblog = await get_note_by_id(db, resolved.id)
     if actual_reblog:
         reblog = await note_to_response(
-            actual_reblog, db=db, emoji_cache=emoji_cache,
+            actual_reblog,
+            db=db,
+            emoji_cache=emoji_cache,
             hashtags_cache=hashtags_cache,
         )
 
     # Build media attachments
     media_attachments = []
-    for att in (note.attachments or []):
+    for att in note.attachments or []:
         if att.drive_file or att.remote_url:
             media_attachments.append(_attachment_to_media(att))
 
     # Build quote
     quote = None
-    if hasattr(note, 'quoted_note') and note.quoted_note:
+    if hasattr(note, "quoted_note") and note.quoted_note:
         quote = await note_to_response(
-            note.quoted_note, db=db, emoji_cache=emoji_cache,
+            note.quoted_note,
+            db=db,
+            emoji_cache=emoji_cache,
             hashtags_cache=hashtags_cache,
         )
     # Fallback: quoted_note not loaded but quote_id is set
@@ -125,11 +142,14 @@ async def note_to_response(
         loaded_quote = await get_note_by_id(db, note.quote_id)
         if loaded_quote:
             quote = await note_to_response(
-                loaded_quote, db=db, emoji_cache=emoji_cache,
+                loaded_quote,
+                db=db,
+                emoji_cache=emoji_cache,
             )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
     if not quote and db and note.quote_ap_id:
         from app.services.note_service import fetch_remote_note
+
         resolved_quote = await fetch_remote_note(db, note.quote_ap_id)
         if resolved_quote:
             note.quote_id = resolved_quote.id
@@ -137,7 +157,9 @@ async def note_to_response(
             loaded_quote = await get_note_by_id(db, resolved_quote.id)
             if loaded_quote:
                 quote = await note_to_response(
-                    loaded_quote, db=db, emoji_cache=emoji_cache,
+                    loaded_quote,
+                    db=db,
+                    emoji_cache=emoji_cache,
                     hashtags_cache=hashtags_cache,
                 )
 
@@ -150,15 +172,15 @@ async def note_to_response(
         content_shortcodes = set(_SHORTCODE_RE.findall(note.content))
     actor_shortcodes: set[str] = set()
     if actor.display_name:
-        actor_shortcodes = set(
-            _SHORTCODE_RE.findall(actor.display_name)
-        )
+        actor_shortcodes = set(_SHORTCODE_RE.findall(actor.display_name))
     all_shortcodes = content_shortcodes | actor_shortcodes
     if all_shortcodes:
         if emoji_cache is not None:
             # Use pre-resolved cache — no DB queries needed
             emoji_list = _resolve_emojis_from_cache(
-                all_shortcodes, actor.domain, emoji_cache,
+                all_shortcodes,
+                actor.domain,
+                emoji_cache,
             )
         elif db:
             from app.services.emoji_service import (
@@ -167,14 +189,18 @@ async def note_to_response(
 
             domain = actor.domain
             emoji_list = await get_emojis_by_shortcodes(
-                db, all_shortcodes, domain,
+                db,
+                all_shortcodes,
+                domain,
             )
             if domain is not None:
                 found = {e.shortcode for e in emoji_list}
                 missing = all_shortcodes - found
                 if missing:
                     local_emojis = await get_emojis_by_shortcodes(
-                        db, missing, None,
+                        db,
+                        missing,
+                        None,
                     )
                     emoji_list.extend(local_emojis)
         else:
@@ -182,40 +208,30 @@ async def note_to_response(
         emoji_map: dict[str, CustomEmojiInfo] = {}
         for emoji in emoji_list:
             url = media_proxy_url(emoji.url)
-            static = (
-                media_proxy_url(emoji.static_url)
-                if emoji.static_url else url
-            )
+            static = media_proxy_url(emoji.static_url) if emoji.static_url else url
             info = CustomEmojiInfo(
-                shortcode=emoji.shortcode, url=url, static_url=static,
+                shortcode=emoji.shortcode,
+                url=url,
+                static_url=static,
             )
             emoji_map[emoji.shortcode] = info
-        emojis = [
-            emoji_map[sc] for sc in content_shortcodes
-            if sc in emoji_map
-        ]
-        actor_emojis = [
-            emoji_map[sc] for sc in actor_shortcodes
-            if sc in emoji_map
-        ]
+        emojis = [emoji_map[sc] for sc in content_shortcodes if sc in emoji_map]
+        actor_emojis = [emoji_map[sc] for sc in actor_shortcodes if sc in emoji_map]
 
     # Resolve hashtags
     tags: list[TagInfo] = []
     if hashtags_cache is not None:
         from app.config import settings as app_settings
+
         tag_names = hashtags_cache.get(note.id, [])
-        tags = [
-            TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}")
-            for tn in tag_names
-        ]
+        tags = [TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}") for tn in tag_names]
     elif db:
         from app.services.hashtag_service import get_hashtags_for_note
+
         tag_names = await get_hashtags_for_note(db, note.id)
         from app.config import settings as app_settings
-        tags = [
-            TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}")
-            for tn in tag_names
-        ]
+
+        tags = [TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}") for tn in tag_names]
 
     # Resolve in_reply_to_account_id (prefer eager-loaded relationship)
     in_reply_to_account_id = None
@@ -304,9 +320,7 @@ async def _build_emoji_cache(db, notes) -> dict:
         if note.content:
             scs.update(_SHORTCODE_RE.findall(note.content))
         if note.actor and note.actor.display_name:
-            scs.update(
-                _SHORTCODE_RE.findall(note.actor.display_name)
-            )
+            scs.update(_SHORTCODE_RE.findall(note.actor.display_name))
         if scs:
             d = note.actor.domain if note.actor else None
             shortcodes_by_domain.setdefault(d, set()).update(scs)
@@ -373,7 +387,10 @@ async def notes_to_responses(
     for n in notes:
         reactions = reactions_map.get(n.id, [])
         resp = await note_to_response(
-            n, reactions, db=db, emoji_cache=emoji_cache,
+            n,
+            reactions,
+            db=db,
+            emoji_cache=emoji_cache,
             hashtags_cache=hashtags_cache,
         )
         result.append(resp)
@@ -487,18 +504,21 @@ async def edit_status(
 @router.get("/{note_id}/history", response_model=list[NoteEditHistoryEntry])
 async def get_status_history(
     note_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     note = await get_note_by_id(db, note_id)
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
+    actor_id = user.actor_id if user else None
+    if not await check_note_visible(db, note, actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
     from app.models.note_edit import NoteEdit
 
     result = await db.execute(
-        select(NoteEdit)
-        .where(NoteEdit.note_id == note.id)
-        .order_by(NoteEdit.created_at.asc())
+        select(NoteEdit).where(NoteEdit.note_id == note.id).order_by(NoteEdit.created_at.asc())
     )
     edits = result.scalars().all()
 
@@ -538,32 +558,50 @@ async def get_status_context(
     if not await check_note_visible(db, note, actor_id):
         raise HTTPException(status_code=404, detail="Note not found")
 
-    # Build ancestors by walking up the in_reply_to_id chain
-    ancestors = []
+    # 祖先ノードのIDを先に収集してバッチ取得
+    MAX_ANCESTORS = 40
+    MAX_DESCENDANTS = 200
+    ancestor_ids: list[uuid.UUID] = []
     current = note
     seen_ids: set[uuid.UUID] = {note.id}
-    while current.in_reply_to_id and current.in_reply_to_id not in seen_ids:
+    while (
+        current.in_reply_to_id
+        and current.in_reply_to_id not in seen_ids
+        and len(ancestor_ids) < MAX_ANCESTORS
+    ):
         parent = await get_note_by_id(db, current.in_reply_to_id)
         if not parent:
             break
         if not await check_note_visible(db, parent, actor_id):
             break
         seen_ids.add(parent.id)
-        ancestors.append(parent)
+        ancestor_ids.append(parent.id)
         current = parent
-    ancestors.reverse()  # oldest first
+    ancestor_ids.reverse()
 
-    # Build descendants using BFS
+    # バッチ取得した祖先をID順で復元
+    ancestors = []
+    if ancestor_ids:
+        result = await db.execute(
+            select(Note)
+            .options(*_note_load_options())
+            .where(Note.id.in_(ancestor_ids), Note.deleted_at.is_(None))
+        )
+        ancestor_map = {n.id: n for n in result.scalars().all()}
+        ancestors = [ancestor_map[aid] for aid in ancestor_ids if aid in ancestor_map]
+
+    # 子孫ノードをBFSで取得(深さ/件数制限付き)
     descendants = []
     queue = [note.id]
     visited: set[uuid.UUID] = {note.id}
-    while queue:
-        parent_id = queue.pop(0)
+    while queue and len(descendants) < MAX_DESCENDANTS:
+        batch_parent_ids = queue[:50]
+        queue = queue[50:]
         result = await db.execute(
             select(Note)
             .options(*_note_load_options())
             .where(
-                Note.in_reply_to_id == parent_id,
+                Note.in_reply_to_id.in_(batch_parent_ids),
                 Note.deleted_at.is_(None),
             )
             .order_by(Note.published.asc())
@@ -573,12 +611,22 @@ async def get_status_context(
             if child.id in visited:
                 continue
             visited.add(child.id)
+            if len(descendants) >= MAX_DESCENDANTS:
+                break
             if await check_note_visible(db, child, actor_id):
                 descendants.append(child)
                 queue.append(child.id)
 
-    ancestor_responses = [await note_to_response(n, db=db) for n in ancestors]
-    descendant_responses = [await note_to_response(n, db=db) for n in descendants]
+    # バッチで絵文字キャッシュを構築
+    all_context_notes = ancestors + descendants
+    emoji_cache = await _build_emoji_cache(db, all_context_notes) if all_context_notes else {}
+
+    ancestor_responses = [
+        await note_to_response(n, db=db, emoji_cache=emoji_cache) for n in ancestors
+    ]
+    descendant_responses = [
+        await note_to_response(n, db=db, emoji_cache=emoji_cache) for n in descendants
+    ]
 
     return ContextResponse(
         ancestors=ancestor_responses,
@@ -607,8 +655,13 @@ async def react_to_note(
     # Notify note author
     if note.actor.is_local:
         from app.services.notification_service import create_notification
+
         await create_notification(
-            db, "reaction", note.actor_id, user.actor_id, note.id,
+            db,
+            "reaction",
+            note.actor_id,
+            user.actor_id,
+            note.id,
             reaction_emoji=emoji,
         )
         await db.commit()
@@ -641,12 +694,17 @@ async def unreact_to_note(
 async def reacted_by(
     note_id: uuid.UUID,
     emoji: str | None = None,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.models.reaction import Reaction
 
     note = await get_note_by_id(db, note_id)
     if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    actor_id = user.actor_id if user else None
+    if not await check_note_visible(db, note, actor_id):
         raise HTTPException(status_code=404, detail="Note not found")
 
     query = (
@@ -728,8 +786,13 @@ async def reblog_status(
     # Notify original note author
     if original.actor.is_local:
         from app.services.notification_service import create_notification
+
         await create_notification(
-            db, "renote", original.actor_id, actor.id, original.id,
+            db,
+            "renote",
+            original.actor_id,
+            actor.id,
+            original.id,
         )
         await db.commit()
 

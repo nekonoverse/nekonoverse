@@ -1,16 +1,28 @@
 """Drive file management service."""
 
+import base64
+import logging
+import math
 import uuid
+from urllib.parse import urlparse
 
+import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.drive_file import DriveFile
 from app.models.user import User
 from app.storage import delete_file, get_public_url, upload_file
 
+logger = logging.getLogger(__name__)
+
 ALLOWED_IMAGE_TYPES = {
-    "image/jpeg", "image/png", "image/gif", "image/webp", "image/avif",
+    "image/jpeg",
+    "image/png",
+    "image/gif",
+    "image/webp",
+    "image/avif",
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -70,7 +82,10 @@ async def delete_drive_file(db: AsyncSession, drive_file: DriveFile) -> None:
 
 
 async def list_user_files(
-    db: AsyncSession, user: User, limit: int = 50, offset: int = 0,
+    db: AsyncSession,
+    user: User,
+    limit: int = 50,
+    offset: int = 0,
 ) -> list[DriveFile]:
     result = await db.execute(
         select(DriveFile)
@@ -82,14 +97,92 @@ async def list_user_files(
     return list(result.scalars().all())
 
 
+async def update_drive_file_meta(
+    db: AsyncSession,
+    drive_file: DriveFile,
+    description: str | None = None,
+    focal_x: float | None = None,
+    focal_y: float | None = None,
+) -> DriveFile:
+    """Update description and/or focal point of a drive file."""
+    if description is not None:
+        drive_file.description = description
+    if focal_x is not None and math.isfinite(focal_x):
+        drive_file.focal_x = max(-1.0, min(1.0, focal_x))
+    if focal_y is not None and math.isfinite(focal_y):
+        drive_file.focal_y = max(-1.0, min(1.0, focal_y))
+    await db.commit()
+    await db.refresh(drive_file)
+    return drive_file
+
+
+async def auto_detect_focal_point(db: AsyncSession, drive_file: DriveFile) -> None:
+    """Call face detection service to auto-set focal point. Fails silently."""
+    if not settings.face_detect_url:
+        return
+    parsed = urlparse(settings.face_detect_url)
+    if parsed.scheme not in ("http", "https"):
+        logger.warning("Invalid face_detect_url scheme: %s", parsed.scheme)
+        return
+    if drive_file.focal_x is not None:
+        return  # Already set manually
+    if not drive_file.mime_type.startswith("image/"):
+        return
+
+    try:
+        image_data = await _read_file_data(drive_file)
+        if not image_data:
+            return
+
+        b64 = base64.b64encode(image_data).decode("ascii")
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                settings.face_detect_url,
+                json={"inputs": b64, "parameters": {"threshold": 0.5}},
+            )
+            resp.raise_for_status()
+            results = resp.json()
+
+        if not results:
+            return
+
+        # Use the highest-score detection
+        best = results[0]
+        box = best["box"]
+        cx = (box["xmin"] + box["xmax"]) / 2
+        cy = (box["ymin"] + box["ymax"]) / 2
+
+        w = drive_file.width or 1
+        h = drive_file.height or 1
+        drive_file.focal_x = max(-1.0, min(1.0, (cx / w) * 2 - 1))
+        drive_file.focal_y = max(-1.0, min(1.0, 1 - (cy / h) * 2))
+        await db.commit()
+    except Exception:
+        logger.debug("Face detection failed for %s, skipping", drive_file.id, exc_info=True)
+
+
+async def _read_file_data(drive_file: DriveFile) -> bytes | None:
+    """Read file data from S3 for face detection."""
+    try:
+        from app.storage import download_file
+
+        return await download_file(drive_file.s3_key)
+    except Exception:
+        logger.debug("Could not read file %s for face detection", drive_file.s3_key)
+        return None
+
+
 def file_to_url(drive_file: DriveFile) -> str:
     return get_public_url(drive_file.s3_key)
 
 
 def _extension_for_mime(mime_type: str) -> str:
     return {
-        "image/jpeg": ".jpg", "image/png": ".png", "image/gif": ".gif",
-        "image/webp": ".webp", "image/avif": ".avif",
+        "image/jpeg": ".jpg",
+        "image/png": ".png",
+        "image/gif": ".gif",
+        "image/webp": ".webp",
+        "image/avif": ".avif",
     }.get(mime_type, "")
 
 
@@ -104,16 +197,18 @@ def _get_image_dimensions(data: bytes, mime_type: str) -> tuple[int | None, int 
                     break
                 marker = data[i + 1]
                 if marker in (0xC0, 0xC1, 0xC2):
-                    w = int.from_bytes(data[i + 7:i + 9], "big")
-                    h = int.from_bytes(data[i + 5:i + 7], "big")
+                    w = int.from_bytes(data[i + 7 : i + 9], "big")
+                    h = int.from_bytes(data[i + 5 : i + 7], "big")
                     return w, h
-                length = int.from_bytes(data[i + 2:i + 4], "big")
+                length = int.from_bytes(data[i + 2 : i + 4], "big")
                 i += 2 + length
         elif mime_type == "image/gif" and len(data) >= 10 and data[:3] == b"GIF":
             return int.from_bytes(data[6:8], "little"), int.from_bytes(data[8:10], "little")
         elif (
-            mime_type == "image/webp" and len(data) >= 30
-            and data[:4] == b"RIFF" and data[8:12] == b"WEBP"
+            mime_type == "image/webp"
+            and len(data) >= 30
+            and data[:4] == b"RIFF"
+            and data[8:12] == b"WEBP"
         ):
             if data[12:16] == b"VP8 ":
                 w = int.from_bytes(data[26:28], "little") & 0x3FFF

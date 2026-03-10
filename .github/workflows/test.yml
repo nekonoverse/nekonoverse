@@ -11,9 +11,16 @@ concurrency:
   group: test-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  COMPOSE_PROJECT_NAME: neko-e2e
+
 jobs:
   backend-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     services:
       postgres:
         image: postgres:17
@@ -49,7 +56,7 @@ jobs:
         working-directory: backend
         run: pip install -e ".[dev]"
 
-      - name: Run tests
+      - name: Run tests (shard ${{ matrix.shard }}/4)
         working-directory: backend
         env:
           DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_test
@@ -58,7 +65,7 @@ jobs:
           SECRET_KEY: test-secret-key
           DEBUG: "true"
           REGISTRATION_OPEN: "true"
-        run: python -m pytest tests/ -v
+        run: python -m pytest tests/ -v -n auto --shard-id=${{ matrix.shard }} --num-shards=4
 
   frontend-build:
     runs-on: ubuntu-latest
@@ -79,32 +86,85 @@ jobs:
         working-directory: frontend
         run: npm run build
 
-  e2e-test:
+  e2e-build:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
 
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build images
+        run: docker compose -f docker-compose.e2e.yml build
+        env:
+          DOCKER_BUILDKIT: "1"
+
+      - name: Save images
+        run: |
+          docker save neko-e2e-app neko-e2e-frontend neko-e2e-worker | gzip > /tmp/e2e-images.tar.gz
+
+      - name: Upload images
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-images
+          path: /tmp/e2e-images.tar.gz
+          retention-days: 1
+          compression-level: 0
+
+  e2e-test:
+    runs-on: ubuntu-latest
+    needs: e2e-build
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download images
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-images
+          path: /tmp
+
+      - name: Load images
+        run: docker load < /tmp/e2e-images.tar.gz
+
       - name: Start services
-        run: docker compose -f docker-compose.e2e.yml up -d --build --wait
+        run: docker compose -f docker-compose.e2e.yml up -d --wait
+        timeout-minutes: 5
 
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
 
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-firefox-${{ hashFiles('tests/e2e/package-lock.json') }}
+
       - name: Install Playwright
         working-directory: tests/e2e
-        run: npm ci && npx playwright install --with-deps firefox chromium
+        run: |
+          npm ci
+          if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
+            npx playwright install --with-deps firefox chromium
+          else
+            npx playwright install-deps firefox chromium
+          fi
 
-      - name: Run E2E tests
+      - name: Run E2E tests (shard ${{ matrix.shard }}/3)
         working-directory: tests/e2e
-        run: npx playwright test
+        run: npx playwright test --shard=${{ matrix.shard }}/3
 
       - name: Upload test results
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-results
+          name: e2e-results-shard-${{ matrix.shard }}
           path: tests/e2e/test-results/
 
       - name: Cleanup

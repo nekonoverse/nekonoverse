@@ -32,21 +32,25 @@ async def log_action(
     return entry
 
 
-async def invalidate_user_sessions(user_id: uuid.UUID) -> int:
+async def invalidate_user_sessions(user_id: uuid.UUID, exclude_session: str | None = None) -> int:
     """Delete all Valkey sessions belonging to a specific user.
 
     Scans all ``session:*`` keys and removes those whose value matches
-    *user_id*.  Returns the number of sessions deleted.
+    *user_id*.  Optionally keeps the session identified by *exclude_session*.
+    Returns the number of sessions deleted.
     """
     from app.valkey_client import valkey
 
     user_id_str = str(user_id)
+    exclude_key = f"session:{exclude_session}" if exclude_session else None
     deleted = 0
     cursor = 0
     while True:
         cursor, keys = await valkey.scan(cursor, match="session:*", count=100)
         if keys:
             for key in keys:
+                if exclude_key and key == exclude_key:
+                    continue
                 val = await valkey.get(key)
                 if val == user_id_str:
                     await valkey.delete(key)
@@ -94,9 +98,7 @@ async def suspend_actor(
             await enqueue_delivery(db, actor.id, inbox_url, delete_activity)
 
 
-async def unsuspend_actor(
-    db: AsyncSession, actor: Actor, moderator: User
-) -> None:
+async def unsuspend_actor(db: AsyncSession, actor: Actor, moderator: User) -> None:
     actor.suspended_at = None
     await db.flush()
     await log_action(db, moderator, "unsuspend", "actor", str(actor.id))
@@ -110,9 +112,7 @@ async def silence_actor(
     await log_action(db, moderator, "silence", "actor", str(actor.id), reason)
 
 
-async def unsilence_actor(
-    db: AsyncSession, actor: Actor, moderator: User
-) -> None:
+async def unsilence_actor(db: AsyncSession, actor: Actor, moderator: User) -> None:
     actor.silenced_at = None
     await db.flush()
     await log_action(db, moderator, "unsilence", "actor", str(actor.id))
@@ -143,9 +143,7 @@ async def admin_delete_note(
             await enqueue_delivery(db, note.actor_id, inbox_url, delete_activity)
 
 
-async def force_sensitive(
-    db: AsyncSession, note: Note, moderator: User
-) -> None:
+async def force_sensitive(db: AsyncSession, note: Note, moderator: User) -> None:
     note.sensitive = True
     await db.flush()
     await log_action(db, moderator, "force_sensitive", "note", str(note.id))

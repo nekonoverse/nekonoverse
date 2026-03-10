@@ -12,6 +12,7 @@ def _iso_z(dt: datetime) -> str:
     """Format datetime as ISO 8601 with Z suffix (no +00:00)."""
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
+
 AP_CONTEXT = [
     "https://www.w3.org/ns/activitystreams",
     "https://w3id.org/security/v1",
@@ -151,16 +152,17 @@ def render_note(note: Note) -> dict:
         data["inReplyTo"] = note.in_reply_to_ap_id
 
     # Quote renote
-    if hasattr(note, 'quote_ap_id') and note.quote_ap_id:
+    if hasattr(note, "quote_ap_id") and note.quote_ap_id:
         data["_misskey_quote"] = note.quote_ap_id
         data["quoteUrl"] = note.quote_ap_id
 
     # Attachments
-    if hasattr(note, 'attachments') and note.attachments:
+    if hasattr(note, "attachments") and note.attachments:
         attachment_list = []
         for att in note.attachments:
             if att.drive_file:
                 from app.services.drive_service import file_to_url
+
                 url = file_to_url(att.drive_file)
                 doc = {
                     "type": "Document",
@@ -173,46 +175,58 @@ def render_note(note: Note) -> dict:
                     doc["height"] = att.drive_file.height
                 if att.drive_file.blurhash:
                     doc["blurhash"] = att.drive_file.blurhash
+                if att.drive_file.focal_x is not None and att.drive_file.focal_y is not None:
+                    doc["focalPoint"] = [att.drive_file.focal_x, att.drive_file.focal_y]
                 attachment_list.append(doc)
             elif att.remote_url:
-                attachment_list.append({
-                    "type": "Document",
-                    "mediaType": att.remote_mime_type or "application/octet-stream",
-                    "url": att.remote_url,
-                    "name": att.remote_description or att.remote_name or "",
-                })
+                attachment_list.append(
+                    {
+                        "type": "Document",
+                        "mediaType": att.remote_mime_type or "application/octet-stream",
+                        "url": att.remote_url,
+                        "name": att.remote_description or att.remote_name or "",
+                    }
+                )
         if attachment_list:
             data["attachment"] = attachment_list
 
     # Tags (mentions + emoji)
     tag = []
-    if hasattr(note, 'mentions') and note.mentions:
+    if hasattr(note, "mentions") and note.mentions:
         for m in note.mentions:
             name = f"@{m['username']}@{m['domain']}" if m.get("domain") else f"@{m['username']}"
-            tag.append({
-                "type": "Mention",
-                "href": m["ap_id"],
-                "name": name,
-            })
+            tag.append(
+                {
+                    "type": "Mention",
+                    "href": m["ap_id"],
+                    "name": name,
+                }
+            )
 
     # Hashtag tags
-    if hasattr(note, '_hashtag_names') and note._hashtag_names:
+    if hasattr(note, "_hashtag_names") and note._hashtag_names:
         for ht_name in note._hashtag_names:
-            tag.append({
-                "type": "Hashtag",
-                "href": f"{settings.server_url}/tags/{ht_name}",
-                "name": f"#{ht_name}",
-            })
+            tag.append(
+                {
+                    "type": "Hashtag",
+                    "href": f"{settings.server_url}/tags/{ht_name}",
+                    "name": f"#{ht_name}",
+                }
+            )
 
     # Custom emoji tags
-    if hasattr(note, '_emoji_tags') and note._emoji_tags:
+    if hasattr(note, "_emoji_tags") and note._emoji_tags:
         for e in note._emoji_tags:
             # Guess media type from URL extension
             url = e["url"]
             ext = url.rsplit(".", 1)[-1].lower() if "." in url else "png"
             media_type = {
-                "png": "image/png", "jpg": "image/jpeg", "jpeg": "image/jpeg",
-                "gif": "image/gif", "webp": "image/webp", "avif": "image/avif",
+                "png": "image/png",
+                "jpg": "image/jpeg",
+                "jpeg": "image/jpeg",
+                "gif": "image/gif",
+                "webp": "image/webp",
+                "avif": "image/avif",
                 "svg": "image/svg+xml",
             }.get(ext, "image/png")
 
@@ -286,9 +300,7 @@ def render_create_activity(note: Note) -> dict:
     }
 
 
-def render_like_activity(
-    activity_id: str, actor_ap_id: str, note_ap_id: str, emoji: str
-) -> dict:
+def render_like_activity(activity_id: str, actor_ap_id: str, note_ap_id: str, emoji: str) -> dict:
     """Render a Like activity with Misskey-compatible emoji reaction."""
     return {
         "@context": AP_CONTEXT,

@@ -166,10 +166,11 @@ docker compose logs -f frontend
 
 ### 作業開始前のルール
 
-1. **Plan Issue を作成する** — 作業開始前に `nekonoverse/nekonoverse` にIssueを立てる (`gh issue create -R nekonoverse/nekonoverse`)。タイトルに `[Plan]` プレフィックスを付け、自分にアサインする。
-2. **重複チェック** — Issue作成前に `gh issue list -R nekonoverse/nekonoverse -l plan` や検索で、同じ内容の既存Planが進行中でないか確認する。進行中の重複があればそちらに合流する。
-3. **作業完了後** — `origin` (fork) に push → `upstream` に PR またはマージ。Plan Issue を閉じる。
-4. **セキュリティチェック** — セキュリティ監査はIssueを立てずに実施する。脆弱性の詳細を公開Issueに書かない。修正はPRのみで行い、PRタイトル・本文にも攻撃手法の詳細を含めない。
+1. **最新を取り込む** — 作業開始前に `git pull upstream develop` で最新の develop を取り込む。コンフリクトがあれば先に解消する。
+2. **Plan Issue を作成する** — 作業開始前に `nekonoverse/nekonoverse` にIssueを立てる (`gh issue create -R nekonoverse/nekonoverse`)。タイトルに `[Plan]` プレフィックスを付ける。自分で実装する場合のみ自分にアサインする。Issueだけ立てる場合はアサインしない。
+3. **重複チェック** — Issue作成前に `gh issue list -R nekonoverse/nekonoverse -l plan` や検索で、同じ内容の既存Planが進行中でないか確認する。進行中の重複があればそちらに合流する。
+4. **作業完了後** — `origin` (fork) に push → `upstream` に PR またはマージ。Plan Issue を閉じる。
+5. **セキュリティチェック** — セキュリティ監査はIssueを立てずに実施する。脆弱性の詳細を公開Issueに書かない。修正はPRのみで行い、PRタイトル・本文にも攻撃手法の詳細を含めない。
 
 ### リリース手順
 
@@ -209,3 +210,9 @@ Set in `.env` at project root:
 | `S3_SECRET_ACCESS_KEY` | S3 storage secret |
 | `S3_BUCKET` | S3 bucket name |
 | `CLOUDFLARE_TUNNEL_TOKEN` | Cloudflare tunnel token (optional) |
+
+## Change Log
+
+| Date | Files | Changes |
+|------|-------|---------|
+| 2026-03-11 | `CONTRIBUTING.md` | Created contribution guide covering setup, coding conventions, branch strategy, testing, PR format, i18n, and security reporting |

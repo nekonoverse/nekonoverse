@@ -1,5 +1,18 @@
-import { test, expect } from "@playwright/test";
+import { test, expect, type Page } from "@playwright/test";
 import { loginAsAdmin, createNote } from "./helpers";
+
+/**
+ * Find a .note-content element inside the note-card that contains the given text.
+ * Using filter({ hasText }) instead of .first() prevents picking up notes from
+ * other tests when running sharded in CI.
+ */
+function findNoteContent(page: Page, text: string) {
+  return page
+    .locator(".note-card")
+    .filter({ hasText: text })
+    .first()
+    .locator(".note-content");
+}
 
 test.describe("MFM Rendering", () => {
   test.beforeEach(async ({ page }) => {
@@ -11,8 +24,8 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
-    await expect(noteContent.locator("strong")).toContainText("bold text");
+    const noteContent = findNoteContent(page, "bold text");
+    await expect(noteContent.locator("strong")).toContainText("bold text", { timeout: 10_000 });
     await expect(noteContent.locator("em")).toContainText("italic text");
     await expect(noteContent.locator("del")).toContainText("strike text");
   });
@@ -22,9 +35,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "some code");
     const code = noteContent.locator("code.mfm-inline-code");
-    await expect(code).toBeVisible();
+    await expect(code).toBeVisible({ timeout: 10_000 });
     await expect(code).toContainText("some code");
   });
 
@@ -33,9 +46,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "console.log");
     const codeBlock = noteContent.locator("pre.mfm-code-block code");
-    await expect(codeBlock).toBeVisible();
+    await expect(codeBlock).toBeVisible({ timeout: 10_000 });
     await expect(codeBlock).toContainText("console.log");
   });
 
@@ -44,9 +57,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "shaking text");
     const shakeEl = noteContent.locator(".mfm-fn-shake");
-    await expect(shakeEl).toBeVisible();
+    await expect(shakeEl).toBeVisible({ timeout: 10_000 });
     await expect(shakeEl).toContainText("shaking text");
   });
 
@@ -55,9 +68,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "spinning text");
     const spinEl = noteContent.locator(".mfm-fn-spin");
-    await expect(spinEl).toBeVisible();
+    await expect(spinEl).toBeVisible({ timeout: 10_000 });
     await expect(spinEl).toContainText("spinning text");
   });
 
@@ -66,20 +79,21 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "bouncing text");
     const bounceEl = noteContent.locator(".mfm-fn-bounce");
-    await expect(bounceEl).toBeVisible();
+    await expect(bounceEl).toBeVisible({ timeout: 10_000 });
     await expect(bounceEl).toContainText("bouncing text");
   });
 
   test("mentions render as links", async ({ page }) => {
-    await createNote(page, "hello @admin");
+    const marker = `mention-test-${Date.now()}`;
+    await createNote(page, `hello @admin ${marker}`);
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, marker);
     const mention = noteContent.locator("a.mention");
-    await expect(mention).toBeVisible();
+    await expect(mention).toBeVisible({ timeout: 10_000 });
     await expect(mention).toContainText("@admin");
   });
 
@@ -89,18 +103,19 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
-    await expect(noteContent).toContainText(text);
+    const noteContent = findNoteContent(page, text);
+    await expect(noteContent).toContainText(text, { timeout: 10_000 });
   });
 
   test("URL auto-linking works", async ({ page }) => {
-    await createNote(page, "check https://example.com for info");
+    const marker = `url-test-${Date.now()}`;
+    await createNote(page, `check https://example.com ${marker}`);
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, marker);
     const link = noteContent.locator('a[href="https://example.com"]');
-    await expect(link).toBeVisible();
+    await expect(link).toBeVisible({ timeout: 10_000 });
   });
 
   test("blur function applies blur class", async ({ page }) => {
@@ -108,9 +123,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "secret text");
     const blurEl = noteContent.locator(".mfm-fn-blur");
-    await expect(blurEl).toBeVisible();
+    await expect(blurEl).toBeVisible({ timeout: 10_000 });
     await expect(blurEl).toContainText("secret text");
   });
 
@@ -119,9 +134,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "big text");
     const x2El = noteContent.locator(".mfm-fn").first();
-    await expect(x2El).toBeVisible();
+    await expect(x2El).toBeVisible({ timeout: 10_000 });
     await expect(x2El).toContainText("big text");
     const fontSize = await x2El.evaluate((el) => el.style.fontSize);
     expect(fontSize).toBe("200%");
@@ -132,9 +147,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "flipped text");
     const flipEl = noteContent.locator(".mfm-fn").first();
-    await expect(flipEl).toBeVisible();
+    await expect(flipEl).toBeVisible({ timeout: 10_000 });
     await expect(flipEl).toContainText("flipped text");
     const transform = await flipEl.evaluate((el) => el.style.transform);
     expect(transform).toBe("scaleX(-1)");
@@ -145,9 +160,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "centered text");
     const centerEl = noteContent.locator(".mfm-center");
-    await expect(centerEl).toBeVisible();
+    await expect(centerEl).toBeVisible({ timeout: 10_000 });
     await expect(centerEl).toContainText("centered text");
   });
 
@@ -156,9 +171,9 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
+    const noteContent = findNoteContent(page, "quoted text");
     const quote = noteContent.locator("blockquote.mfm-quote");
-    await expect(quote).toBeVisible();
+    await expect(quote).toBeVisible({ timeout: 10_000 });
     await expect(quote).toContainText("quoted text");
   });
 
@@ -167,8 +182,8 @@ test.describe("MFM Rendering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
 
-    const noteContent = page.locator(".note-content").first();
-    await expect(noteContent.locator("strong")).toContainText("bold");
+    const noteContent = findNoteContent(page, "animated");
+    await expect(noteContent.locator("strong")).toContainText("bold", { timeout: 10_000 });
     await expect(noteContent.locator(".mfm-fn-shake")).toContainText("animated");
     await expect(noteContent.locator("code.mfm-inline-code")).toContainText("code");
   });

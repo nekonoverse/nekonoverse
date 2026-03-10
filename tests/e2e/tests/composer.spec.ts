@@ -26,6 +26,71 @@ test.describe("Note Composer", () => {
     await expect(page.locator("form.note-composer textarea")).toHaveValue("");
   });
 
+  test("emoji picker opens and closes", async ({ page }) => {
+    const composerForm = page.locator("form.note-composer");
+    await expect(composerForm).toBeVisible({ timeout: 10_000 });
+
+    // Emoji button should be visible
+    const emojiBtn = composerForm.locator(".composer-emoji-wrap .composer-attach-btn");
+    await expect(emojiBtn).toBeVisible();
+
+    // Click to open picker
+    await emojiBtn.click();
+    await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".emoji-search")).toBeVisible();
+
+    // Close by pressing Escape (more reliable than re-clicking the toggle button
+    // which can race with the picker's outside-click listener)
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".emoji-picker")).not.toBeVisible({ timeout: 5_000 });
+  });
+
+  test("can insert emoji from picker into textarea", async ({ page }) => {
+    const composerForm = page.locator("form.note-composer");
+    await expect(composerForm).toBeVisible({ timeout: 10_000 });
+
+    // Type some text first
+    const textarea = composerForm.locator("textarea");
+    await textarea.fill("Hello ");
+
+    // Open emoji picker
+    const emojiBtn = composerForm.locator(".composer-emoji-wrap .composer-attach-btn");
+    await emojiBtn.click();
+    await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
+
+    // Search for a specific emoji to get results outside LazyCategory scroll area.
+    // LazyCategory renders Unicode emojis lazily inside .emoji-scroll-area;
+    // in Firefox CI the buttons stay "outside of the viewport" even after
+    // scrollIntoView. Search results bypass LazyCategory entirely.
+    await page.locator(".emoji-search").fill("smile");
+    const firstEmoji = page.locator(".emoji-picker .emoji-btn").first();
+    await expect(firstEmoji).toBeVisible({ timeout: 5_000 });
+    await firstEmoji.click();
+
+    // Picker should close and textarea should contain the emoji
+    await expect(page.locator(".emoji-picker")).not.toBeVisible({ timeout: 5_000 });
+    const value = await textarea.inputValue();
+    expect(value.startsWith("Hello ")).toBe(true);
+    expect(value.length).toBeGreaterThan("Hello ".length);
+  });
+
+  test("emoji picker search filters results", async ({ page }) => {
+    const composerForm = page.locator("form.note-composer");
+    await expect(composerForm).toBeVisible({ timeout: 10_000 });
+
+    // Open emoji picker
+    const emojiBtn = composerForm.locator(".composer-emoji-wrap .composer-attach-btn");
+    await emojiBtn.click();
+    await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
+
+    // Type a search query
+    const searchInput = page.locator(".emoji-search");
+    await searchInput.fill("heart");
+
+    // Should show filtered results (at least one emoji)
+    await expect(page.locator(".emoji-picker .emoji-btn").first()).toBeVisible({ timeout: 5_000 });
+  });
+
   test("can change visibility", async ({ page }) => {
     // Open the visibility dropdown
     await page.click("button.composer-vis-toggle");

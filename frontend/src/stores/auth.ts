@@ -91,12 +91,21 @@ export async function register(
   email: string,
   password: string,
   inviteCode?: string,
-) {
+  reason?: string,
+): Promise<{ pending?: boolean }> {
   const body: Record<string, string> = { username, email, password };
   if (inviteCode) body.invite_code = inviteCode;
+  if (reason) body.reason = reason;
   await apiRequest("/api/v1/accounts", {
     method: "POST",
     body,
   });
-  await login(username, password);
+  // 承認制モードではログインせず、pendingフラグを返す
+  try {
+    await login(username, password);
+    return {};
+  } catch {
+    // ログイン失敗 = 承認待ち
+    return { pending: true };
+  }
 }

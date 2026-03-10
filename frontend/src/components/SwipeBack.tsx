@@ -5,7 +5,7 @@ const isTouchDevice = () =>
   typeof window !== "undefined" &&
   (("ontouchstart" in window) || window.matchMedia("(hover: none)").matches);
 
-const EDGE_ZONE = 25;       // px from left edge
+const EDGE_ZONE = 50;       // px from left edge
 const THRESHOLD = 100;      // px to trigger back
 const ANGLE_LIMIT = 30;     // degrees — horizontal lock
 
@@ -14,6 +14,7 @@ export default function SwipeBack() {
 
   const [active, setActive] = createSignal(false);
   const [offsetX, setOffsetX] = createSignal(0);
+  const [touchX, setTouchX] = createSignal(0);
   const [ready, setReady] = createSignal(false);
 
   let startX = 0;
@@ -32,6 +33,7 @@ export default function SwipeBack() {
     locked = null;
     setActive(true);
     setOffsetX(0);
+    setTouchX(touch.clientX);
     setReady(false);
   };
 
@@ -55,6 +57,7 @@ export default function SwipeBack() {
 
     const clamped = Math.max(0, dx);
     setOffsetX(clamped);
+    setTouchX(touch.clientX);
     setReady(clamped >= THRESHOLD);
   };
 
@@ -65,6 +68,7 @@ export default function SwipeBack() {
     }
     setActive(false);
     setOffsetX(0);
+    setTouchX(0);
     setReady(false);
     locked = null;
   };
@@ -83,7 +87,7 @@ export default function SwipeBack() {
     <Show when={active()}>
       <div
         class={`swipe-back-indicator${ready() ? " swipe-back-ready" : ""}`}
-        style={{ transform: `translateX(${offsetX() - 20}px)` }}
+        style={{ transform: `translateX(${touchX() - 20}px)` }}
       >
         ‹
       </div>

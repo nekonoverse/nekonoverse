@@ -96,6 +96,7 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
                     poll_options.append({"title": title, "votes_count": votes})
             note.poll_options = poll_options
             from sqlalchemy.orm.attributes import flag_modified
+
             flag_modified(note, "poll_options")
 
     await db.commit()

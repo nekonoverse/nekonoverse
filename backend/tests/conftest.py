@@ -51,12 +51,66 @@ import app.models.user_mute  # noqa: F401
 from app.models.base import Base
 
 
-TEST_DATABASE_URL = os.environ["DATABASE_URL"]
+_BASE_DATABASE_URL = os.environ["DATABASE_URL"]
+
+
+def _get_worker_db_name(worker_id: str) -> str:
+    """Return per-worker database name."""
+    _, db_name = _BASE_DATABASE_URL.rsplit("/", 1)
+    if worker_id == "master":
+        return db_name
+    return f"{db_name}_{worker_id}"
+
+
+def _get_worker_db_url(worker_id: str) -> str:
+    """Return per-worker database URL."""
+    base = _BASE_DATABASE_URL.rsplit("/", 1)[0]
+    return f"{base}/{_get_worker_db_name(worker_id)}"
+
+
+def _sync_url(async_url: str) -> str:
+    """Convert asyncpg URL to psycopg2."""
+    return async_url.replace("postgresql+asyncpg://", "postgresql://")
+
+
+def _create_worker_db(worker_id: str) -> None:
+    """Create a per-worker database (sync, called before async engine)."""
+    if worker_id == "master":
+        return
+    from sqlalchemy import create_engine, text
+
+    admin_url = _sync_url(_BASE_DATABASE_URL)
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    db_name = _get_worker_db_name(worker_id)
+    with engine.connect() as conn:
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+        conn.execute(text(f'CREATE DATABASE "{db_name}"'))
+    engine.dispose()
+
+
+def _drop_worker_db(worker_id: str) -> None:
+    """Drop the per-worker database (sync, called after async engine dispose)."""
+    if worker_id == "master":
+        return
+    from sqlalchemy import create_engine, text
+
+    admin_url = _sync_url(_BASE_DATABASE_URL)
+    engine = create_engine(admin_url, isolation_level="AUTOCOMMIT")
+    db_name = _get_worker_db_name(worker_id)
+    with engine.connect() as conn:
+        conn.execute(text(
+            f"SELECT pg_terminate_backend(pid) FROM pg_stat_activity "
+            f"WHERE datname = '{db_name}' AND pid <> pg_backend_pid()"
+        ))
+        conn.execute(text(f'DROP DATABASE IF EXISTS "{db_name}"'))
+    engine.dispose()
 
 
 @pytest.fixture(scope="session")
-async def db_engine():
-    engine = create_async_engine(TEST_DATABASE_URL, echo=False)
+async def db_engine(worker_id):
+    _create_worker_db(worker_id)
+    db_url = _get_worker_db_url(worker_id)
+    engine = create_async_engine(db_url, echo=False)
     async with engine.begin() as conn:
         await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
         await conn.execute(sa.text("CREATE SCHEMA public"))
@@ -66,6 +120,7 @@ async def db_engine():
         await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
         await conn.execute(sa.text("CREATE SCHEMA public"))
     await engine.dispose()
+    _drop_worker_db(worker_id)
 
 
 @pytest.fixture

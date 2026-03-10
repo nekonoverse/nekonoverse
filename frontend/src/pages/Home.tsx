@@ -38,8 +38,19 @@ export default function Home() {
   const [bufferedNotes, setBufferedNotes] = createSignal<Note[]>([]);
   const [isAtTop, setIsAtTop] = createSignal(true);
 
+  // Scroll-to-top button state
+  const [showScrollTop, setShowScrollTop] = createSignal(false);
+
   let sentinelRef: HTMLDivElement | undefined;
   let observer: IntersectionObserver | undefined;
+
+  // Callback ref: observe sentinel as soon as it appears in the DOM
+  const setSentinelRef = (el: HTMLDivElement) => {
+    sentinelRef = el;
+    if (observer && el) {
+      observer.observe(el);
+    }
+  };
 
   const isHomeTL = () => searchParams.tl === "home" && !!currentUser();
 
@@ -85,12 +96,25 @@ export default function Home() {
       // ignore
     } finally {
       setLoadingMore(false);
+      // Re-observe sentinel: IntersectionObserver only fires on state *changes*,
+      // so if the sentinel is still in view after appending notes we must
+      // reset observation to trigger the next page load.
+      if (observer && sentinelRef && hasMore()) {
+        observer.unobserve(sentinelRef);
+        observer.observe(sentinelRef);
+      }
     }
   };
 
-  // Scroll position tracking for new post buffering
+  // Scroll position tracking for new post buffering and scroll-to-top button
   const handleScroll = () => {
-    setIsAtTop(window.scrollY < 100);
+    const y = window.scrollY;
+    setIsAtTop(y < 100);
+    setShowScrollTop(y > 500);
+  };
+
+  const scrollToTop = () => {
+    window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
   // Flush buffered notes into the timeline
@@ -181,11 +205,21 @@ export default function Home() {
     }
   });
 
+  // リアクション更新のデバウンス (同一Noteへの連続更新を集約)
+  const pendingReactionRefresh = new Map<string, ReturnType<typeof setTimeout>>();
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
     if (notes().some((n) => n.id === id || n.reblog?.id === id)) {
-      await refreshNote(id);
+      const existing = pendingReactionRefresh.get(id);
+      if (existing) clearTimeout(existing);
+      pendingReactionRefresh.set(
+        id,
+        setTimeout(async () => {
+          pendingReactionRefresh.delete(id);
+          await refreshNote(id);
+        }, 500),
+      );
     }
   });
 
@@ -201,6 +235,7 @@ export default function Home() {
       },
       { rootMargin: "200px" },
     );
+    // If sentinel already rendered (e.g. fast load), observe it now
     if (sentinelRef) {
       observer.observe(sentinelRef);
     }
@@ -209,6 +244,8 @@ export default function Home() {
   onCleanup(() => {
     unsub();
     unsubReaction();
+    pendingReactionRefresh.forEach((timer) => clearTimeout(timer));
+    pendingReactionRefresh.clear();
     window.removeEventListener("scroll", handleScroll);
     if (observer) {
       observer.disconnect();
@@ -324,7 +361,7 @@ export default function Home() {
           </Show>
 
           {/* Sentinel element for infinite scroll */}
-          <div ref={sentinelRef} class="timeline-sentinel" />
+          <div ref={setSentinelRef} class="timeline-sentinel" />
 
           {/* Loading indicator */}
           <Show when={loadingMore()}>
@@ -337,6 +374,30 @@ export default function Home() {
           </Show>
         </Show>
       </div>
+
+      {/* Scroll-to-top floating button */}
+      <Show when={showScrollTop()}>
+        <button
+          class="scroll-to-top"
+          onClick={scrollToTop}
+          aria-label={t("timeline.scrollToTop")}
+          title={t("timeline.scrollToTop")}
+        >
+          <svg
+            width="20"
+            height="20"
+            viewBox="0 0 20 20"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            aria-hidden="true"
+          >
+            <path
+              d="M10 3L3 10h4v7h6v-7h4L10 3z"
+              fill="currentColor"
+            />
+          </svg>
+        </button>
+      </Show>
     </div>
   );
 }

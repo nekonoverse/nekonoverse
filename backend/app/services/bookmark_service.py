@@ -56,9 +56,7 @@ async def get_bookmarks(
         )
     )
     if max_id:
-        sub = select(Bookmark.created_at).where(
-            Bookmark.id == max_id
-        ).scalar_subquery()
+        sub = select(Bookmark.created_at).where(Bookmark.id == max_id).scalar_subquery()
         query = query.where(Bookmark.created_at < sub)
     query = query.order_by(Bookmark.created_at.desc()).limit(limit)
     result = await db.execute(query)

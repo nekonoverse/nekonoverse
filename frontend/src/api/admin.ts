@@ -14,6 +14,7 @@ export interface ServerSettings {
   registration_mode: string;
   invite_create_role: string;
   server_icon_url: string | null;
+  server_theme_color: string | null;
 }
 
 export interface AdminUser {
@@ -282,20 +283,53 @@ export interface InviteCode {
   created_by: string;
   used_by: string | null;
   used_at: string | null;
+  max_uses: number | null;
+  use_count: number;
   expires_at: string | null;
   created_at: string;
+}
+
+export interface InviteCodeCreateParams {
+  max_uses?: number | null;
+  expires_in_days?: number | null;
 }
 
 export async function getInviteCodes(): Promise<InviteCode[]> {
   return apiRequest<InviteCode[]>("/api/v1/invites");
 }
 
-export async function createInviteCode(): Promise<InviteCode> {
-  return apiRequest<InviteCode>("/api/v1/invites", { method: "POST" });
+export async function createInviteCode(
+  params?: InviteCodeCreateParams,
+): Promise<InviteCode> {
+  return apiRequest<InviteCode>("/api/v1/invites", {
+    method: "POST",
+    body: params ?? {},
+  });
 }
 
 export async function revokeInviteCode(code: string): Promise<void> {
   await apiRequest(`/api/v1/invites/${code}`, { method: "DELETE" });
+}
+
+// Pending Registrations
+export interface PendingRegistration {
+  id: string;
+  username: string;
+  email: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export async function getPendingRegistrations(): Promise<PendingRegistration[]> {
+  return apiRequest<PendingRegistration[]>("/api/v1/admin/registrations");
+}
+
+export async function approveRegistration(userId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/registrations/${userId}/approve`, { method: "POST" });
+}
+
+export async function rejectRegistration(userId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/registrations/${userId}/reject`, { method: "POST" });
 }
 
 // Federation

@@ -23,9 +23,7 @@ from app.models.base import Base
 class Actor(Base):
     __tablename__ = "actors"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ap_id: Mapped[str] = mapped_column(String(2048), unique=True, nullable=False, index=True)
     type: Mapped[str] = mapped_column(String(50), default="Person", nullable=False)
     username: Mapped[str] = mapped_column(String(255), nullable=False)
@@ -63,16 +61,20 @@ class Actor(Base):
     avatar_file_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(
-            "drive_files.id", ondelete="SET NULL",
-            name="fk_actors_avatar_file_id", use_alter=True,
+            "drive_files.id",
+            ondelete="SET NULL",
+            name="fk_actors_avatar_file_id",
+            use_alter=True,
         ),
         nullable=True,
     )
     header_file_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True),
         ForeignKey(
-            "drive_files.id", ondelete="SET NULL",
-            name="fk_actors_header_file_id", use_alter=True,
+            "drive_files.id",
+            ondelete="SET NULL",
+            name="fk_actors_header_file_id",
+            use_alter=True,
         ),
         nullable=True,
     )

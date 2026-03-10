@@ -11,9 +11,7 @@ from app.models.base import Base
 class Report(Base):
     __tablename__ = "reports"
 
-    id: Mapped[uuid.UUID] = mapped_column(
-        UUID(as_uuid=True), primary_key=True, default=uuid.uuid4
-    )
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ap_id: Mapped[str | None] = mapped_column(String(2048), unique=True, nullable=True)
     reporter_actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actors.id"), nullable=False

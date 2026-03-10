@@ -6,6 +6,7 @@ from pydantic import BaseModel
 
 class MediaAttachment(BaseModel):
     """Mastodon-compatible MediaAttachment response."""
+
     id: str
     type: str
     url: str
@@ -27,6 +28,8 @@ class DriveFileResponse(BaseModel):
     height: int | None
     description: str | None
     blurhash: str | None
+    focal_x: float | None = None
+    focal_y: float | None = None
     server_file: bool
     created_at: datetime
 

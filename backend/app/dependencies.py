@@ -38,6 +38,11 @@ async def get_current_user(
         await valkey.delete(f"session:{session_id}")
         raise HTTPException(status_code=403, detail="Account is suspended")
 
+    # 承認待ちユーザーはアクセス不可
+    if user.approval_status == "pending":
+        await valkey.delete(f"session:{session_id}")
+        raise HTTPException(status_code=403, detail="Your registration is pending approval")
+
     return user
 
 
@@ -77,6 +82,9 @@ async def get_optional_user(
 
     user = await get_user_by_id(db, uuid.UUID(user_id_str))
     if user and user.actor and user.actor.is_suspended:
+        await valkey.delete(f"session:{session_id}")
+        return None
+    if user and user.approval_status == "pending":
         await valkey.delete(f"session:{session_id}")
         return None
 

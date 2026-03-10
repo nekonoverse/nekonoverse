@@ -35,17 +35,19 @@ async def webfinger(
     profile_url = f"{settings.server_url}/@{actor.username}"
 
     return Response(
-        content=json.dumps({
-            "subject": resource,
-            "aliases": [actor_url, profile_url],
-            "links": [
-                {"rel": "self", "type": "application/activity+json", "href": actor_url},
-                {
-                    "rel": "http://webfinger.net/rel/profile-page",
-                    "type": "text/html",
-                    "href": profile_url,
-                },
-            ],
-        }),
+        content=json.dumps(
+            {
+                "subject": resource,
+                "aliases": [actor_url, profile_url],
+                "links": [
+                    {"rel": "self", "type": "application/activity+json", "href": actor_url},
+                    {
+                        "rel": "http://webfinger.net/rel/profile-page",
+                        "type": "text/html",
+                        "href": profile_url,
+                    },
+                ],
+            }
+        ),
         media_type="application/jrd+json",
     )

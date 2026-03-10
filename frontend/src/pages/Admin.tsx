@@ -11,6 +11,7 @@ import {
 import { useParams, A } from "@solidjs/router";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
+import { registrationMode } from "../stores/instance";
 import Breadcrumb from "../components/Breadcrumb";
 import {
   getAdminStats,
@@ -53,6 +54,9 @@ import {
   retryAllDeadJobs,
   purgeDeliveredJobs,
   getSystemStats,
+  getPendingRegistrations,
+  approveRegistration,
+  rejectRegistration,
   type AdminStats,
   type ServerSettings,
   type AdminUser,
@@ -70,6 +74,7 @@ import {
   type QueueJob,
   type QueueJobList,
   type SystemStats,
+  type PendingRegistration,
 } from "../api/admin";
 
 interface AdminSection {
@@ -90,6 +95,11 @@ const categories: AdminCategory[] = [
     adminOnly: false,
     sections: [
       { key: "users", labelKey: "admin.tabUsers", descKey: "admin.descUsers" },
+      {
+        key: "registrations",
+        labelKey: "admin.tabRegistrations",
+        descKey: "admin.descRegistrations",
+      },
       {
         key: "domains",
         labelKey: "admin.tabDomains",
@@ -187,7 +197,9 @@ export default function Admin() {
                           {t(cat.labelKey as any)}
                         </h3>
                         <div class="settings-menu-grid">
-                          <For each={cat.sections}>
+                          <For each={cat.sections.filter(
+                            (s) => s.key !== "registrations" || registrationMode() === "approval"
+                          )}>
                             {(s) => (
                               <A
                                 href={`/admin/${s.key}`}
@@ -223,6 +235,9 @@ export default function Admin() {
             </Match>
             <Match when={section() === "users"}>
               <UsersTab />
+            </Match>
+            <Match when={section() === "registrations"}>
+              <RegistrationsTab />
             </Match>
             <Match when={section() === "domains"}>
               <DomainsTab />
@@ -312,6 +327,7 @@ function ServerSettingsTab() {
   const [tos, setTos] = createSignal("");
   const [regMode, setRegMode] = createSignal("open");
   const [inviteRole, setInviteRole] = createSignal("admin");
+  const [themeColor, setThemeColor] = createSignal("");
   const [iconUrl, setIconUrl] = createSignal("");
   const [uploadingIcon, setUploadingIcon] = createSignal(false);
   let iconInput!: HTMLInputElement;
@@ -330,6 +346,7 @@ function ServerSettingsTab() {
           setTos(s.tos_url || "");
           setRegMode(s.registration_mode || "open");
           setInviteRole(s.invite_create_role || "admin");
+          setThemeColor(s.server_theme_color || "");
           if (s.server_icon_url) setIconUrl(s.server_icon_url);
         } catch (e) {
           console.error("Failed to load server settings:", e);
@@ -348,6 +365,7 @@ function ServerSettingsTab() {
         tos_url: tos() || null,
         registration_mode: regMode(),
         invite_create_role: inviteRole(),
+        server_theme_color: themeColor() || null,
       } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
@@ -387,6 +405,25 @@ function ServerSettingsTab() {
           />
         </div>
         <div class="settings-form-group">
+          <label>{t("admin.themeColor")}</label>
+          <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+            <input
+              type="color"
+              value={themeColor() || "#f5e6f0"}
+              onInput={(e) => setThemeColor(e.currentTarget.value)}
+              style={{ width: "48px", height: "36px", padding: "2px", cursor: "pointer" }}
+            />
+            <input
+              type="text"
+              value={themeColor()}
+              onInput={(e) => setThemeColor(e.currentTarget.value)}
+              placeholder="#f5e6f0"
+              maxlength={7}
+              style={{ "max-width": "120px" }}
+            />
+          </div>
+        </div>
+        <div class="settings-form-group">
           <label>{t("admin.registrationMode")}</label>
           <select
             value={regMode()}
@@ -394,6 +431,7 @@ function ServerSettingsTab() {
           >
             <option value="open">{t("admin.regModeOpen")}</option>
             <option value="invite">{t("admin.regModeInvite")}</option>
+            <option value="approval">{t("admin.regModeApproval")}</option>
             <option value="closed">{t("admin.regModeClosed")}</option>
           </select>
         </div>
@@ -493,6 +531,103 @@ function SensitiveMarker() {
         </button>
       </div>
     </div>
+  );
+}
+
+function RegistrationsTab() {
+  const { t } = useI18n();
+  const [registrations, setRegistrations] = createSignal<PendingRegistration[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal("");
+
+  const reload = async () => {
+    setLoading(true);
+    try {
+      setRegistrations(await getPendingRegistrations());
+      setError("");
+    } catch {
+      setError(t("common.loadError"));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  createEffect(() => {
+    reload();
+  });
+
+  const handleApprove = async (userId: string) => {
+    try {
+      await approveRegistration(userId);
+      await reload();
+    } catch {}
+  };
+
+  const handleReject = async (userId: string) => {
+    if (!confirm(t("admin.confirmRejectRegistration"))) return;
+    try {
+      await rejectRegistration(userId);
+      await reload();
+    } catch {}
+  };
+
+  return (
+    <>
+      <div class="settings-section">
+        <h3>{t("admin.tabRegistrations")}</h3>
+        <Show when={error()}>
+          <div class="error">{error()}</div>
+        </Show>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show
+            when={registrations().length > 0}
+            fallback={<p class="admin-empty">{t("admin.noRegistrations")}</p>}
+          >
+            <div class="admin-table-container">
+              <table class="admin-table">
+                <thead>
+                  <tr>
+                    <th>{t("auth.username")}</th>
+                    <th>{t("auth.email")}</th>
+                    <th>{t("auth.reason")}</th>
+                    <th>{t("admin.createdAt")}</th>
+                    <th>{t("admin.actions")}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <For each={registrations()}>
+                    {(reg) => (
+                      <tr>
+                        <td>{reg.username}</td>
+                        <td>{reg.email}</td>
+                        <td class="admin-registration-reason">
+                          {reg.reason || "-"}
+                        </td>
+                        <td>{new Date(reg.created_at).toLocaleString()}</td>
+                        <td class="admin-actions">
+                          <button
+                            class="btn btn-small btn-primary"
+                            onClick={() => handleApprove(reg.id)}
+                          >
+                            {t("admin.approve")}
+                          </button>
+                          <button
+                            class="btn btn-small btn-danger"
+                            onClick={() => handleReject(reg.id)}
+                          >
+                            {t("admin.reject")}
+                          </button>
+                        </td>
+                      </tr>
+                    )}
+                  </For>
+                </tbody>
+              </table>
+            </div>
+          </Show>
+        </Show>
+      </div>
+    </>
   );
 }
 
@@ -1546,6 +1681,8 @@ function InvitesTab() {
   const [loading, setLoading] = createSignal(true);
   const [creating, setCreating] = createSignal(false);
   const [copied, setCopied] = createSignal("");
+  const [maxUses, setMaxUses] = createSignal<string>("1");
+  const [expiresInDays, setExpiresInDays] = createSignal<string>("");
 
   const load = async () => {
     try {
@@ -1568,7 +1705,12 @@ function InvitesTab() {
   const handleCreate = async () => {
     setCreating(true);
     try {
-      await createInviteCode();
+      const mu = maxUses();
+      const ed = expiresInDays();
+      await createInviteCode({
+        max_uses: mu === "" ? null : parseInt(mu, 10),
+        expires_in_days: ed ? parseInt(ed, 10) : null,
+      });
       await load();
     } catch {}
     setCreating(false);
@@ -1588,16 +1730,62 @@ function InvitesTab() {
     setTimeout(() => setCopied(""), 2000);
   };
 
+  const isExhausted = (inv: InviteCode) =>
+    inv.max_uses !== null && inv.use_count >= inv.max_uses;
+
+  const isExpired = (inv: InviteCode) =>
+    inv.expires_at !== null && new Date(inv.expires_at) < new Date();
+
+  const isAvailable = (inv: InviteCode) => !isExhausted(inv) && !isExpired(inv);
+
+  const usageLabel = (inv: InviteCode) => {
+    if (inv.max_uses === null) return `${inv.use_count}/${t("admin.inviteUnlimited")}`;
+    return `${inv.use_count}/${inv.max_uses}`;
+  };
+
   return (
     <div class="settings-section">
       <h3>{t("admin.tabInvites")}</h3>
-      <button
-        class="btn btn-small"
-        onClick={handleCreate}
-        disabled={creating()}
-      >
-        {creating() ? t("common.loading") : t("admin.createInvite")}
-      </button>
+      <div class="admin-invite-create-form">
+        <div class="admin-invite-create-fields">
+          <div class="field">
+            <label>{t("admin.inviteMaxUses")}</label>
+            <select
+              value={maxUses()}
+              onChange={(e) => setMaxUses(e.currentTarget.value)}
+            >
+              <option value="1">{t("admin.inviteSingleUse")}</option>
+              <option value="5">5</option>
+              <option value="10">10</option>
+              <option value="25">25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+              <option value="">{t("admin.inviteUnlimited")}</option>
+            </select>
+          </div>
+          <div class="field">
+            <label>{t("admin.inviteExpiry")}</label>
+            <select
+              value={expiresInDays()}
+              onChange={(e) => setExpiresInDays(e.currentTarget.value)}
+            >
+              <option value="">{t("admin.inviteNoExpiry")}</option>
+              <option value="1">1{t("admin.inviteDays")}</option>
+              <option value="7">7{t("admin.inviteDays")}</option>
+              <option value="30">30{t("admin.inviteDays")}</option>
+              <option value="90">90{t("admin.inviteDays")}</option>
+              <option value="365">365{t("admin.inviteDays")}</option>
+            </select>
+          </div>
+        </div>
+        <button
+          class="btn btn-small"
+          onClick={handleCreate}
+          disabled={creating()}
+        >
+          {creating() ? t("common.loading") : t("admin.createInvite")}
+        </button>
+      </div>
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
         <Show
           when={invites().length > 0}
@@ -1606,26 +1794,24 @@ function InvitesTab() {
           <div class="admin-invite-list">
             <For each={invites()}>
               {(inv) => (
-                <div class={`admin-invite-item${inv.used_by ? " used" : ""}`}>
+                <div class={`admin-invite-item${!isAvailable(inv) ? " used" : ""}`}>
                   <div class="admin-invite-info">
                     <code class="admin-invite-code">{inv.code}</code>
-                    <Show
-                      when={inv.used_by}
-                      fallback={
-                        <span class="admin-invite-unused">
-                          {t("admin.inviteUnused")}
-                        </span>
-                      }
-                    >
-                      <span class="admin-invite-used">
-                        {t("admin.inviteUsedBy")} @{inv.used_by}
+                    <span class={isAvailable(inv) ? "admin-invite-unused" : "admin-invite-used"}>
+                      {t("admin.inviteUsage")}: {usageLabel(inv)}
+                    </span>
+                    <Show when={inv.expires_at}>
+                      <span class={isExpired(inv) ? "admin-invite-used" : "admin-invite-unused"}>
+                        {isExpired(inv)
+                          ? t("admin.inviteExpired")
+                          : `${t("admin.inviteExpiresAt")} ${new Date(inv.expires_at!).toLocaleDateString()}`}
                       </span>
                     </Show>
                     <span class="admin-invite-time">
                       {new Date(inv.created_at).toLocaleString()}
                     </span>
                   </div>
-                  <Show when={!inv.used_by}>
+                  <Show when={isAvailable(inv)}>
                     <div class="admin-invite-actions">
                       <button
                         class="btn btn-small"

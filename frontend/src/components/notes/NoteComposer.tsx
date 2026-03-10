@@ -1,7 +1,9 @@
 import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
-import { createNote, uploadMedia, type Note, type MediaAttachment } from "../../api/statuses";
+import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment } from "../../api/statuses";
 import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
+import FocalPointPicker from "../FocalPointPicker";
+import EmojiPicker from "../reactions/EmojiPicker";
 import { sanitizeHtml } from "../../utils/sanitize";
 import type { DriveFile } from "../../api/drive";
 import {
@@ -39,8 +41,11 @@ export default function NoteComposer(props: Props) {
   const [uploading, setUploading] = createSignal(false);
   const [visMenuOpen, setVisMenuOpen] = createSignal(false);
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
+  const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
+  const [emojiPickerOpen, setEmojiPickerOpen] = createSignal(false);
 
   let fileInput!: HTMLInputElement;
+  let textareaRef!: HTMLTextAreaElement;
 
   // Auto-set visibility to match parent note when replying
   createEffect(() => {
@@ -91,19 +96,41 @@ export default function NoteComposer(props: Props) {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
+  const handleFocalSave = async (x: number, y: number) => {
+    const media = focalPickerMedia();
+    if (!media) return;
+    try {
+      const updated = await updateMedia(media.id, undefined, `${x},${y}`);
+      setAttachments((prev) => prev.map((a) => a.id === media.id ? updated : a));
+    } catch {
+      // silent — focal point is optional
+    }
+    setFocalPickerMedia(null);
+  };
+
   const handleDriveSelect = (driveFiles: DriveFile[]) => {
     setDrivePickerOpen(false);
     const remaining = MAX_FILES - attachments().length;
     const toAdd = driveFiles.slice(0, remaining);
-    const newAttachments: MediaAttachment[] = toAdd.map((f) => ({
-      id: f.id,
-      type: f.mime_type.startsWith("image/") ? "image" : "unknown",
-      url: f.url,
-      preview_url: f.url,
-      description: f.description,
-      blurhash: f.blurhash,
-      meta: f.width && f.height ? { original: { width: f.width, height: f.height } } : null,
-    }));
+    const newAttachments: MediaAttachment[] = toAdd.map((f) => {
+      const meta: MediaAttachment["meta"] = f.width && f.height
+        ? { original: { width: f.width, height: f.height } }
+        : null;
+      if (f.focal_x != null && f.focal_y != null) {
+        const m = meta || {};
+        m.focus = { x: f.focal_x, y: f.focal_y };
+        return {
+          id: f.id, type: f.mime_type.startsWith("image/") ? "image" : "unknown",
+          url: f.url, preview_url: f.url, description: f.description,
+          blurhash: f.blurhash, meta: m,
+        };
+      }
+      return {
+        id: f.id, type: f.mime_type.startsWith("image/") ? "image" : "unknown",
+        url: f.url, preview_url: f.url, description: f.description,
+        blurhash: f.blurhash, meta,
+      };
+    });
     setAttachments((prev) => [...prev, ...newAttachments]);
   };
 
@@ -160,6 +187,25 @@ export default function NoteComposer(props: Props) {
     }
   };
 
+  const handleEmojiSelect = (emoji: string) => {
+    const textarea = textareaRef;
+    const start = textarea?.selectionStart ?? content().length;
+    const end = textarea?.selectionEnd ?? content().length;
+    const before = content().slice(0, start);
+    const after = content().slice(end);
+    setContent(before + emoji + after);
+    setEmojiPickerOpen(false);
+    // カーソルを挿入した絵文字の後ろに移動
+    requestAnimationFrame(() => {
+      if (textarea) {
+        const pos = start + emoji.length;
+        textarea.selectionStart = pos;
+        textarea.selectionEnd = pos;
+        textarea.focus();
+      }
+    });
+  };
+
   const replyToActor = () => {
     const rt = props.replyTo;
     if (!rt) return null;
@@ -198,8 +244,14 @@ export default function NoteComposer(props: Props) {
         )}
       </Show>
       <textarea
+        ref={textareaRef}
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            handleSubmit(e);
+          }
+        }}
         onPaste={handlePaste}
         placeholder={props.replyTo ? t("reply.reply") + "..." : t("composer.placeholder")}
         rows={3}
@@ -211,6 +263,20 @@ export default function NoteComposer(props: Props) {
             {(media) => (
               <div class="composer-media-item">
                 <img src={media.preview_url} alt={media.description || ""} />
+                <button
+                  type="button"
+                  class="composer-media-focal-btn"
+                  onClick={() => setFocalPickerMedia(media)}
+                  title={t("composer.setFocalPoint")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3" />
+                    <line x1="12" y1="2" x2="12" y2="6" />
+                    <line x1="12" y1="18" x2="12" y2="22" />
+                    <line x1="2" y1="12" x2="6" y2="12" />
+                    <line x1="18" y1="12" x2="22" y2="12" />
+                  </svg>
+                </button>
                 <button
                   type="button"
                   class="composer-media-remove"
@@ -252,6 +318,28 @@ export default function NoteComposer(props: Props) {
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
           </button>
+          <div class="composer-emoji-wrap">
+            <button
+              type="button"
+              class="composer-attach-btn"
+              onClick={() => setEmojiPickerOpen(!emojiPickerOpen())}
+              title={t("composer.emoji" as any)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+            </button>
+            <Show when={emojiPickerOpen()}>
+              <div class="composer-emoji-backdrop" onClick={() => setEmojiPickerOpen(false)} />
+              <EmojiPicker
+                onSelect={handleEmojiSelect}
+                onClose={() => setEmojiPickerOpen(false)}
+              />
+            </Show>
+          </div>
           <input
             ref={fileInput}
             type="file"
@@ -305,6 +393,17 @@ export default function NoteComposer(props: Props) {
           onSelect={handleDriveSelect}
           onClose={() => setDrivePickerOpen(false)}
         />
+      </Show>
+      <Show when={focalPickerMedia()}>
+        {(media) => (
+          <FocalPointPicker
+            imageUrl={media().url}
+            initialX={media().meta?.focus?.x}
+            initialY={media().meta?.focus?.y}
+            onSave={handleFocalSave}
+            onClose={() => setFocalPickerMedia(null)}
+          />
+        )}
       </Show>
     </form>
   );
