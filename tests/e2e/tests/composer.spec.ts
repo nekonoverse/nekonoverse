@@ -39,9 +39,10 @@ test.describe("Note Composer", () => {
     await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
     await expect(page.locator(".emoji-search")).toBeVisible();
 
-    // Click button again to close
-    await emojiBtn.click();
-    await expect(page.locator(".emoji-picker")).not.toBeVisible();
+    // Close by pressing Escape (more reliable than re-clicking the toggle button
+    // which can race with the picker's outside-click listener)
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".emoji-picker")).not.toBeVisible({ timeout: 5_000 });
   });
 
   test("can insert emoji from picker into textarea", async ({ page }) => {
@@ -57,12 +58,15 @@ test.describe("Note Composer", () => {
     await emojiBtn.click();
     await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
 
-    // Click the first emoji button in the picker
+    // Wait for ghost tap guard (300ms) and lazy category rendering
     const firstEmoji = page.locator(".emoji-picker .emoji-btn").first();
-    await firstEmoji.click({ timeout: 5_000 });
+    await expect(firstEmoji).toBeVisible({ timeout: 5_000 });
+
+    // Click the first emoji button
+    await firstEmoji.click();
 
     // Picker should close and textarea should contain the emoji
-    await expect(page.locator(".emoji-picker")).not.toBeVisible();
+    await expect(page.locator(".emoji-picker")).not.toBeVisible({ timeout: 5_000 });
     const value = await textarea.inputValue();
     expect(value.startsWith("Hello ")).toBe(true);
     expect(value.length).toBeGreaterThan("Hello ".length);

@@ -81,11 +81,16 @@ export default function EmojiPicker(props: Props) {
         props.onClose();
       }
     };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") props.onClose();
+    };
     document.addEventListener("mousedown", handleClick);
     document.addEventListener("touchstart", handleClick, { passive: true });
+    document.addEventListener("keydown", handleKeyDown);
     onCleanup(() => {
       document.removeEventListener("mousedown", handleClick);
       document.removeEventListener("touchstart", handleClick);
+      document.removeEventListener("keydown", handleKeyDown);
     });
 
     getCustomEmojis()
