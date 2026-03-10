@@ -310,6 +310,27 @@ export async function revokeInviteCode(code: string): Promise<void> {
   await apiRequest(`/api/v1/invites/${code}`, { method: "DELETE" });
 }
 
+// Pending Registrations
+export interface PendingRegistration {
+  id: string;
+  username: string;
+  email: string;
+  reason: string | null;
+  created_at: string;
+}
+
+export async function getPendingRegistrations(): Promise<PendingRegistration[]> {
+  return apiRequest<PendingRegistration[]>("/api/v1/admin/registrations");
+}
+
+export async function approveRegistration(userId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/registrations/${userId}/approve`, { method: "POST" });
+}
+
+export async function rejectRegistration(userId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/registrations/${userId}/reject`, { method: "POST" });
+}
+
 // Federation
 export interface DeliveryStats {
   success: number;
