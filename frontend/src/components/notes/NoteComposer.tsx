@@ -224,6 +224,11 @@ export default function NoteComposer(props: Props) {
       <textarea
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+            handleSubmit(e);
+          }
+        }}
         onPaste={handlePaste}
         placeholder={props.replyTo ? t("reply.reply") + "..." : t("composer.placeholder")}
         rows={3}
