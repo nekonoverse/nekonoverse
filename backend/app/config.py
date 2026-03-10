@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     s3_bucket: str = "nekonoverse"
     s3_region: str = "us-east-1"
     skip_ssl_verify: bool = False
+    face_detect_url: str | None = None
 
     use_https: bool = True
 

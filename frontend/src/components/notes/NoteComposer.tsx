@@ -1,7 +1,8 @@
 import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
-import { createNote, uploadMedia, type Note, type MediaAttachment } from "../../api/statuses";
+import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment } from "../../api/statuses";
 import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
+import FocalPointPicker from "../FocalPointPicker";
 import { sanitizeHtml } from "../../utils/sanitize";
 import type { DriveFile } from "../../api/drive";
 import {
@@ -39,6 +40,7 @@ export default function NoteComposer(props: Props) {
   const [uploading, setUploading] = createSignal(false);
   const [visMenuOpen, setVisMenuOpen] = createSignal(false);
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
+  const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
 
   let fileInput!: HTMLInputElement;
 
@@ -91,19 +93,41 @@ export default function NoteComposer(props: Props) {
     setAttachments((prev) => prev.filter((a) => a.id !== id));
   };
 
+  const handleFocalSave = async (x: number, y: number) => {
+    const media = focalPickerMedia();
+    if (!media) return;
+    try {
+      const updated = await updateMedia(media.id, undefined, `${x},${y}`);
+      setAttachments((prev) => prev.map((a) => a.id === media.id ? updated : a));
+    } catch {
+      // silent — focal point is optional
+    }
+    setFocalPickerMedia(null);
+  };
+
   const handleDriveSelect = (driveFiles: DriveFile[]) => {
     setDrivePickerOpen(false);
     const remaining = MAX_FILES - attachments().length;
     const toAdd = driveFiles.slice(0, remaining);
-    const newAttachments: MediaAttachment[] = toAdd.map((f) => ({
-      id: f.id,
-      type: f.mime_type.startsWith("image/") ? "image" : "unknown",
-      url: f.url,
-      preview_url: f.url,
-      description: f.description,
-      blurhash: f.blurhash,
-      meta: f.width && f.height ? { original: { width: f.width, height: f.height } } : null,
-    }));
+    const newAttachments: MediaAttachment[] = toAdd.map((f) => {
+      const meta: MediaAttachment["meta"] = f.width && f.height
+        ? { original: { width: f.width, height: f.height } }
+        : null;
+      if (f.focal_x != null && f.focal_y != null) {
+        const m = meta || {};
+        m.focus = { x: f.focal_x, y: f.focal_y };
+        return {
+          id: f.id, type: f.mime_type.startsWith("image/") ? "image" : "unknown",
+          url: f.url, preview_url: f.url, description: f.description,
+          blurhash: f.blurhash, meta: m,
+        };
+      }
+      return {
+        id: f.id, type: f.mime_type.startsWith("image/") ? "image" : "unknown",
+        url: f.url, preview_url: f.url, description: f.description,
+        blurhash: f.blurhash, meta,
+      };
+    });
     setAttachments((prev) => [...prev, ...newAttachments]);
   };
 
@@ -213,6 +237,20 @@ export default function NoteComposer(props: Props) {
                 <img src={media.preview_url} alt={media.description || ""} />
                 <button
                   type="button"
+                  class="composer-media-focal-btn"
+                  onClick={() => setFocalPickerMedia(media)}
+                  title={t("composer.setFocalPoint")}
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="3" />
+                    <line x1="12" y1="2" x2="12" y2="6" />
+                    <line x1="12" y1="18" x2="12" y2="22" />
+                    <line x1="2" y1="12" x2="6" y2="12" />
+                    <line x1="18" y1="12" x2="22" y2="12" />
+                  </svg>
+                </button>
+                <button
+                  type="button"
                   class="composer-media-remove"
                   onClick={() => removeAttachment(media.id)}
                 >
@@ -305,6 +343,17 @@ export default function NoteComposer(props: Props) {
           onSelect={handleDriveSelect}
           onClose={() => setDrivePickerOpen(false)}
         />
+      </Show>
+      <Show when={focalPickerMedia()}>
+        {(media) => (
+          <FocalPointPicker
+            imageUrl={media().url}
+            initialX={media().meta?.focus?.x}
+            initialY={media().meta?.focus?.y}
+            onSave={handleFocalSave}
+            onClose={() => setFocalPickerMedia(null)}
+          />
+        )}
       </Show>
     </form>
   );

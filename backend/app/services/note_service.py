@@ -824,6 +824,16 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             )
         if not att_url or not isinstance(att_url, str):
             continue
+        # Parse focalPoint [x, y]
+        focal_x, focal_y = None, None
+        fp = att_data.get("focalPoint")
+        if isinstance(fp, list) and len(fp) >= 2:
+            try:
+                focal_x = max(-1.0, min(1.0, float(fp[0])))
+                focal_y = max(-1.0, min(1.0, float(fp[1])))
+            except (ValueError, TypeError):
+                pass
+
         attachment = NoteAttachment(
             note_id=note.id,
             position=position,
@@ -834,6 +844,8 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             remote_width=att_data.get("width"),
             remote_height=att_data.get("height"),
             remote_description=att_data.get("name"),
+            remote_focal_x=focal_x,
+            remote_focal_y=focal_y,
         )
         db.add(attachment)
 
