@@ -99,6 +99,7 @@ def mock_valkey():
     mock.brpop = AsyncMock(return_value=None)
     mock.incr = AsyncMock(return_value=1)
     mock.expire = AsyncMock(return_value=True)
+    mock.scan = AsyncMock(return_value=(0, []))
     with patch("app.valkey_client.valkey", mock):
         yield mock
 
