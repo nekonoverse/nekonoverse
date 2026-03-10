@@ -96,6 +96,13 @@ export default function Home() {
       // ignore
     } finally {
       setLoadingMore(false);
+      // Re-observe sentinel: IntersectionObserver only fires on state *changes*,
+      // so if the sentinel is still in view after appending notes we must
+      // reset observation to trigger the next page load.
+      if (observer && sentinelRef && hasMore()) {
+        observer.unobserve(sentinelRef);
+        observer.observe(sentinelRef);
+      }
     }
   };
 
