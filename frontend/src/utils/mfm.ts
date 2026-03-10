@@ -5,6 +5,21 @@ import { emojiToUrl } from "./twemoji";
 
 const HEX_COLOR_RE = /^[0-9a-fA-F]{3,6}$/;
 const SAFE_FONTS = new Set(["serif", "monospace", "cursive", "fantasy", "math"]);
+const SAFE_URL_PROTOCOLS = new Set(["http:", "https:"]);
+
+/**
+ * Check whether a URL uses a safe protocol (http/https only).
+ * Blocks javascript:, data:, vbscript:, and all other non-http protocols
+ * to prevent XSS from malicious remote MFM content.
+ */
+export function isSafeUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url, "https://dummy.invalid");
+    return SAFE_URL_PROTOCOLS.has(parsed.protocol);
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Parse MFM source text and render it as DOM nodes into the target element.
@@ -129,6 +144,12 @@ function renderNode(
     }
 
     case "link": {
+      if (!isSafeUrl(node.props.url)) {
+        // Unsafe protocol — render children as plain text
+        const span = document.createElement("span");
+        renderChildren(span, node.children, emojiMap, navigate);
+        return span;
+      }
       const el = document.createElement("a");
       el.href = node.props.url;
       el.target = "_blank";
@@ -138,6 +159,10 @@ function renderNode(
     }
 
     case "url": {
+      if (!isSafeUrl(node.props.url)) {
+        // Unsafe protocol — render as plain text
+        return document.createTextNode(node.props.url);
+      }
       const el = document.createElement("a");
       el.href = node.props.url;
       el.target = "_blank";
