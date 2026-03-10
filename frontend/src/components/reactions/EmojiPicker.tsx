@@ -30,6 +30,11 @@ export default function EmojiPicker(props: Props) {
     getRecentEmojis()
   );
 
+  // Guard against ghost-tap on iOS: ignore clicks for 300ms after opening
+  const [ready, setReady] = createSignal(false);
+  const readyTimer = setTimeout(() => setReady(true), 300);
+  onCleanup(() => clearTimeout(readyTimer));
+
   const isUsed = (emoji: string) => props.usedEmojis?.includes(emoji) ?? false;
 
   onMount(() => {
@@ -89,6 +94,7 @@ export default function EmojiPicker(props: Props) {
   // --- Selection handlers ---
 
   const selectUnicode = (def: UnicodeEmojiDef) => {
+    if (!ready()) return;
     addRecentEmoji({
       emoji: def.emoji,
       isCustom: false,
@@ -100,6 +106,7 @@ export default function EmojiPicker(props: Props) {
   };
 
   const selectCustom = (emoji: CustomEmoji) => {
+    if (!ready()) return;
     const emojiStr = `:${emoji.shortcode}:`;
     addRecentEmoji({
       emoji: emojiStr,
@@ -113,6 +120,7 @@ export default function EmojiPicker(props: Props) {
   };
 
   const selectRecent = (recent: RecentEmoji) => {
+    if (!ready()) return;
     addRecentEmoji(recent);
     setRecentEmojis(getRecentEmojis());
     props.onSelect(recent.emoji);
