@@ -62,7 +62,8 @@ test.describe("Note Composer", () => {
     const firstEmoji = page.locator(".emoji-picker .emoji-btn").first();
     await expect(firstEmoji).toBeVisible({ timeout: 5_000 });
 
-    // Click the first emoji button
+    // Scroll into view (LazyCategory may render emoji outside the picker viewport)
+    await firstEmoji.scrollIntoViewIfNeeded();
     await firstEmoji.click();
 
     // Picker should close and textarea should contain the emoji
