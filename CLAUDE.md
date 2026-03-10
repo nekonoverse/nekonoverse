@@ -160,27 +160,39 @@ docker compose logs -f frontend
 ### Branches
 
 - **`main`**: Stable releases only. Tagged with `yyyymmdd-x` (例: `20260311-1`).
+  - **main には直接コミットしない。** すべての変更は develop 経由で行う。直接 push するとブランチが乖離し修復が必要になる。
 - **`develop`**: Active development branch. Push here for `unstable` Docker images.
-- Merge to main: `git merge --no-ff develop`
+- Feature/fix branches: `feature/<name>`, `fix/<name>` — develop から作成し、PR は `upstream/develop` に出す。
+- Merge to main: リリース時のみ `git merge --no-ff develop`
 - Tag on main: `git tag yyyymmdd-x`
+- **注意**: main は `--no-ff` マージコミットの分だけ develop より ahead になるが、これは正常。main が develop より **behind** になることがあってはならない。
 
 ### 作業開始前のルール
 
 1. **最新を取り込む** — 作業開始前に `git pull upstream develop` で最新の develop を取り込む。コンフリクトがあれば先に解消する。
 2. **Plan Issue を作成する** — 作業開始前に `nekonoverse/nekonoverse` にIssueを立てる (`gh issue create -R nekonoverse/nekonoverse`)。タイトルに `[Plan]` プレフィックスを付ける。自分で実装する場合のみ自分にアサインする。Issueだけ立てる場合はアサインしない。
 3. **重複チェック** — Issue作成前に `gh issue list -R nekonoverse/nekonoverse -l plan` や検索で、同じ内容の既存Planが進行中でないか確認する。進行中の重複があればそちらに合流する。
-4. **作業完了後** — `origin` (fork) に push → `upstream` に PR またはマージ。Plan Issue を閉じる。
+4. **作業完了後** — `origin` (fork) に push → `upstream/develop` に PR を作成。CI が通ったらマージし、Plan Issue を閉じる。
 5. **セキュリティチェック** — セキュリティ監査はIssueを立てずに実施する。脆弱性の詳細を公開Issueに書かない。修正はPRのみで行い、PRタイトル・本文にも攻撃手法の詳細を含めない。
 
 ### リリース手順
 
-1. **バージョン番号を更新する** — 以下の3箇所を新しいバージョンに揃える:
+1. **CHANGELOG.md を更新する** — 新しいリリースエントリを先頭に追加する。
+2. **バージョン番号を更新する** — 以下の3箇所を新しいバージョンに揃える:
    - `backend/app/__init__.py` → `__version__ = "yyyymmdd-x"` (nodeinfoはここから読み取る)
    - `backend/pyproject.toml` → `version = "yyyymmdd-x"`
    - `frontend/package.json` → `"version": "yyyymmdd-x"`
-2. **develop にコミット・push**
-3. **main にマージ**: `git checkout main && git merge --no-ff develop`
-4. **タグを打つ**: `git tag yyyymmdd-x && git push upstream main --tags`
+3. **develop にコミット・push** — `git push upstream develop`
+4. **main にマージ**:
+   ```bash
+   git checkout main
+   git pull upstream main
+   git merge --no-ff upstream/develop
+   # コンフリクトが発生した場合は develop 側 (--theirs) を採用して解消
+   git push upstream main
+   ```
+5. **タグを打つ**: `git tag yyyymmdd-x && git push upstream main --tags`
+6. **GitHub Release を作成する**: `gh release create yyyymmdd-x -R nekonoverse/nekonoverse --title "yyyymmdd-x" --latest --notes-file -` (またはリリースノートを指定)
 
 ### Docker Image Tags (CI)
 - `yyyymmdd-x` tag push → `latest` + タグ名 (例: `20260311-1`)
