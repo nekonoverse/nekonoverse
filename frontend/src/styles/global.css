@@ -1169,6 +1169,7 @@ a:hover {
   object-fit: cover;
   max-height: 300px;
   display: block;
+  transition: object-position 0.6s ease-in-out;
 }
 
 .note-media-2 .note-media-item img,

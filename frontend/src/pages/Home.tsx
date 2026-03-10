@@ -173,8 +173,12 @@ export default function Home() {
       ) {
         return;
       }
-      // Check for duplicate across both notes and buffer
-      if (notes().some((n) => n.id === id)) return;
+      // If this note already exists, update it in-place
+      // (handles focal point updates, edits, reaction changes, etc.)
+      if (notes().some((n) => n.id === id)) {
+        setNotes((prev) => prev.map((n) => (n.id === id ? note : n)));
+        return;
+      }
       if (bufferedNotes().some((n) => n.id === id)) return;
 
       if (isAtTop()) {
