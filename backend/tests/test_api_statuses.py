@@ -340,3 +340,261 @@ async def test_get_status_followers_hidden_unauthenticated(
 
     resp = await app_client.get(f"/api/v1/statuses/{note_id}")
     assert resp.status_code == 404
+
+
+# --- Edit tests ---
+
+
+async def test_edit_status(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Original content", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.put(f"/api/v1/statuses/{note_id}", json={
+        "content": "Edited content"
+    })
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "Edited content" in data["content"]
+    assert data["edited_at"] is not None
+
+
+async def test_edit_status_not_found(authed_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await authed_client.put(f"/api/v1/statuses/{fake_id}", json={
+        "content": "Edited"
+    })
+    assert resp.status_code == 404
+
+
+async def test_edit_status_not_owner(authed_client, test_user_b, db, app_client, mock_valkey):
+    """Cannot edit another user's note."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Not yours", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.put(f"/api/v1/statuses/{note_id}", json={
+        "content": "Hijacked"
+    })
+    assert resp.status_code == 403
+
+
+async def test_edit_status_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.put(f"/api/v1/statuses/{uuid.uuid4()}", json={
+        "content": "Edited"
+    })
+    assert resp.status_code == 401
+
+
+# --- History tests ---
+
+
+async def test_get_status_history(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Version 1", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.put(f"/api/v1/statuses/{note_id}", json={
+        "content": "Version 2"
+    })
+
+    resp = await authed_client.get(f"/api/v1/statuses/{note_id}/history")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    assert "Version 1" in data[0]["content"]
+    assert "Version 2" in data[1]["content"]
+
+
+async def test_get_status_history_not_found(app_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await app_client.get(f"/api/v1/statuses/{fake_id}/history")
+    assert resp.status_code == 404
+
+
+# --- Context tests ---
+
+
+async def test_get_status_context(authed_client, mock_valkey):
+    parent = await authed_client.post("/api/v1/statuses", json={
+        "content": "Parent", "visibility": "public"
+    })
+    parent_id = parent.json()["id"]
+
+    reply = await authed_client.post("/api/v1/statuses", json={
+        "content": "Reply", "visibility": "public", "in_reply_to_id": parent_id
+    })
+    reply_id = reply.json()["id"]
+
+    resp = await authed_client.get(f"/api/v1/statuses/{reply_id}/context")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["ancestors"]) >= 1
+    assert data["ancestors"][0]["id"] == parent_id
+
+    resp2 = await authed_client.get(f"/api/v1/statuses/{parent_id}/context")
+    assert resp2.status_code == 200
+    data2 = resp2.json()
+    assert len(data2["descendants"]) >= 1
+    assert data2["descendants"][0]["id"] == reply_id
+
+
+async def test_get_status_context_empty(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "No context", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.get(f"/api/v1/statuses/{note_id}/context")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ancestors"] == []
+    assert data["descendants"] == []
+
+
+async def test_get_status_context_not_found(app_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await app_client.get(f"/api/v1/statuses/{fake_id}/context")
+    assert resp.status_code == 404
+
+
+# --- Reacted by tests ---
+
+
+async def test_reacted_by(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Reacted by test", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/react/👍")
+
+    resp = await authed_client.get(f"/api/v1/statuses/{note_id}/reacted_by")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) >= 1
+    assert data[0]["emoji"] == "👍"
+    assert data[0]["actor"]["username"] == "testuser"
+
+
+async def test_reacted_by_filter_emoji(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Multi react", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/react/👍")
+
+    resp = await authed_client.get(
+        f"/api/v1/statuses/{note_id}/reacted_by", params={"emoji": "👍"},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()) >= 1
+
+    resp2 = await authed_client.get(
+        f"/api/v1/statuses/{note_id}/reacted_by", params={"emoji": "😀"},
+    )
+    assert resp2.status_code == 200
+    assert len(resp2.json()) == 0
+
+
+async def test_reacted_by_not_found(app_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await app_client.get(f"/api/v1/statuses/{fake_id}/reacted_by")
+    assert resp.status_code == 404
+
+
+# --- Bookmark tests ---
+
+
+async def test_bookmark_status(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Bookmark me", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/bookmark")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+async def test_bookmark_not_found(authed_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await authed_client.post(f"/api/v1/statuses/{fake_id}/bookmark")
+    assert resp.status_code == 404
+
+
+async def test_bookmark_duplicate(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Dup bookmark", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/bookmark")
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/bookmark")
+    assert resp.status_code == 422
+
+
+async def test_unbookmark_status(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unbookmark me", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/bookmark")
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/unbookmark")
+    assert resp.status_code == 200
+
+
+async def test_unbookmark_not_found(authed_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await authed_client.post(f"/api/v1/statuses/{fake_id}/unbookmark")
+    assert resp.status_code == 404
+
+
+async def test_bookmark_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.post(f"/api/v1/statuses/{uuid.uuid4()}/bookmark")
+    assert resp.status_code == 401
+
+
+# --- Pin/Unpin tests ---
+
+
+async def test_pin_status(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Pin me", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/pin")
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+async def test_pin_duplicate(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Dup pin", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/pin")
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/pin")
+    assert resp.status_code == 422
+
+
+async def test_unpin_status(authed_client, mock_valkey):
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unpin me", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/pin")
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/unpin")
+    assert resp.status_code == 200
+
+
+async def test_unpin_not_found(authed_client, mock_valkey):
+    fake_id = str(uuid.uuid4())
+    resp = await authed_client.post(f"/api/v1/statuses/{fake_id}/unpin")
+    assert resp.status_code == 404
+
+
+async def test_pin_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.post(f"/api/v1/statuses/{uuid.uuid4()}/pin")
+    assert resp.status_code == 401
