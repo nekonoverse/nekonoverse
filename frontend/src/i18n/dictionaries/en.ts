@@ -46,6 +46,7 @@ export const en: Dictionary = {
   "composer.setFocalPoint": "Set focal point",
   "composer.focalPoint": "Focal Point",
   "composer.saveFocalPoint": "Save",
+  "composer.emoji": "Insert emoji",
   "lang.ja": "日本語",
   "lang.en": "English",
   "auth.or": "or",

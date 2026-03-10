@@ -46,6 +46,7 @@ export const neko: Dictionary = {
   "composer.setFocalPoint": "にゃんてんを設定にゃ",
   "composer.focalPoint": "にゃんてんの設定にゃ",
   "composer.saveFocalPoint": "保存にゃ",
+  "composer.emoji": "えもじをいれるにゃ",
   "lang.ja": "日本語",
   "lang.en": "English",
   "auth.or": "または",

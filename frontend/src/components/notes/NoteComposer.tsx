@@ -3,6 +3,7 @@ import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment }
 import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
+import EmojiPicker from "../reactions/EmojiPicker";
 import { sanitizeHtml } from "../../utils/sanitize";
 import type { DriveFile } from "../../api/drive";
 import {
@@ -41,8 +42,10 @@ export default function NoteComposer(props: Props) {
   const [visMenuOpen, setVisMenuOpen] = createSignal(false);
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
   const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
+  const [emojiPickerOpen, setEmojiPickerOpen] = createSignal(false);
 
   let fileInput!: HTMLInputElement;
+  let textareaRef!: HTMLTextAreaElement;
 
   // Auto-set visibility to match parent note when replying
   createEffect(() => {
@@ -184,6 +187,25 @@ export default function NoteComposer(props: Props) {
     }
   };
 
+  const handleEmojiSelect = (emoji: string) => {
+    const textarea = textareaRef;
+    const start = textarea?.selectionStart ?? content().length;
+    const end = textarea?.selectionEnd ?? content().length;
+    const before = content().slice(0, start);
+    const after = content().slice(end);
+    setContent(before + emoji + after);
+    setEmojiPickerOpen(false);
+    // カーソルを挿入した絵文字の後ろに移動
+    requestAnimationFrame(() => {
+      if (textarea) {
+        const pos = start + emoji.length;
+        textarea.selectionStart = pos;
+        textarea.selectionEnd = pos;
+        textarea.focus();
+      }
+    });
+  };
+
   const replyToActor = () => {
     const rt = props.replyTo;
     if (!rt) return null;
@@ -222,6 +244,7 @@ export default function NoteComposer(props: Props) {
         )}
       </Show>
       <textarea
+        ref={textareaRef}
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
         onKeyDown={(e) => {
@@ -295,6 +318,28 @@ export default function NoteComposer(props: Props) {
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
           </button>
+          <div class="composer-emoji-wrap">
+            <button
+              type="button"
+              class="composer-attach-btn"
+              onClick={() => setEmojiPickerOpen(!emojiPickerOpen())}
+              title={t("composer.emoji" as any)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="10" />
+                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+                <line x1="9" y1="9" x2="9.01" y2="9" />
+                <line x1="15" y1="9" x2="15.01" y2="9" />
+              </svg>
+            </button>
+            <Show when={emojiPickerOpen()}>
+              <div class="composer-emoji-backdrop" onClick={() => setEmojiPickerOpen(false)} />
+              <EmojiPicker
+                onSelect={handleEmojiSelect}
+                onClose={() => setEmojiPickerOpen(false)}
+              />
+            </Show>
+          </div>
           <input
             ref={fileInput}
             type="file"
