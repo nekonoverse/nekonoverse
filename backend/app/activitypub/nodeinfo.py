@@ -79,6 +79,7 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     node_name = "Nekonoverse"
     node_description = "A cat-friendly ActivityPub server"
     node_icon_url = None
+    node_theme_color = None
     try:
         from app.services.server_settings_service import get_setting
         name = await get_setting(db, "server_name")
@@ -90,6 +91,9 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
         icon_url = await get_setting(db, "server_icon_url")
         if icon_url:
             node_icon_url = icon_url
+        theme_color = await get_setting(db, "server_theme_color")
+        if theme_color:
+            node_theme_color = theme_color
     except Exception:
         pass
 
@@ -100,6 +104,8 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     }
     if node_icon_url:
         metadata["iconUrl"] = node_icon_url
+    if node_theme_color:
+        metadata["themeColor"] = node_theme_color
 
     return {
         "version": "2.0",

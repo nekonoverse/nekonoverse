@@ -327,6 +327,7 @@ function ServerSettingsTab() {
   const [tos, setTos] = createSignal("");
   const [regMode, setRegMode] = createSignal("open");
   const [inviteRole, setInviteRole] = createSignal("admin");
+  const [themeColor, setThemeColor] = createSignal("");
   const [iconUrl, setIconUrl] = createSignal("");
   const [uploadingIcon, setUploadingIcon] = createSignal(false);
   let iconInput!: HTMLInputElement;
@@ -345,6 +346,7 @@ function ServerSettingsTab() {
           setTos(s.tos_url || "");
           setRegMode(s.registration_mode || "open");
           setInviteRole(s.invite_create_role || "admin");
+          setThemeColor(s.server_theme_color || "");
           if (s.server_icon_url) setIconUrl(s.server_icon_url);
         } catch (e) {
           console.error("Failed to load server settings:", e);
@@ -363,6 +365,7 @@ function ServerSettingsTab() {
         tos_url: tos() || null,
         registration_mode: regMode(),
         invite_create_role: inviteRole(),
+        server_theme_color: themeColor() || null,
       } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
@@ -400,6 +403,25 @@ function ServerSettingsTab() {
             value={tos()}
             onInput={(e) => setTos(e.currentTarget.value)}
           />
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.themeColor")}</label>
+          <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+            <input
+              type="color"
+              value={themeColor() || "#f5e6f0"}
+              onInput={(e) => setThemeColor(e.currentTarget.value)}
+              style={{ width: "48px", height: "36px", padding: "2px", cursor: "pointer" }}
+            />
+            <input
+              type="text"
+              value={themeColor()}
+              onInput={(e) => setThemeColor(e.currentTarget.value)}
+              placeholder="#f5e6f0"
+              maxlength={7}
+              style={{ "max-width": "120px" }}
+            />
+          </div>
         </div>
         <div class="settings-form-group">
           <label>{t("admin.registrationMode")}</label>

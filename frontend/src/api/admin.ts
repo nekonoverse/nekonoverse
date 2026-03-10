@@ -14,6 +14,7 @@ export interface ServerSettings {
   registration_mode: string;
   invite_create_role: string;
   server_icon_url: string | null;
+  server_theme_color: string | null;
 }
 
 export interface AdminUser {

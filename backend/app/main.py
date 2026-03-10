@@ -72,6 +72,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     description = "A cat-friendly ActivityPub server"
     registration_open = settings.registration_open
     registration_mode = "open"
+    theme_color = None
     try:
         icon_url = await get_setting(db, "server_icon_url")
         if icon_url:
@@ -91,6 +92,9 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
             if reg is not None:
                 registration_open = reg == "true"
             registration_mode = "open" if registration_open else "closed"
+        tc = await get_setting(db, "server_theme_color")
+        if tc:
+            theme_color = tc
     except Exception:
         pass
 
@@ -106,6 +110,8 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     }
     if thumbnail_url:
         resp["thumbnail"] = {"url": thumbnail_url}
+    if theme_color:
+        resp["theme_color"] = theme_color
     return resp
 
 
@@ -117,6 +123,7 @@ async def manifest(db: AsyncSession = Depends(get_db)):
 
     name = await get_setting(db, "server_name") or "Nekonoverse"
     icon_url = await get_setting(db, "server_icon_url")
+    theme_color = await get_setting(db, "server_theme_color") or "#f5e6f0"
 
     if icon_url:
         icons = [
@@ -142,8 +149,8 @@ async def manifest(db: AsyncSession = Depends(get_db)):
             "name": name,
             "short_name": name,
             "description": "A cozy Fediverse social network",
-            "theme_color": "#f5e6f0",
-            "background_color": "#f5e6f0",
+            "theme_color": theme_color,
+            "background_color": theme_color,
             "display": "standalone",
             "scope": "/",
             "start_url": "/",

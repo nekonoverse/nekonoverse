@@ -12,6 +12,7 @@ class ServerSettingsResponse(BaseModel):
     registration_mode: str = "open"
     invite_create_role: str = "admin"
     server_icon_url: str | None = None
+    server_theme_color: str | None = None
 
 
 class ServerSettingsUpdate(BaseModel):
@@ -21,6 +22,9 @@ class ServerSettingsUpdate(BaseModel):
     registration_open: bool | None = None
     registration_mode: str | None = Field(None, pattern=r"^(open|invite|closed|approval)$")
     invite_create_role: str | None = Field(None, pattern=r"^(admin|moderator|user)$")
+    server_theme_color: str | None = Field(
+        None, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$"
+    )
 
 
 class AdminUserResponse(BaseModel):

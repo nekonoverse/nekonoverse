@@ -97,6 +97,7 @@ async def get_server_settings(
         registration_mode=mode,
         invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
+        server_theme_color=settings.get("server_theme_color"),
     )
 
 
@@ -142,6 +143,7 @@ async def update_server_settings(
         registration_mode=mode,
         invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
+        server_theme_color=settings.get("server_theme_color"),
     )
 
 
