@@ -159,10 +159,10 @@ docker compose logs -f frontend
 
 ### Branches
 
-- **`main`**: Stable releases only. Tagged with semver (`v0.5.0`, `v0.5.1`, ...).
+- **`main`**: Stable releases only. Tagged with `yyyymmdd-x` (例: `20260311-1`).
 - **`develop`**: Active development branch. Push here for `unstable` Docker images.
 - Merge to main: `git merge --no-ff develop`
-- Tag on main: `git tag v<version>`
+- Tag on main: `git tag yyyymmdd-x`
 
 ### 作業開始前のルール
 
@@ -175,15 +175,15 @@ docker compose logs -f frontend
 ### リリース手順
 
 1. **バージョン番号を更新する** — 以下の3箇所を新しいバージョンに揃える:
-   - `backend/app/__init__.py` → `__version__ = "X.Y.Z"` (nodeinfoはここから読み取る)
-   - `backend/pyproject.toml` → `version = "X.Y.Z"`
-   - `frontend/package.json` → `"version": "X.Y.Z"`
+   - `backend/app/__init__.py` → `__version__ = "yyyymmdd-x"` (nodeinfoはここから読み取る)
+   - `backend/pyproject.toml` → `version = "yyyymmdd-x"`
+   - `frontend/package.json` → `"version": "yyyymmdd-x"`
 2. **develop にコミット・push**
 3. **main にマージ**: `git checkout main && git merge --no-ff develop`
-4. **タグを打つ**: `git tag vX.Y.Z && git push origin main --tags`
+4. **タグを打つ**: `git tag yyyymmdd-x && git push upstream main --tags`
 
 ### Docker Image Tags (CI)
-- `v*` tag push → `latest` + semver tags (`0.5.1`, `0.5`)
+- `yyyymmdd-x` tag push → `latest` + タグ名 (例: `20260311-1`)
 - `develop` push → `unstable` tag
 
 ## CI/CD
@@ -192,7 +192,7 @@ docker compose logs -f frontend
 |----------|---------|---------|
 | `test.yml` | PR / push to develop | Backend tests, E2E tests (Playwright), frontend build |
 | `federation-test.yml` | PR / push to develop | Multi-instance federation test |
-| `docker-publish.yml` | Tag push (`v*`) / develop push | Docker image build & publish |
+| `docker-publish.yml` | Tag push (`yyyymmdd-*`) / develop push | Docker image build & publish |
 | `docs.yml` | Push to main | MkDocs documentation deploy |
 
 ## Environment Variables
