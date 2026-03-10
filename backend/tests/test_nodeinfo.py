@@ -1,4 +1,3 @@
-import pytest
 
 from app import __version__
 from tests.conftest import make_note
@@ -74,3 +73,57 @@ async def test_nodeinfo_metadata(app_client):
     data = resp.json()
     assert data["metadata"]["nodeName"] == "Nekonoverse"
     assert "emoji_reactions" in data["metadata"]["features"]
+
+
+async def test_nodeinfo_custom_server_name(app_client, db):
+    from app.services.server_settings_service import set_setting
+    await set_setting(db, "server_name", "My Custom Server")
+    await db.commit()
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["metadata"]["nodeName"] == "My Custom Server"
+
+
+async def test_nodeinfo_custom_description(app_client, db):
+    from app.services.server_settings_service import set_setting
+    await set_setting(db, "server_description", "Custom description")
+    await db.commit()
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["metadata"]["nodeDescription"] == "Custom description"
+
+
+async def test_nodeinfo_icon_url(app_client, db):
+    from app.services.server_settings_service import set_setting
+    await set_setting(db, "server_icon_url", "https://example.com/icon.png")
+    await db.commit()
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["metadata"]["iconUrl"] == "https://example.com/icon.png"
+
+
+async def test_nodeinfo_theme_color(app_client, db):
+    from app.services.server_settings_service import set_setting
+    await set_setting(db, "server_theme_color", "#ff6600")
+    await db.commit()
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["metadata"]["themeColor"] == "#ff6600"
+
+
+async def test_nodeinfo_registration_open_via_setting(app_client, db):
+    from app.services.server_settings_service import set_setting
+    await set_setting(db, "registration_mode", "open")
+    await db.commit()
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["openRegistrations"] is True
+
+
+async def test_nodeinfo_registration_open_legacy(app_client, db):
+    from app.services.server_settings_service import set_setting
+    await set_setting(db, "registration_open", "true")
+    await db.commit()
+    resp = await app_client.get("/nodeinfo/2.0")
+    data = resp.json()
+    assert data["openRegistrations"] is True
