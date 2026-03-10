@@ -453,7 +453,6 @@ export const ja = {
   "admin.descRegistrations": "承認待ちの登録申請の管理",
   "admin.noRegistrations": "承認待ちの登録申請はありません",
   "admin.approve": "承認",
-  "admin.reject": "却下",
   "admin.confirmRejectRegistration": "この登録申請を却下しますか？ユーザーデータは削除されます。",
   "auth.approvalNotice": "この登録は管理者の承認が必要です。",
   "auth.reason": "意気込み",

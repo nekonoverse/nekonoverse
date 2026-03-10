@@ -458,7 +458,6 @@ export const en: Dictionary = {
   "admin.descRegistrations": "Manage pending registration requests",
   "admin.noRegistrations": "No pending registrations",
   "admin.approve": "Approve",
-  "admin.reject": "Reject",
   "admin.confirmRejectRegistration": "Reject this registration? The user data will be deleted.",
   "auth.approvalNotice": "Registration requires administrator approval.",
   "auth.reason": "Motivation",

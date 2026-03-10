@@ -17,6 +17,10 @@ env:
 jobs:
   backend-test:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3]
     services:
       postgres:
         image: postgres:17
@@ -52,7 +56,7 @@ jobs:
         working-directory: backend
         run: pip install -e ".[dev]"
 
-      - name: Run tests
+      - name: Run tests (shard ${{ matrix.shard }}/4)
         working-directory: backend
         env:
           DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_test
@@ -61,7 +65,7 @@ jobs:
           SECRET_KEY: test-secret-key
           DEBUG: "true"
           REGISTRATION_OPEN: "true"
-        run: python -m pytest tests/ -v -n auto
+        run: python -m pytest tests/ -v -n auto --shard-id=${{ matrix.shard }} --num-shards=4
 
   frontend-build:
     runs-on: ubuntu-latest
