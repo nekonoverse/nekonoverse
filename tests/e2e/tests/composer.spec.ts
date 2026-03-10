@@ -58,12 +58,13 @@ test.describe("Note Composer", () => {
     await emojiBtn.click();
     await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
 
-    // Wait for ghost tap guard (300ms) and lazy category rendering
+    // Search for a specific emoji to get results outside LazyCategory scroll area.
+    // LazyCategory renders Unicode emojis lazily inside .emoji-scroll-area;
+    // in Firefox CI the buttons stay "outside of the viewport" even after
+    // scrollIntoView. Search results bypass LazyCategory entirely.
+    await page.locator(".emoji-search").fill("smile");
     const firstEmoji = page.locator(".emoji-picker .emoji-btn").first();
     await expect(firstEmoji).toBeVisible({ timeout: 5_000 });
-
-    // Scroll into view (LazyCategory may render emoji outside the picker viewport)
-    await firstEmoji.scrollIntoViewIfNeeded();
     await firstEmoji.click();
 
     // Picker should close and textarea should contain the emoji
