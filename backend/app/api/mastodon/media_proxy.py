@@ -1,6 +1,6 @@
 import ipaddress
 import socket
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
@@ -50,19 +50,21 @@ async def proxy_media(
         try:
             # リダイレクトを手動で追跡し、各ホップでSSRF検証を行う
             current_url = url
+            resp = None
             for _ in range(3):
                 resp = await client.get(current_url)
                 if resp.status_code in (301, 302, 303, 307, 308):
                     location = resp.headers.get("location")
                     if not location:
                         raise HTTPException(status_code=502, detail="Redirect without location")
-                    redirect_parsed = urlparse(location)
-                    valid_scheme = redirect_parsed.scheme in ("http", "https")
-                    if not valid_scheme or not redirect_parsed.hostname:
+                    # 相対URLを絶対URLに解決
+                    resolved = urljoin(current_url, location)
+                    redirect_parsed = urlparse(resolved)
+                    if redirect_parsed.scheme not in ("http", "https") or not redirect_parsed.hostname:
                         raise HTTPException(status_code=403, detail="Invalid redirect URL")
                     if _is_private_host(redirect_parsed.hostname):
                         raise HTTPException(status_code=403, detail="Forbidden redirect host")
-                    current_url = location
+                    current_url = resolved
                 else:
                     break
             else:
@@ -70,16 +72,16 @@ async def proxy_media(
         except httpx.HTTPError:
             raise HTTPException(status_code=502, detail="Upstream fetch failed")
 
-    if resp.status_code != 200:
-        raise HTTPException(status_code=502, detail="Upstream returned non-200")
+        if resp.status_code != 200:
+            raise HTTPException(status_code=502, detail="Upstream returned non-200")
 
-    content_type = resp.headers.get("content-type", "")
-    if not any(content_type.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
-        raise HTTPException(status_code=403, detail="Disallowed content type")
+        content_type = resp.headers.get("content-type", "")
+        if not any(content_type.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
+            raise HTTPException(status_code=403, detail="Disallowed content type")
 
-    body = resp.content
-    if len(body) > _MAX_SIZE:
-        raise HTTPException(status_code=413, detail="Response too large")
+        body = resp.content
+        if len(body) > _MAX_SIZE:
+            raise HTTPException(status_code=413, detail="Response too large")
 
     return StreamingResponse(
         iter([body]),
