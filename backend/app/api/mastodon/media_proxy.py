@@ -45,10 +45,28 @@ async def proxy_media(
     from app.utils.http_client import make_async_client
 
     async with make_async_client(
-        timeout=_TIMEOUT, follow_redirects=True, max_redirects=3,
+        timeout=_TIMEOUT, follow_redirects=False,
     ) as client:
         try:
-            resp = await client.get(url)
+            # リダイレクトを手動で追跡し、各ホップでSSRF検証を行う
+            current_url = url
+            for _ in range(3):
+                resp = await client.get(current_url)
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = resp.headers.get("location")
+                    if not location:
+                        raise HTTPException(status_code=502, detail="Redirect without location")
+                    redirect_parsed = urlparse(location)
+                    valid_scheme = redirect_parsed.scheme in ("http", "https")
+                    if not valid_scheme or not redirect_parsed.hostname:
+                        raise HTTPException(status_code=403, detail="Invalid redirect URL")
+                    if _is_private_host(redirect_parsed.hostname):
+                        raise HTTPException(status_code=403, detail="Forbidden redirect host")
+                    current_url = location
+                else:
+                    break
+            else:
+                raise HTTPException(status_code=502, detail="Too many redirects")
         except httpx.HTTPError:
             raise HTTPException(status_code=502, detail="Upstream fetch failed")
 

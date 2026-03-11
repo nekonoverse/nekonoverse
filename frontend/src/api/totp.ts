@@ -13,9 +13,10 @@ export interface TotpStatusResponse {
   totp_enabled: boolean;
 }
 
-export async function setupTotp(): Promise<TotpSetupResponse> {
+export async function setupTotp(password: string): Promise<TotpSetupResponse> {
   return apiRequest<TotpSetupResponse>("/api/v1/auth/totp/setup", {
     method: "POST",
+    body: { password },
   });
 }
 

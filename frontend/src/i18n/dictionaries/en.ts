@@ -453,6 +453,8 @@ export const en: Dictionary = {
   "totp.required": "Enter 2FA code",
   "totp.copySecret": "Copy secret",
   "totp.copyCodes": "Copy codes",
+  "totp.confirmPassword": "Enter password",
+  "totp.passwordRequired": "Password is required",
   "totp.disableConfirm":
     "Enter your password to disable two-factor authentication",
   "totp.recoveryHint":

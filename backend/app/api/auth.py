@@ -30,6 +30,8 @@ TOTP_MAX_ATTEMPTS = 5
 TOTP_LOCKOUT_TTL = 300  # 5 minutes
 LOGIN_MAX_ATTEMPTS = 10
 LOGIN_LOCKOUT_TTL = 300  # 5 minutes
+REGISTER_MAX_ATTEMPTS = 20
+REGISTER_LOCKOUT_TTL = 3600  # 1 hour
 
 
 def get_session_id(request: Request) -> str | None:
@@ -37,9 +39,24 @@ def get_session_id(request: Request) -> str | None:
 
 
 @router.post("/accounts", response_model=UserResponse, status_code=201)
-async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    body: UserRegisterRequest,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
     from app.config import settings
     from app.services.server_settings_service import get_setting
+    from app.valkey_client import valkey
+
+    # IPベースの登録レートリミット
+    client_ip = request.client.host if request.client else "unknown"
+    reg_key = f"register_attempts:{client_ip}"
+    reg_attempts = await valkey.get(reg_key)
+    if reg_attempts is not None and int(reg_attempts) >= REGISTER_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many registration attempts. Please try again later.",
+        )
 
     # Determine registration mode
     mode_setting = await get_setting(db, "registration_mode")
@@ -100,6 +117,10 @@ async def register(body: UserRegisterRequest, db: AsyncSession = Depends(get_db)
         await redeem_invitation(db, invite, user)
         await db.commit()
 
+    # 登録レートリミットのカウントを増加
+    await valkey.incr(reg_key)
+    await valkey.expire(reg_key, REGISTER_LOCKOUT_TTL)
+
     return _user_response(user)
 
 
@@ -122,10 +143,21 @@ async def login(
             detail="Too many login attempts. Please wait 5 minutes and try again.",
         )
 
+    # ユーザー名ベースのレートリミット
+    username_key = f"login_attempts:user:{body.username.lower()}"
+    user_attempts = await valkey.get(username_key)
+    if user_attempts is not None and int(user_attempts) >= LOGIN_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Please wait 5 minutes and try again.",
+        )
+
     user = await authenticate_user(db, body.username, body.password)
     if user is None:
         await valkey.incr(attempts_key)
         await valkey.expire(attempts_key, LOGIN_LOCKOUT_TTL)
+        await valkey.incr(username_key)
+        await valkey.expire(username_key, LOGIN_LOCKOUT_TTL)
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password",
@@ -389,6 +421,10 @@ async def change_password_endpoint(
 # ── TOTP endpoints ──
 
 
+class TotpSetupRequest(BaseModel):
+    password: str
+
+
 class TotpEnableRequest(BaseModel):
     code: str
 
@@ -404,9 +440,12 @@ class TotpVerifyRequest(BaseModel):
 
 @router.post("/auth/totp/setup")
 async def totp_setup(
+    body: TotpSetupRequest,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    import bcrypt as _bcrypt
+
     from app.services.totp_service import (
         encrypt_secret,
         generate_provisioning_uri,
@@ -418,6 +457,13 @@ async def totp_setup(
             status_code=400,
             detail="TOTP is already enabled",
         )
+
+    # パスワード再確認
+    valid = await asyncio.to_thread(
+        _bcrypt.checkpw, body.password.encode(), user.password_hash.encode()
+    )
+    if not valid:
+        raise HTTPException(status_code=401, detail="Invalid password")
 
     secret = generate_totp_secret()
     user.totp_secret = encrypt_secret(secret)

@@ -11,6 +11,19 @@ from app.config import settings
 
 
 def _get_fernet() -> Fernet:
+    # PBKDF2で鍵を導出 (ソルトは固定だが、SECRET_KEYから安全に鍵を導出する)
+    dk = hashlib.pbkdf2_hmac(
+        "sha256",
+        settings.secret_key.encode(),
+        b"nekonoverse-totp-encryption",
+        iterations=600_000,
+    )
+    key = base64.urlsafe_b64encode(dk)
+    return Fernet(key)
+
+
+def _get_legacy_fernet() -> Fernet:
+    """Legacy key derivation (SHA-256 direct) for migration."""
     key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode()).digest())
     return Fernet(key)
 
@@ -20,7 +33,11 @@ def encrypt_secret(secret: str) -> str:
 
 
 def decrypt_secret(encrypted: str) -> str:
-    return _get_fernet().decrypt(encrypted.encode()).decode()
+    try:
+        return _get_fernet().decrypt(encrypted.encode()).decode()
+    except Exception:
+        # レガシー鍵導出でのフォールバック
+        return _get_legacy_fernet().decrypt(encrypted.encode()).decode()
 
 
 def generate_totp_secret() -> str:

@@ -66,9 +66,9 @@ cors_origins = [
     "http://localhost:3000",
     settings.server_url,
 ]
-# Allow Tailscale / LAN access in debug mode
-if settings.debug:
-    cors_origins.append("http://100.68.9.116:3000")
+# Allow frontend URL configured via environment
+if settings.frontend_url and settings.frontend_url not in cors_origins:
+    cors_origins.append(settings.frontend_url)
 
 app.add_middleware(
     CORSMiddleware,

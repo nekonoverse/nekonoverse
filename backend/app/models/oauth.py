@@ -62,7 +62,14 @@ class OAuthToken(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     application = relationship("OAuthApplication", back_populates="tokens")
     user = relationship("User", back_populates="oauth_tokens")
+
+    @property
+    def is_expired(self) -> bool:
+        if self.expires_at is None:
+            return False
+        return datetime.now(timezone.utc) > self.expires_at

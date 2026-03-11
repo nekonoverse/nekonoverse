@@ -450,6 +450,8 @@ export const ja = {
   "totp.required": "二要素認証コードを入力",
   "totp.copySecret": "シークレットをコピー",
   "totp.copyCodes": "コードをコピー",
+  "totp.confirmPassword": "パスワードを入力",
+  "totp.passwordRequired": "パスワードを入力してください",
   "totp.disableConfirm": "二要素認証を無効にするにはパスワードを入力してください",
   "totp.recoveryHint": "認証アプリが使えない場合はリカバリーコードを入力してください",
   "admin.regModeApproval": "承認制",
