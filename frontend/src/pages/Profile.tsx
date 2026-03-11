@@ -233,7 +233,11 @@ export default function Profile() {
   const refreshNote = async (noteId: string) => {
     try {
       const updated = await getNote(noteId);
-      setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
+      setNotes((prev) => prev.map((n) => {
+        if (n.id === noteId) return updated;
+        if (n.reblog?.id === noteId) return { ...n, reblog: updated };
+        return n;
+      }));
     } catch {}
   };
 

@@ -279,7 +279,11 @@ export default function Home() {
     try {
       const updated = await getNote(noteId);
       setNotes((prev) =>
-        prev.map((n) => (n.id === noteId ? updated : n)),
+        prev.map((n) => {
+          if (n.id === noteId) return updated;
+          if (n.reblog?.id === noteId) return { ...n, reblog: updated };
+          return n;
+        }),
       );
     } catch {
       // ignore
