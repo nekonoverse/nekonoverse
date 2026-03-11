@@ -41,6 +41,7 @@ export const ja = {
   "drive.loginRequired": "ドライブを見るにはログインが必要です。",
   "drive.pickFromDrive": "ドライブから選択",
   "drive.select": "選択",
+  "composer.uploading": "アップロード中...",
   "composer.uploadFailed": "アップロードに失敗しました",
   "composer.setFocalPoint": "焦点を設定",
   "composer.focalPoint": "焦点の設定",

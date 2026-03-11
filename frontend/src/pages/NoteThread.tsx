@@ -91,11 +91,20 @@ export default function NoteThread() {
         setTargetNote(updated);
         return;
       }
+      if (target && target.reblog?.id === noteId) {
+        setTargetNote({ ...target, reblog: updated });
+        return;
+      }
       const ctx = context();
       if (!ctx) return;
+      const mapNote = (n: Note) => {
+        if (n.id === noteId) return updated;
+        if (n.reblog?.id === noteId) return { ...n, reblog: updated };
+        return n;
+      };
       setContext({
-        ancestors: ctx.ancestors.map((n) => (n.id === noteId ? updated : n)),
-        descendants: ctx.descendants.map((n) => (n.id === noteId ? updated : n)),
+        ancestors: ctx.ancestors.map(mapNote),
+        descendants: ctx.descendants.map(mapNote),
       });
     } catch {}
   };

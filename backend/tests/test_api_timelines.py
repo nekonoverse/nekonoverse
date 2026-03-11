@@ -96,6 +96,58 @@ async def test_public_timeline_includes_reactions(authed_client, mock_valkey):
             break
 
 
+async def test_reblog_includes_reactions_on_get(authed_client, mock_valkey):
+    """GET /api/v1/statuses/{reblog_id} should include reblog's inner reactions."""
+    # Create original note
+    orig_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Reblog reactions test", "visibility": "public"
+    })
+    orig_id = orig_resp.json()["id"]
+
+    # Add reaction to original note
+    await authed_client.post(f"/api/v1/statuses/{orig_id}/react/❤️")
+
+    # Reblog (boost) the note
+    reblog_resp = await authed_client.post(f"/api/v1/statuses/{orig_id}/reblog")
+    assert reblog_resp.status_code == 200
+    reblog_id = reblog_resp.json()["id"]
+
+    # Fetch the reblog and verify inner note has reactions
+    get_resp = await authed_client.get(f"/api/v1/statuses/{reblog_id}")
+    assert get_resp.status_code == 200
+    data = get_resp.json()
+    assert data["reblog"] is not None
+    assert len(data["reblog"]["reactions"]) >= 1
+    assert data["reblog"]["reactions"][0]["emoji"] == "❤️"
+
+
+async def test_reblog_reactions_on_timeline(authed_client, mock_valkey):
+    """Reblogged notes on the timeline should include the inner note's reactions."""
+    # Create and react to a note
+    orig_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "TL reblog reactions", "visibility": "public"
+    })
+    orig_id = orig_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{orig_id}/react/⭐")
+
+    # Reblog the note
+    reblog_resp = await authed_client.post(f"/api/v1/statuses/{orig_id}/reblog")
+    assert reblog_resp.status_code == 200
+    reblog_id = reblog_resp.json()["id"]
+
+    # Check public timeline
+    resp = await authed_client.get("/api/v1/timelines/public")
+    assert resp.status_code == 200
+    for note in resp.json():
+        if note["id"] == reblog_id:
+            assert note["reblog"] is not None
+            assert len(note["reblog"]["reactions"]) >= 1
+            assert note["reblog"]["reactions"][0]["emoji"] == "⭐"
+            break
+    else:
+        assert False, "Reblog not found on timeline"
+
+
 async def test_home_timeline_shows_own_notes(authed_client, mock_valkey):
     """Home timeline should include the user's own notes."""
     await authed_client.post("/api/v1/statuses", json={

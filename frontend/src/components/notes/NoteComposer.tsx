@@ -248,7 +248,7 @@ export default function NoteComposer(props: Props) {
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !uploading()) {
             handleSubmit(e);
           }
         }}
@@ -356,9 +356,9 @@ export default function NoteComposer(props: Props) {
               <button
                 type="submit"
                 class="composer-post-btn"
-                disabled={loading() || (!content().trim() && attachments().length === 0)}
+                disabled={loading() || uploading() || (!content().trim() && attachments().length === 0)}
               >
-                {loading() ? t("composer.posting") : (props.replyTo ? t("reply.reply") : t("composer.post"))}
+                {uploading() ? t("composer.uploading") : loading() ? t("composer.posting") : (props.replyTo ? t("reply.reply") : t("composer.post"))}
                 <span class="composer-vis-icon">{visEmoji()}</span>
               </button>
               <button

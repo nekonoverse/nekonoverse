@@ -349,8 +349,11 @@ async def get_account_statuses(
     notes = list(notes_result.scalars().all())
 
     note_ids = [n.id for n in notes]
-    reactions_map = await get_reaction_summaries(db, note_ids)
-    return await notes_to_responses(notes, reactions_map, db)
+    current_actor_id = user.actor_id if user else None
+    reactions_map = await get_reaction_summaries(db, note_ids, current_actor_id)
+    return await notes_to_responses(
+        notes, reactions_map, db, actor_id=current_actor_id
+    )
 
 
 async def _batch_resolve_actor_emojis(
