@@ -41,8 +41,9 @@ async def lifespan(app: FastAPI):
         logging.getLogger(__name__).warning("Could not ensure S3 bucket: %s", e)
 
     from app.config import settings as app_settings
+    from app.utils.http_client import make_async_client
 
-    app.state.http_client = httpx.AsyncClient(
+    app.state.http_client = make_async_client(
         timeout=30.0,
         verify=not app_settings.skip_ssl_verify,
         follow_redirects=True,

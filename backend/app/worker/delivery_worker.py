@@ -31,7 +31,9 @@ def _get_http_client(settings) -> httpx.AsyncClient:
     """Get or create a shared HTTP client for the delivery worker."""
     global _http_client
     if _http_client is None:
-        _http_client = httpx.AsyncClient(
+        from app.utils.http_client import make_async_client
+
+        _http_client = make_async_client(
             timeout=30.0,
             verify=not settings.skip_ssl_verify,
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),

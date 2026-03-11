@@ -236,9 +236,9 @@ async def import_remote_emoji_to_local(db: AsyncSession, emoji_id: uuid.UUID) ->
         raise ValueError(f"Local emoji :{remote.shortcode}: already exists")
 
     # Download image from remote URL
-    import httpx
+    from app.utils.http_client import make_async_client
 
-    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+    async with make_async_client(timeout=30.0, follow_redirects=True) as client:
         resp = await client.get(remote.url)
         resp.raise_for_status()
 

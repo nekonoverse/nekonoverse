@@ -17,6 +17,11 @@ class Settings(BaseSettings):
     skip_ssl_verify: bool = False
     face_detect_url: str | None = None
 
+    # Forward proxy for outbound federation requests (origin IP concealment)
+    http_proxy: str | None = None
+    https_proxy: str | None = None
+    no_proxy: str = ""
+
     use_https: bool = True
 
     @property
