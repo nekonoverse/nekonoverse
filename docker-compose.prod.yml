@@ -75,7 +75,7 @@ services:
       - |
         chown 101:101 /var/run/nekonoverse-app &&
         exec setpriv --reuid=101 --regid=101 --clear-groups \
-          sh -c "alembic upgrade head && uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4"
+          env HOME=/app sh -c "alembic upgrade head && uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4"
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
       VALKEY_URL: valkey://valkey:6379/0
