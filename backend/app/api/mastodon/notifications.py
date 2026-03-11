@@ -75,6 +75,7 @@ async def _notification_to_response(
     db=None,
     emoji_url_map: dict | None = None,
     emoji_cache: dict | None = None,
+    actor_id=None,
 ) -> NotificationResponse:
     account = None
     if notif.sender:
@@ -91,7 +92,9 @@ async def _notification_to_response(
     if notif.note:
         from app.api.mastodon.statuses import note_to_response
 
-        status = await note_to_response(notif.note, db=db, emoji_cache=emoji_cache)
+        status = await note_to_response(
+            notif.note, db=db, emoji_cache=emoji_cache, actor_id=actor_id
+        )
 
     emoji_url = None
     if emoji_url_map and notif.reaction_emoji:
@@ -140,6 +143,7 @@ async def get_notifications(
                 db=db,
                 emoji_url_map=emoji_url_map,
                 emoji_cache=emoji_cache,
+                actor_id=user.actor_id,
             )
         )
     return result

@@ -102,9 +102,13 @@ export default function Notifications() {
     try {
       const updated = await getNote(noteId);
       setNotifications((prev) =>
-        prev.map((n) =>
-          n.status?.id === noteId ? { ...n, status: updated } : n
-        )
+        prev.map((n) => {
+          if (n.status?.id === noteId) return { ...n, status: updated };
+          if (n.status?.reblog?.id === noteId) {
+            return { ...n, status: { ...n.status, reblog: updated } };
+          }
+          return n;
+        })
       );
     } catch {}
   };
