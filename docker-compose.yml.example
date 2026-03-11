@@ -47,16 +47,11 @@ services:
   s3proxy-deliverer:
     image: ghcr.io/nananek/s3proxy-deliverer:latest
     restart: unless-stopped
-    user: "0:0"
-    command:
-      - sh
-      - -c
-      - chown 101:101 /var/run/s3proxy-deliverer && exec setpriv --reuid=101 --regid=101 --init-groups python main.py
     environment:
       STORAGE_ROOT: /data
     volumes:
       - ./volumes/nekono3s:/data:ro
-      - ./volumes/s3proxy_sock:/var/run/s3proxy-deliverer
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     depends_on:
       nekono3s:
         condition: service_healthy
@@ -132,7 +127,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./volumes/s3proxy_sock:/var/run/s3proxy-deliverer
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     ports:
       - "80:80"
     depends_on:
@@ -164,3 +159,6 @@ services:
   #   command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
   #   environment:
   #     TUNNEL_TRANSPORT_PROTOCOL: http2
+
+volumes:
+  s3proxy_sock:
