@@ -8,6 +8,11 @@ interface InstanceInfo {
   registrations: boolean;
   registration_mode?: string;
   thumbnail?: { url: string };
+  stats?: {
+    user_count: number;
+    status_count: number;
+    domain_count: number;
+  };
 }
 
 const [instance, setInstance] = createSignal<InstanceInfo | null>(null);
@@ -17,7 +22,10 @@ const [versionUpdateReady, setVersionUpdateReady] = createSignal(false);
 export { instance, instanceLoading, versionUpdateReady };
 
 export function registrationMode(): string {
-  return instance()?.registration_mode ?? (instance()?.registrations ? "open" : "closed");
+  return (
+    instance()?.registration_mode ??
+    (instance()?.registrations ? "open" : "closed")
+  );
 }
 
 export function inviteRequired(): boolean {
@@ -34,7 +42,9 @@ export function defaultAvatar(): string {
 
 function updateDynamicIcons(iconUrl: string) {
   // Favicon
-  let link = document.querySelector("link[rel='icon']") as HTMLLinkElement | null;
+  let link = document.querySelector(
+    "link[rel='icon']",
+  ) as HTMLLinkElement | null;
   if (!link) {
     link = document.createElement("link");
     link.rel = "icon";
@@ -43,7 +53,9 @@ function updateDynamicIcons(iconUrl: string) {
   link.href = iconUrl;
 
   // Apple touch icon
-  const apple = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement | null;
+  const apple = document.querySelector(
+    "link[rel='apple-touch-icon']",
+  ) as HTMLLinkElement | null;
   if (apple) apple.href = iconUrl;
 }
 

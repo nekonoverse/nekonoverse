@@ -436,7 +436,8 @@ export const ja = {
   "cw.hide": "隠す",
   "remote.viewOnRemote": "元サーバーで表示",
   "totp.title": "二要素認証",
-  "totp.description": "認証アプリを使って、ログイン時にワンタイムパスワードを要求します。",
+  "totp.description":
+    "認証アプリを使って、ログイン時にワンタイムパスワードを要求します。",
   "totp.enable": "有効にする",
   "totp.disable": "無効にする",
   "totp.enabled": "二要素認証は有効です",
@@ -452,20 +453,33 @@ export const ja = {
   "totp.copyCodes": "コードをコピー",
   "totp.confirmPassword": "パスワードを入力",
   "totp.passwordRequired": "パスワードを入力してください",
-  "totp.disableConfirm": "二要素認証を無効にするにはパスワードを入力してください",
-  "totp.recoveryHint": "認証アプリが使えない場合はリカバリーコードを入力してください",
+  "totp.disableConfirm":
+    "二要素認証を無効にするにはパスワードを入力してください",
+  "totp.recoveryHint":
+    "認証アプリが使えない場合はリカバリーコードを入力してください",
   "admin.regModeApproval": "承認制",
   "admin.tabRegistrations": "登録申請",
   "admin.descRegistrations": "承認待ちの登録申請の管理",
   "admin.noRegistrations": "承認待ちの登録申請はありません",
   "admin.approve": "承認",
-  "admin.confirmRejectRegistration": "この登録申請を却下しますか？ユーザーデータは削除されます。",
+  "admin.confirmRejectRegistration":
+    "この登録申請を却下しますか？ユーザーデータは削除されます。",
   "auth.approvalNotice": "この登録は管理者の承認が必要です。",
   "auth.reason": "意気込み",
   "auth.reasonPlaceholder": "参加への意気込みを教えてください",
   "auth.registrationPending": "登録申請を受け付けました",
-  "auth.registrationPendingDesc": "管理者が承認するまでお待ちください。承認されるとログインできるようになります。",
+  "auth.registrationPendingDesc":
+    "管理者が承認するまでお待ちください。承認されるとログインできるようになります。",
   "auth.pendingApproval": "承認待ちです",
+  "entrance.stats.users": "ユーザー",
+  "entrance.stats.posts": "投稿",
+  "entrance.stats.servers": "連合サーバー",
+  "entrance.preview.title": "最近の投稿",
+  "entrance.cta.join": "今すぐ参加する",
+  "entrance.footer.joinCommunity": "コミュニティに参加しよう",
+  "entrance.footer.inviteRequired": "登録には招待コードが必要です。",
+  "entrance.footer.approvalRequired": "登録には管理者の承認が必要です。",
+  "entrance.footer.closed": "現在、新規登録は受け付けていません。",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

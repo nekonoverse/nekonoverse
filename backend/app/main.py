@@ -81,6 +81,10 @@ app.add_middleware(
 
 @app.get("/api/v1/instance")
 async def instance_info(db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import func, select
+
+    from app.models.actor import Actor
+    from app.models.note import Note
     from app.services.server_settings_service import get_setting
 
     thumbnail_url = None
@@ -114,13 +118,39 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
+    # サーバー統計を実際のデータベースから取得
+    user_count = 0
+    status_count = 0
+    domain_count = 0
+    try:
+        user_result = await db.execute(
+            select(func.count()).select_from(Actor).where(Actor.domain.is_(None))
+        )
+        user_count = user_result.scalar() or 0
+
+        status_result = await db.execute(
+            select(func.count()).select_from(Note).where(Note.local.is_(True))
+        )
+        status_count = status_result.scalar() or 0
+
+        domain_result = await db.execute(
+            select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
+        )
+        domain_count = domain_result.scalar() or 0
+    except Exception:
+        pass
+
     resp: dict = {
         "uri": settings.domain,
         "title": title,
         "description": description,
         "version": __version__,
         "urls": {},
-        "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
+        "stats": {
+            "user_count": user_count,
+            "status_count": status_count,
+            "domain_count": domain_count,
+        },
         "registrations": registration_open,
         "registration_mode": registration_mode,
     }
