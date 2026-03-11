@@ -3,6 +3,7 @@
 Usage:
     python -m app.cli create-admin
     python -m app.cli reset-password
+    python -m app.cli detect-focal-points
     python -m app.cli create-admin --username neko --email neko@example.com --password mypassword
 """
 
@@ -20,6 +21,7 @@ import app.models.delivery  # noqa: F401
 import app.models.drive_file  # noqa: F401
 import app.models.follow  # noqa: F401
 import app.models.note  # noqa: F401
+import app.models.note_attachment  # noqa: F401
 import app.models.oauth  # noqa: F401
 import app.models.reaction  # noqa: F401
 import app.models.user  # noqa: F401
@@ -111,6 +113,105 @@ async def _create_admin(args: argparse.Namespace) -> None:
     await engine.dispose()
 
 
+async def _detect_focal_points(args: argparse.Namespace) -> None:
+    from sqlalchemy import select
+
+    from app.config import settings
+    from app.models.drive_file import DriveFile
+    from app.models.note_attachment import NoteAttachment
+    from app.services.drive_service import auto_detect_focal_point
+    from app.services.focal_point_service import _call_face_detect, _download_image
+
+    if not settings.face_detect_url:
+        print("Error: FACE_DETECT_URL is not set.", file=sys.stderr)
+        sys.exit(1)
+
+    concurrency = args.concurrency
+    sem = asyncio.Semaphore(concurrency)
+
+    # --- Local DriveFiles ---
+    async with async_session() as db:
+        rows = await db.execute(
+            select(DriveFile).where(
+                DriveFile.focal_x.is_(None),
+                DriveFile.mime_type.startswith("image/"),
+            )
+        )
+        local_files = list(rows.scalars().all())
+
+    print(f"Local DriveFiles (focal_x IS NULL, image): {len(local_files)}")
+
+    local_ok = 0
+    local_fail = 0
+    for i, df in enumerate(local_files, 1):
+        async with sem:
+            async with async_session() as db:
+                merged = await db.merge(df)
+                await auto_detect_focal_point(db, merged)
+                if merged.focal_x is not None:
+                    local_ok += 1
+                else:
+                    local_fail += 1
+        print(f"\r  [{i}/{len(local_files)}] ok={local_ok} skip={local_fail}", end="", flush=True)
+    if local_files:
+        print()
+
+    # --- Remote NoteAttachments ---
+    image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"}
+    async with async_session() as db:
+        rows = await db.execute(
+            select(NoteAttachment).where(
+                NoteAttachment.remote_focal_x.is_(None),
+                NoteAttachment.remote_url.isnot(None),
+                NoteAttachment.remote_mime_type.in_(image_mimes),
+            )
+        )
+        remote_atts = list(rows.scalars().all())
+
+    print(f"Remote NoteAttachments (remote_focal_x IS NULL, image): {len(remote_atts)}")
+
+    remote_ok = 0
+    remote_fail = 0
+
+    async def _process_remote(att: NoteAttachment) -> bool:
+        async with sem:
+            image_data = await _download_image(att.remote_url)
+            if not image_data:
+                return False
+            focal = await _call_face_detect(image_data, att.remote_width, att.remote_height)
+            if focal is None:
+                return False
+            att.remote_focal_x = focal[0]
+            att.remote_focal_y = focal[1]
+            return True
+
+    # Process in batches to avoid holding too many sessions open
+    batch_size = 50
+    for batch_start in range(0, len(remote_atts), batch_size):
+        batch = remote_atts[batch_start : batch_start + batch_size]
+        async with async_session() as db:
+            merged_batch = [await db.merge(att) for att in batch]
+            results = await asyncio.gather(
+                *(_process_remote(att) for att in merged_batch),
+                return_exceptions=True,
+            )
+            for res in results:
+                if res is True:
+                    remote_ok += 1
+                else:
+                    remote_fail += 1
+            await db.commit()
+        done = min(batch_start + batch_size, len(remote_atts))
+        print(f"\r  [{done}/{len(remote_atts)}] ok={remote_ok} skip={remote_fail}", end="", flush=True)
+    if remote_atts:
+        print()
+
+    print(f"\nDone. Local: {local_ok} detected / {local_fail} skipped. "
+          f"Remote: {remote_ok} detected / {remote_fail} skipped.")
+
+    await engine.dispose()
+
+
 async def _reset_password(args: argparse.Namespace) -> None:
     async with async_session() as db:
         try:
@@ -138,6 +239,9 @@ def main() -> None:
     reset_pw.add_argument("--username", default=None)
     reset_pw.add_argument("--password", default=None)
 
+    detect_fp = sub.add_parser("detect-focal-points", help="Run face detection on all images without focal points")
+    detect_fp.add_argument("--concurrency", type=int, default=4, help="Max concurrent requests (default: 4)")
+
     args = parser.parse_args()
 
     if args.command == "create-admin":
@@ -148,6 +252,8 @@ def main() -> None:
         if not (args.username and args.password):
             args = _interactive_reset_password()
         asyncio.run(_reset_password(args))
+    elif args.command == "detect-focal-points":
+        asyncio.run(_detect_focal_points(args))
     else:
         parser.print_help()
         sys.exit(1)

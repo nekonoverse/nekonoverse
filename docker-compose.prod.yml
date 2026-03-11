@@ -1,7 +1,7 @@
 # =============================================================================
 # Nekonoverse — Production Docker Compose (UDS)
 # =============================================================================
-# nginx 配下の全サービス間通信を Unix Domain Socket で統一。
+# 全サービス間通信を Unix Domain Socket で統一。
 # フロントエンドはビルド済み静的ファイルを nginx が直接配信。
 #
 # 使い方:
@@ -19,8 +19,9 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
     volumes:
       - ./volumes/postgresql:/var/lib/postgresql
+      - pg_sock:/var/run/postgresql
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U nekonoverse"]
+      test: ["CMD-SHELL", "pg_isready -U nekonoverse -h /var/run/postgresql"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -28,10 +29,18 @@ services:
   valkey:
     image: valkey/valkey:8-alpine
     restart: unless-stopped
+    command: >
+      valkey-server
+        --unixsocket /var/run/valkey/valkey.sock
+        --unixsocketperm 777
+        --port 0
+        --save 60 1
+        --loglevel warning
     volumes:
       - ./volumes/valkey:/data
+      - valkey_sock:/var/run/valkey
     healthcheck:
-      test: ["CMD", "valkey-cli", "ping"]
+      test: ["CMD", "valkey-cli", "-s", "/var/run/valkey/valkey.sock", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -75,10 +84,17 @@ services:
       - |
         chown 101:101 /var/run/nekonoverse-app &&
         exec setpriv --reuid=101 --regid=101 --clear-groups \
-          sh -c "alembic upgrade head && uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4"
+          env HOME=/app sh -c '
+            for i in 1 2 3 4 5; do
+              alembic upgrade head && break
+              echo "alembic failed (attempt $$i), retrying in 3s..."
+              sleep 3
+            done &&
+            uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4
+          '
     environment:
-      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
-      VALKEY_URL: valkey://valkey:6379/0
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
+      VALKEY_URL: unix:///var/run/valkey/valkey.sock?db=0
       DOMAIN: ${DOMAIN}
       SECRET_KEY: ${SECRET_KEY}
       FRONTEND_URL: https://${DOMAIN}
@@ -96,9 +112,11 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       # HTTP_PROXY: http://squid:3128
       # HTTPS_PROXY: http://squid:3128
-      # NO_PROXY: nekono3s,valkey,postgresql,localhost
+      # NO_PROXY: nekono3s,localhost
     volumes:
       - app_sock:/var/run/nekonoverse-app
+      - pg_sock:/var/run/postgresql
+      - valkey_sock:/var/run/valkey
       # face-detect UDS 使用時はコメント解除
       # - face_detect_sock:/var/run/nekonoverse-face-detect:ro
     depends_on:
@@ -114,8 +132,8 @@ services:
     restart: unless-stopped
     command: python -m app.worker.main
     environment:
-      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
-      VALKEY_URL: valkey://valkey:6379/0
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
+      VALKEY_URL: unix:///var/run/valkey/valkey.sock?db=0
       DOMAIN: ${DOMAIN}
       SECRET_KEY: ${SECRET_KEY}
       S3_ENDPOINT_URL: http://nekono3s:8080
@@ -126,7 +144,10 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       # HTTP_PROXY: http://squid:3128
       # HTTPS_PROXY: http://squid:3128
-      # NO_PROXY: nekono3s,valkey,postgresql,localhost
+      # NO_PROXY: nekono3s,localhost
+    volumes:
+      - pg_sock:/var/run/postgresql
+      - valkey_sock:/var/run/valkey
     depends_on:
       postgresql:
         condition: service_healthy
@@ -194,9 +215,40 @@ services:
   #   environment:
   #     TUNNEL_TRANSPORT_PROTOCOL: http2
 
+  # Optional: Tailscale (uncomment to use)
+  # app/worker で network_mode: "service:tailscale" を使う場合、
+  # tailscale を default ネットワークにも参加させることで Docker 内部 DNS が使える。
+  # (nekono3s 等の TCP サービスをホスト名で解決するために必要)
+  # tailscale:
+  #   image: tailscale/tailscale:latest
+  #   restart: unless-stopped
+  #   cap_add:
+  #     - NET_ADMIN
+  #     - SYS_MODULE
+  #   environment:
+  #     TS_AUTHKEY: ${TAILSCALE_AUTHKEY:-}
+  #     TS_STATE_DIR: /var/lib/tailscale
+  #     TS_HOSTNAME: nekonoverse
+  #   volumes:
+  #     - ./volumes/tailscale:/var/lib/tailscale
+  #   networks:
+  #     - default
+  #     - tailscale_net
+  #
+  # Tailscale 使用時は app/worker に以下を追加:
+  #   network_mode: "service:tailscale"
+  #   (depends_on に tailscale を追加)
+
 volumes:
+  pg_sock:
+  valkey_sock:
   s3proxy_sock:
   app_sock:
   frontend_dist:
   # face-detect UDS 使用時はコメント解除
   # face_detect_sock:
+
+# Optional: Tailscale 使用時はコメント解除
+# networks:
+#   tailscale_net:
+#     driver: bridge
