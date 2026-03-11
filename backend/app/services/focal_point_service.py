@@ -98,23 +98,20 @@ async def _download_image(url: str) -> bytes | None:
     if _is_private_host(parsed.hostname):
         return None
 
-    try:
-        from app.utils.http_client import make_async_client
+    from app.utils.http_client import make_async_client
 
-        async with make_async_client(
-            timeout=httpx.Timeout(15.0, connect=5.0),
-            follow_redirects=True,
-            max_redirects=3,
-            verify=not settings.skip_ssl_verify,
-        ) as client:
-            resp = await client.get(url)
-            if resp.status_code != 200:
-                return None
-            if len(resp.content) > _MAX_DOWNLOAD_BYTES:
-                return None
-            return resp.content
-    except Exception:
-        return None
+    async with make_async_client(
+        timeout=httpx.Timeout(15.0, connect=5.0),
+        follow_redirects=True,
+        max_redirects=3,
+        verify=not settings.skip_ssl_verify,
+    ) as client:
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            return None
+        if len(resp.content) > _MAX_DOWNLOAD_BYTES:
+            return None
+        return resp.content
 
 
 async def _call_face_detect(
@@ -122,33 +119,33 @@ async def _call_face_detect(
     width: int | None,
     height: int | None,
 ) -> tuple[float, float] | None:
-    """Call face-detect service. Returns (focal_x, focal_y) or None."""
+    """Call face-detect service. Returns (focal_x, focal_y) or None if no face.
+
+    Raises on server/network errors so callers can distinguish from "no face".
+    """
     b64 = base64.b64encode(image_data).decode("ascii")
-    try:
-        from app.utils.http_client import make_face_detect_client
+    from app.utils.http_client import make_face_detect_client
 
-        async with make_face_detect_client() as client:
-            resp = await client.post(
-                settings.face_detect_url,
-                json={"inputs": b64, "parameters": {"threshold": 0.5}},
-            )
-            resp.raise_for_status()
-            results = resp.json()
+    async with make_face_detect_client() as client:
+        resp = await client.post(
+            settings.face_detect_url,
+            json={"inputs": b64, "parameters": {"threshold": 0.5}},
+        )
+        resp.raise_for_status()
+        results = resp.json()
 
-        if not results:
-            return None
-
-        box = results[0]["box"]
-        cx = (box["xmin"] + box["xmax"]) / 2
-        cy = (box["ymin"] + box["ymax"]) / 2
-
-        w = width or 1
-        h = height or 1
-        focal_x = max(-1.0, min(1.0, (cx / w) * 2 - 1))
-        focal_y = max(-1.0, min(1.0, 1 - (cy / h) * 2))
-        return (focal_x, focal_y)
-    except Exception:
+    if not results:
         return None
+
+    box = results[0]["box"]
+    cx = (box["xmin"] + box["xmax"]) / 2
+    cy = (box["ymin"] + box["ymax"]) / 2
+
+    w = width or 1
+    h = height or 1
+    focal_x = max(-1.0, min(1.0, (cx / w) * 2 - 1))
+    focal_y = max(-1.0, min(1.0, 1 - (cy / h) * 2))
+    return (focal_x, focal_y)
 
 
 async def _publish_update(note_id: uuid.UUID) -> None:
