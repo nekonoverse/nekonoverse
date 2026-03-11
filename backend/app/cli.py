@@ -119,7 +119,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     from app.config import settings
     from app.models.drive_file import DriveFile
     from app.models.note_attachment import NoteAttachment
-    from app.services.drive_service import auto_detect_focal_point
+    from app.services.drive_service import _read_file_data
     from app.services.focal_point_service import _call_face_detect, _download_image
 
     if not settings.face_detect_url:
@@ -142,17 +142,29 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     print(f"Local DriveFiles (focal_x IS NULL, image): {len(local_files)}")
 
     local_ok = 0
-    local_fail = 0
+    local_noface = 0
+    local_err = 0
     for i, df in enumerate(local_files, 1):
         async with sem:
             async with async_session() as db:
                 merged = await db.merge(df)
-                await auto_detect_focal_point(db, merged)
-                if merged.focal_x is not None:
-                    local_ok += 1
-                else:
-                    local_fail += 1
-        print(f"\r  [{i}/{len(local_files)}] ok={local_ok} skip={local_fail}", end="", flush=True)
+                try:
+                    image_data = await _read_file_data(merged)
+                    if not image_data:
+                        local_err += 1
+                        continue
+                    focal = await _call_face_detect(image_data, merged.width, merged.height)
+                    if focal is None:
+                        local_noface += 1
+                    else:
+                        merged.focal_x = focal[0]
+                        merged.focal_y = focal[1]
+                        await db.commit()
+                        local_ok += 1
+                except Exception as e:
+                    local_err += 1
+                    print(f"\n  [error] {df.id}: {e}", file=sys.stderr)
+        print(f"\r  [{i}/{len(local_files)}] ok={local_ok} noface={local_noface} err={local_err}", end="", flush=True)
     if local_files:
         print()
 
@@ -171,19 +183,21 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     print(f"Remote NoteAttachments (remote_focal_x IS NULL, image): {len(remote_atts)}")
 
     remote_ok = 0
-    remote_fail = 0
+    remote_noface = 0
+    remote_err = 0
 
-    async def _process_remote(att: NoteAttachment) -> bool:
+    # "ok" / "noface" / "dl_err" / "detect_err"
+    async def _process_remote(att: NoteAttachment) -> str:
         async with sem:
             image_data = await _download_image(att.remote_url)
             if not image_data:
-                return False
+                return "dl_err"
             focal = await _call_face_detect(image_data, att.remote_width, att.remote_height)
             if focal is None:
-                return False
+                return "noface"
             att.remote_focal_x = focal[0]
             att.remote_focal_y = focal[1]
-            return True
+            return "ok"
 
     # Process in batches to avoid holding too many sessions open
     batch_size = 50
@@ -196,18 +210,23 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
                 return_exceptions=True,
             )
             for res in results:
-                if res is True:
+                if res == "ok":
                     remote_ok += 1
+                elif isinstance(res, Exception):
+                    remote_err += 1
+                    print(f"\n  [error] {res}", file=sys.stderr)
+                elif res == "dl_err":
+                    remote_err += 1
                 else:
-                    remote_fail += 1
+                    remote_noface += 1
             await db.commit()
         done = min(batch_start + batch_size, len(remote_atts))
-        print(f"\r  [{done}/{len(remote_atts)}] ok={remote_ok} skip={remote_fail}", end="", flush=True)
+        print(f"\r  [{done}/{len(remote_atts)}] ok={remote_ok} noface={remote_noface} err={remote_err}", end="", flush=True)
     if remote_atts:
         print()
 
-    print(f"\nDone. Local: {local_ok} detected / {local_fail} skipped. "
-          f"Remote: {remote_ok} detected / {remote_fail} skipped.")
+    print(f"\nDone. Local: {local_ok} detected / {local_noface} noface / {local_err} errors. "
+          f"Remote: {remote_ok} detected / {remote_noface} noface / {remote_err} errors.")
 
     await engine.dispose()
 
