@@ -1,5 +1,14 @@
-# TCP ベースの簡易構成例。
-# 本番環境では docker-compose.prod.yml (UDS + 静的フロントエンド配信) を推奨。
+# =============================================================================
+# Nekonoverse — Production Docker Compose (UDS)
+# =============================================================================
+# nginx 配下の全サービス間通信を Unix Domain Socket で統一。
+# フロントエンドはビルド済み静的ファイルを nginx が直接配信。
+#
+# 使い方:
+#   cp .env.example .env  # 環境変数を設定
+#   docker compose -f docker-compose.prod.yml up -d
+# =============================================================================
+
 services:
   postgresql:
     image: postgres:18-alpine
@@ -56,17 +65,22 @@ services:
       STORAGE_ROOT: /data
     volumes:
       - ./volumes/nekono3s:/data:ro
-      - ./volumes/s3proxy_sock:/var/run/s3proxy-deliverer
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     depends_on:
       nekono3s:
         condition: service_healthy
 
   app:
-    # image: ghcr.io/nekonoverse/nekonoverse-backend:unstable
     image: ghcr.io/nekonoverse/nekonoverse-backend:latest
     restart: unless-stopped
-    command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - |
+        chown 101:101 /var/run/nekonoverse-app &&
+        exec setpriv --reuid=101 --regid=101 --init-groups \
+          sh -c "alembic upgrade head && uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4"
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
       VALKEY_URL: valkey://valkey:6379/0
@@ -79,12 +93,19 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # face-detect via UDS (同一マシン)
+      # FACE_DETECT_URL: http://localhost/object-detection
+      # FACE_DETECT_UDS: /var/run/nekonoverse-face-detect/uvicorn.sock
+      # face-detect via TCP (外部マシン)
+      # FACE_DETECT_URL: http://gpu-server:8001/object-detection
       # Forward proxy for outbound federation requests (origin IP concealment)
       # HTTP_PROXY: http://squid:3128
       # HTTPS_PROXY: http://squid:3128
-      # NO_PROXY: nekono3s,valkey,postgresql,face-detect,localhost
-    expose:
-      - "8000"
+      # NO_PROXY: nekono3s,valkey,postgresql,localhost
+    volumes:
+      - app_sock:/var/run/nekonoverse-app
+      # face-detect UDS 使用時はコメント解除
+      # - face_detect_sock:/var/run/nekonoverse-face-detect:ro
     depends_on:
       postgresql:
         condition: service_healthy
@@ -94,7 +115,6 @@ services:
         condition: service_healthy
 
   worker:
-    # image: ghcr.io/nekonoverse/nekonoverse-backend:unstable
     image: ghcr.io/nekonoverse/nekonoverse-backend:latest
     restart: unless-stopped
     command: python -m app.worker.main
@@ -111,7 +131,7 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       # HTTP_PROXY: http://squid:3128
       # HTTPS_PROXY: http://squid:3128
-      # NO_PROXY: nekono3s,valkey,postgresql,face-detect,localhost
+      # NO_PROXY: nekono3s,valkey,postgresql,localhost
     depends_on:
       postgresql:
         condition: service_healthy
@@ -121,18 +141,23 @@ services:
         condition: service_healthy
 
   frontend:
-    # image: ghcr.io/nekonoverse/nekonoverse-frontend:unstable
     image: ghcr.io/nekonoverse/nekonoverse-frontend:latest
-    restart: unless-stopped
-    expose:
-      - "3000"
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - cp -a /app/dist/. /var/www/frontend/ && echo "Frontend static files copied"
+    volumes:
+      - frontend_dist:/var/www/frontend
 
   nginx:
     image: nginx:alpine
     restart: unless-stopped
     volumes:
-      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./volumes/s3proxy_sock:/var/run/s3proxy-deliverer
+      - ./nginx/prod.conf:/etc/nginx/nginx.conf:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
+      - app_sock:/var/run/nekonoverse-app
+      - frontend_dist:/var/www/frontend:ro
     ports:
       - "80:80"
     depends_on:
@@ -142,11 +167,22 @@ services:
 
   # Optional: GPU face detection service (uncomment to use)
   # Requires NVIDIA GPU + nvidia-container-toolkit.
-  # Set FACE_DETECT_URL=http://face-detect:8001/object-detection in app environment.
-  # If running on a separate machine, set FACE_DETECT_URL to that machine's URL instead.
+  # Also uncomment face_detect_sock volume in app service and FACE_DETECT_URL/UDS env vars.
   # face-detect:
   #   build: ./face-detect
   #   restart: unless-stopped
+  #   user: "0:0"
+  #   command:
+  #     - sh
+  #     - -c
+  #     - |
+  #       chown 101:101 /var/run/nekonoverse-face-detect &&
+  #       exec setpriv --reuid=101 --regid=101 --init-groups \
+  #         /venv/bin/uvicorn main:app --uds /var/run/nekonoverse-face-detect/uvicorn.sock
+  #   environment:
+  #     DETECTION_MODE: anime
+  #   volumes:
+  #     - face_detect_sock:/var/run/nekonoverse-face-detect
   #   deploy:
   #     resources:
   #       reservations:
@@ -154,8 +190,6 @@ services:
   #           - driver: nvidia
   #             count: 1
   #             capabilities: [gpu]
-  #   expose:
-  #     - "8001"
 
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cloudflared:
@@ -164,3 +198,10 @@ services:
   #   command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
   #   environment:
   #     TUNNEL_TRANSPORT_PROTOCOL: http2
+
+volumes:
+  s3proxy_sock:
+  app_sock:
+  frontend_dist:
+  # face-detect UDS 使用時はコメント解除
+  # face_detect_sock:
