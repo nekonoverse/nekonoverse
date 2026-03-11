@@ -43,6 +43,7 @@ export const en: Dictionary = {
   "drive.loginRequired": "Please log in to view your drive.",
   "drive.pickFromDrive": "Pick from drive",
   "drive.select": "Select",
+  "composer.uploading": "Uploading...",
   "composer.uploadFailed": "Upload failed",
   "composer.setFocalPoint": "Set focal point",
   "composer.focalPoint": "Focal Point",

@@ -43,6 +43,7 @@ export const neko: Dictionary = {
   "drive.loginRequired": "ドライブ見るにはにゃグインが必要にゃ。",
   "drive.pickFromDrive": "ドライブからえらぶにゃ",
   "drive.select": "えらぶにゃ",
+  "composer.uploading": "アップロード中にゃ...",
   "composer.uploadFailed": "アップロードできにゃかった...",
   "composer.setFocalPoint": "にゃんてんを設定にゃ",
   "composer.focalPoint": "にゃんてんの設定にゃ",
