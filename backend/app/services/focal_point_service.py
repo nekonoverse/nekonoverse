@@ -125,7 +125,9 @@ async def _call_face_detect(
     """Call face-detect service. Returns (focal_x, focal_y) or None."""
     b64 = base64.b64encode(image_data).decode("ascii")
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        from app.utils.http_client import make_face_detect_client
+
+        async with make_face_detect_client() as client:
             resp = await client.post(
                 settings.face_detect_url,
                 json={"inputs": b64, "parameters": {"threshold": 0.5}},

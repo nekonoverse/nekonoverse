@@ -16,6 +16,7 @@ class Settings(BaseSettings):
     s3_region: str = "us-east-1"
     skip_ssl_verify: bool = False
     face_detect_url: str | None = None
+    face_detect_uds: str | None = None  # UDS path for face-detect (e.g. /var/run/nekonoverse-face-detect/uvicorn.sock)
 
     # Forward proxy for outbound federation requests (origin IP concealment)
     http_proxy: str | None = None

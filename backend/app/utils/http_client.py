@@ -10,6 +10,20 @@ def get_proxy_url() -> str | None:
     return settings.https_proxy or settings.http_proxy
 
 
+def make_face_detect_client(**kwargs) -> httpx.AsyncClient:
+    """Create an httpx.AsyncClient configured for the face-detect service.
+
+    When ``settings.face_detect_uds`` is set, uses a Unix domain socket
+    transport instead of TCP.
+    """
+    if settings.face_detect_uds:
+        kwargs.setdefault(
+            "transport", httpx.AsyncHTTPTransport(uds=settings.face_detect_uds)
+        )
+    kwargs.setdefault("timeout", 30.0)
+    return httpx.AsyncClient(**kwargs)
+
+
 def make_async_client(*, use_proxy: bool = True, **kwargs) -> httpx.AsyncClient:
     """Create an httpx.AsyncClient with proxy settings injected.
 
