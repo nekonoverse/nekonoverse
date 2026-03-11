@@ -42,8 +42,10 @@ async def proxy_media(
     if _is_private_host(parsed.hostname):
         raise HTTPException(status_code=403, detail="Forbidden host")
 
-    async with httpx.AsyncClient(
-        timeout=_TIMEOUT, follow_redirects=True, max_redirects=3
+    from app.utils.http_client import make_async_client
+
+    async with make_async_client(
+        timeout=_TIMEOUT, follow_redirects=True, max_redirects=3,
     ) as client:
         try:
             resp = await client.get(url)

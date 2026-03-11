@@ -99,8 +99,11 @@ async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
         headers.update(sig_headers)
 
     from app.config import settings
+    from app.utils.http_client import make_async_client
 
-    async with httpx.AsyncClient(timeout=10.0, verify=not settings.skip_ssl_verify) as client:
+    async with make_async_client(
+        timeout=10.0, verify=not settings.skip_ssl_verify,
+    ) as client:
         return await client.get(url, headers=headers, follow_redirects=True)
 
 

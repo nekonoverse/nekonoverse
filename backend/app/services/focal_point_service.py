@@ -35,6 +35,7 @@ async def detect_remote_focal_points(
     try:
         async with async_session() as db:
             from sqlalchemy import select
+
             from app.models.note_attachment import NoteAttachment
 
             rows = await db.execute(
@@ -88,6 +89,7 @@ async def _detect_single(att) -> bool:
 async def _download_image(url: str) -> bytes | None:
     """Download remote image with SSRF protection and size limit."""
     from urllib.parse import urlparse
+
     from app.api.mastodon.media_proxy import _is_private_host
 
     parsed = urlparse(url)
@@ -97,7 +99,9 @@ async def _download_image(url: str) -> bytes | None:
         return None
 
     try:
-        async with httpx.AsyncClient(
+        from app.utils.http_client import make_async_client
+
+        async with make_async_client(
             timeout=httpx.Timeout(15.0, connect=5.0),
             follow_redirects=True,
             max_redirects=3,
@@ -148,16 +152,18 @@ async def _call_face_detect(
 async def _publish_update(note_id: uuid.UUID) -> None:
     """Publish streaming event so clients re-fetch the note."""
     import json
+
     from app.valkey_client import valkey as valkey_client
 
     try:
         event = json.dumps({"event": "update", "payload": {"id": str(note_id)}})
         await valkey_client.publish("timeline:public", event)
 
+        from sqlalchemy import select
+
         from app.database import async_session
         from app.models.note import Note
         from app.services.follow_service import get_follower_ids
-        from sqlalchemy import select
 
         async with async_session() as db:
             actor_id = (
