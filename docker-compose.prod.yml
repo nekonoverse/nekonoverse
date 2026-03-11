@@ -79,7 +79,7 @@ services:
       - -c
       - |
         chown 101:101 /var/run/nekonoverse-app &&
-        exec setpriv --reuid=101 --regid=101 --init-groups \
+        exec setpriv --reuid=101 --regid=101 --clear-groups \
           sh -c "alembic upgrade head && uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4"
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
@@ -177,7 +177,7 @@ services:
   #     - -c
   #     - |
   #       chown 101:101 /var/run/nekonoverse-face-detect &&
-  #       exec setpriv --reuid=101 --regid=101 --init-groups \
+  #       exec setpriv --reuid=101 --regid=101 --clear-groups \
   #         /venv/bin/uvicorn main:app --uds /var/run/nekonoverse-face-detect/uvicorn.sock
   #   environment:
   #     DETECTION_MODE: anime
