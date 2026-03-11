@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { loginAsAdmin } from "./helpers";
+import { loginAsAdmin, png1x1 } from "./helpers";
 
 test.describe("Note Composer", () => {
   test.beforeEach(async ({ page }) => {
@@ -89,6 +89,35 @@ test.describe("Note Composer", () => {
 
     // Should show filtered results (at least one emoji)
     await expect(page.locator(".emoji-picker .emoji-btn").first()).toBeVisible({ timeout: 5_000 });
+  });
+
+  test("post button is disabled while uploading media", async ({ page }) => {
+    const composerForm = page.locator("form.note-composer");
+    await expect(composerForm).toBeVisible({ timeout: 10_000 });
+
+    // Intercept media upload API and delay the response
+    let resolveUpload!: () => void;
+    const uploadGate = new Promise<void>((r) => { resolveUpload = r; });
+    await page.route("**/api/v1/media", async (route) => {
+      await uploadGate;
+      await route.continue();
+    });
+
+    // Trigger file upload via the hidden file input
+    const fileInput = composerForm.locator('input[type="file"]');
+    await fileInput.setInputFiles({
+      name: "test.png",
+      mimeType: "image/png",
+      buffer: png1x1(),
+    });
+
+    // While uploading, post button should be disabled
+    const postBtn = page.locator("button.composer-post-btn");
+    await expect(postBtn).toBeDisabled({ timeout: 5_000 });
+
+    // Resolve upload and verify button becomes enabled
+    resolveUpload();
+    await expect(postBtn).toBeEnabled({ timeout: 10_000 });
   });
 
   test("can change visibility", async ({ page }) => {
