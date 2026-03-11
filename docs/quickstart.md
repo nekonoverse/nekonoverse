@@ -19,30 +19,32 @@ DOMAIN=your-domain.example
 SECRET_KEY=$(openssl rand -base64 32)
 DEBUG=false
 FRONTEND_URL=https://your-domain.example
+S3_SECRET_ACCESS_KEY=<強力なパスワード>
 EOF
-
-# Compose ファイルをコピー
-cp docker-compose.yml.example docker-compose.yml
 ```
 
 ## 2. nginx 設定
 
-TLS 終端 + リバースプロキシを設定します。`nginx/nginx.conf` を環境に合わせて編集してください。
+TLS 終端 + リバースプロキシを設定します。`nginx/prod.conf` を環境に合わせて編集してください。
 
 Cloudflare Tunnel を使う場合は [デプロイガイド](deploy.md#cloudflared-cloudflare-tunnel-を使う場合) を参照。
 
 ## 3. 起動
 
 ```bash
-docker compose up -d
+# UDS 構成 (推奨)
+docker compose -f docker-compose.prod.yml up -d
 ```
+
+!!! note "TCP 構成"
+    TCP 構成を使う場合は `cp docker-compose.yml.example docker-compose.yml` でコピーし、`docker compose up -d` で起動。詳細は [デプロイガイド](deploy.md) を参照。
 
 ## 4. 管理者ユーザーの作成
 
 初回は CLI で管理者を作成します。対話型プロンプトで入力できます。
 
 ```bash
-docker compose exec -it app python -m app.cli create-admin
+docker compose -f docker-compose.prod.yml exec -it app python -m app.cli create-admin
 ```
 
 ```
@@ -61,7 +63,7 @@ Admin user created: neko (neko@example.com)
 引数を直接指定することもできます:
 
 ```bash
-docker compose exec app python -m app.cli create-admin \
+docker compose -f docker-compose.prod.yml exec app python -m app.cli create-admin \
   --username neko \
   --email neko@example.com \
   --password your-secure-password
@@ -97,32 +99,39 @@ docker compose exec app python -m app.cli create-admin \
 |---------|------|
 | `python -m app.cli create-admin` | 管理者ユーザーの作成 |
 | `python -m app.cli reset-password` | パスワードリセット |
+| `python -m app.cli detect-focal-points` | 既存画像の顔検出一括実行 |
 
-いずれも引数なしで対話型、`--username` 等の引数付きで非対話型として動作します。
+`create-admin` / `reset-password` は引数なしで対話型、`--username` 等の引数付きで非対話型として動作します。
+
+`detect-focal-points` は `FACE_DETECT_URL` が設定されている環境で、フォーカルポイント未設定の画像に対して顔検出を一括実行します。`--concurrency` オプションで並列度を指定できます（デフォルト: 4）。
 
 ## 本番更新手順
 
 GHCR のイメージを使っている場合:
 
 ```bash
+# UDS 構成 (docker-compose.prod.yml) — nginx 再起動不要
+docker compose -f docker-compose.prod.yml pull
+docker compose -f docker-compose.prod.yml up -d
+
+# TCP 構成 (docker-compose.yml) — nginx 再起動が必要
 docker compose pull
 docker compose up -d
 docker compose restart nginx
 ```
 
-!!! important "nginx の再起動"
-    `docker compose up -d` でバックエンドのコンテナが再作成されると内部 IP が変わる。nginx は起動時に upstream の DNS を解決してキャッシュするため、**app 更新後は必ず `docker compose restart nginx` を実行すること**。
+!!! note "UDS 構成と TCP 構成"
+    `docker-compose.prod.yml` では全サービス間通信を Unix Domain Socket で行うため、コンテナ再作成時に nginx の再起動が不要。TCP 構成 (`docker-compose.yml`) では内部 IP が変わるため `restart nginx` が必要。
 
 ### Docker イメージタグ
 
 | タグ | 内容 | 用途 |
 |------|------|------|
-| `latest` | 最新リリースタグのビルド | 安定版を使いたい場合 |
-| `0.5.1` | 特定バージョン | バージョン固定したい場合 |
-| `0.5` | マイナーバージョン最新 | パッチ更新を自動で受けたい場合 |
+| `latest` | 最新リリースのビルド | 安定版を使いたい場合 |
+| `20260311-1` | 特定リリース (yyyymmdd-x) | バージョン固定したい場合 |
 | `unstable` | develop ブランチの最新ビルド | 最新の開発版を試したい場合 |
 
 !!! warning "注意事項"
     - `DEBUG=false` で HTTPS モードになります。nginx または Cloudflare で TLS 終端してください
     - `DOMAIN` は ActivityPub ID に使用されるため、**運用開始後は変更できません**
-    - 本番用 Compose は app/frontend を `expose` のみ（ポート直接公開なし）、nginx 経由でアクセスします
+    - UDS 構成ではサービス間を Unix Domain Socket で接続し、TCP ポートを外部に公開しません

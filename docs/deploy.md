@@ -4,8 +4,32 @@
 
 [クイックスタート](quickstart.md) を参照。すべてのサービスが Docker Compose で管理される標準的な構成。
 
+### TCP 構成 (`docker-compose.yml`)
+
 ```
-Client → nginx → backend (API) / frontend / s3proxy-deliverer (メディア)
+Client → nginx → (TCP) → backend / frontend / s3proxy-deliverer
+```
+
+従来の構成。nginx が各サービスに TCP で接続する。`docker-compose.yml.example` をコピーして使用。
+
+### UDS 構成 (`docker-compose.prod.yml`) — 推奨
+
+```
+Client → nginx → (UDS) → backend / s3proxy-deliverer
+                → (volume) → frontend (静的ファイル)
+         → (UDS) → PostgreSQL / Valkey
+```
+
+全サービス間通信を Unix Domain Socket で統一した本番推奨構成:
+
+- **PostgreSQL / Valkey**: UDS 接続（TCP ポート無効化）
+- **backend / s3proxy-deliverer**: nginx ↔ app 間を UDS
+- **frontend**: ビルド済み静的ファイルを nginx が直接配信（Vite プロセス不要）
+- **メリット**: コンテナ再作成時に nginx 再起動不要、ネットワーク攻撃面の削減、わずかなレイテンシ改善
+
+```bash
+cp .env.example .env  # 環境変数を設定
+docker compose -f docker-compose.prod.yml up -d
 ```
 
 ## 本番更新手順
@@ -128,6 +152,18 @@ server {
     server_name your-domain.example;
     client_max_body_size 10M;
 
+    # SSE streaming — バッファリング無効、長タイムアウト
+    location /api/v1/streaming/ {
+        proxy_pass http://backend;
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 3600s;
+        proxy_send_timeout 3600s;
+        chunked_transfer_encoding off;
+    }
+
     # API routes
     location /api/ {
         proxy_pass http://backend;
@@ -140,11 +176,21 @@ server {
     # ActivityPub routes
     location /.well-known/ { proxy_pass http://backend; proxy_set_header Host $host; }
     location /users/       { proxy_pass http://backend; proxy_set_header Host $host; }
-    location /notes/       { proxy_pass http://backend; proxy_set_header Host $host; }
     location /inbox        { proxy_pass http://backend; proxy_set_header Host $host; }
     location /nodeinfo/    { proxy_pass http://backend; proxy_set_header Host $host; }
     location /oauth/       { proxy_pass http://backend; proxy_set_header Host $host; }
     location /manifest.webmanifest { proxy_pass http://backend; proxy_set_header Host $host; }
+
+    # Notes: AP リクエストはバックエンドへ、ブラウザはフロントエンドへ
+    location /notes/ {
+        proxy_set_header Host $host;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        if ($http_accept ~* "application/(activity\+json|ld\+json)") {
+            proxy_pass http://backend;
+            break;
+        }
+        proxy_pass http://frontend;
+    }
 
     # Media files
     location /media/ {
