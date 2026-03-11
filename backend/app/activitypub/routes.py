@@ -261,6 +261,9 @@ async def user_inbox(username: str, request: Request, db: AsyncSession = Depends
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
+    # 署名鍵のアクターとactivityのactorが一致するか検証
+    _verify_key_actor_match(key_id, activity)
+
     await process_inbox_activity(db, activity)
     return Response(status_code=202)
 
@@ -285,8 +288,33 @@ async def shared_inbox(request: Request, db: AsyncSession = Depends(get_db)):
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
+    # 署名鍵のアクターとactivityのactorが一致するか検証
+    _verify_key_actor_match(key_id, activity)
+
     await process_inbox_activity(db, activity)
     return Response(status_code=202)
+
+
+def _verify_key_actor_match(key_id: str, activity: dict):
+    """Verify that the HTTP Signature key owner matches the activity actor.
+
+    key_id is typically like "https://example.com/users/alice#main-key".
+    The actor portion is the URL before the fragment.
+    """
+    activity_actor = activity.get("actor", "")
+    if not activity_actor or not key_id:
+        raise HTTPException(status_code=401, detail="Missing actor or key_id")
+
+    # key_idからアクターURLを抽出 (フラグメント部分を除去)
+    key_actor = key_id.split("#")[0]
+
+    if key_actor != activity_actor:
+        logger.warning(
+            "Key actor mismatch: key_id actor=%s, activity actor=%s",
+            key_actor,
+            activity_actor,
+        )
+        raise HTTPException(status_code=401, detail="Key owner does not match activity actor")
 
 
 async def process_inbox_activity(db: AsyncSession, activity: dict):

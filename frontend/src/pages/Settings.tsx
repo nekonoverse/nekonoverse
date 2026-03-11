@@ -247,6 +247,7 @@ function SecurityTab(props: { onLogout: () => void }) {
   const [totpError, setTotpError] = createSignal("");
   const [totpProcessing, setTotpProcessing] = createSignal(false);
   const [disablePw, setDisablePw] = createSignal("");
+  const [setupPw, setSetupPw] = createSignal("");
   const [qrDataUrl, setQrDataUrl] = createSignal("");
 
   createEffect(async () => {
@@ -293,10 +294,15 @@ function SecurityTab(props: { onLogout: () => void }) {
   };
 
   const handleSetupTotp = async () => {
+    if (!setupPw()) {
+      setTotpError(t("totp.passwordRequired"));
+      return;
+    }
     setTotpError("");
     setTotpProcessing(true);
     try {
-      const data = await setupTotp();
+      const data = await setupTotp(setupPw());
+      setSetupPw("");
       setTotpSecret(data.secret);
       setTotpUri(data.provisioning_uri);
       setTotpStep("qr");
@@ -392,10 +398,19 @@ function SecurityTab(props: { onLogout: () => void }) {
           <Switch>
             <Match when={totpStep() === "idle" && !totpEnabled()}>
               <p class="settings-desc">{t("totp.description")}</p>
+              <div class="form-group">
+                <label>{t("totp.confirmPassword")}</label>
+                <input
+                  type="password"
+                  value={setupPw()}
+                  onInput={(e) => setSetupPw(e.currentTarget.value)}
+                  placeholder={t("totp.confirmPassword")}
+                />
+              </div>
               <button
                 class="btn btn-small"
                 onClick={handleSetupTotp}
-                disabled={totpProcessing()}
+                disabled={totpProcessing() || !setupPw()}
               >
                 {t("totp.enable")}
               </button>

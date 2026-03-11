@@ -647,13 +647,24 @@ async def get_reaction_summaries(
     return summaries
 
 
-async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
+_FETCH_MAX_DEPTH = 3
+
+
+async def fetch_remote_note(
+    db: AsyncSession, ap_id: str, *, _depth: int = 0,
+) -> Note | None:
     """Fetch a remote note by AP ID and store it locally.
 
     Used by announce/create handlers when the referenced note
     (boost target or quote target) is not in the local database.
     """
     import logging
+
+    if _depth >= _FETCH_MAX_DEPTH:
+        logging.getLogger(__name__).warning(
+            "fetch_remote_note depth limit reached for %s", ap_id,
+        )
+        return None
 
     from app.models.note_attachment import NoteAttachment
     from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id

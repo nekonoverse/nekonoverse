@@ -81,7 +81,9 @@ def test_hash_and_verify_recovery_code():
 
 
 async def test_totp_setup(authed_client, test_user):
-    resp = await authed_client.post("/api/v1/auth/totp/setup")
+    resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert "secret" in data
@@ -92,7 +94,9 @@ async def test_totp_setup(authed_client, test_user):
 async def test_totp_setup_already_enabled(authed_client, test_user, db):
     test_user.totp_enabled = True
     await db.commit()
-    resp = await authed_client.post("/api/v1/auth/totp/setup")
+    resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
     assert resp.status_code == 400
 
 

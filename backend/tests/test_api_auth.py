@@ -177,7 +177,9 @@ async def test_totp_status_disabled(authed_client, test_user):
 
 
 async def test_totp_setup(authed_client, test_user):
-    resp = await authed_client.post("/api/v1/auth/totp/setup")
+    resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
     assert resp.status_code == 200
     data = resp.json()
     assert "secret" in data
@@ -188,12 +190,16 @@ async def test_totp_setup(authed_client, test_user):
 async def test_totp_setup_already_enabled(authed_client, test_user, db):
     test_user.totp_enabled = True
     await db.flush()
-    resp = await authed_client.post("/api/v1/auth/totp/setup")
+    resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
     assert resp.status_code == 400
 
 
 async def test_totp_enable(authed_client, test_user, db):
-    setup_resp = await authed_client.post("/api/v1/auth/totp/setup")
+    setup_resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
     secret = setup_resp.json()["secret"]
 
     import pyotp
@@ -207,7 +213,9 @@ async def test_totp_enable(authed_client, test_user, db):
 
 
 async def test_totp_enable_invalid_code(authed_client, test_user, db):
-    await authed_client.post("/api/v1/auth/totp/setup")
+    await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
     resp = await authed_client.post("/api/v1/auth/totp/enable", json={"code": "000000"})
     assert resp.status_code == 400
 
@@ -218,7 +226,9 @@ async def test_totp_enable_no_setup(authed_client, test_user, db):
 
 
 async def test_totp_disable(authed_client, test_user, db):
-    setup_resp = await authed_client.post("/api/v1/auth/totp/setup")
+    setup_resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
     secret = setup_resp.json()["secret"]
     import pyotp
     code = pyotp.TOTP(secret).now()
@@ -232,7 +242,9 @@ async def test_totp_disable(authed_client, test_user, db):
 
 
 async def test_totp_disable_wrong_password(authed_client, test_user, db):
-    setup_resp = await authed_client.post("/api/v1/auth/totp/setup")
+    setup_resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
     secret = setup_resp.json()["secret"]
     import pyotp
     code = pyotp.TOTP(secret).now()
@@ -306,5 +318,7 @@ async def test_totp_status_unauthenticated(app_client, mock_valkey):
 
 
 async def test_totp_setup_unauthenticated(app_client, mock_valkey):
-    resp = await app_client.post("/api/v1/auth/totp/setup")
+    resp = await app_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "anything"},
+    )
     assert resp.status_code == 401

@@ -6,7 +6,7 @@ import html as html_mod
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -18,6 +18,9 @@ from app.dependencies import get_db
 from app.models.oauth import OAuthApplication, OAuthAuthorizationCode, OAuthToken
 
 router = APIRouter(tags=["oauth"])
+
+# トークン有効期限: 90日
+TOKEN_LIFETIME = timedelta(days=90)
 
 
 class AppCreateRequest(BaseModel):
@@ -73,8 +76,15 @@ async def authorize_form(
     if not app:
         raise HTTPException(status_code=400, detail="Invalid client_id")
 
-    if redirect_uri not in app.redirect_uris.split():
+    # リダイレクトURIの厳密な完全一致検証
+    allowed_uris = [u.strip() for u in app.redirect_uris.split() if u.strip()]
+    if redirect_uri not in allowed_uris:
         raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+
+    # 危険なスキーム(javascript:等)のブロック
+    parsed_redirect = urlparse(redirect_uri)
+    if parsed_redirect.scheme not in ("https", "http", "urn"):
+        raise HTTPException(status_code=400, detail="Invalid redirect_uri scheme")
 
     # Check if user is logged in
     session_id = request.cookies.get("nekonoverse_session")
@@ -195,6 +205,7 @@ async def token(
             scopes=auth_code.scopes,
             application_id=app.id,
             user_id=auth_code.user_id,
+            expires_at=datetime.now(timezone.utc) + TOKEN_LIFETIME,
         )
         db.add(token_obj)
 
@@ -216,6 +227,7 @@ async def token(
             scopes=scope or "read",
             application_id=app.id,
             user_id=None,
+            expires_at=datetime.now(timezone.utc) + TOKEN_LIFETIME,
         )
         db.add(token_obj)
         await db.commit()
@@ -239,9 +251,20 @@ async def revoke_token(
     db: AsyncSession = Depends(get_db),
 ):
     """Revoke an access token."""
+    # クライアント認証
+    result = await db.execute(
+        select(OAuthApplication).where(OAuthApplication.client_id == client_id)
+    )
+    app = result.scalar_one_or_none()
+    if not app or not hmac.compare_digest(app.client_secret, client_secret):
+        raise HTTPException(status_code=401, detail="Invalid client credentials")
+
     result = await db.execute(select(OAuthToken).where(OAuthToken.access_token == token))
     token_obj = result.scalar_one_or_none()
     if token_obj:
+        # トークンが要求元のアプリケーションに属するか検証
+        if token_obj.application_id != app.id:
+            raise HTTPException(status_code=403, detail="Token does not belong to this client")
         token_obj.revoked_at = datetime.now(timezone.utc)
         await db.commit()
 

@@ -18,6 +18,11 @@ async def get_current_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
+    # OAuthベアラートークンを先にチェック
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        return await get_oauth_user(request, db)
+
     session_id = request.cookies.get("nekonoverse_session")
     if not session_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
@@ -66,10 +71,62 @@ async def get_admin_user(
     return user
 
 
+async def get_oauth_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Authenticate a user via OAuth Bearer token (Authorization header)."""
+    auth_header = request.headers.get("authorization", "")
+    if not auth_header.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Missing Bearer token")
+
+    token_str = auth_header[7:]
+
+    from sqlalchemy import select
+
+    from app.models.oauth import OAuthToken
+
+    result = await db.execute(
+        select(OAuthToken).where(OAuthToken.access_token == token_str)
+    )
+    token_obj = result.scalar_one_or_none()
+    if not token_obj:
+        raise HTTPException(status_code=401, detail="Invalid token")
+
+    if token_obj.revoked_at is not None:
+        raise HTTPException(status_code=401, detail="Token revoked")
+
+    if token_obj.is_expired:
+        raise HTTPException(status_code=401, detail="Token expired")
+
+    if not token_obj.user_id:
+        raise HTTPException(status_code=401, detail="Token has no associated user")
+
+    user = await get_user_by_id(db, token_obj.user_id)
+    if not user:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    if user.actor and user.actor.is_suspended:
+        raise HTTPException(status_code=403, detail="Account is suspended")
+
+    if user.approval_status == "pending":
+        raise HTTPException(status_code=403, detail="Your registration is pending approval")
+
+    return user
+
+
 async def get_optional_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User | None:
+    # OAuthベアラートークンを先にチェック
+    auth_header = request.headers.get("authorization", "")
+    if auth_header.startswith("Bearer "):
+        try:
+            return await get_oauth_user(request, db)
+        except HTTPException:
+            return None
+
     session_id = request.cookies.get("nekonoverse_session")
     if not session_id:
         return None

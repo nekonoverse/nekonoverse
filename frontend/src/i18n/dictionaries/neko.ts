@@ -451,6 +451,8 @@ export const neko: Dictionary = {
   "totp.required": "にゃんそう認証コードをいれるにゃ",
   "totp.copySecret": "シークレットこぴーにゃ",
   "totp.copyCodes": "コードこぴーにゃ",
+  "totp.confirmPassword": "にゃスワードいれるにゃ",
+  "totp.passwordRequired": "にゃスワードがひつようにゃ",
   "totp.disableConfirm": "にゃんそう認証むこうにするにはにゃスワードいれるにゃ",
   "totp.recoveryHint": "にんしょうアプリがつかえにゃいならリカバリーコードいれるにゃ",
   "admin.regModeApproval": "しょうにんせいにゃ",
