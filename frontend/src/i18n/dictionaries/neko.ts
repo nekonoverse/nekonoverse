@@ -499,11 +499,12 @@ export const neko: Dictionary = {
   "entrance.stats.servers": "れんごうサーバー",
   "entrance.preview.title": "さいきんのとうこうにゃ",
   "entrance.cta.join": "いますぐさんかにゃ！",
-  "entrance.footer.joinCommunity": "なかまになるにゃ",
-  "entrance.footer.inviteRequired":
+  "entrance.cta.invite": "しょうたいコードでとうろくにゃ",
+  "entrance.cta.approval": "とうろくをしんせいするにゃ",
+  "entrance.notice.inviteRequired":
     "とうろくにはしょうたいコードがひつようにゃ。",
-  "entrance.footer.approvalRequired": "かんりしゃのしょうにんがひつようにゃ。",
-  "entrance.footer.closed": "いまはとうろくおやすみにゃ。",
+  "entrance.notice.approvalRequired": "かんりしゃのしょうにんがひつようにゃ。",
+  "entrance.notice.closed": "いまはとうろくおやすみにゃ。",
   "profile.followsYou": "フォローされてるにゃ",
   "profile.postsCount": "とうこうにゃ",
   "settings.timeFormat": "じかんのみせかたにゃ",

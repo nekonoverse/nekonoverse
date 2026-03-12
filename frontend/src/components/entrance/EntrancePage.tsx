@@ -1,6 +1,5 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
-import { instance } from "../../stores/instance";
-import { registrationMode } from "../../stores/instance";
+import { instance, registrationMode } from "../../stores/instance";
 import { getPublicTimeline, type Note } from "../../api/statuses";
 import { useI18n } from "../../i18n";
 import NoteCard from "../notes/NoteCard";
@@ -55,21 +54,25 @@ export default function EntrancePage() {
           </a>
           <Show when={mode() !== "closed"}>
             <a href="/register" class="btn btn-accent">
-              {t("entrance.cta.join")}
+              {mode() === "invite"
+                ? t("entrance.cta.invite")
+                : mode() === "approval"
+                  ? t("entrance.cta.approval")
+                  : t("entrance.cta.join")}
             </a>
           </Show>
         </div>
         <Show when={mode() === "closed"}>
-          <p class="entrance-hero-notice">{t("entrance.footer.closed")}</p>
+          <p class="entrance-hero-notice">{t("entrance.notice.closed")}</p>
         </Show>
         <Show when={mode() === "invite"}>
           <p class="entrance-hero-notice">
-            {t("entrance.footer.inviteRequired")}
+            {t("entrance.notice.inviteRequired")}
           </p>
         </Show>
         <Show when={mode() === "approval"}>
           <p class="entrance-hero-notice">
-            {t("entrance.footer.approvalRequired")}
+            {t("entrance.notice.approvalRequired")}
           </p>
         </Show>
       </section>
@@ -119,7 +122,6 @@ export default function EntrancePage() {
           </Show>
         </Show>
       </section>
-
     </div>
   );
 }
