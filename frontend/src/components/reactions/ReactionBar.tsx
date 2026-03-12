@@ -124,7 +124,11 @@ export default function ReactionBar(props: Props) {
             <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
           </button>
         ))}
-        <button class="reaction-add-btn" onClick={() => setShowPicker(!showPicker())}>
+        <button class="reaction-add-btn" onClick={() => {
+          const opening = !showPicker();
+          if (opening) (document.activeElement as HTMLElement)?.blur();
+          setShowPicker(opening);
+        }}>
           +
         </button>
         <Show when={showPicker()}>

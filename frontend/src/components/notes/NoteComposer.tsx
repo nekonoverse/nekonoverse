@@ -322,7 +322,11 @@ export default function NoteComposer(props: Props) {
             <button
               type="button"
               class="composer-attach-btn"
-              onClick={() => setEmojiPickerOpen(!emojiPickerOpen())}
+              onClick={() => {
+                const opening = !emojiPickerOpen();
+                if (opening) textareaRef?.blur();
+                setEmojiPickerOpen(opening);
+              }}
               title={t("composer.emoji" as any)}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
