@@ -114,6 +114,75 @@ async def _download_image(url: str) -> bytes | None:
         return resp.content
 
 
+def _get_image_size(image_data: bytes) -> tuple[int, int] | None:
+    """Extract image dimensions from raw bytes without heavy dependencies."""
+    import io
+    import struct
+
+    data = io.BytesIO(image_data)
+    head = data.read(32)
+    if len(head) < 8:
+        return None
+
+    # PNG
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        if len(head) >= 24:
+            w, h = struct.unpack(">II", head[16:24])
+            return (w, h)
+        return None
+
+    # GIF
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        w, h = struct.unpack("<HH", head[6:10])
+        return (w, h)
+
+    # JPEG
+    if head[:2] == b"\xff\xd8":
+        data.seek(2)
+        while True:
+            marker = data.read(2)
+            if len(marker) < 2:
+                return None
+            if marker[0] != 0xFF:
+                return None
+            if marker[1] == 0xD9:
+                return None
+            if marker[1] in (0xC0, 0xC1, 0xC2):
+                seg = data.read(7)
+                if len(seg) < 7:
+                    return None
+                h, w = struct.unpack(">HH", seg[3:7])
+                return (w, h)
+            length = struct.unpack(">H", data.read(2))[0]
+            data.seek(length - 2, 1)
+
+    # WebP
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        # VP8
+        if head[12:16] == b"VP8 ":
+            if len(head) >= 30:
+                w = struct.unpack("<H", head[26:28])[0] & 0x3FFF
+                h = struct.unpack("<H", head[28:30])[0] & 0x3FFF
+                return (w, h)
+        # VP8L
+        elif head[12:16] == b"VP8L":
+            if len(head) >= 25:
+                bits = struct.unpack("<I", head[21:25])[0]
+                w = (bits & 0x3FFF) + 1
+                h = ((bits >> 14) & 0x3FFF) + 1
+                return (w, h)
+        # VP8X (extended)
+        elif head[12:16] == b"VP8X":
+            data.seek(24)
+            chunk = data.read(6)
+            if len(chunk) >= 6:
+                w = struct.unpack("<I", chunk[0:3] + b"\x00")[0] + 1
+                h = struct.unpack("<I", chunk[3:6] + b"\x00")[0] + 1
+                return (w, h)
+
+    return None
+
+
 async def _call_face_detect(
     image_data: bytes,
     width: int | None,
@@ -123,6 +192,15 @@ async def _call_face_detect(
 
     Raises on server/network errors so callers can distinguish from "no face".
     """
+    # Resolve actual image size if metadata is missing
+    if not width or not height:
+        size = _get_image_size(image_data)
+        if size:
+            width, height = size
+        else:
+            logger.debug("Could not determine image size, skipping focal detection")
+            return None
+
     b64 = base64.b64encode(image_data).decode("ascii")
     from app.utils.http_client import make_face_detect_client
 
@@ -141,10 +219,8 @@ async def _call_face_detect(
     cx = (box["xmin"] + box["xmax"]) / 2
     cy = (box["ymin"] + box["ymax"]) / 2
 
-    w = width or 1
-    h = height or 1
-    focal_x = max(-1.0, min(1.0, (cx / w) * 2 - 1))
-    focal_y = max(-1.0, min(1.0, 1 - (cy / h) * 2))
+    focal_x = max(-1.0, min(1.0, (cx / width) * 2 - 1))
+    focal_y = max(-1.0, min(1.0, 1 - (cy / height) * 2))
     return (focal_x, focal_y)
 
 

@@ -311,7 +311,7 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
                     print(f"       -> ERROR: {e}")
             else:
                 # Remote attachment
-                print(f"  [{i}] Remote: {att.remote_url[:80]}")
+                print(f"  [{i}] Remote: {att.remote_url}")
                 old = (att.remote_focal_x, att.remote_focal_y)
                 try:
                     image_data = await _download_image(att.remote_url)
