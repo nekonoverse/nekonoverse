@@ -118,6 +118,7 @@ export const en: Dictionary = {
   "visibility.direct": "Direct",
   "profile.posts": "Posts",
   "profile.joined": "Joined:",
+  "profile.firstSeen": "First seen:",
   "profile.noPostsYet": "No posts yet",
   "profile.edit": "Edit Profile",
   "profile.save": "Save",
