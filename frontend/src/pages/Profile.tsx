@@ -110,13 +110,26 @@ export default function Profile() {
     return el.textContent?.trim() || "";
   };
 
+  const decodeHtmlEntities = (text: string): string => {
+    const el = document.createElement("div");
+    el.innerHTML = text;
+    return el.textContent || "";
+  };
+
   const startEditing = () => {
     const acc = account()!;
     const user = currentUser();
     setEditName(acc.display_name || "");
     setEditBio(htmlToPlainText(user?.summary || ""));
     setEditBirthday(user?.birthday || "");
-    setEditFields(user?.fields?.length ? [...user.fields] : []);
+    setEditFields(
+      user?.fields?.length
+        ? user.fields.map((f) => ({
+            name: decodeHtmlEntities(f.name),
+            value: decodeHtmlEntities(f.value),
+          }))
+        : [],
+    );
     setEditIsCat(user?.is_cat || false);
     setEditIsBot(user?.is_bot || false);
     setEditLocked(user?.locked || false);

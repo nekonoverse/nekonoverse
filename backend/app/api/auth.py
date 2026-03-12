@@ -287,8 +287,8 @@ async def update_credentials(
         for f in fields_list:
             if not isinstance(f, dict):
                 continue
-            name = _bleach.clean(str(f.get("name", "")))[:255]
-            value = _bleach.clean(str(f.get("value", "")))[:2048]
+            name = _bleach.clean(str(f.get("name", "")), tags=[], attributes={})[:255]
+            value = _bleach.clean(str(f.get("value", "")), tags=[], attributes={})[:2048]
             if name or value:
                 validated.append({"name": name, "value": value})
         user.actor.fields = validated
