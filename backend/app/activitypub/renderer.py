@@ -333,6 +333,16 @@ def render_accept_activity(activity_id: str, actor_ap_id: str, follow_activity: 
     }
 
 
+def render_reject_activity(activity_id: str, actor_ap_id: str, follow_activity: dict) -> dict:
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "Reject",
+        "actor": actor_ap_id,
+        "object": follow_activity,
+    }
+
+
 def render_undo_activity(activity_id: str, actor_ap_id: str, inner_activity: dict) -> dict:
     return {
         "@context": AP_CONTEXT,

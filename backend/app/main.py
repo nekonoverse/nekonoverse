@@ -14,6 +14,7 @@ from app.api.invites import router as invites_router
 from app.api.mastodon.accounts import relationships_router
 from app.api.mastodon.accounts import router as accounts_router
 from app.api.mastodon.bookmarks import router as bookmarks_router
+from app.api.mastodon.follow_requests import router as follow_requests_router
 from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.mastodon.notifications import router as notifications_router
 from app.api.mastodon.polls import router as polls_router
@@ -283,6 +284,7 @@ app.include_router(accounts_router)
 app.include_router(relationships_router)
 app.include_router(notifications_router)
 app.include_router(bookmarks_router)
+app.include_router(follow_requests_router)
 app.include_router(polls_router)
 app.include_router(statuses_router)
 app.include_router(timelines_router)
