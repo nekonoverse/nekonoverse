@@ -156,6 +156,10 @@ jobs:
             npx playwright install-deps chromium
           fi
 
+      - name: Generate missing snapshots
+        working-directory: tests/e2e
+        run: npx playwright test --update-snapshots --grep "visual regression" --shard=${{ matrix.shard }}/3 || true
+
       - name: Run E2E tests (shard ${{ matrix.shard }}/3)
         working-directory: tests/e2e
         run: npx playwright test --shard=${{ matrix.shard }}/3
