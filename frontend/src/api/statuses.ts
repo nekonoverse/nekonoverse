@@ -121,16 +121,24 @@ export async function updateMedia(
   });
 }
 
+export interface PollCreate {
+  options: string[];
+  expires_in?: number;
+  multiple?: boolean;
+}
+
 export async function createNote(
   content: string,
   visibility = "public",
   mediaIds?: string[],
   quoteId?: string,
   inReplyToId?: string,
+  poll?: PollCreate,
 ): Promise<Note> {
   const body: Record<string, unknown> = { content, visibility, media_ids: mediaIds || [] };
   if (quoteId) body.quote_id = quoteId;
   if (inReplyToId) body.in_reply_to_id = inReplyToId;
+  if (poll) body.poll = poll;
   return apiRequest<Note>("/api/v1/statuses", {
     method: "POST",
     body,
