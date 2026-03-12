@@ -49,9 +49,14 @@ async def lifespan(app: FastAPI):
         follow_redirects=True,
         limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
     )
+
+    from app.pubsub_hub import pubsub_hub
+
+    await pubsub_hub.start()
     try:
         yield
     finally:
+        await pubsub_hub.stop()
         await app.state.http_client.aclose()
 
 
