@@ -504,4 +504,5 @@ export const neko: Dictionary = {
   "entrance.footer.approvalRequired": "かんりしゃのしょうにんがひつようにゃ。",
   "entrance.footer.closed": "いまはとうろくおやすみにゃ。",
   "profile.followsYou": "フォローされてるにゃ",
+  "profile.postsCount": "とうこうにゃ",
 };

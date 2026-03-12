@@ -502,6 +502,7 @@ export const ja = {
   "entrance.footer.approvalRequired": "登録には管理者の承認が必要です。",
   "entrance.footer.closed": "現在、新規登録は受け付けていません。",
   "profile.followsYou": "フォローされています",
+  "profile.postsCount": "投稿",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

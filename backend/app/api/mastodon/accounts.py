@@ -11,6 +11,7 @@ from app.models.follow import Follow
 from app.models.note import Note
 from app.models.user import User
 from app.services.follow_service import follow_actor, get_follow_counts, unfollow_actor
+from app.services.note_service import get_statuses_count
 from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
@@ -84,7 +85,10 @@ async def lookup_account(
         raise HTTPException(status_code=404, detail="Account not found")
 
     fc, fic = await get_follow_counts(db, actor.id)
-    return await _actor_to_account(actor, followers_count=fc, following_count=fic, db=db)
+    sc = await get_statuses_count(db, actor.id)
+    return await _actor_to_account(
+        actor, followers_count=fc, following_count=fic, statuses_count=sc, db=db
+    )
 
 
 @router.get("/search")
@@ -121,6 +125,7 @@ async def _actor_to_account(
     actor: Actor,
     followers_count: int | None = None,
     following_count: int | None = None,
+    statuses_count: int | None = None,
     db: AsyncSession | None = None,
 ) -> dict:
     import re
@@ -148,6 +153,8 @@ async def _actor_to_account(
         data["followers_count"] = followers_count
     if following_count is not None:
         data["following_count"] = following_count
+    if statuses_count is not None:
+        data["statuses_count"] = statuses_count
 
     # Resolve custom emoji from display_name, summary, and fields
     if db:
@@ -351,9 +358,7 @@ async def get_account_statuses(
     note_ids = [n.id for n in notes]
     current_actor_id = user.actor_id if user else None
     reactions_map = await get_reaction_summaries(db, note_ids, current_actor_id)
-    return await notes_to_responses(
-        notes, reactions_map, db, actor_id=current_actor_id
-    )
+    return await notes_to_responses(notes, reactions_map, db, actor_id=current_actor_id)
 
 
 async def _batch_resolve_actor_emojis(
@@ -492,7 +497,10 @@ async def get_account(
         return _actor_to_limited_account(actor)
 
     fc, fic = await get_follow_counts(db, actor.id)
-    return await _actor_to_account(actor, followers_count=fc, following_count=fic, db=db)
+    sc = await get_statuses_count(db, actor.id)
+    return await _actor_to_account(
+        actor, followers_count=fc, following_count=fic, statuses_count=sc, db=db
+    )
 
 
 @router.get("/{actor_id}/relationship")

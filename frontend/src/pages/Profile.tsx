@@ -464,6 +464,12 @@ export default function Profile() {
 
                   <Show when={acc.followers_count != null || acc.following_count != null}>
                     <div class="profile-follow-counts">
+                      <Show when={acc.statuses_count != null}>
+                        <span class="profile-follow-count-link">
+                          <span class="profile-follow-count-num">{acc.statuses_count ?? 0}</span>
+                          {" "}{t("profile.postsCount")}
+                        </span>
+                      </Show>
                       <A href={`/@${acc.acct}/following`} class="profile-follow-count-link">
                         <span class="profile-follow-count-num">{acc.following_count ?? 0}</span>
                         {" "}{t("profile.followingList")}
