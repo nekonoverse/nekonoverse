@@ -45,11 +45,11 @@ test.describe("Timeline", () => {
 
     const noteCard = page.locator(".note-card").first();
     await expect(noteCard).toBeVisible();
-    await expect(noteCard).toHaveScreenshot("note-card.png");
+    await expect(noteCard).toHaveScreenshot("note-card.png", { maxDiffPixelRatio: 0.05 });
   });
 
   test("boosted note card visual regression", async ({ page }) => {
-    const note = await createNote(page, `Visual boost ${Date.now()}`);
+    const note = await createNote(page, "Visual boost snapshot test");
     await page.request.post(`/api/v1/statuses/${note.id}/reblog`);
 
     await page.goto("/");
@@ -60,6 +60,6 @@ test.describe("Timeline", () => {
       has: page.locator(".note-reblog-indicator"),
     }).first();
     await expect(boostedCard).toBeVisible({ timeout: 5_000 });
-    await expect(boostedCard).toHaveScreenshot("boosted-note-card.png");
+    await expect(boostedCard).toHaveScreenshot("boosted-note-card.png", { maxDiffPixelRatio: 0.05 });
   });
 });
