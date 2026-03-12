@@ -4,6 +4,7 @@ Usage:
     python -m app.cli create-admin
     python -m app.cli reset-password
     python -m app.cli detect-focal-points
+    python -m app.cli redetect-focal <note_id>
     python -m app.cli create-admin --username neko --email neko@example.com --password mypassword
 """
 
@@ -12,6 +13,7 @@ import asyncio
 import getpass
 import re
 import sys
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -231,6 +233,114 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     await engine.dispose()
 
 
+async def _redetect_focal(args: argparse.Namespace) -> None:
+    from sqlalchemy import select
+    from sqlalchemy.orm import selectinload
+
+    from app.config import settings
+    from app.models.drive_file import DriveFile
+    from app.models.note import Note
+    from app.models.note_attachment import NoteAttachment
+    from app.services.drive_service import _read_file_data
+    from app.services.focal_point_service import (
+        _call_face_detect,
+        _download_image,
+        _publish_update,
+    )
+
+    if not settings.face_detect_url:
+        print("Error: FACE_DETECT_URL is not set.", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        note_id = uuid.UUID(args.note_id)
+    except ValueError:
+        print(f"Error: Invalid UUID: {args.note_id}", file=sys.stderr)
+        sys.exit(1)
+
+    image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"}
+
+    async with async_session() as db:
+        note = (
+            await db.execute(
+                select(Note)
+                .options(selectinload(Note.attachments).selectinload(NoteAttachment.drive_file))
+                .where(Note.id == note_id)
+            )
+        ).scalar_one_or_none()
+
+        if not note:
+            print(f"Error: Note {note_id} not found.", file=sys.stderr)
+            sys.exit(1)
+
+        attachments = [
+            att for att in note.attachments
+            if (att.drive_file and (att.drive_file.mime_type or "") in image_mimes)
+            or ((att.remote_mime_type or "") in image_mimes and att.remote_url)
+        ]
+
+        if not attachments:
+            print("No image attachments found for this note.")
+            sys.exit(0)
+
+        print(f"Note {note_id}: {len(attachments)} image attachment(s)\n")
+
+        updated = False
+        for i, att in enumerate(attachments, 1):
+            if att.drive_file:
+                # Local attachment
+                df = att.drive_file
+                print(f"  [{i}] Local: {df.s3_key} ({df.mime_type})")
+                old = (df.focal_x, df.focal_y)
+                try:
+                    image_data = await _read_file_data(df)
+                    if not image_data:
+                        print(f"       -> ERROR: could not read file data")
+                        continue
+                    focal = await _call_face_detect(image_data, df.width, df.height)
+                    if focal is None:
+                        df.focal_x = None
+                        df.focal_y = None
+                        print(f"       -> no face detected (was {old})")
+                    else:
+                        df.focal_x = focal[0]
+                        df.focal_y = focal[1]
+                        print(f"       -> focal=({focal[0]:.4f}, {focal[1]:.4f}) (was {old})")
+                    updated = True
+                except Exception as e:
+                    print(f"       -> ERROR: {e}")
+            else:
+                # Remote attachment
+                print(f"  [{i}] Remote: {att.remote_url[:80]}")
+                old = (att.remote_focal_x, att.remote_focal_y)
+                try:
+                    image_data = await _download_image(att.remote_url)
+                    if not image_data:
+                        print(f"       -> ERROR: could not download image")
+                        continue
+                    focal = await _call_face_detect(image_data, att.remote_width, att.remote_height)
+                    if focal is None:
+                        att.remote_focal_x = None
+                        att.remote_focal_y = None
+                        print(f"       -> no face detected (was {old})")
+                    else:
+                        att.remote_focal_x = focal[0]
+                        att.remote_focal_y = focal[1]
+                        print(f"       -> focal=({focal[0]:.4f}, {focal[1]:.4f}) (was {old})")
+                    updated = True
+                except Exception as e:
+                    print(f"       -> ERROR: {e}")
+
+        if updated:
+            await db.commit()
+            await _publish_update(note_id)
+            print("\nDone. Changes committed and streaming update published.")
+        else:
+            print("\nNo changes made.")
+
+    await engine.dispose()
+
+
 async def _reset_password(args: argparse.Namespace) -> None:
     async with async_session() as db:
         try:
@@ -261,6 +371,9 @@ def main() -> None:
     detect_fp = sub.add_parser("detect-focal-points", help="Run face detection on all images without focal points")
     detect_fp.add_argument("--concurrency", type=int, default=4, help="Max concurrent requests (default: 4)")
 
+    redetect = sub.add_parser("redetect-focal", help="Force re-detect focal point for a specific note")
+    redetect.add_argument("note_id", type=str, help="Note ID (UUID)")
+
     args = parser.parse_args()
 
     if args.command == "create-admin":
@@ -273,6 +386,8 @@ def main() -> None:
         asyncio.run(_reset_password(args))
     elif args.command == "detect-focal-points":
         asyncio.run(_detect_focal_points(args))
+    elif args.command == "redetect-focal":
+        asyncio.run(_redetect_focal(args))
     else:
         parser.print_help()
         sys.exit(1)
