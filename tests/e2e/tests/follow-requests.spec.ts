@@ -46,8 +46,9 @@ async function followUser(page: import("@playwright/test").Page, targetActorId: 
 async function setupFollower(page: import("@playwright/test").Page): Promise<{ username: string; password: string }> {
   const username = `follower_${Date.now()}`;
   const password = "testpassword123";
-  await registerUser(page, username, password);
+  // loginAsAdmin first to ensure page has navigated (baseURL resolution)
   await loginAsAdmin(page);
+  await registerUser(page, username, password);
   await setLocked(page, true);
   return { username, password };
 }
