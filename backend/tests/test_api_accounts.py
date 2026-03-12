@@ -257,6 +257,7 @@ async def test_unmute_not_found(authed_client, mock_valkey):
 
 async def test_list_followers(app_client, test_user, test_user_b, db, mock_valkey):
     from app.models.follow import Follow
+
     follow = Follow(
         follower_id=test_user_b.actor_id,
         following_id=test_user.actor_id,
@@ -286,6 +287,7 @@ async def test_list_followers_not_found(app_client, mock_valkey):
 
 async def test_list_following(app_client, test_user, test_user_b, db, mock_valkey):
     from app.models.follow import Follow
+
     follow = Follow(
         follower_id=test_user.actor_id,
         following_id=test_user_b.actor_id,
@@ -330,6 +332,7 @@ async def test_get_relationship(authed_client, test_user, test_user_b, mock_valk
 
 async def test_get_relationship_following(authed_client, test_user, test_user_b, db, mock_valkey):
     from app.models.follow import Follow
+
     follow = Follow(
         follower_id=test_user.actor_id,
         following_id=test_user_b.actor_id,
@@ -347,6 +350,7 @@ async def test_get_relationship_following(authed_client, test_user, test_user_b,
 
 async def test_get_relationship_pending(authed_client, test_user, test_user_b, db, mock_valkey):
     from app.models.follow import Follow
+
     follow = Follow(
         follower_id=test_user.actor_id,
         following_id=test_user_b.actor_id,
@@ -372,6 +376,7 @@ async def test_get_relationship_unauthenticated(app_client, test_user, mock_valk
 
 async def test_following_ids(authed_client, test_user, test_user_b, db, mock_valkey):
     from app.models.follow import Follow
+
     follow = Follow(
         follower_id=test_user.actor_id,
         following_id=test_user_b.actor_id,
@@ -423,3 +428,91 @@ async def test_mutes_list_empty(authed_client, test_user, mock_valkey):
     resp = await authed_client.get("/api/v1/mutes")
     assert resp.status_code == 200
     assert resp.json() == []
+
+
+# --- Statuses count ---
+
+
+async def test_get_account_statuses_count(app_client, db, test_user, mock_valkey):
+    """Account response should include statuses_count."""
+    from sqlalchemy import select
+
+    from app.models.actor import Actor
+
+    result = await db.execute(select(Actor).where(Actor.id == test_user.actor_id))
+    actor = result.scalar_one()
+    await make_note(db, actor, content="Post 1")
+    await make_note(db, actor, content="Post 2")
+    await db.commit()
+
+    resp = await app_client.get(f"/api/v1/accounts/{test_user.actor_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["statuses_count"] == 2
+
+
+async def test_get_account_statuses_count_zero(app_client, test_user, mock_valkey):
+    """Account with no posts should have statuses_count 0."""
+    resp = await app_client.get(f"/api/v1/accounts/{test_user.actor_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["statuses_count"] == 0
+
+
+async def test_lookup_account_statuses_count(app_client, db, test_user, mock_valkey):
+    """Lookup endpoint should also include statuses_count."""
+    from sqlalchemy import select
+
+    from app.models.actor import Actor
+
+    result = await db.execute(select(Actor).where(Actor.id == test_user.actor_id))
+    actor = result.scalar_one()
+    await make_note(db, actor, content="Post 1")
+    await db.commit()
+
+    resp = await app_client.get("/api/v1/accounts/lookup", params={"acct": "testuser"})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["statuses_count"] == 1
+
+
+async def test_statuses_count_excludes_deleted(app_client, db, test_user, mock_valkey):
+    """Deleted notes should not be counted in statuses_count."""
+    from datetime import datetime, timezone
+
+    from sqlalchemy import select
+
+    from app.models.actor import Actor
+
+    result = await db.execute(select(Actor).where(Actor.id == test_user.actor_id))
+    actor = result.scalar_one()
+    await make_note(db, actor, content="Active post")
+    deleted_note = await make_note(db, actor, content="Deleted post")
+    deleted_note.deleted_at = datetime.now(timezone.utc)
+    await db.commit()
+
+    resp = await app_client.get(f"/api/v1/accounts/{test_user.actor_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["statuses_count"] == 1
+
+
+async def test_statuses_count_excludes_private(app_client, db, test_user, mock_valkey):
+    """Private and direct notes should not be counted in statuses_count."""
+    from sqlalchemy import select
+
+    from app.models.actor import Actor
+
+    result = await db.execute(select(Actor).where(Actor.id == test_user.actor_id))
+    actor = result.scalar_one()
+    await make_note(db, actor, content="Public post", visibility="public")
+    await make_note(db, actor, content="Unlisted post", visibility="unlisted")
+    await make_note(db, actor, content="Followers only", visibility="followers")
+    await make_note(db, actor, content="Direct msg", visibility="direct")
+    await db.commit()
+
+    resp = await app_client.get(f"/api/v1/accounts/{test_user.actor_id}")
+    assert resp.status_code == 200
+    data = resp.json()
+    # public + unlistedのみカウント
+    assert data["statuses_count"] == 2

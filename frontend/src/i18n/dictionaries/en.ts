@@ -506,4 +506,5 @@ export const en: Dictionary = {
     "Registration requires administrator approval.",
   "entrance.footer.closed": "Registration is currently closed.",
   "profile.followsYou": "Follows you",
+  "profile.postsCount": "Posts",
 };

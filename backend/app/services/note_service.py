@@ -647,11 +647,50 @@ async def get_reaction_summaries(
     return summaries
 
 
+async def get_statuses_count(db: AsyncSession, actor_id: uuid.UUID) -> int:
+    """Return the number of public/unlisted statuses for the given actor.
+
+    Cached in Valkey for 5 minutes.
+    """
+    import json
+
+    from app.valkey_client import valkey
+
+    cache_key = f"perf:statuses_count:{actor_id}"
+    try:
+        cached = await valkey.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    result = await db.execute(
+        select(func.count())
+        .select_from(Note)
+        .where(
+            Note.actor_id == actor_id,
+            Note.visibility.in_(["public", "unlisted"]),
+            Note.deleted_at.is_(None),
+        )
+    )
+    count = result.scalar() or 0
+
+    try:
+        await valkey.set(cache_key, json.dumps(count), ex=300)
+    except Exception:
+        pass
+
+    return count
+
+
 _FETCH_MAX_DEPTH = 3
 
 
 async def fetch_remote_note(
-    db: AsyncSession, ap_id: str, *, _depth: int = 0,
+    db: AsyncSession,
+    ap_id: str,
+    *,
+    _depth: int = 0,
 ) -> Note | None:
     """Fetch a remote note by AP ID and store it locally.
 
@@ -662,7 +701,8 @@ async def fetch_remote_note(
 
     if _depth >= _FETCH_MAX_DEPTH:
         logging.getLogger(__name__).warning(
-            "fetch_remote_note depth limit reached for %s", ap_id,
+            "fetch_remote_note depth limit reached for %s",
+            ap_id,
         )
         return None
 

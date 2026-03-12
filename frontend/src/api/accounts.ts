@@ -23,6 +23,7 @@ export interface Account {
   fields?: { name: string; value: string; verified_at: string | null }[];
   followers_count?: number;
   following_count?: number;
+  statuses_count?: number;
   emojis?: AccountEmoji[];
 }
 
