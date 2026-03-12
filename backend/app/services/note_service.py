@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -891,7 +892,16 @@ async def fetch_remote_note(
             pass
 
     db.add(note)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # 同じap_idのノートがCreate活動とAnnounce活動の競合で既に挿入されている場合、
+        # 既存のノートにフォールバックする
+        await db.rollback()
+        existing = await get_note_by_ap_id(db, ap_id)
+        if existing:
+            return existing
+        return None
 
     # 添付ファイル処理
     attachments = data.get("attachment", [])
