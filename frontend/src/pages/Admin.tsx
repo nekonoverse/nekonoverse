@@ -2146,7 +2146,7 @@ function FederationTab() {
                   load();
                 }}
               >
-                \u2190
+                &larr;
               </button>
               <span>
                 {currentPage()} / {totalPages()}
@@ -2159,7 +2159,7 @@ function FederationTab() {
                   load();
                 }}
               >
-                \u2192
+                &rarr;
               </button>
             </div>
           </Show>
