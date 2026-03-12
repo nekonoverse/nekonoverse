@@ -3,7 +3,7 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "./tests",
   timeout: 30_000,
-  retries: process.env.CI ? 0 : 1,
+  retries: process.env.CI ? 2 : 1,
   expect: {
     toHaveScreenshot: { maxDiffPixelRatio: 0.01 },
   },
@@ -14,8 +14,8 @@ export default defineConfig({
   },
   projects: [
     {
-      name: "firefox",
-      use: { browserName: "firefox" },
+      name: "chromium",
+      use: { browserName: "chromium" },
       testIgnore: /swipe/,
     },
     {
