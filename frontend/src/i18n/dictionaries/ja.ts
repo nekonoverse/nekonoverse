@@ -116,6 +116,7 @@ export const ja = {
   "visibility.direct": "ダイレクト",
   "profile.posts": "投稿",
   "profile.joined": "登録日:",
+  "profile.firstSeen": "初観測:",
   "profile.noPostsYet": "まだ投稿がありません",
   "profile.edit": "プロフィールを編集",
   "profile.save": "保存",

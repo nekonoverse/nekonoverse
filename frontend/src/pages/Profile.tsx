@@ -577,7 +577,7 @@ export default function Profile() {
                   </Show>
                   <Show when={acc.created_at}>
                     <span class="profile-joined">
-                      {t("profile.joined")} {formatDate(acc.created_at)}
+                      {acc.domain ? t("profile.firstSeen") : t("profile.joined")} {formatDate(acc.created_at)}
                     </span>
                   </Show>
                 </div>
