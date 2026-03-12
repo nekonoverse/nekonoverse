@@ -268,7 +268,7 @@ function renderNode(
     }
 
     case "fn": {
-      return renderFn(node, emojiMap, navigate);
+      return renderFn(node, emojiMap, navigate, actorHost);
     }
 
     default: {
@@ -288,6 +288,7 @@ function renderFn(
   node: MfmNode & { type: "fn" },
   emojiMap: Map<string, CustomEmoji>,
   navigate?: (path: string) => void,
+  actorHost?: string | null,
 ): Node {
   const { name, args } = node.props;
   const el = document.createElement("span");
