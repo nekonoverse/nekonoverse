@@ -8,7 +8,7 @@ from fastapi.responses import StreamingResponse
 
 from app.dependencies import get_current_user
 from app.models.user import User
-from app.valkey_client import valkey
+from app.pubsub_hub import pubsub_hub
 
 router = APIRouter(prefix="/api/v1/streaming", tags=["streaming"])
 
@@ -16,30 +16,28 @@ KEEPALIVE_INTERVAL = 30  # seconds
 
 
 async def _event_stream(request: Request, channels: list[str]):
-    """Generic SSE event stream from Valkey pub/sub channels."""
-    pubsub = valkey.pubsub()
-    await pubsub.subscribe(*channels)
+    """Generic SSE event stream using the shared PubSubHub."""
+    queue = await pubsub_hub.subscribe(channels)
     keepalive_counter = 0
     try:
         while True:
             if await request.is_disconnected():
                 break
-            msg = await pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
-            if msg and msg["type"] == "message":
+            try:
+                msg = queue.get_nowait()
                 data = json.loads(msg["data"])
                 event_type = data.get("event", "update")
                 payload = json.dumps(data.get("payload", {}))
                 yield f"event: {event_type}\ndata: {payload}\n\n"
                 keepalive_counter = 0
-            else:
+            except asyncio.QueueEmpty:
                 keepalive_counter += 1
                 if keepalive_counter >= KEEPALIVE_INTERVAL:
                     yield ":\n\n"
                     keepalive_counter = 0
                 await asyncio.sleep(1)
     finally:
-        await pubsub.unsubscribe()
-        await pubsub.close()
+        await pubsub_hub.unsubscribe(queue, channels)
 
 
 def _sse_response(request: Request, channels: list[str]):

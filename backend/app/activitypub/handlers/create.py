@@ -5,6 +5,7 @@ import math
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.models.note import Note
 from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
 from app.services.note_service import fetch_remote_note, get_note_by_ap_id
@@ -24,7 +25,10 @@ async def handle_create(db: AsyncSession, activity: dict):
         return
 
     obj_type = obj.get("type")
-    if obj_type in ("Note", "Question"):
+    if obj_type == "Note" and obj.get("name") and obj.get("inReplyTo"):
+        # A Note with 'name' + 'inReplyTo' is a poll vote (Mastodon convention)
+        await _handle_poll_vote(db, activity, obj)
+    elif obj_type in ("Note", "Question"):
         await handle_create_note(db, activity, obj)
     else:
         logger.info("Unhandled Create object type: %s", obj_type)
@@ -286,3 +290,99 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             await valkey_client.publish(f"timeline:home:{fid}", event)
     except Exception:
         logger.exception("Failed to publish remote note to streaming")
+
+    # Background focal point detection for remote image attachments
+    if settings.face_detect_url:
+        from sqlalchemy import select as sel
+
+        from app.models.note_attachment import NoteAttachment as NA
+
+        att_rows = await db.execute(
+            sel(NA.id).where(
+                NA.note_id == note.id,
+                NA.remote_url.isnot(None),
+                NA.remote_focal_x.is_(None),
+                NA.remote_mime_type.in_(
+                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
+                ),
+            )
+        )
+        att_ids = [row[0] for row in att_rows.all()]
+        if att_ids:
+            import asyncio
+
+            from app.services.focal_point_service import detect_remote_focal_points
+
+            asyncio.create_task(detect_remote_focal_points(note.id, att_ids))
+
+
+async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
+    """Handle an incoming poll vote (Create Note with name + inReplyTo)."""
+    in_reply_to = obj.get("inReplyTo")
+    option_name = obj.get("name", "").strip()
+    if not in_reply_to or not option_name:
+        return
+
+    # Find the poll note
+    poll_note = await get_note_by_ap_id(db, in_reply_to)
+    if not poll_note or not poll_note.is_poll or not poll_note.local:
+        logger.debug("Poll vote for unknown/non-local poll: %s", in_reply_to)
+        return
+
+    options = poll_note.poll_options or []
+    # Find matching option index
+    choice_index = None
+    for i, opt in enumerate(options):
+        if opt.get("title", "") == option_name:
+            choice_index = i
+            break
+
+    if choice_index is None:
+        logger.debug("Poll vote option '%s' not found in poll %s", option_name, in_reply_to)
+        return
+
+    # Resolve voter actor
+    voter_ap_id = obj.get("attributedTo") or activity.get("actor")
+    if not voter_ap_id:
+        return
+
+    voter = await get_actor_by_ap_id(db, voter_ap_id)
+    if not voter:
+        voter = await fetch_remote_actor(db, voter_ap_id)
+    if not voter:
+        logger.warning("Could not resolve voter actor %s", voter_ap_id)
+        return
+
+    # Check for duplicate vote
+    from sqlalchemy import select
+
+    from app.models.poll_vote import PollVote
+
+    existing = await db.execute(
+        select(PollVote).where(
+            PollVote.note_id == poll_note.id,
+            PollVote.actor_id == voter.id,
+            PollVote.choice_index == choice_index,
+        )
+    )
+    if existing.scalars().first():
+        logger.debug("Duplicate poll vote from %s on %s", voter_ap_id, in_reply_to)
+        return
+
+    # Record vote
+    vote = PollVote(
+        note_id=poll_note.id,
+        actor_id=voter.id,
+        choice_index=choice_index,
+    )
+    db.add(vote)
+
+    # Update JSONB vote count
+    options[choice_index]["votes_count"] = options[choice_index].get("votes_count", 0) + 1
+    from sqlalchemy.orm.attributes import flag_modified
+
+    poll_note.poll_options = list(options)
+    flag_modified(poll_note, "poll_options")
+
+    await db.commit()
+    logger.info("Recorded poll vote from %s on %s (choice: %s)", voter_ap_id, in_reply_to, option_name)

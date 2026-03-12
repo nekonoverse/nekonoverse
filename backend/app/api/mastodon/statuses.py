@@ -19,6 +19,7 @@ from app.schemas.note import (
     NoteEditRequest,
     NoteMediaAttachment,
     NoteResponse,
+    PollResponse,
     ReactionSummary,
     TagInfo,
 )
@@ -28,6 +29,7 @@ from app.services.note_service import (
     check_note_visible,
     create_note,
     get_note_by_id,
+    get_reaction_summaries,
     get_reaction_summary,
 )
 from app.utils.media_proxy import media_proxy_url
@@ -88,6 +90,8 @@ async def note_to_response(
     db=None,
     emoji_cache: dict | None = None,
     hashtags_cache: dict | None = None,
+    actor_id=None,
+    reactions_map: dict | None = None,
 ) -> NoteResponse:
     """Convert a Note model to a NoteResponse.
 
@@ -115,11 +119,22 @@ async def note_to_response(
             await db.commit()
             actual_reblog = await get_note_by_id(db, resolved.id)
     if actual_reblog:
+        # リノート元ノートのリアクションを解決
+        reblog_reactions = None
+        if reactions_map is not None:
+            reblog_reactions = reactions_map.get(actual_reblog.id, [])
+        elif db:
+            reblog_reactions = await get_reaction_summary(
+                db, actual_reblog.id, actor_id
+            )
         reblog = await note_to_response(
             actual_reblog,
+            reactions=reblog_reactions,
             db=db,
             emoji_cache=emoji_cache,
             hashtags_cache=hashtags_cache,
+            actor_id=actor_id,
+            reactions_map=reactions_map,
         )
 
     # Build media attachments
@@ -136,6 +151,8 @@ async def note_to_response(
             db=db,
             emoji_cache=emoji_cache,
             hashtags_cache=hashtags_cache,
+            actor_id=actor_id,
+            reactions_map=reactions_map,
         )
     # Fallback: quoted_note not loaded but quote_id is set
     if not quote and db and note.quote_id:
@@ -145,6 +162,8 @@ async def note_to_response(
                 loaded_quote,
                 db=db,
                 emoji_cache=emoji_cache,
+                actor_id=actor_id,
+                reactions_map=reactions_map,
             )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
     if not quote and db and note.quote_ap_id:
@@ -161,6 +180,8 @@ async def note_to_response(
                     db=db,
                     emoji_cache=emoji_cache,
                     hashtags_cache=hashtags_cache,
+                    actor_id=actor_id,
+                    reactions_map=reactions_map,
                 )
 
     # Resolve custom emoji from content and display_name
@@ -247,6 +268,15 @@ async def note_to_response(
     if note.updated_at:
         edited_at = note.updated_at.isoformat()
 
+    # Build poll response
+    poll_response = None
+    if note.is_poll and note.poll_options:
+        from app.services.poll_service import get_poll_data
+
+        poll_data = await get_poll_data(db, note.id, actor_id) if db else None
+        if poll_data:
+            poll_response = PollResponse(**poll_data)
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -275,6 +305,7 @@ async def note_to_response(
         reblog=reblog,
         media_attachments=media_attachments,
         quote=quote,
+        poll=poll_response,
         emojis=emojis,
         tags=tags,
     )
@@ -349,6 +380,7 @@ async def notes_to_responses(
     notes,
     reactions_map: dict,
     db,
+    actor_id=None,
 ) -> list[NoteResponse]:
     """Convert multiple notes to responses with batched emoji/hashtag resolution.
 
@@ -357,6 +389,7 @@ async def notes_to_responses(
         reactions_map: Dict mapping note_id -> list of reaction summary dicts,
             as returned by get_reaction_summaries().
         db: AsyncSession.
+        actor_id: Optional current user's actor ID for reaction "me" flags.
 
     Returns:
         List of NoteResponse in the same order as input notes.
@@ -383,6 +416,14 @@ async def notes_to_responses(
             unique_ids.append(nid)
     hashtags_cache = await get_hashtags_for_notes(db, unique_ids)
 
+    # リノート/引用ノートのリアクションもバッチ取得
+    inner_ids = [
+        nid for nid in unique_ids if nid not in reactions_map
+    ]
+    if inner_ids:
+        inner_reactions = await get_reaction_summaries(db, inner_ids, actor_id)
+        reactions_map.update(inner_reactions)
+
     result = []
     for n in notes:
         reactions = reactions_map.get(n.id, [])
@@ -392,6 +433,8 @@ async def notes_to_responses(
             db=db,
             emoji_cache=emoji_cache,
             hashtags_cache=hashtags_cache,
+            actor_id=actor_id,
+            reactions_map=reactions_map,
         )
         result.append(resp)
     return result
@@ -443,7 +486,7 @@ async def get_status(
         raise HTTPException(status_code=404, detail="Note not found")
 
     reactions = await get_reaction_summary(db, note.id, actor_id)
-    return await note_to_response(note, reactions, db=db)
+    return await note_to_response(note, reactions, db=db, actor_id=actor_id)
 
 
 @router.put("/{note_id}", response_model=NoteResponse)
@@ -622,10 +665,12 @@ async def get_status_context(
     emoji_cache = await _build_emoji_cache(db, all_context_notes) if all_context_notes else {}
 
     ancestor_responses = [
-        await note_to_response(n, db=db, emoji_cache=emoji_cache) for n in ancestors
+        await note_to_response(n, db=db, emoji_cache=emoji_cache, actor_id=actor_id)
+        for n in ancestors
     ]
     descendant_responses = [
-        await note_to_response(n, db=db, emoji_cache=emoji_cache) for n in descendants
+        await note_to_response(n, db=db, emoji_cache=emoji_cache, actor_id=actor_id)
+        for n in descendants
     ]
 
     return ContextResponse(
@@ -719,8 +764,41 @@ async def reacted_by(
     result = await db.execute(query)
     reactions = result.scalars().all()
 
-    return [
-        {
+    # Batch-collect all shortcodes from reactor display names
+    from app.services.emoji_service import get_emojis_by_shortcodes
+
+    all_shortcodes_by_domain: dict[str | None, set[str]] = {}
+    for r in reactions:
+        if r.actor.display_name:
+            scs = set(_SHORTCODE_RE.findall(r.actor.display_name))
+            if scs:
+                domain = r.actor.domain
+                all_shortcodes_by_domain.setdefault(domain, set()).update(scs)
+                all_shortcodes_by_domain.setdefault(None, set()).update(scs)
+
+    # Batch-fetch emojis per domain
+    emoji_cache: dict[tuple[str, str | None], object] = {}
+    for domain, scs in all_shortcodes_by_domain.items():
+        if scs:
+            emoji_list = await get_emojis_by_shortcodes(db, scs, domain)
+            for e in emoji_list:
+                emoji_cache[(e.shortcode, e.domain)] = e
+
+    response = []
+    for r in reactions:
+        actor_emojis: list[CustomEmojiInfo] = []
+        if r.actor.display_name:
+            scs = set(_SHORTCODE_RE.findall(r.actor.display_name))
+            for sc in scs:
+                emoji = emoji_cache.get((sc, r.actor.domain)) or emoji_cache.get((sc, None))
+                if emoji:
+                    url = media_proxy_url(emoji.url)
+                    static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+                    actor_emojis.append(
+                        CustomEmojiInfo(shortcode=emoji.shortcode, url=url, static_url=static)
+                    )
+
+        response.append({
             "actor": NoteActorResponse(
                 id=r.actor.id,
                 username=r.actor.username,
@@ -728,11 +806,11 @@ async def reacted_by(
                 avatar_url=media_proxy_url(r.actor.avatar_url) or "/default-avatar.svg",
                 ap_id=r.actor.ap_id,
                 domain=r.actor.domain,
+                emojis=actor_emojis,
             ),
             "emoji": r.emoji,
-        }
-        for r in reactions
-    ]
+        })
+    return response
 
 
 @router.post("/{note_id}/reblog", response_model=NoteResponse, status_code=200)

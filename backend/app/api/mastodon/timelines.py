@@ -42,7 +42,7 @@ async def _public_tl_deduped(
     )
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(db, note_ids, actor_id)
-    result = await notes_to_responses(notes, reactions_map, db)
+    result = await notes_to_responses(notes, reactions_map, db, actor_id=actor_id)
     deduped = _deduplicate_timeline(result)
     return deduped[:limit]
 
@@ -58,7 +58,9 @@ async def _home_tl_deduped(
     notes = await get_home_timeline(db, user=user, limit=fetch_limit, max_id=max_id)
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(db, note_ids, user.actor_id)
-    result = await notes_to_responses(notes, reactions_map, db)
+    result = await notes_to_responses(
+        notes, reactions_map, db, actor_id=user.actor_id
+    )
     deduped = _deduplicate_timeline(result)
     return deduped[:limit]
 
@@ -101,4 +103,4 @@ async def tag_timeline(
     )
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(db, note_ids, actor_id)
-    return await notes_to_responses(notes, reactions_map, db)
+    return await notes_to_responses(notes, reactions_map, db, actor_id=actor_id)

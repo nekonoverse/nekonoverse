@@ -130,6 +130,101 @@ async def test_proxy_blocks_non_media_content_type(app_client, mock_valkey):
         assert resp.status_code == 403
 
 
+def _proxy_params(url: str) -> dict:
+    """Generate valid proxy query params for the given URL."""
+    from urllib.parse import parse_qs, urlparse as _urlparse
+    proxy = media_proxy_url(url)
+    parsed = _urlparse(proxy)
+    params = parse_qs(parsed.query)
+    return {"url": params["url"][0], "h": params["h"][0]}
+
+
+def _mock_client(get_side_effect):
+    """Create a mock async client with the given get side_effect."""
+    instance = AsyncMock()
+    instance.get = AsyncMock(side_effect=get_side_effect)
+    instance.__aenter__ = AsyncMock(return_value=instance)
+    instance.__aexit__ = AsyncMock(return_value=False)
+    return instance
+
+
+async def test_proxy_redirect_follows_and_checks_ssrf(app_client, mock_valkey):
+    """Redirect to a valid host should be followed and return the final content."""
+    url = "https://cdn.example/image.png"
+
+    redirect_resp = httpx.Response(
+        302, headers={"location": "https://cdn2.example/real.png"},
+    )
+    final_resp = httpx.Response(
+        200, content=b"\x89PNG" + b"\x00" * 50, headers={"content-type": "image/png"},
+    )
+    instance = _mock_client([redirect_resp, final_resp])
+
+    with (
+        patch("app.api.mastodon.media_proxy.httpx.AsyncClient", return_value=instance),
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+    ):
+        resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+
+
+async def test_proxy_redirect_to_private_blocked(app_client, mock_valkey):
+    """Redirect to a private IP should be blocked."""
+    url = "https://cdn.example/image.png"
+
+    redirect_resp = httpx.Response(
+        302, headers={"location": "http://169.254.169.254/metadata"},
+    )
+    instance = _mock_client([redirect_resp])
+
+    def is_private(hostname):
+        return hostname in ("169.254.169.254",)
+
+    with (
+        patch("app.api.mastodon.media_proxy.httpx.AsyncClient", return_value=instance),
+        patch("app.api.mastodon.media_proxy._is_private_host", side_effect=is_private),
+    ):
+        resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
+    assert resp.status_code == 403
+
+
+async def test_proxy_relative_redirect(app_client, mock_valkey):
+    """Relative Location header should be resolved against the current URL."""
+    url = "https://cdn.example/old.png"
+
+    redirect_resp = httpx.Response(302, headers={"location": "/new/image.png"})
+    final_resp = httpx.Response(
+        200, content=b"\x89PNG" + b"\x00" * 50, headers={"content-type": "image/png"},
+    )
+    instance = _mock_client([redirect_resp, final_resp])
+
+    with (
+        patch("app.api.mastodon.media_proxy.httpx.AsyncClient", return_value=instance),
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+    ):
+        resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
+    assert resp.status_code == 200
+    # 2回目のGETは絶対URLに解決されたURLで呼ばれる
+    second_call_url = instance.get.call_args_list[1][0][0]
+    assert second_call_url == "https://cdn.example/new/image.png"
+
+
+async def test_proxy_too_many_redirects(app_client, mock_valkey):
+    """More than 3 redirects should return 502."""
+    url = "https://cdn.example/loop.png"
+
+    redirect_resp = httpx.Response(302, headers={"location": "https://cdn.example/loop.png"})
+    instance = _mock_client([redirect_resp, redirect_resp, redirect_resp])
+
+    with (
+        patch("app.api.mastodon.media_proxy.httpx.AsyncClient", return_value=instance),
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+    ):
+        resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
+    assert resp.status_code == 502
+
+
 async def test_attachment_url_proxied(authed_client, db, mock_valkey):
     """Remote attachment URLs in API response should be proxied."""
     from tests.conftest import make_remote_actor, make_note

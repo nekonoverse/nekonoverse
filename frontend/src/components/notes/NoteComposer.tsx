@@ -1,5 +1,5 @@
 import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
-import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment } from "../../api/statuses";
+import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment, type PollCreate } from "../../api/statuses";
 import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
@@ -22,6 +22,17 @@ const VISIBILITY_OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] 
 ];
 
 const MAX_FILES = 4;
+const MIN_POLL_OPTIONS = 2;
+const MAX_POLL_OPTIONS = 4;
+const POLL_EXPIRY_OPTIONS = [
+  { value: 300, i18nKey: "poll.expires5m" },
+  { value: 1800, i18nKey: "poll.expires30m" },
+  { value: 3600, i18nKey: "poll.expires1h" },
+  { value: 21600, i18nKey: "poll.expires6h" },
+  { value: 86400, i18nKey: "poll.expires1d" },
+  { value: 259200, i18nKey: "poll.expires3d" },
+  { value: 604800, i18nKey: "poll.expires7d" },
+];
 
 interface Props {
   onPost?: (note: Note) => void;
@@ -43,6 +54,10 @@ export default function NoteComposer(props: Props) {
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
   const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = createSignal(false);
+  const [pollOpen, setPollOpen] = createSignal(false);
+  const [pollOptions, setPollOptions] = createSignal<string[]>(["", ""]);
+  const [pollMultiple, setPollMultiple] = createSignal(false);
+  const [pollExpiresIn, setPollExpiresIn] = createSignal(86400);
 
   let fileInput!: HTMLInputElement;
   let textareaRef!: HTMLTextAreaElement;
@@ -143,15 +158,31 @@ export default function NoteComposer(props: Props) {
       const mediaIds = attachments().map((a) => a.id);
       const quoteId = props.quoteNote?.id;
       const replyToId = props.replyTo?.id;
+      let pollData: PollCreate | undefined;
+      if (pollOpen()) {
+        const opts = pollOptions().filter((o) => o.trim());
+        if (opts.length >= MIN_POLL_OPTIONS) {
+          pollData = {
+            options: opts,
+            expires_in: pollExpiresIn(),
+            multiple: pollMultiple(),
+          };
+        }
+      }
       const note = await createNote(
         content(),
         visibility(),
         mediaIds.length > 0 ? mediaIds : undefined,
         quoteId,
         replyToId,
+        pollData,
       );
       setContent("");
       setAttachments([]);
+      setPollOpen(false);
+      setPollOptions(["", ""]);
+      setPollMultiple(false);
+      setPollExpiresIn(86400);
       props.onClearQuote?.();
       props.onClearReply?.();
 
@@ -248,7 +279,7 @@ export default function NoteComposer(props: Props) {
         value={content()}
         onInput={(e) => setContent(e.currentTarget.value)}
         onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
+          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !uploading()) {
             handleSubmit(e);
           }
         }}
@@ -289,6 +320,70 @@ export default function NoteComposer(props: Props) {
           </For>
         </div>
       </Show>
+      <Show when={pollOpen()}>
+        <div class="composer-poll-editor">
+          <For each={pollOptions()}>
+            {(opt, i) => (
+              <div class="composer-poll-option">
+                <input
+                  type="text"
+                  class="composer-poll-input"
+                  value={opt}
+                  onInput={(e) => {
+                    const newOpts = [...pollOptions()];
+                    newOpts[i()] = e.currentTarget.value;
+                    setPollOptions(newOpts);
+                  }}
+                  placeholder={`${t("poll.option" as any)} ${i() + 1}`}
+                  maxLength={50}
+                />
+                <Show when={pollOptions().length > MIN_POLL_OPTIONS}>
+                  <button
+                    type="button"
+                    class="composer-poll-remove"
+                    onClick={() => {
+                      const newOpts = pollOptions().filter((_, idx) => idx !== i());
+                      setPollOptions(newOpts);
+                    }}
+                  >
+                    ✕
+                  </button>
+                </Show>
+              </div>
+            )}
+          </For>
+          <Show when={pollOptions().length < MAX_POLL_OPTIONS}>
+            <button
+              type="button"
+              class="composer-poll-add"
+              onClick={() => setPollOptions([...pollOptions(), ""])}
+            >
+              + {t("poll.addOption" as any)}
+            </button>
+          </Show>
+          <div class="composer-poll-settings">
+            <label class="composer-poll-multiple">
+              <input
+                type="checkbox"
+                checked={pollMultiple()}
+                onChange={(e) => setPollMultiple(e.currentTarget.checked)}
+              />
+              {t("poll.multiple" as any)}
+            </label>
+            <select
+              class="composer-poll-expiry"
+              value={pollExpiresIn()}
+              onChange={(e) => setPollExpiresIn(Number(e.currentTarget.value))}
+            >
+              <For each={POLL_EXPIRY_OPTIONS}>
+                {(opt) => (
+                  <option value={opt.value}>{t(opt.i18nKey as any)}</option>
+                )}
+              </For>
+            </select>
+          </div>
+        </div>
+      </Show>
       <div class="composer-footer">
         <div class="composer-footer-left">
           <button
@@ -322,7 +417,11 @@ export default function NoteComposer(props: Props) {
             <button
               type="button"
               class="composer-attach-btn"
-              onClick={() => setEmojiPickerOpen(!emojiPickerOpen())}
+              onClick={() => {
+                const opening = !emojiPickerOpen();
+                if (opening) textareaRef?.blur();
+                setEmojiPickerOpen(opening);
+              }}
               title={t("composer.emoji" as any)}
             >
               <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
@@ -340,6 +439,18 @@ export default function NoteComposer(props: Props) {
               />
             </Show>
           </div>
+          <button
+            type="button"
+            class={`composer-attach-btn${pollOpen() ? " active" : ""}`}
+            onClick={() => setPollOpen(!pollOpen())}
+            title={t("poll.create" as any)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="3" width="18" height="4" rx="1" />
+              <rect x="3" y="10" width="12" height="4" rx="1" />
+              <rect x="3" y="17" width="15" height="4" rx="1" />
+            </svg>
+          </button>
           <input
             ref={fileInput}
             type="file"
@@ -356,9 +467,9 @@ export default function NoteComposer(props: Props) {
               <button
                 type="submit"
                 class="composer-post-btn"
-                disabled={loading() || (!content().trim() && attachments().length === 0)}
+                disabled={loading() || uploading() || (!content().trim() && attachments().length === 0)}
               >
-                {loading() ? t("composer.posting") : (props.replyTo ? t("reply.reply") : t("composer.post"))}
+                {uploading() ? t("composer.uploading") : loading() ? t("composer.posting") : (props.replyTo ? t("reply.reply") : t("composer.post"))}
                 <span class="composer-vis-icon">{visEmoji()}</span>
               </button>
               <button

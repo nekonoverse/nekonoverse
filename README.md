@@ -50,7 +50,7 @@
 
 ### 開発・運用
 - **CI/CD** — ユニットテスト (56 ファイル)・E2E テスト (Playwright)・連合テスト (Neko↔Neko, Neko↔Misskey)
-- **Docker Compose** — 開発・E2E・連合テスト・Misskey 連合テスト用の各構成
+- **Docker Compose** — 本番 UDS 構成（推奨）・TCP 構成・開発・E2E・連合テスト用の各構成
 
 ## 技術スタック
 

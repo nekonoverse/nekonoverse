@@ -30,4 +30,6 @@ async def get_bookmarks(
         note_ids,
         user.actor_id,
     )
-    return await notes_to_responses(notes, reactions_map, db)
+    return await notes_to_responses(
+        notes, reactions_map, db, actor_id=user.actor_id
+    )

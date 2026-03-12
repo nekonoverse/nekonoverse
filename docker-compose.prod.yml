@@ -1,0 +1,254 @@
+# =============================================================================
+# Nekonoverse — Production Docker Compose (UDS)
+# =============================================================================
+# 全サービス間通信を Unix Domain Socket で統一。
+# フロントエンドはビルド済み静的ファイルを nginx が直接配信。
+#
+# 使い方:
+#   cp .env.example .env  # 環境変数を設定
+#   docker compose -f docker-compose.prod.yml up -d
+# =============================================================================
+
+services:
+  postgresql:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+    volumes:
+      - ./volumes/postgresql:/var/lib/postgresql
+      - pg_sock:/var/run/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U nekonoverse -h /var/run/postgresql"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  valkey:
+    image: valkey/valkey:8-alpine
+    restart: unless-stopped
+    command: >
+      valkey-server
+        --unixsocket /var/run/valkey/valkey.sock
+        --unixsocketperm 777
+        --port 0
+        --save 60 1
+        --loglevel warning
+    volumes:
+      - ./volumes/valkey:/data
+      - valkey_sock:/var/run/valkey
+    healthcheck:
+      test: ["CMD", "valkey-cli", "-s", "/var/run/valkey/valkey.sock", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  nekono3s:
+    image: ghcr.io/nananek/nekono3s:latest
+    restart: unless-stopped
+    environment:
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-nekonoverse}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_STORAGE_PATH: /data
+      S3_REGION: us-east-1
+      S3_XATTR_JCLOUDS_COMPAT: "true"
+    volumes:
+      - ./volumes/nekono3s:/data
+    healthcheck:
+      test: ["CMD", "python", "-c", "import socket; s=socket.create_connection(('localhost',8080),2); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  s3proxy-deliverer:
+    image: ghcr.io/nananek/s3proxy-deliverer:latest
+    restart: unless-stopped
+    environment:
+      STORAGE_ROOT: /data
+    volumes:
+      - ./volumes/nekono3s:/data:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
+    depends_on:
+      nekono3s:
+        condition: service_healthy
+
+  app:
+    image: ghcr.io/nekonoverse/nekonoverse-backend:latest
+    restart: unless-stopped
+    user: "0:0"
+    command:
+      - sh
+      - -c
+      - |
+        chown 101:101 /var/run/nekonoverse-app &&
+        exec setpriv --reuid=101 --regid=101 --clear-groups \
+          env HOME=/app sh -c '
+            for i in 1 2 3 4 5; do
+              alembic upgrade head && break
+              echo "alembic failed (attempt $$i), retrying in 3s..."
+              sleep 3
+            done &&
+            uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4
+          '
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
+      VALKEY_URL: unix:///var/run/valkey/valkey.sock?db=0
+      DOMAIN: ${DOMAIN}
+      SECRET_KEY: ${SECRET_KEY}
+      FRONTEND_URL: https://${DOMAIN}
+      DEBUG: "false"
+      S3_ENDPOINT_URL: http://nekono3s:8080
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-nekonoverse}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_BUCKET: ${S3_BUCKET:-nekonoverse}
+      S3_REGION: us-east-1
+      # face-detect via UDS (同一マシン)
+      # FACE_DETECT_URL: http://localhost/object-detection
+      # FACE_DETECT_UDS: /var/run/nekonoverse-face-detect/uvicorn.sock
+      # face-detect via TCP (外部マシン)
+      # FACE_DETECT_URL: http://gpu-server:8001/object-detection
+      # Forward proxy for outbound federation requests (origin IP concealment)
+      # HTTP_PROXY: http://squid:3128
+      # HTTPS_PROXY: http://squid:3128
+      # NO_PROXY: nekono3s,localhost
+    volumes:
+      - app_sock:/var/run/nekonoverse-app
+      - pg_sock:/var/run/postgresql
+      - valkey_sock:/var/run/valkey
+      # face-detect UDS 使用時はコメント解除
+      # - face_detect_sock:/var/run/nekonoverse-face-detect:ro
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      nekono3s:
+        condition: service_healthy
+
+  worker:
+    image: ghcr.io/nekonoverse/nekonoverse-backend:latest
+    restart: unless-stopped
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
+      VALKEY_URL: unix:///var/run/valkey/valkey.sock?db=0
+      DOMAIN: ${DOMAIN}
+      SECRET_KEY: ${SECRET_KEY}
+      S3_ENDPOINT_URL: http://nekono3s:8080
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-nekonoverse}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
+      S3_BUCKET: ${S3_BUCKET:-nekonoverse}
+      S3_REGION: us-east-1
+      # Forward proxy for outbound federation requests (origin IP concealment)
+      # HTTP_PROXY: http://squid:3128
+      # HTTPS_PROXY: http://squid:3128
+      # NO_PROXY: nekono3s,localhost
+    volumes:
+      - pg_sock:/var/run/postgresql
+      - valkey_sock:/var/run/valkey
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+      nekono3s:
+        condition: service_healthy
+
+  frontend:
+    image: ghcr.io/nekonoverse/nekonoverse-frontend:latest
+    restart: "no"
+    command:
+      - sh
+      - -c
+      - cp -a /app/dist/. /var/www/frontend/ && echo "Frontend static files copied"
+    volumes:
+      - frontend_dist:/var/www/frontend
+
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    volumes:
+      - ./nginx/prod.conf:/etc/nginx/nginx.conf:ro
+      - s3proxy_sock:/var/run/s3proxy-deliverer
+      - app_sock:/var/run/nekonoverse-app
+      - frontend_dist:/var/www/frontend:ro
+    ports:
+      - "80:80"
+    depends_on:
+      - app
+      - frontend
+      - s3proxy-deliverer
+
+  # Optional: GPU face detection service (uncomment to use)
+  # Requires NVIDIA GPU + nvidia-container-toolkit.
+  # Also uncomment face_detect_sock volume in app service and FACE_DETECT_URL/UDS env vars.
+  # face-detect:
+  #   build: ./face-detect
+  #   restart: unless-stopped
+  #   user: "0:0"
+  #   command:
+  #     - sh
+  #     - -c
+  #     - |
+  #       chown 101:101 /var/run/nekonoverse-face-detect &&
+  #       exec setpriv --reuid=101 --regid=101 --clear-groups \
+  #         /venv/bin/uvicorn main:app --uds /var/run/nekonoverse-face-detect/uvicorn.sock
+  #   environment:
+  #     DETECTION_MODE: anime
+  #   volumes:
+  #     - face_detect_sock:/var/run/nekonoverse-face-detect
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
+  # Optional: Cloudflare Tunnel (uncomment to use)
+  # cloudflared:
+  #   image: cloudflare/cloudflared:latest
+  #   restart: unless-stopped
+  #   command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   environment:
+  #     TUNNEL_TRANSPORT_PROTOCOL: http2
+
+  # Optional: Tailscale (uncomment to use)
+  # app/worker で network_mode: "service:tailscale" を使う場合、
+  # tailscale を default ネットワークにも参加させることで Docker 内部 DNS が使える。
+  # (nekono3s 等の TCP サービスをホスト名で解決するために必要)
+  # tailscale:
+  #   image: tailscale/tailscale:latest
+  #   restart: unless-stopped
+  #   cap_add:
+  #     - NET_ADMIN
+  #     - SYS_MODULE
+  #   environment:
+  #     TS_AUTHKEY: ${TAILSCALE_AUTHKEY:-}
+  #     TS_STATE_DIR: /var/lib/tailscale
+  #     TS_HOSTNAME: nekonoverse
+  #   volumes:
+  #     - ./volumes/tailscale:/var/lib/tailscale
+  #   networks:
+  #     - default
+  #     - tailscale_net
+  #
+  # Tailscale 使用時は app/worker に以下を追加:
+  #   network_mode: "service:tailscale"
+  #   (depends_on に tailscale を追加)
+
+volumes:
+  pg_sock:
+  valkey_sock:
+  s3proxy_sock:
+  app_sock:
+  frontend_dist:
+  # face-detect UDS 使用時はコメント解除
+  # face_detect_sock:
+
+# Optional: Tailscale 使用時はコメント解除
+# networks:
+#   tailscale_net:
+#     driver: bridge

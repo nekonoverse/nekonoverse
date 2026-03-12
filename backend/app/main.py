@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import __version__
+from app import VERSION as __version__
 from app.activitypub.nodeinfo import router as nodeinfo_router
 from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
@@ -41,16 +41,22 @@ async def lifespan(app: FastAPI):
         logging.getLogger(__name__).warning("Could not ensure S3 bucket: %s", e)
 
     from app.config import settings as app_settings
+    from app.utils.http_client import make_async_client
 
-    app.state.http_client = httpx.AsyncClient(
+    app.state.http_client = make_async_client(
         timeout=30.0,
         verify=not app_settings.skip_ssl_verify,
         follow_redirects=True,
         limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
     )
+
+    from app.pubsub_hub import pubsub_hub
+
+    await pubsub_hub.start()
     try:
         yield
     finally:
+        await pubsub_hub.stop()
         await app.state.http_client.aclose()
 
 
@@ -65,9 +71,9 @@ cors_origins = [
     "http://localhost:3000",
     settings.server_url,
 ]
-# Allow Tailscale / LAN access in debug mode
-if settings.debug:
-    cors_origins.append("http://100.68.9.116:3000")
+# Allow frontend URL configured via environment
+if settings.frontend_url and settings.frontend_url not in cors_origins:
+    cors_origins.append(settings.frontend_url)
 
 app.add_middleware(
     CORSMiddleware,
@@ -80,6 +86,10 @@ app.add_middleware(
 
 @app.get("/api/v1/instance")
 async def instance_info(db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import func, select
+
+    from app.models.actor import Actor
+    from app.models.note import Note
     from app.services.server_settings_service import get_setting
 
     thumbnail_url = None
@@ -113,13 +123,39 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
+    # サーバー統計を実際のデータベースから取得
+    user_count = 0
+    status_count = 0
+    domain_count = 0
+    try:
+        user_result = await db.execute(
+            select(func.count()).select_from(Actor).where(Actor.domain.is_(None))
+        )
+        user_count = user_result.scalar() or 0
+
+        status_result = await db.execute(
+            select(func.count()).select_from(Note).where(Note.local.is_(True))
+        )
+        status_count = status_result.scalar() or 0
+
+        domain_result = await db.execute(
+            select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
+        )
+        domain_count = domain_result.scalar() or 0
+    except Exception:
+        pass
+
     resp: dict = {
         "uri": settings.domain,
         "title": title,
         "description": description,
         "version": __version__,
         "urls": {},
-        "stats": {"user_count": 0, "status_count": 0, "domain_count": 0},
+        "stats": {
+            "user_count": user_count,
+            "status_count": status_count,
+            "domain_count": domain_count,
+        },
         "registrations": registration_open,
         "registration_mode": registration_mode,
     }

@@ -10,7 +10,7 @@ import {
 } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
 import { currentUser, authLoading } from "../stores/auth";
-import { registrationMode } from "../stores/instance";
+import EntrancePage from "../components/entrance/EntrancePage";
 import {
   getPublicTimeline,
   getHomeTimeline,
@@ -173,8 +173,12 @@ export default function Home() {
       ) {
         return;
       }
-      // Check for duplicate across both notes and buffer
-      if (notes().some((n) => n.id === id)) return;
+      // If this note already exists, update it in-place
+      // (handles focal point updates, edits, reaction changes, etc.)
+      if (notes().some((n) => n.id === id)) {
+        setNotes((prev) => prev.map((n) => (n.id === id ? note : n)));
+        return;
+      }
       if (bufferedNotes().some((n) => n.id === id)) return;
 
       if (isAtTop()) {
@@ -206,7 +210,10 @@ export default function Home() {
   });
 
   // リアクション更新のデバウンス (同一Noteへの連続更新を集約)
-  const pendingReactionRefresh = new Map<string, ReturnType<typeof setTimeout>>();
+  const pendingReactionRefresh = new Map<
+    string,
+    ReturnType<typeof setTimeout>
+  >();
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
@@ -275,7 +282,11 @@ export default function Home() {
     try {
       const updated = await getNote(noteId);
       setNotes((prev) =>
-        prev.map((n) => (n.id === noteId ? updated : n)),
+        prev.map((n) => {
+          if (n.id === noteId) return updated;
+          if (n.reblog?.id === noteId) return { ...n, reblog: updated };
+          return n;
+        }),
       );
     } catch {
       // ignore
@@ -284,119 +295,92 @@ export default function Home() {
 
   return (
     <div class="page-container">
-      <Show
-        when={!authLoading()}
-        fallback={<p>{t("common.loading")}</p>}
-      >
-        <Show
-          when={currentUser()}
-          fallback={
-            <div>
-              <p>{t("app.tagline")}</p>
-              <div class="home-actions">
-                <a href="/login" class="btn">
-                  {t("common.login")}
-                </a>
-                <Show when={registrationMode() !== "closed"}>
-                  <a href="/register" class="btn btn-secondary">
-                    {t("common.register")}
-                  </a>
-                </Show>
-              </div>
-            </div>
-          }
-        >
+      <Show when={!authLoading()} fallback={<p>{t("common.loading")}</p>}>
+        <Show when={currentUser()} fallback={<EntrancePage />}>
           <NoteComposer
             onPost={handleNewNote}
             quoteNote={quoteTarget()}
             onClearQuote={() => setQuoteTarget(null)}
           />
-        </Show>
-      </Show>
 
-      <div class="timeline">
-        <h2>{isHomeTL() ? t("timeline.home") : t("timeline.public")}</h2>
+          <div class="timeline">
+            <h2>{isHomeTL() ? t("timeline.home") : t("timeline.public")}</h2>
 
-        {/* New posts banner */}
-        <Show when={bufferedNotes().length > 0}>
-          <button class="new-posts-banner" onClick={flushBuffer}>
-            {t("timeline.newPosts").replace(
-              "{count}",
-              String(bufferedNotes().length),
-            )}
-          </button>
-        </Show>
+            {/* New posts banner */}
+            <Show when={bufferedNotes().length > 0}>
+              <button class="new-posts-banner" onClick={flushBuffer}>
+                {t("timeline.newPosts").replace(
+                  "{count}",
+                  String(bufferedNotes().length),
+                )}
+              </button>
+            </Show>
 
-        <Show
-          when={!initialLoading()}
-          fallback={<p>{t("timeline.loading")}</p>}
-        >
-          <Show
-            when={notes().length > 0}
-            fallback={<p class="empty">{t("timeline.empty")}</p>}
-          >
-            <For each={notes()}>
-              {(note) => (
-                <div
-                  class={
-                    newNoteIds().has(note.id) ? "note-slide-in" : ""
-                  }
-                >
-                  <NoteCard
-                    note={note}
-                    onReactionUpdate={() => refreshNote(note.id)}
-                    onQuote={(n) => {
-                      setQuoteTarget(n);
-                      window.scrollTo({ top: 0, behavior: "smooth" });
-                    }}
-                    onDelete={(id) =>
-                      setNotes((prev) =>
-                        prev.filter((n) => n.id !== id),
-                      )
-                    }
-                  />
-                </div>
-              )}
-            </For>
+            <Show
+              when={!initialLoading()}
+              fallback={<p>{t("timeline.loading")}</p>}
+            >
+              <Show
+                when={notes().length > 0}
+                fallback={<p class="empty">{t("timeline.empty")}</p>}
+              >
+                <For each={notes()}>
+                  {(note) => (
+                    <div
+                      class={newNoteIds().has(note.id) ? "note-slide-in" : ""}
+                    >
+                      <NoteCard
+                        note={note}
+                        onReactionUpdate={() => refreshNote(note.id)}
+                        onQuote={(n) => {
+                          setQuoteTarget(n);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
+                        onDelete={(id) =>
+                          setNotes((prev) => prev.filter((n) => n.id !== id))
+                        }
+                      />
+                    </div>
+                  )}
+                </For>
+              </Show>
+
+              {/* Sentinel element for infinite scroll */}
+              <div ref={setSentinelRef} class="timeline-sentinel" />
+
+              {/* Loading indicator */}
+              <Show when={loadingMore()}>
+                <p class="timeline-loading">{t("timeline.loadingMore")}</p>
+              </Show>
+
+              {/* End of timeline */}
+              <Show when={!hasMore() && notes().length > 0}>
+                <p class="timeline-end">{t("timeline.noMore")}</p>
+              </Show>
+            </Show>
+          </div>
+
+          {/* Scroll-to-top floating button */}
+          <Show when={showScrollTop()}>
+            <button
+              class="scroll-to-top"
+              onClick={scrollToTop}
+              aria-label={t("timeline.scrollToTop")}
+              title={t("timeline.scrollToTop")}
+            >
+              <svg
+                width="20"
+                height="20"
+                viewBox="0 0 20 20"
+                fill="none"
+                xmlns="http://www.w3.org/2000/svg"
+                aria-hidden="true"
+              >
+                <path d="M10 3L3 10h4v7h6v-7h4L10 3z" fill="currentColor" />
+              </svg>
+            </button>
           </Show>
-
-          {/* Sentinel element for infinite scroll */}
-          <div ref={setSentinelRef} class="timeline-sentinel" />
-
-          {/* Loading indicator */}
-          <Show when={loadingMore()}>
-            <p class="timeline-loading">{t("timeline.loadingMore")}</p>
-          </Show>
-
-          {/* End of timeline */}
-          <Show when={!hasMore() && notes().length > 0}>
-            <p class="timeline-end">{t("timeline.noMore")}</p>
-          </Show>
         </Show>
-      </div>
-
-      {/* Scroll-to-top floating button */}
-      <Show when={showScrollTop()}>
-        <button
-          class="scroll-to-top"
-          onClick={scrollToTop}
-          aria-label={t("timeline.scrollToTop")}
-          title={t("timeline.scrollToTop")}
-        >
-          <svg
-            width="20"
-            height="20"
-            viewBox="0 0 20 20"
-            fill="none"
-            xmlns="http://www.w3.org/2000/svg"
-            aria-hidden="true"
-          >
-            <path
-              d="M10 3L3 10h4v7h6v-7h4L10 3z"
-              fill="currentColor"
-            />
-          </svg>
-        </button>
       </Show>
     </div>
   );

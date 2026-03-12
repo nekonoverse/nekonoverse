@@ -2,6 +2,9 @@ import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { getNotifications, dismissNotification, clearNotifications, type Notification } from "../api/notifications";
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
+import { emojify } from "../utils/emojify";
+import { twemojify } from "../utils/twemojify";
+import { formatTimestamp, useTimeTick } from "../utils/formatTime";
 import { getNote } from "../api/statuses";
 import { onNotification, onReaction, resetUnread } from "../stores/streaming";
 import { useI18n } from "../i18n";
@@ -102,9 +105,13 @@ export default function Notifications() {
     try {
       const updated = await getNote(noteId);
       setNotifications((prev) =>
-        prev.map((n) =>
-          n.status?.id === noteId ? { ...n, status: updated } : n
-        )
+        prev.map((n) => {
+          if (n.status?.id === noteId) return { ...n, status: updated };
+          if (n.status?.reblog?.id === noteId) {
+            return { ...n, status: { ...n.status, reblog: updated } };
+          }
+          return n;
+        })
       );
     } catch {}
   };
@@ -151,7 +158,11 @@ export default function Notifications() {
                               src={notif.account!.avatar_url || defaultAvatar()}
                               alt=""
                             />
-                            <strong>{notif.account!.display_name || notif.account!.username}</strong>
+                            <strong ref={(el) => {
+                              el.textContent = notif.account!.display_name || notif.account!.username;
+                              emojify(el, notif.account!.emojis || []);
+                              twemojify(el);
+                            }} />
                           </a>
                         </Show>
                         <span class="notification-type-text">
@@ -173,7 +184,7 @@ export default function Notifications() {
                         </Show>
                       </div>
                       <span class="notification-time">
-                        {new Date(notif.created_at).toLocaleString()}
+                        {(() => { useTimeTick(); return formatTimestamp(notif.created_at, t); })()}
                       </span>
                       <Show when={notif.status}>
                         <div class="notification-note">

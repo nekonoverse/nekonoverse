@@ -278,13 +278,27 @@ async def test_revoke_token(app_client, db, mock_valkey, test_user):
 
 
 async def test_revoke_nonexistent_token(app_client, db, mock_valkey):
-    """Revoking a nonexistent token returns 200 (idempotent)."""
+    """Revoking with invalid client credentials returns 401."""
     resp = await app_client.post(
         "/oauth/revoke",
         data={
             "token": "nonexistent-token",
             "client_id": "x",
             "client_secret": "y",
+        },
+    )
+    assert resp.status_code == 401
+
+
+async def test_revoke_nonexistent_token_valid_client(app_client, db, mock_valkey):
+    """Revoking a nonexistent token with valid client returns 200 (idempotent)."""
+    app_data = await _create_test_app(app_client, mock_valkey)
+    resp = await app_client.post(
+        "/oauth/revoke",
+        data={
+            "token": "nonexistent-token",
+            "client_id": app_data["client_id"],
+            "client_secret": app_data["client_secret"],
         },
     )
     assert resp.status_code == 200

@@ -93,7 +93,8 @@ docker compose -f docker-compose.federation.yml run --rm --no-deps test-runner
 | ファイル | 用途 |
 |---------|------|
 | `docker-compose.dev.yml.example` | 開発用テンプレート（ホットリロード、ソースマウント、ポート直接公開） |
-| `docker-compose.yml.example` | 本番用テンプレート（GHCR イメージ、nginx + Cloudflare Tunnel オプション） |
+| `docker-compose.yml.example` | 本番用テンプレート TCP 構成（GHCR イメージ、nginx + Cloudflare Tunnel オプション） |
+| `docker-compose.prod.yml` | 本番用 UDS 構成（全サービス間 UDS、静的フロントエンド配信）— 推奨 |
 | `docker-compose.e2e.yml` | フロントエンド E2E テスト用（CI） |
 | `docker-compose.federation.yml` | Neko↔Neko 連合テスト用（CI） |
 | `docker-compose.misskey-federation.yml` | Neko↔Misskey 連合テスト用（CI） |
@@ -104,13 +105,13 @@ docker compose -f docker-compose.federation.yml run --rm --no-deps test-runner
 
 | ブランチ | 用途 |
 |---------|------|
-| `main` | 安定リリース。タグ付き (`v0.5.0`, `v0.5.1`, ...) |
+| `main` | 安定リリース。タグ付き (`20260311-1`, ...) |
 | `develop` | 開発ブランチ。push で `unstable` Docker イメージがビルドされる |
 
 ```bash
 # develop で作業 → main にマージ → タグ
 git checkout main
 git merge --no-ff develop
-git tag v<version>
-git push origin main develop v<version>
+git tag <yyyymmdd-x>
+git push origin main develop <yyyymmdd-x>
 ```

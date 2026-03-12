@@ -13,6 +13,7 @@ import { twemojify } from "../../utils/twemojify";
 import { emojify } from "../../utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "../../utils/mentionify";
+import { formatTimestamp, useTimeTick } from "../../utils/formatTime";
 import { sanitizeHtml } from "../../utils/sanitize";
 import { renderMfm } from "../../utils/mfm";
 import { defaultAvatar } from "../../stores/instance";
@@ -24,12 +25,6 @@ interface Props {
   onDelete?: (noteId: string) => void;
   onReply?: (note: Note) => void;
   inReplyToActor?: { username: string; domain: string | null } | null;
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function actorHandle(actor: Note["actor"]): string {
@@ -73,7 +68,7 @@ function QuoteEmbed(props: { note: Note }) {
       </div>
       <div class="note-quote-content" ref={(el) => {
         if (props.note.source !== null && props.note.source !== undefined) {
-          renderMfm(el, props.note.source, props.note.emojis, navigate);
+          renderMfm(el, props.note.source, props.note.emojis, navigate, props.note.actor.domain);
         } else {
           el.innerHTML = sanitizeHtml(props.note.content);
           mentionify(el, navigate);
@@ -166,7 +161,7 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
           {poll().votes_count} {t("poll.votes")}
           <Show when={poll().expires_at}>
             {" · "}
-            {poll().expired ? t("poll.expired") : t("poll.expiresAt") + " " + formatTime(poll().expires_at!)}
+            {poll().expired ? t("poll.expired") : t("poll.expiresAt") + " " + formatTimestamp(poll().expires_at!, t)}
           </Show>
         </span>
       </div>
@@ -452,7 +447,7 @@ export default function NoteCard(props: Props) {
             <div class="note-content" ref={(el) => {
               const src = noteSource();
               if (src !== null && src !== undefined) {
-                renderMfm(el, src, note().emojis, navigate);
+                renderMfm(el, src, note().emojis, navigate, note().actor.domain);
               } else {
                 el.innerHTML = sanitizeHtml(noteContent());
                 mentionify(el, navigate);
@@ -583,7 +578,7 @@ export default function NoteCard(props: Props) {
         <Show when={!currentUser() && note().reactions.length > 0}>
           <div class="note-reactions">
             {note().reactions.map((r) => (
-              <span class="reaction-badge">
+              <span class="reaction-badge reaction-badge-static">
                 <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
               </span>
             ))}
@@ -632,7 +627,7 @@ export default function NoteCard(props: Props) {
             </a>
           </Show>
           <a href={`/notes/${note().id}`} class="note-time-link">
-            <span class="note-time">{formatTime(note().published)}</span>
+            <span class="note-time">{(() => { useTimeTick(); return formatTimestamp(note().published, t); })()}</span>
           </a>
         </div>
       </div>

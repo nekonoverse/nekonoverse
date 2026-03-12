@@ -1,13 +1,23 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PollCreateRequest(BaseModel):
     options: list[str] = Field(min_length=2, max_length=10)
     expires_in: int = Field(default=86400, ge=300, le=2592000)  # seconds
     multiple: bool = False
+
+    @field_validator("options")
+    @classmethod
+    def validate_options(cls, v: list[str]) -> list[str]:
+        for opt in v:
+            if len(opt) > 200:
+                raise ValueError("Poll option must be 200 characters or fewer")
+            if not opt.strip():
+                raise ValueError("Poll option cannot be empty")
+        return v
 
 
 class NoteCreateRequest(BaseModel):

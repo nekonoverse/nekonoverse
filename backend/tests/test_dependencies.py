@@ -14,6 +14,7 @@ def mock_request():
     """Create a mock request with configurable cookies."""
     request = AsyncMock()
     request.cookies = {}
+    request.headers = {}
     return request
 
 

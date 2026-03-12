@@ -165,3 +165,160 @@ async def test_update_avatar(mock_s3, authed_client, test_user):
     )
     assert resp.status_code == 200
     assert resp.json()["avatar_url"] is not None
+
+
+# ── TOTP tests ──
+
+
+async def test_totp_status_disabled(authed_client, test_user):
+    resp = await authed_client.get("/api/v1/auth/totp/status")
+    assert resp.status_code == 200
+    assert resp.json()["totp_enabled"] is False
+
+
+async def test_totp_setup(authed_client, test_user):
+    resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "secret" in data
+    assert "provisioning_uri" in data
+    assert len(data["secret"]) == 32
+
+
+async def test_totp_setup_already_enabled(authed_client, test_user, db):
+    test_user.totp_enabled = True
+    await db.flush()
+    resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
+    assert resp.status_code == 400
+
+
+async def test_totp_enable(authed_client, test_user, db):
+    setup_resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
+    secret = setup_resp.json()["secret"]
+
+    import pyotp
+    code = pyotp.TOTP(secret).now()
+
+    resp = await authed_client.post("/api/v1/auth/totp/enable", json={"code": code})
+    assert resp.status_code == 200
+    data = resp.json()
+    assert "recovery_codes" in data
+    assert len(data["recovery_codes"]) > 0
+
+
+async def test_totp_enable_invalid_code(authed_client, test_user, db):
+    await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
+    resp = await authed_client.post("/api/v1/auth/totp/enable", json={"code": "000000"})
+    assert resp.status_code == 400
+
+
+async def test_totp_enable_no_setup(authed_client, test_user, db):
+    resp = await authed_client.post("/api/v1/auth/totp/enable", json={"code": "123456"})
+    assert resp.status_code == 400
+
+
+async def test_totp_disable(authed_client, test_user, db):
+    setup_resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
+    secret = setup_resp.json()["secret"]
+    import pyotp
+    code = pyotp.TOTP(secret).now()
+    await authed_client.post("/api/v1/auth/totp/enable", json={"code": code})
+
+    resp = await authed_client.post("/api/v1/auth/totp/disable", json={
+        "password": "password1234"
+    })
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+async def test_totp_disable_wrong_password(authed_client, test_user, db):
+    setup_resp = await authed_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "password1234"},
+    )
+    secret = setup_resp.json()["secret"]
+    import pyotp
+    code = pyotp.TOTP(secret).now()
+    await authed_client.post("/api/v1/auth/totp/enable", json={"code": code})
+
+    resp = await authed_client.post("/api/v1/auth/totp/disable", json={
+        "password": "wrongpassword"
+    })
+    assert resp.status_code == 400
+
+
+async def test_totp_disable_not_enabled(authed_client, test_user):
+    resp = await authed_client.post("/api/v1/auth/totp/disable", json={
+        "password": "password1234"
+    })
+    assert resp.status_code == 400
+
+
+async def test_totp_verify(app_client, test_user, db, mock_valkey):
+    """Full TOTP login flow: login -> requires_totp -> verify."""
+    import pyotp
+
+    from app.services.totp_service import (
+        encrypt_secret,
+        generate_recovery_codes,
+        generate_totp_secret,
+        hash_recovery_codes,
+    )
+
+    secret = generate_totp_secret()
+    test_user.totp_secret = encrypt_secret(secret)
+    test_user.totp_enabled = True
+    recovery = generate_recovery_codes()
+    test_user.totp_recovery_codes = hash_recovery_codes(recovery)
+    await db.flush()
+
+    login_resp = await app_client.post("/api/v1/auth/login", json={
+        "username": "testuser", "password": "password1234"
+    })
+    assert login_resp.status_code == 200
+    login_data = login_resp.json()
+    assert login_data["requires_totp"] is True
+    totp_token = login_data["totp_token"]
+
+    # valkeyのgetが呼ばれた時にユーザーIDを返すようにモック
+    mock_valkey.get = AsyncMock(
+        side_effect=lambda key: str(test_user.id) if "totp_pending:" in key else None,
+    )
+
+    code = pyotp.TOTP(secret).now()
+    resp = await app_client.post("/api/v1/auth/totp/verify", json={
+        "totp_token": totp_token,
+        "code": code,
+    })
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+async def test_totp_verify_invalid_token(app_client, mock_valkey):
+    mock_valkey.get = AsyncMock(return_value=None)
+    resp = await app_client.post("/api/v1/auth/totp/verify", json={
+        "totp_token": "invalid-token",
+        "code": "123456",
+    })
+    assert resp.status_code == 401
+
+
+async def test_totp_status_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.get("/api/v1/auth/totp/status")
+    assert resp.status_code == 401
+
+
+async def test_totp_setup_unauthenticated(app_client, mock_valkey):
+    resp = await app_client.post(
+        "/api/v1/auth/totp/setup", json={"password": "anything"},
+    )
+    assert resp.status_code == 401

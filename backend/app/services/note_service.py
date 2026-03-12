@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import func, or_, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -647,13 +648,64 @@ async def get_reaction_summaries(
     return summaries
 
 
-async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
+async def get_statuses_count(db: AsyncSession, actor_id: uuid.UUID) -> int:
+    """Return the number of public/unlisted statuses for the given actor.
+
+    Cached in Valkey for 5 minutes.
+    """
+    import json
+
+    from app.valkey_client import valkey
+
+    cache_key = f"perf:statuses_count:{actor_id}"
+    try:
+        cached = await valkey.get(cache_key)
+        if cached:
+            return json.loads(cached)
+    except Exception:
+        pass
+
+    result = await db.execute(
+        select(func.count())
+        .select_from(Note)
+        .where(
+            Note.actor_id == actor_id,
+            Note.visibility.in_(["public", "unlisted"]),
+            Note.deleted_at.is_(None),
+        )
+    )
+    count = result.scalar() or 0
+
+    try:
+        await valkey.set(cache_key, json.dumps(count), ex=300)
+    except Exception:
+        pass
+
+    return count
+
+
+_FETCH_MAX_DEPTH = 3
+
+
+async def fetch_remote_note(
+    db: AsyncSession,
+    ap_id: str,
+    *,
+    _depth: int = 0,
+) -> Note | None:
     """Fetch a remote note by AP ID and store it locally.
 
     Used by announce/create handlers when the referenced note
     (boost target or quote target) is not in the local database.
     """
     import logging
+
+    if _depth >= _FETCH_MAX_DEPTH:
+        logging.getLogger(__name__).warning(
+            "fetch_remote_note depth limit reached for %s",
+            ap_id,
+        )
+        return None
 
     from app.models.note_attachment import NoteAttachment
     from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
@@ -840,7 +892,16 @@ async def fetch_remote_note(db: AsyncSession, ap_id: str) -> Note | None:
             pass
 
     db.add(note)
-    await db.flush()
+    try:
+        await db.flush()
+    except IntegrityError:
+        # 同じap_idのノートがCreate活動とAnnounce活動の競合で既に挿入されている場合、
+        # 既存のノートにフォールバックする
+        await db.rollback()
+        existing = await get_note_by_ap_id(db, ap_id)
+        if existing:
+            return existing
+        return None
 
     # 添付ファイル処理
     attachments = data.get("attachment", [])

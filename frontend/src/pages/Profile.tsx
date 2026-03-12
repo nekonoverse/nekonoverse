@@ -13,6 +13,7 @@ import { sanitizeHtml } from "../utils/sanitize";
 import { emojify } from "../utils/emojify";
 import { twemojify } from "../utils/twemojify";
 import { defaultAvatar } from "../stores/instance";
+import { formatTimestamp, useTimeTick } from "../utils/formatTime";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -30,6 +31,7 @@ export default function Profile() {
   // Block/mute state
   const [isBlocking, setIsBlocking] = createSignal(false);
   const [isMuting, setIsMuting] = createSignal(false);
+  const [isFollowedBy, setIsFollowedBy] = createSignal(false);
   const [blockMuteLoading, setBlockMuteLoading] = createSignal(false);
   const [moreOpen, setMoreOpen] = createSignal(false);
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
@@ -67,6 +69,7 @@ export default function Profile() {
           setIsRequested(rel.requested);
           setIsBlocking(rel.blocking);
           setIsMuting(rel.muting);
+          setIsFollowedBy(rel.followed_by);
           if (rel.following) addFollowedId(acc.id);
           else removeFollowedId(acc.id);
         } catch {}
@@ -88,6 +91,7 @@ export default function Profile() {
       setIsRequested(false);
       setIsBlocking(false);
       setIsMuting(false);
+      setIsFollowedBy(false);
       setEditing(false);
       setMoreOpen(false);
       setShowUnfollowModal(false);
@@ -100,11 +104,17 @@ export default function Profile() {
     return acc && currentUser()?.username === acc.username && !acc.acct.includes("@");
   };
 
+  const htmlToPlainText = (html: string): string => {
+    const el = document.createElement("div");
+    el.innerHTML = html.replace(/<br\s*\/?>/gi, "\n");
+    return el.textContent?.trim() || "";
+  };
+
   const startEditing = () => {
     const acc = account()!;
     const user = currentUser();
     setEditName(acc.display_name || "");
-    setEditBio(user?.summary || "");
+    setEditBio(htmlToPlainText(user?.summary || ""));
     setEditBirthday(user?.birthday || "");
     setEditFields(user?.fields?.length ? [...user.fields] : []);
     setEditIsCat(user?.is_cat || false);
@@ -233,7 +243,11 @@ export default function Profile() {
   const refreshNote = async (noteId: string) => {
     try {
       const updated = await getNote(noteId);
-      setNotes((prev) => prev.map((n) => (n.id === noteId ? updated : n)));
+      setNotes((prev) => prev.map((n) => {
+        if (n.id === noteId) return updated;
+        if (n.reblog?.id === noteId) return { ...n, reblog: updated };
+        return n;
+      }));
     } catch {}
   };
 
@@ -245,11 +259,6 @@ export default function Profile() {
     }
   });
   onCleanup(() => unsubReaction());
-
-  const formatDate = (iso?: string) => {
-    if (!iso) return "";
-    return new Date(iso).toLocaleDateString();
-  };
 
   return (
     <div class="page-container">
@@ -436,6 +445,9 @@ export default function Profile() {
                     </Show>
                   </div>
                   <span class="profile-handle">@{acc.acct}</span>
+                  <Show when={!isOwn() && currentUser() && isFollowedBy()}>
+                    <span class="follows-you-badge">{t("profile.followsYou")}</span>
+                  </Show>
                   <Show when={acc.acct.includes("@") && acc.url}>
                     <a
                       class="remote-view-link"
@@ -454,6 +466,12 @@ export default function Profile() {
 
                   <Show when={acc.followers_count != null || acc.following_count != null}>
                     <div class="profile-follow-counts">
+                      <Show when={acc.statuses_count != null}>
+                        <span class="profile-follow-count-link">
+                          <span class="profile-follow-count-num">{acc.statuses_count ?? 0}</span>
+                          {" "}{t("profile.postsCount")}
+                        </span>
+                      </Show>
                       <A href={`/@${acc.acct}/following`} class="profile-follow-count-link">
                         <span class="profile-follow-count-num">{acc.following_count ?? 0}</span>
                         {" "}{t("profile.followingList")}
@@ -561,7 +579,7 @@ export default function Profile() {
                   </Show>
                   <Show when={acc.created_at}>
                     <span class="profile-joined">
-                      {t("profile.joined")} {formatDate(acc.created_at)}
+                      {acc.domain ? t("profile.firstSeen") : t("profile.joined")} {(() => { useTimeTick(); return formatTimestamp(acc.created_at!, t, true); })()}
                     </span>
                   </Show>
                 </div>

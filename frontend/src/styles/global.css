@@ -11,6 +11,7 @@
   --reblog: #2ecc71;
   --radius: 8px;
   --font-size-base: 16px;
+  --font-family: "Noto Sans JP", sans-serif;
 }
 
 [data-theme="light"] {
@@ -46,13 +47,7 @@
 }
 
 body {
-  font-family:
-    "Noto Sans JP",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  font-family: var(--font-family);
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-size: var(--font-size-base);
@@ -637,7 +632,9 @@ a:hover {
   height: 24px;
   border: 3px solid #fff;
   border-radius: 50%;
-  box-shadow: 0 0 0 2px rgba(0, 0, 0, 0.5), inset 0 0 0 2px rgba(0, 0, 0, 0.3);
+  box-shadow:
+    0 0 0 2px rgba(0, 0, 0, 0.5),
+    inset 0 0 0 2px rgba(0, 0, 0, 0.3);
   transform: translate(-50%, -50%);
   pointer-events: none;
 }
@@ -832,6 +829,96 @@ a:hover {
   font-weight: 600;
 }
 
+/* Poll editor */
+.composer-poll-editor {
+  margin-top: 8px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+}
+
+.composer-poll-option {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.composer-poll-input {
+  flex: 1;
+  padding: 8px 10px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.875em;
+}
+
+.composer-poll-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.composer-poll-remove {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-size: 0.875em;
+}
+
+.composer-poll-remove:hover {
+  color: var(--accent);
+}
+
+.composer-poll-add {
+  background: none;
+  border: 1px dashed var(--border);
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-size: 0.8em;
+  width: 100%;
+  margin-bottom: 8px;
+}
+
+.composer-poll-add:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.composer-poll-settings {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.composer-poll-multiple {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.composer-poll-expiry {
+  padding: 4px 8px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8em;
+}
+
+.composer-attach-btn.active {
+  color: var(--accent);
+}
+
 /* Timeline */
 .timeline {
   margin-top: 24px;
@@ -903,7 +990,10 @@ a:hover {
   align-items: center;
   justify-content: center;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  transition: background 0.2s, opacity 0.2s, transform 0.2s;
+  transition:
+    background 0.2s,
+    opacity 0.2s,
+    transform 0.2s;
   animation: scroll-top-fade-in 0.25s ease-out;
 }
 
@@ -1014,6 +1104,10 @@ a:hover {
   color: var(--accent);
 }
 
+.mention-domain {
+  opacity: 0.5;
+}
+
 /* Note editing */
 .note-edit-form {
   margin-top: 4px;
@@ -1114,7 +1208,9 @@ a:hover {
   font-size: 0.85em;
   cursor: pointer;
   margin-bottom: 6px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .note-cw-toggle:hover {
@@ -1169,6 +1265,7 @@ a:hover {
   object-fit: cover;
   max-height: 300px;
   display: block;
+  transition: object-position 0.6s ease-in-out;
 }
 
 .note-media-2 .note-media-item img,
@@ -1342,6 +1439,11 @@ a:hover {
 
 .reaction-badge:hover {
   border-color: var(--accent);
+}
+
+.reaction-badge-static {
+  cursor: default;
+  pointer-events: none;
 }
 
 .reaction-me {
@@ -2489,6 +2591,22 @@ a:hover {
   color: var(--accent);
 }
 
+.font-custom-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.875em;
+}
+
+.font-custom-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 /* Passkey Manager */
 .passkey-manager h3 {
   margin-bottom: 12px;
@@ -2702,6 +2820,16 @@ a:hover {
   display: block;
   color: var(--text-secondary);
   font-size: 0.875em;
+  margin-bottom: 8px;
+}
+
+.follows-you-badge {
+  display: inline-block;
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
   margin-bottom: 8px;
 }
 
@@ -5414,6 +5542,21 @@ a:hover {
   padding: 2px 6px;
 }
 
+.search-modal-close {
+  display: none;
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px;
+  line-height: 0;
+}
+
+.search-modal-close:hover {
+  color: var(--text-primary);
+}
+
 .search-modal-body {
   overflow-y: auto;
   flex: 1;
@@ -5499,5 +5642,132 @@ a:hover {
 
   .search-modal-hint {
     display: none;
+  }
+
+  .search-modal-close {
+    display: block;
+  }
+}
+
+/* Entrance Page */
+.entrance {
+  max-width: 600px;
+  margin: 0 auto;
+}
+
+.entrance-hero {
+  text-align: center;
+  padding: 48px 16px 32px;
+}
+
+.entrance-hero-icon {
+  width: 80px;
+  height: 80px;
+  border-radius: 16px;
+  object-fit: cover;
+  margin-bottom: 16px;
+}
+
+.entrance-hero-title {
+  font-size: 2em;
+  font-weight: 700;
+  margin-bottom: 8px;
+}
+
+.entrance-hero-tagline {
+  font-size: 1.1em;
+  color: var(--text-secondary);
+  margin-bottom: 24px;
+}
+
+.entrance-hero-actions {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+  flex-wrap: wrap;
+}
+
+.entrance-hero-notice {
+  color: var(--text-secondary);
+  font-size: 0.9em;
+  margin-top: 12px;
+}
+
+.btn-accent {
+  background: var(--accent);
+  color: var(--accent-text);
+  font-weight: 600;
+}
+
+.btn-accent:hover {
+  background: var(--accent-hover);
+  color: var(--accent-text);
+}
+
+.entrance-stats {
+  display: flex;
+  gap: 12px;
+  padding: 0 16px 32px;
+  justify-content: center;
+}
+
+.entrance-stat-card {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+  text-align: center;
+}
+
+.entrance-stat-number {
+  display: block;
+  font-size: 1.5em;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.entrance-stat-label {
+  display: block;
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  margin-top: 4px;
+}
+
+.entrance-preview {
+  padding: 0 16px 32px;
+}
+
+.entrance-preview-title {
+  font-size: 1.2em;
+  margin-bottom: 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.entrance-preview-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+
+@media (max-width: 480px) {
+  .entrance-hero-title {
+    font-size: 1.5em;
+  }
+
+  .entrance-stats {
+    flex-direction: column;
+  }
+
+  .entrance-hero-actions {
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .entrance-hero-actions .btn {
+    width: 100%;
+    text-align: center;
   }
 }

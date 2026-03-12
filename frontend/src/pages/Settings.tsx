@@ -2,7 +2,13 @@ import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "s
 import QRCode from "qrcode";
 import { useNavigate, useParams, A } from "@solidjs/router";
 import { currentUser, authLoading, logout } from "../stores/auth";
-import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
+import {
+  theme, setTheme, fontSize, setFontSize,
+  fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
+  timeFormat, setTimeFormat,
+  FONT_FAMILY_MAP,
+  type Theme, type FontSize, type FontFamily, type TimeFormat,
+} from "../stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
   rememberVisibility, setRememberVisibility,
@@ -177,6 +183,59 @@ function AppearanceTab() {
         </div>
       </div>
 
+      <div class="settings-section">
+        <h3>{t("settings.fontFamily")}</h3>
+        <div class="theme-selector" style={{ "flex-wrap": "wrap" }}>
+          {([
+            { key: "noto" as FontFamily, label: t("settings.fontNoto"), css: FONT_FAMILY_MAP.noto },
+            { key: "hiragino" as FontFamily, label: t("settings.fontHiragino"), css: FONT_FAMILY_MAP.hiragino },
+            { key: "yu-mac" as FontFamily, label: t("settings.fontYuMac"), css: FONT_FAMILY_MAP["yu-mac"] },
+            { key: "yu-win" as FontFamily, label: t("settings.fontYuWin"), css: FONT_FAMILY_MAP["yu-win"] },
+            { key: "meiryo" as FontFamily, label: t("settings.fontMeiryo"), css: FONT_FAMILY_MAP.meiryo },
+            { key: "ipa" as FontFamily, label: t("settings.fontIPA"), css: FONT_FAMILY_MAP.ipa },
+            { key: "system" as FontFamily, label: t("settings.fontSystem"), css: FONT_FAMILY_MAP.system },
+            { key: "custom" as FontFamily, label: t("settings.fontCustom"), css: undefined },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${fontFamily() === item.key ? " theme-active" : ""}`}
+              style={item.css ? { "font-family": item.css } : {}}
+              onClick={() => setFontFamily(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <Show when={fontFamily() === "custom"}>
+          <input
+            type="text"
+            class="font-custom-input"
+            placeholder={t("settings.fontCustomPlaceholder")}
+            value={customFontFamily()}
+            onInput={(e) => setCustomFontFamily(e.currentTarget.value)}
+            style={{ "font-family": customFontFamily() || "inherit" }}
+          />
+        </Show>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.timeFormat")}</h3>
+        <div class="theme-selector">
+          {([
+            { key: "absolute" as TimeFormat, label: t("settings.timeAbsolute") },
+            { key: "relative" as TimeFormat, label: t("settings.timeRelative") },
+            { key: "combined" as TimeFormat, label: t("settings.timeCombined") },
+            { key: "unixtime" as TimeFormat, label: t("settings.timeUnixtime") },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${timeFormat() === item.key ? " theme-active" : ""}`}
+              onClick={() => setTimeFormat(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
     </>
   );
 }
@@ -247,6 +306,7 @@ function SecurityTab(props: { onLogout: () => void }) {
   const [totpError, setTotpError] = createSignal("");
   const [totpProcessing, setTotpProcessing] = createSignal(false);
   const [disablePw, setDisablePw] = createSignal("");
+  const [setupPw, setSetupPw] = createSignal("");
   const [qrDataUrl, setQrDataUrl] = createSignal("");
 
   createEffect(async () => {
@@ -293,10 +353,15 @@ function SecurityTab(props: { onLogout: () => void }) {
   };
 
   const handleSetupTotp = async () => {
+    if (!setupPw()) {
+      setTotpError(t("totp.passwordRequired"));
+      return;
+    }
     setTotpError("");
     setTotpProcessing(true);
     try {
-      const data = await setupTotp();
+      const data = await setupTotp(setupPw());
+      setSetupPw("");
       setTotpSecret(data.secret);
       setTotpUri(data.provisioning_uri);
       setTotpStep("qr");
@@ -392,10 +457,19 @@ function SecurityTab(props: { onLogout: () => void }) {
           <Switch>
             <Match when={totpStep() === "idle" && !totpEnabled()}>
               <p class="settings-desc">{t("totp.description")}</p>
+              <div class="form-group">
+                <label>{t("totp.confirmPassword")}</label>
+                <input
+                  type="password"
+                  value={setupPw()}
+                  onInput={(e) => setSetupPw(e.currentTarget.value)}
+                  placeholder={t("totp.confirmPassword")}
+                />
+              </div>
               <button
                 class="btn btn-small"
                 onClick={handleSetupTotp}
-                disabled={totpProcessing()}
+                disabled={totpProcessing() || !setupPw()}
               >
                 {t("totp.enable")}
               </button>

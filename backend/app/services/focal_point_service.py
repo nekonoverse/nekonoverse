@@ -1,0 +1,251 @@
+"""Background focal point detection for remote image attachments."""
+
+import asyncio
+import base64
+import logging
+import uuid
+
+import httpx
+
+from app.config import settings
+
+logger = logging.getLogger(__name__)
+
+_IMAGE_MIMES = frozenset({
+    "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif",
+})
+_MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
+
+
+async def detect_remote_focal_points(
+    note_id: uuid.UUID,
+    attachment_ids: list[uuid.UUID],
+) -> None:
+    """Background task: detect focal points for remote attachments.
+
+    Downloads each remote image, calls face-detect service, updates DB,
+    and publishes a streaming event.  Designed for asyncio.create_task();
+    never raises.
+    """
+    if not settings.face_detect_url:
+        return
+
+    from app.database import async_session
+
+    try:
+        async with async_session() as db:
+            from sqlalchemy import select
+
+            from app.models.note_attachment import NoteAttachment
+
+            rows = await db.execute(
+                select(NoteAttachment).where(
+                    NoteAttachment.id.in_(attachment_ids),
+                )
+            )
+            attachments = list(rows.scalars().all())
+
+            results = await asyncio.gather(
+                *(_detect_single(att) for att in attachments),
+                return_exceptions=True,
+            )
+
+            updated = False
+            for att, res in zip(attachments, results):
+                if isinstance(res, Exception):
+                    logger.debug("Focal detection failed for %s: %s", att.id, res)
+                elif res is True:
+                    updated = True
+
+            if updated:
+                await db.commit()
+                await _publish_update(note_id)
+    except Exception:
+        logger.debug("Background focal detection failed for note %s", note_id, exc_info=True)
+
+
+async def _detect_single(att) -> bool:
+    """Detect focal point for one attachment. Returns True if updated."""
+    if att.remote_focal_x is not None:
+        return False
+    if not att.remote_url:
+        return False
+    if (att.remote_mime_type or "") not in _IMAGE_MIMES:
+        return False
+
+    image_data = await _download_image(att.remote_url)
+    if not image_data:
+        return False
+
+    focal = await _call_face_detect(image_data, att.remote_width, att.remote_height)
+    if focal is None:
+        return False
+
+    att.remote_focal_x = focal[0]
+    att.remote_focal_y = focal[1]
+    return True
+
+
+async def _download_image(url: str) -> bytes | None:
+    """Download remote image with SSRF protection and size limit."""
+    from urllib.parse import urlparse
+
+    from app.api.mastodon.media_proxy import _is_private_host
+
+    parsed = urlparse(url)
+    if parsed.scheme not in ("http", "https") or not parsed.hostname:
+        return None
+    if _is_private_host(parsed.hostname):
+        return None
+
+    from app.utils.http_client import make_async_client
+
+    async with make_async_client(
+        timeout=httpx.Timeout(15.0, connect=5.0),
+        follow_redirects=True,
+        max_redirects=3,
+        verify=not settings.skip_ssl_verify,
+    ) as client:
+        resp = await client.get(url)
+        if resp.status_code != 200:
+            return None
+        if len(resp.content) > _MAX_DOWNLOAD_BYTES:
+            return None
+        return resp.content
+
+
+def _get_image_size(image_data: bytes) -> tuple[int, int] | None:
+    """Extract image dimensions from raw bytes without heavy dependencies."""
+    import io
+    import struct
+
+    data = io.BytesIO(image_data)
+    head = data.read(32)
+    if len(head) < 8:
+        return None
+
+    # PNG
+    if head[:8] == b"\x89PNG\r\n\x1a\n":
+        if len(head) >= 24:
+            w, h = struct.unpack(">II", head[16:24])
+            return (w, h)
+        return None
+
+    # GIF
+    if head[:6] in (b"GIF87a", b"GIF89a"):
+        w, h = struct.unpack("<HH", head[6:10])
+        return (w, h)
+
+    # JPEG
+    if head[:2] == b"\xff\xd8":
+        data.seek(2)
+        while True:
+            marker = data.read(2)
+            if len(marker) < 2:
+                return None
+            if marker[0] != 0xFF:
+                return None
+            if marker[1] == 0xD9:
+                return None
+            if marker[1] in (0xC0, 0xC1, 0xC2):
+                seg = data.read(7)
+                if len(seg) < 7:
+                    return None
+                h, w = struct.unpack(">HH", seg[3:7])
+                return (w, h)
+            length = struct.unpack(">H", data.read(2))[0]
+            data.seek(length - 2, 1)
+
+    # WebP
+    if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
+        # VP8
+        if head[12:16] == b"VP8 ":
+            if len(head) >= 30:
+                w = struct.unpack("<H", head[26:28])[0] & 0x3FFF
+                h = struct.unpack("<H", head[28:30])[0] & 0x3FFF
+                return (w, h)
+        # VP8L
+        elif head[12:16] == b"VP8L":
+            if len(head) >= 25:
+                bits = struct.unpack("<I", head[21:25])[0]
+                w = (bits & 0x3FFF) + 1
+                h = ((bits >> 14) & 0x3FFF) + 1
+                return (w, h)
+        # VP8X (extended)
+        elif head[12:16] == b"VP8X":
+            data.seek(24)
+            chunk = data.read(6)
+            if len(chunk) >= 6:
+                w = struct.unpack("<I", chunk[0:3] + b"\x00")[0] + 1
+                h = struct.unpack("<I", chunk[3:6] + b"\x00")[0] + 1
+                return (w, h)
+
+    return None
+
+
+async def _call_face_detect(
+    image_data: bytes,
+    width: int | None,
+    height: int | None,
+) -> tuple[float, float] | None:
+    """Call face-detect service. Returns (focal_x, focal_y) or None if no face.
+
+    Raises on server/network errors so callers can distinguish from "no face".
+    """
+    # Resolve actual image size if metadata is missing
+    if not width or not height:
+        size = _get_image_size(image_data)
+        if size:
+            width, height = size
+        else:
+            logger.debug("Could not determine image size, skipping focal detection")
+            return None
+
+    b64 = base64.b64encode(image_data).decode("ascii")
+    from app.utils.http_client import make_face_detect_client
+
+    async with make_face_detect_client() as client:
+        resp = await client.post(
+            settings.face_detect_url,
+            json={"inputs": b64, "parameters": {"threshold": 0.5}},
+        )
+        resp.raise_for_status()
+        results = resp.json()
+
+    if not results:
+        return None
+
+    box = results[0]["box"]
+    cx = (box["xmin"] + box["xmax"]) / 2
+    cy = (box["ymin"] + box["ymax"]) / 2
+
+    focal_x = max(-1.0, min(1.0, (cx / width) * 2 - 1))
+    focal_y = max(-1.0, min(1.0, 1 - (cy / height) * 2))
+    return (focal_x, focal_y)
+
+
+async def _publish_update(note_id: uuid.UUID) -> None:
+    """Publish streaming event so clients re-fetch the note."""
+    import json
+
+    from app.valkey_client import valkey as valkey_client
+
+    try:
+        event = json.dumps({"event": "update", "payload": {"id": str(note_id)}})
+        await valkey_client.publish("timeline:public", event)
+
+        from sqlalchemy import select
+
+        from app.database import async_session
+        from app.models.note import Note
+        from app.services.follow_service import get_follower_ids
+
+        async with async_session() as db:
+            actor_id = (
+                await db.execute(select(Note.actor_id).where(Note.id == note_id))
+            ).scalar_one_or_none()
+            if actor_id:
+                for fid in await get_follower_ids(db, actor_id):
+                    await valkey_client.publish(f"timeline:home:{fid}", event)
+    except Exception:
+        logger.debug("Failed to publish focal update for %s", note_id, exc_info=True)

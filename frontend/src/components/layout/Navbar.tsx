@@ -44,6 +44,13 @@ export default function Navbar() {
     }
   });
 
+  // Close dropdowns on route change
+  createEffect(() => {
+    location.pathname; // track
+    setNotifOpen(false);
+    setMenuOpen(false);
+  });
+
   // Invalidate notification preview cache when new notifications arrive
   const unsub = onNotification(() => {
     setNotifLoaded(false);

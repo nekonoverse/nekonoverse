@@ -2,7 +2,7 @@
  * Post-process mention links in rendered HTML to show full handle for remote users.
  * Rewrites remote mention hrefs to local profile paths (/@user@domain) and
  * intercepts clicks to navigate within the app via SolidJS Router.
- * Also converts "@username" display text to "@username@domain".
+ * Also converts "@username" display text to "@username@domain" with styled domain.
  * Call this after setting innerHTML.
  */
 export function mentionify(
@@ -33,10 +33,30 @@ export function mentionify(
         }
       }
 
+      // ドメインスタイリング: 既存の .mention-domain があればスキップ
+      if (link.querySelector(".mention-domain")) continue;
+
       const span = link.querySelector("span");
       if (!span) continue;
-      if (span.textContent?.includes("@")) continue;
-      span.textContent = `${span.textContent}@${url.hostname}`;
+
+      const text = span.textContent || "";
+      if (text.includes("@")) {
+        // テキストにドメインが含まれている場合、分割してスタイル適用
+        const atIdx = text.indexOf("@");
+        const username = text.slice(0, atIdx);
+        const domain = text.slice(atIdx);
+        span.textContent = username;
+        const domainSpan = document.createElement("span");
+        domainSpan.className = "mention-domain";
+        domainSpan.textContent = domain;
+        span.appendChild(domainSpan);
+      } else {
+        // ドメインがない場合、hrefから補完
+        const domainSpan = document.createElement("span");
+        domainSpan.className = "mention-domain";
+        domainSpan.textContent = `@${url.hostname}`;
+        span.appendChild(domainSpan);
+      }
     } catch {
       // URL解析失敗時はスキップ
     }

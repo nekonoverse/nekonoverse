@@ -1,3 +1,5 @@
+# TCP ベースの簡易構成例。
+# 本番環境では docker-compose.prod.yml (UDS + 静的フロントエンド配信) を推奨。
 services:
   postgresql:
     image: postgres:18-alpine
@@ -45,16 +47,11 @@ services:
   s3proxy-deliverer:
     image: ghcr.io/nananek/s3proxy-deliverer:latest
     restart: unless-stopped
-    user: "0:0"
-    command:
-      - sh
-      - -c
-      - chown 101:101 /var/run/s3proxy-deliverer && exec setpriv --reuid=101 --regid=101 --init-groups python main.py
     environment:
       STORAGE_ROOT: /data
     volumes:
       - ./volumes/nekono3s:/data:ro
-      - ./volumes/s3proxy_sock:/var/run/s3proxy-deliverer
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     depends_on:
       nekono3s:
         condition: service_healthy
@@ -77,6 +74,10 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # Forward proxy for outbound federation requests (origin IP concealment)
+      # HTTP_PROXY: http://squid:3128
+      # HTTPS_PROXY: http://squid:3128
+      # NO_PROXY: nekono3s,valkey,postgresql,face-detect,localhost
     expose:
       - "8000"
     depends_on:
@@ -102,6 +103,10 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # Forward proxy for outbound federation requests (origin IP concealment)
+      # HTTP_PROXY: http://squid:3128
+      # HTTPS_PROXY: http://squid:3128
+      # NO_PROXY: nekono3s,valkey,postgresql,face-detect,localhost
     depends_on:
       postgresql:
         condition: service_healthy
@@ -122,7 +127,7 @@ services:
     restart: unless-stopped
     volumes:
       - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
-      - ./volumes/s3proxy_sock:/var/run/s3proxy-deliverer
+      - s3proxy_sock:/var/run/s3proxy-deliverer
     ports:
       - "80:80"
     depends_on:
@@ -154,3 +159,6 @@ services:
   #   command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
   #   environment:
   #     TUNNEL_TRANSPORT_PROTOCOL: http2
+
+volumes:
+  s3proxy_sock:
