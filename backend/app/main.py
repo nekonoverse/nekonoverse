@@ -4,7 +4,7 @@ from fastapi import Depends, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import __version__
+from app import VERSION as __version__
 from app.activitypub.nodeinfo import router as nodeinfo_router
 from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
