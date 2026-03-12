@@ -1,14 +1,18 @@
 """Poll service: create poll notes, vote, get results."""
 
+import logging
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.note import Note
 from app.models.poll_vote import PollVote
 from app.models.user import User
 from app.services.note_service import get_note_by_id
+
+logger = logging.getLogger(__name__)
 
 
 async def vote_on_poll(
@@ -61,7 +65,7 @@ async def vote_on_poll(
         )
         db.add(vote)
 
-        # Update vote count in poll_options
+        # Update vote count in poll_options JSONB
         options[idx]["votes_count"] = options[idx].get("votes_count", 0) + 1
 
     # Force JSONB update detection
@@ -70,6 +74,48 @@ async def vote_on_poll(
     note.poll_options = list(options)
     flag_modified(note, "poll_options")
     await db.flush()
+
+    # Federate the vote
+    try:
+        await _federate_vote(db, user, note, choices)
+    except Exception:
+        logger.debug("Failed to federate vote for %s", note_id, exc_info=True)
+
+
+async def _federate_vote(
+    db: AsyncSession,
+    user: User,
+    note: Note,
+    choices: list[int],
+) -> None:
+    """Send AP activities after voting."""
+    actor = user.actor
+    options = note.poll_options or []
+
+    if note.local:
+        # Local poll: send Update(Question) to followers with updated counts
+        from app.activitypub.renderer import render_poll_update_activity
+        from app.services.delivery_service import enqueue_delivery
+        from app.services.follow_service import get_follower_inboxes
+
+        activity = render_poll_update_activity(note)
+        inboxes = await get_follower_inboxes(db, actor_id=note.actor_id)
+        for inbox_url in inboxes:
+            await enqueue_delivery(db, note.actor_id, inbox_url, activity)
+    else:
+        # Remote poll: send Create(Note with name) to the poll author's inbox
+        from app.activitypub.renderer import render_vote_activity
+        from app.services.delivery_service import enqueue_delivery
+
+        poll_actor = note.actor
+        if not poll_actor or not poll_actor.inbox_url:
+            return
+
+        for idx in choices:
+            if idx < len(options):
+                option_name = options[idx].get("title", "")
+                activity = render_vote_activity(note, actor, option_name)
+                await enqueue_delivery(db, actor.id, poll_actor.inbox_url, activity)
 
 
 async def get_poll_data(
@@ -83,13 +129,37 @@ async def get_poll_data(
         return None
 
     options = note.poll_options or []
-    votes_count = sum(opt.get("votes_count", 0) for opt in options)
+
+    # For local polls, compute vote counts from PollVote table (source of truth)
+    if note.local:
+        vote_counts_result = await db.execute(
+            select(PollVote.choice_index, func.count(PollVote.id))
+            .where(PollVote.note_id == note_id)
+            .group_by(PollVote.choice_index)
+        )
+        vote_counts = dict(vote_counts_result.all())
+
+        response_options = [
+            {
+                "title": opt.get("title", ""),
+                "votes_count": vote_counts.get(i, 0),
+            }
+            for i, opt in enumerate(options)
+        ]
+        votes_count = sum(vc for vc in vote_counts.values())
+    else:
+        # Remote polls: use JSONB counts (remote server is source of truth)
+        response_options = [
+            {"title": opt.get("title", ""), "votes_count": opt.get("votes_count", 0)}
+            for opt in options
+        ]
+        votes_count = sum(opt.get("votes_count", 0) for opt in options)
 
     # Count unique voters
-    from sqlalchemy import func
-
     voters_result = await db.execute(
-        select(func.count(func.distinct(PollVote.actor_id))).where(PollVote.note_id == note_id)
+        select(func.count(func.distinct(PollVote.actor_id))).where(
+            PollVote.note_id == note_id
+        )
     )
     voters_count = voters_result.scalar() or 0
 
@@ -116,10 +186,7 @@ async def get_poll_data(
         "multiple": note.poll_multiple,
         "votes_count": votes_count,
         "voters_count": voters_count,
-        "options": [
-            {"title": opt.get("title", ""), "votes_count": opt.get("votes_count", 0)}
-            for opt in options
-        ],
+        "options": response_options,
         "voted": voted,
         "own_votes": own_votes,
     }

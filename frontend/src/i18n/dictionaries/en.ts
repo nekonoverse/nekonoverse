@@ -520,4 +520,8 @@ export const en: Dictionary = {
   "time.daysAgo": "{n}d ago",
   "time.monthsAgo": "{n}mo ago",
   "time.yearsAgo": "{n}y ago",
+  "time.inSeconds": "in {n}s",
+  "time.inMinutes": "in {n}m",
+  "time.inHours": "in {n}h",
+  "time.inDays": "in {n}d",
 };

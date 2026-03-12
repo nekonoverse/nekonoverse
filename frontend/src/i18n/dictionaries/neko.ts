@@ -518,4 +518,8 @@ export const neko: Dictionary = {
   "time.daysAgo": "{n}にちまえにゃ",
   "time.monthsAgo": "{n}かげつまえにゃ",
   "time.yearsAgo": "{n}ねんまえにゃ",
+  "time.inSeconds": "あと{n}びょうにゃ",
+  "time.inMinutes": "あと{n}ふんにゃ",
+  "time.inHours": "あと{n}じかんにゃ",
+  "time.inDays": "あと{n}にちにゃ",
 };

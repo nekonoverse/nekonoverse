@@ -516,6 +516,10 @@ export const ja = {
   "time.daysAgo": "{n}日前",
   "time.monthsAgo": "{n}ヶ月前",
   "time.yearsAgo": "{n}年前",
+  "time.inSeconds": "あと{n}秒",
+  "time.inMinutes": "あと{n}分",
+  "time.inHours": "あと{n}時間",
+  "time.inDays": "あと{n}日",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

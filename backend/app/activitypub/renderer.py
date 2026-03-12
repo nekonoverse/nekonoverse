@@ -287,6 +287,37 @@ def render_note(note: Note) -> dict:
     return data
 
 
+def render_vote_activity(poll_note: Note, voter: Actor, option_name: str) -> dict:
+    """Render a vote on a remote poll as Create(Note) with name field."""
+    import uuid as _uuid
+
+    vote_id = f"{actor_uri(voter)}#vote-{_uuid.uuid4().hex[:8]}"
+    note_object = {
+        "type": "Note",
+        "id": vote_id,
+        "attributedTo": actor_uri(voter),
+        "to": poll_note.actor.ap_id if poll_note.actor else "",
+        "inReplyTo": poll_note.ap_id,
+        "name": option_name,
+    }
+    return {
+        "@context": AP_CONTEXT,
+        "id": f"{vote_id}/activity",
+        "type": "Create",
+        "actor": actor_uri(voter),
+        "object": note_object,
+        "to": [poll_note.actor.ap_id] if poll_note.actor else [],
+    }
+
+
+def render_poll_update_activity(note: Note) -> dict:
+    """Render an Update(Question) activity for a local poll (vote count update)."""
+    import uuid as _uuid
+
+    activity_id = f"{note.ap_id}#update-{_uuid.uuid4().hex[:8]}"
+    return render_update_activity(activity_id, actor_uri(note.actor), render_note(note))
+
+
 def render_create_activity(note: Note) -> dict:
     return {
         "@context": AP_CONTEXT,

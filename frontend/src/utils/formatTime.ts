@@ -24,7 +24,21 @@ function formatRelative(iso: string, t: TranslatorFn): string {
   const then = new Date(iso).getTime();
   const diffSec = Math.floor((now - then) / 1000);
 
-  if (diffSec < 0) return formatAbsolute(iso);
+  // Future dates (e.g. poll expiry)
+  if (diffSec < 0) {
+    const futureSec = -diffSec;
+    if (futureSec < 60) return t("time.inSeconds").replace("{n}", String(futureSec));
+
+    const futureMin = Math.floor(futureSec / 60);
+    if (futureMin < 60) return t("time.inMinutes").replace("{n}", String(futureMin));
+
+    const futureHour = Math.floor(futureMin / 60);
+    if (futureHour < 24) return t("time.inHours").replace("{n}", String(futureHour));
+
+    const futureDay = Math.floor(futureHour / 24);
+    return t("time.inDays").replace("{n}", String(futureDay));
+  }
+
   if (diffSec < 60) return t("time.justNow");
 
   const diffMin = Math.floor(diffSec / 60);
