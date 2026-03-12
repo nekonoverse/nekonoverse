@@ -118,6 +118,7 @@ export const neko: Dictionary = {
   "visibility.direct": "ないしょにゃ",
   "profile.posts": "とうこうにゃ",
   "profile.joined": "はじめた日にゃ:",
+  "profile.firstSeen": "みつけた日にゃ:",
   "profile.noPostsYet": "まだにゃんにもにゃいにゃ",
   "profile.edit": "へんしゅうにゃ",
   "profile.save": "ほぞんにゃ",
