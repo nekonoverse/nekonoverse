@@ -319,8 +319,45 @@ async def update_credentials(
         changed = True
 
     if locked is not None:
+        was_locked = user.actor.manually_approves_followers
         user.actor.manually_approves_followers = locked
         changed = True
+
+        # Auto-accept all pending follow requests when turning off locked mode
+        if was_locked and not locked:
+            from sqlalchemy import select as sel
+
+            from app.models.follow import Follow
+
+            from sqlalchemy.orm import joinedload
+
+            pending_result = await db.execute(
+                sel(Follow).where(
+                    Follow.following_id == user.actor_id,
+                    Follow.accepted == False,  # noqa: E712
+                ).options(
+                    joinedload(Follow.follower)
+                )
+            )
+            pending_follows = pending_result.scalars().unique().all()
+            for pf in pending_follows:
+                pf.accepted = True
+                # Send Accept to remote followers
+                if pf.follower and not pf.follower.is_local and pf.follower.inbox_url:
+                    from app.activitypub.renderer import (
+                        render_accept_activity,
+                        render_follow_activity,
+                    )
+                    from app.services.delivery_service import enqueue_delivery
+
+                    follow_act = render_follow_activity(
+                        pf.ap_id or f"{pf.follower.ap_id}#follows/{user.actor_id}",
+                        pf.follower.ap_id,
+                        user.actor.ap_id,
+                    )
+                    accept_id = f"{user.actor.ap_id}#accepts/follows/{pf.follower.id}"
+                    accept_act = render_accept_activity(accept_id, user.actor.ap_id, follow_act)
+                    await enqueue_delivery(db, user.actor_id, pf.follower.inbox_url, accept_act)
 
     if discoverable is not None:
         user.actor.discoverable = discoverable
