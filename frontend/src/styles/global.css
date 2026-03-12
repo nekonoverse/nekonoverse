@@ -1014,6 +1014,10 @@ a:hover {
   color: var(--accent);
 }
 
+.mention-domain {
+  opacity: 0.5;
+}
+
 /* Note editing */
 .note-edit-form {
   margin-top: 4px;

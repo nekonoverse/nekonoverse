@@ -25,11 +25,14 @@ def _replace_mention(match: re.Match) -> str:
 
         href = f"{settings.server_url}/@{username}"
 
-    display = f"{username}@{domain}" if domain else username
+    if domain:
+        display_html = f'{username}<span class="mention-domain">@{domain}</span>'
+    else:
+        display_html = username
 
     return (
         f'<span class="h-card">'
-        f'<a href="{href}" class="u-url mention">@<span>{display}</span></a>'
+        f'<a href="{href}" class="u-url mention">@<span>{display_html}</span></a>'
         f"</span>"
     )
 
