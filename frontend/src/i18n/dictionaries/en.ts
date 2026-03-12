@@ -500,12 +500,13 @@ export const en: Dictionary = {
   "entrance.stats.servers": "Federated Servers",
   "entrance.preview.title": "Recent Posts",
   "entrance.cta.join": "Join Now",
-  "entrance.footer.joinCommunity": "Join Our Community",
-  "entrance.footer.inviteRequired":
+  "entrance.cta.invite": "Register with Invite Code",
+  "entrance.cta.approval": "Apply to Register",
+  "entrance.notice.inviteRequired":
     "An invitation code is required to register.",
-  "entrance.footer.approvalRequired":
+  "entrance.notice.approvalRequired":
     "Registration requires administrator approval.",
-  "entrance.footer.closed": "Registration is currently closed.",
+  "entrance.notice.closed": "Registration is currently closed.",
   "profile.followsYou": "Follows you",
   "profile.postsCount": "Posts",
   "settings.timeFormat": "Time Display",
