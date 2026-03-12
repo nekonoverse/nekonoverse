@@ -106,8 +106,9 @@ class PubSubHub:
     async def _read_messages(self) -> None:
         """Read messages from the shared pubsub connection."""
         while True:
-            if not self._pubsub:
-                await asyncio.sleep(0.1)
+            if not self._pubsub or not self._subscribers:
+                # 購読チャンネルがない間はポーリングを待機
+                await asyncio.sleep(1)
                 continue
 
             msg = await self._pubsub.get_message(ignore_subscribe_messages=True, timeout=1.0)
