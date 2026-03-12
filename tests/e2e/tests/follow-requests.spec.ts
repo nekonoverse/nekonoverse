@@ -1,8 +1,34 @@
 import { test, expect } from "@playwright/test";
-import { loginAsAdmin, registerUser } from "./helpers";
+import { loginAsAdmin } from "./helpers";
 
 /**
- * Helper: login as a specific user via the API (not via UI form).
+ * Register a user via browser fetch (avoids page.request baseURL issues).
+ */
+async function registerUserViaFetch(
+  page: import("@playwright/test").Page,
+  username: string,
+  password: string,
+) {
+  const result = await page.evaluate(
+    async ({ username, password }) => {
+      const resp = await fetch("/api/v1/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          email: `${username}@test.example.com`,
+          password,
+        }),
+      });
+      return { status: resp.status, body: await resp.text() };
+    },
+    { username, password },
+  );
+  expect(result.status, `Registration failed: ${result.body}`).toBe(201);
+}
+
+/**
+ * Login as a specific user via API.
  */
 async function loginAs(page: import("@playwright/test").Page, username: string, password: string) {
   const resp = await page.request.post("/api/v1/auth/login", {
@@ -12,7 +38,7 @@ async function loginAs(page: import("@playwright/test").Page, username: string, 
 }
 
 /**
- * Helper: set locked mode via update_credentials API.
+ * Set locked mode via update_credentials API.
  */
 async function setLocked(page: import("@playwright/test").Page, locked: boolean) {
   const resp = await page.request.patch("/api/v1/accounts/update_credentials", {
@@ -22,7 +48,7 @@ async function setLocked(page: import("@playwright/test").Page, locked: boolean)
 }
 
 /**
- * Helper: get the current user's actor_id from verify_credentials.
+ * Get the current user's actor_id.
  */
 async function getMyActorId(page: import("@playwright/test").Page): Promise<string> {
   const resp = await page.request.get("/api/v1/accounts/verify_credentials");
@@ -32,7 +58,7 @@ async function getMyActorId(page: import("@playwright/test").Page): Promise<stri
 }
 
 /**
- * Helper: send a follow request via API.
+ * Send a follow request via API.
  */
 async function followUser(page: import("@playwright/test").Page, targetActorId: string) {
   const resp = await page.request.post(`/api/v1/accounts/${targetActorId}/follow`);
@@ -40,23 +66,21 @@ async function followUser(page: import("@playwright/test").Page, targetActorId: 
 }
 
 /**
- * Helper: register a follower user and set admin to locked mode.
- * Returns the follower username.
+ * Setup: login as admin, register a follower, enable locked mode.
  */
 async function setupFollower(page: import("@playwright/test").Page): Promise<{ username: string; password: string }> {
   const username = `follower_${Date.now()}`;
   const password = "testpassword123";
-  // loginAsAdmin first to ensure page has navigated (baseURL resolution)
   await loginAsAdmin(page);
-  await registerUser(page, username, password);
+  await registerUserViaFetch(page, username, password);
   await setLocked(page, true);
   return { username, password };
 }
 
 test.describe("Follow Requests", () => {
   test.afterEach(async ({ page }) => {
-    // Restore admin to unlocked mode
-    await loginAsAdmin(page);
+    // Restore admin to unlocked mode via API (no UI navigation)
+    await loginAs(page, "admin", "testpassword123");
     await setLocked(page, false);
   });
 
