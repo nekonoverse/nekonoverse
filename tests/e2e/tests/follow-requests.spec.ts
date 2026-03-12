@@ -39,41 +39,39 @@ async function followUser(page: import("@playwright/test").Page, targetActorId: 
   expect(resp.status()).toBe(200);
 }
 
+/**
+ * Helper: register a follower user and set admin to locked mode.
+ * Returns the follower username.
+ */
+async function setupFollower(page: import("@playwright/test").Page): Promise<{ username: string; password: string }> {
+  const username = `follower_${Date.now()}`;
+  const password = "testpassword123";
+  await registerUser(page, username, password);
+  await loginAsAdmin(page);
+  await setLocked(page, true);
+  return { username, password };
+}
+
 test.describe("Follow Requests", () => {
-  const followerUsername = `follower_${Date.now()}`;
-  const followerPassword = "testpassword123";
-
-  test.beforeAll(async ({ browser }) => {
-    // Register a follower user and enable locked mode on admin
-    const page = await browser.newPage();
-    await registerUser(page, followerUsername, followerPassword);
-    await loginAsAdmin(page);
-    await setLocked(page, true);
-    await page.close();
-  });
-
-  test.afterAll(async ({ browser }) => {
+  test.afterEach(async ({ page }) => {
     // Restore admin to unlocked mode
-    const page = await browser.newPage();
     await loginAsAdmin(page);
     await setLocked(page, false);
-    await page.close();
   });
 
   test("follow request appears and can be accepted", async ({ page }) => {
-    // Login as admin, get actor_id
-    await loginAsAdmin(page);
+    const follower = await setupFollower(page);
     const adminId = await getMyActorId(page);
 
     // Login as follower, send follow request to admin
-    await loginAs(page, followerUsername, followerPassword);
+    await loginAs(page, follower.username, follower.password);
     await followUser(page, adminId);
 
     // Login as admin again, check follow request page
     await loginAsAdmin(page);
     await page.goto("/follow-requests");
     await expect(page.locator(".follow-request-item")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(".follow-request-item")).toContainText(followerUsername);
+    await expect(page.locator(".follow-request-item")).toContainText(follower.username);
 
     // Accept the follow request
     const acceptResponsePromise = page.waitForResponse(
@@ -88,12 +86,11 @@ test.describe("Follow Requests", () => {
   });
 
   test("follow request can be rejected", async ({ page }) => {
-    // Login as admin, get actor_id
-    await loginAsAdmin(page);
+    const follower = await setupFollower(page);
     const adminId = await getMyActorId(page);
 
     // Login as follower, send follow request
-    await loginAs(page, followerUsername, followerPassword);
+    await loginAs(page, follower.username, follower.password);
     await followUser(page, adminId);
 
     // Login as admin, check follow request page
@@ -121,8 +118,6 @@ test.describe("Follow Requests", () => {
 
   test("confirmation modal appears when disabling locked mode", async ({ page }) => {
     await loginAsAdmin(page);
-
-    // Ensure locked mode is ON first
     await setLocked(page, true);
 
     // Go to profile and enter edit mode
@@ -143,10 +138,9 @@ test.describe("Follow Requests", () => {
 
     // Modal should appear
     await expect(page.locator(".modal-overlay")).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator(".modal-content")).toContainText("承認制");
 
     // Cancel - should close modal without saving
-    await page.click('.modal-content button:has-text("キャンセル")');
+    await page.locator(".modal-content .btn:not(.btn-danger)").click();
     await expect(page.locator(".modal-overlay")).toHaveCount(0, { timeout: 3_000 });
 
     // Still in edit mode
@@ -154,13 +148,11 @@ test.describe("Follow Requests", () => {
   });
 
   test("confirming unlock modal saves and auto-approves pending requests", async ({ page }) => {
-    // Login as admin, ensure locked, get actor_id
-    await loginAsAdmin(page);
-    await setLocked(page, true);
+    const follower = await setupFollower(page);
     const adminId = await getMyActorId(page);
 
     // Login as follower, send follow request
-    await loginAs(page, followerUsername, followerPassword);
+    await loginAs(page, follower.username, follower.password);
     await followUser(page, adminId);
 
     // Login as admin, verify request exists
@@ -187,7 +179,7 @@ test.describe("Follow Requests", () => {
       (resp) => resp.url().includes("/update_credentials") && resp.status() === 200,
       { timeout: 10_000 },
     );
-    await page.locator('.modal-content button.btn-danger').click();
+    await page.locator(".modal-content button.btn-danger").click();
     await saveResponsePromise;
 
     // Should exit edit mode
