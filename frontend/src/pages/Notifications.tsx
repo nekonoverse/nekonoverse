@@ -2,6 +2,8 @@ import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
 import { getNotifications, dismissNotification, clearNotifications, type Notification } from "../api/notifications";
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
+import { emojify } from "../utils/emojify";
+import { twemojify } from "../utils/twemojify";
 import { getNote } from "../api/statuses";
 import { onNotification, onReaction, resetUnread } from "../stores/streaming";
 import { useI18n } from "../i18n";
@@ -155,7 +157,11 @@ export default function Notifications() {
                               src={notif.account!.avatar_url || defaultAvatar()}
                               alt=""
                             />
-                            <strong>{notif.account!.display_name || notif.account!.username}</strong>
+                            <strong ref={(el) => {
+                              el.textContent = notif.account!.display_name || notif.account!.username;
+                              emojify(el, notif.account!.emojis || []);
+                              twemojify(el);
+                            }} />
                           </a>
                         </Show>
                         <span class="notification-type-text">

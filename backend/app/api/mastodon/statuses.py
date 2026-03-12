@@ -764,8 +764,41 @@ async def reacted_by(
     result = await db.execute(query)
     reactions = result.scalars().all()
 
-    return [
-        {
+    # Batch-collect all shortcodes from reactor display names
+    from app.services.emoji_service import get_emojis_by_shortcodes
+
+    all_shortcodes_by_domain: dict[str | None, set[str]] = {}
+    for r in reactions:
+        if r.actor.display_name:
+            scs = set(_SHORTCODE_RE.findall(r.actor.display_name))
+            if scs:
+                domain = r.actor.domain
+                all_shortcodes_by_domain.setdefault(domain, set()).update(scs)
+                all_shortcodes_by_domain.setdefault(None, set()).update(scs)
+
+    # Batch-fetch emojis per domain
+    emoji_cache: dict[tuple[str, str | None], object] = {}
+    for domain, scs in all_shortcodes_by_domain.items():
+        if scs:
+            emoji_list = await get_emojis_by_shortcodes(db, scs, domain)
+            for e in emoji_list:
+                emoji_cache[(e.shortcode, e.domain)] = e
+
+    response = []
+    for r in reactions:
+        actor_emojis: list[CustomEmojiInfo] = []
+        if r.actor.display_name:
+            scs = set(_SHORTCODE_RE.findall(r.actor.display_name))
+            for sc in scs:
+                emoji = emoji_cache.get((sc, r.actor.domain)) or emoji_cache.get((sc, None))
+                if emoji:
+                    url = media_proxy_url(emoji.url)
+                    static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+                    actor_emojis.append(
+                        CustomEmojiInfo(shortcode=emoji.shortcode, url=url, static_url=static)
+                    )
+
+        response.append({
             "actor": NoteActorResponse(
                 id=r.actor.id,
                 username=r.actor.username,
@@ -773,11 +806,11 @@ async def reacted_by(
                 avatar_url=media_proxy_url(r.actor.avatar_url) or "/default-avatar.svg",
                 ap_id=r.actor.ap_id,
                 domain=r.actor.domain,
+                emojis=actor_emojis,
             ),
             "emoji": r.emoji,
-        }
-        for r in reactions
-    ]
+        })
+    return response
 
 
 @router.post("/{note_id}/reblog", response_model=NoteResponse, status_code=200)
