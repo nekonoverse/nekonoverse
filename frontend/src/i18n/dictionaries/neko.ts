@@ -492,4 +492,5 @@ export const neko: Dictionary = {
     "とうろくにはしょうたいコードがひつようにゃ。",
   "entrance.footer.approvalRequired": "かんりしゃのしょうにんがひつようにゃ。",
   "entrance.footer.closed": "いまはとうろくおやすみにゃ。",
+  "profile.followsYou": "フォローされてるにゃ",
 };

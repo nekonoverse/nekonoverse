@@ -30,6 +30,7 @@ export default function Profile() {
   // Block/mute state
   const [isBlocking, setIsBlocking] = createSignal(false);
   const [isMuting, setIsMuting] = createSignal(false);
+  const [isFollowedBy, setIsFollowedBy] = createSignal(false);
   const [blockMuteLoading, setBlockMuteLoading] = createSignal(false);
   const [moreOpen, setMoreOpen] = createSignal(false);
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
@@ -67,6 +68,7 @@ export default function Profile() {
           setIsRequested(rel.requested);
           setIsBlocking(rel.blocking);
           setIsMuting(rel.muting);
+          setIsFollowedBy(rel.followed_by);
           if (rel.following) addFollowedId(acc.id);
           else removeFollowedId(acc.id);
         } catch {}
@@ -88,6 +90,7 @@ export default function Profile() {
       setIsRequested(false);
       setIsBlocking(false);
       setIsMuting(false);
+      setIsFollowedBy(false);
       setEditing(false);
       setMoreOpen(false);
       setShowUnfollowModal(false);
@@ -440,6 +443,9 @@ export default function Profile() {
                     </Show>
                   </div>
                   <span class="profile-handle">@{acc.acct}</span>
+                  <Show when={!isOwn() && currentUser() && isFollowedBy()}>
+                    <span class="follows-you-badge">{t("profile.followsYou")}</span>
+                  </Show>
                   <Show when={acc.acct.includes("@") && acc.url}>
                     <a
                       class="remote-view-link"

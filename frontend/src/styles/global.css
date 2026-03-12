@@ -2729,6 +2729,16 @@ a:hover {
   margin-bottom: 8px;
 }
 
+.follows-you-badge {
+  display: inline-block;
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  background: var(--bg-secondary);
+  padding: 2px 8px;
+  border-radius: 4px;
+  margin-bottom: 8px;
+}
+
 .profile-bio {
   margin-top: 8px;
   line-height: 1.5;

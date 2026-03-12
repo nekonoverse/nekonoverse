@@ -494,4 +494,5 @@ export const en: Dictionary = {
   "entrance.footer.approvalRequired":
     "Registration requires administrator approval.",
   "entrance.footer.closed": "Registration is currently closed.",
+  "profile.followsYou": "Follows you",
 };
