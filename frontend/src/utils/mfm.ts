@@ -30,6 +30,7 @@ export function renderMfm(
   source: string,
   emojis: CustomEmoji[],
   navigate?: (path: string) => void,
+  actorHost?: string | null,
 ): void {
   el.textContent = "";
 
@@ -40,7 +41,7 @@ export function renderMfm(
   }
 
   for (const node of ast) {
-    el.appendChild(renderNode(node, emojiMap, navigate));
+    el.appendChild(renderNode(node, emojiMap, navigate, actorHost));
   }
 }
 
@@ -49,9 +50,10 @@ function renderChildren(
   children: MfmNode[],
   emojiMap: Map<string, CustomEmoji>,
   navigate?: (path: string) => void,
+  actorHost?: string | null,
 ): void {
   for (const child of children) {
-    parent.appendChild(renderNode(child, emojiMap, navigate));
+    parent.appendChild(renderNode(child, emojiMap, navigate, actorHost));
   }
 }
 
@@ -59,6 +61,7 @@ function renderNode(
   node: MfmNode,
   emojiMap: Map<string, CustomEmoji>,
   navigate?: (path: string) => void,
+  actorHost?: string | null,
 ): Node {
   switch (node.type) {
     case "text": {
@@ -73,40 +76,40 @@ function renderNode(
 
     case "bold": {
       const el = document.createElement("strong");
-      renderChildren(el, node.children, emojiMap, navigate);
+      renderChildren(el, node.children, emojiMap, navigate, actorHost);
       return el;
     }
 
     case "italic": {
       const el = document.createElement("em");
-      renderChildren(el, node.children, emojiMap, navigate);
+      renderChildren(el, node.children, emojiMap, navigate, actorHost);
       return el;
     }
 
     case "strike": {
       const el = document.createElement("del");
-      renderChildren(el, node.children, emojiMap, navigate);
+      renderChildren(el, node.children, emojiMap, navigate, actorHost);
       return el;
     }
 
     case "small": {
       const el = document.createElement("small");
       el.className = "mfm-small";
-      renderChildren(el, node.children, emojiMap, navigate);
+      renderChildren(el, node.children, emojiMap, navigate, actorHost);
       return el;
     }
 
     case "center": {
       const el = document.createElement("div");
       el.className = "mfm-center";
-      renderChildren(el, node.children, emojiMap, navigate);
+      renderChildren(el, node.children, emojiMap, navigate, actorHost);
       return el;
     }
 
     case "quote": {
       const el = document.createElement("blockquote");
       el.className = "mfm-quote";
-      renderChildren(el, node.children, emojiMap, navigate);
+      renderChildren(el, node.children, emojiMap, navigate, actorHost);
       return el;
     }
 
@@ -147,14 +150,14 @@ function renderNode(
       if (!isSafeUrl(node.props.url)) {
         // Unsafe protocol — render children as plain text
         const span = document.createElement("span");
-        renderChildren(span, node.children, emojiMap, navigate);
+        renderChildren(span, node.children, emojiMap, navigate, actorHost);
         return span;
       }
       const el = document.createElement("a");
       el.href = node.props.url;
       el.target = "_blank";
       el.rel = "nofollow noopener noreferrer";
-      renderChildren(el, node.children, emojiMap, navigate);
+      renderChildren(el, node.children, emojiMap, navigate, actorHost);
       return el;
     }
 
@@ -174,15 +177,23 @@ function renderNode(
     case "mention": {
       const el = document.createElement("a");
       el.className = "u-url mention";
-      const { username, host } = node.props;
+      const { username } = node.props;
+      // host がない場合、リモートノートならノート作者のドメインを補完
+      const host = node.props.host || (actorHost ? actorHost : null);
       const localPath = host ? `/@${username}@${host}` : `/@${username}`;
       el.href = localPath;
 
       const span = document.createElement("span");
       span.className = "h-card";
       const inner = document.createElement("span");
-      inner.textContent = host ? `@${username}@${host}` : `@${username}`;
+      inner.textContent = `@${username}`;
       span.appendChild(inner);
+      if (host) {
+        const domainSpan = document.createElement("span");
+        domainSpan.className = "mention-domain";
+        domainSpan.textContent = `@${host}`;
+        span.appendChild(domainSpan);
+      }
       el.appendChild(span);
 
       if (navigate) {
@@ -265,7 +276,7 @@ function renderNode(
       const frag = document.createDocumentFragment();
       if ("children" in node && Array.isArray((node as any).children)) {
         for (const child of (node as any).children) {
-          frag.appendChild(renderNode(child, emojiMap, navigate));
+          frag.appendChild(renderNode(child, emojiMap, navigate, actorHost));
         }
       }
       return frag;
@@ -395,7 +406,7 @@ function renderFn(
 
     case "ruby": {
       const ruby = document.createElement("ruby");
-      renderChildren(ruby, node.children, emojiMap, navigate);
+      renderChildren(ruby, node.children, emojiMap, navigate, actorHost);
       // mfm-js parses ruby as $[ruby text reading] where last child text is the reading
       const texts = ruby.textContent?.split(" ") ?? [];
       if (texts.length >= 2) {
@@ -419,7 +430,7 @@ function renderFn(
   }
 
   if (name !== "ruby") {
-    renderChildren(el, node.children, emojiMap, navigate);
+    renderChildren(el, node.children, emojiMap, navigate, actorHost);
   }
 
   return el;

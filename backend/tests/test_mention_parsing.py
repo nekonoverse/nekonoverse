@@ -21,7 +21,7 @@ def test_mention_remote_user():
 
     html = text_to_html("Hello @bob@remote.example")
     assert 'class="u-url mention"' in html
-    assert "@<span>bob@remote.example</span>" in html
+    assert '@<span>bob<span class="mention-domain">@remote.example</span></span>' in html
     assert 'href="https://remote.example/@bob"' in html
 
 

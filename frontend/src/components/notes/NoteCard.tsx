@@ -73,7 +73,7 @@ function QuoteEmbed(props: { note: Note }) {
       </div>
       <div class="note-quote-content" ref={(el) => {
         if (props.note.source !== null && props.note.source !== undefined) {
-          renderMfm(el, props.note.source, props.note.emojis, navigate);
+          renderMfm(el, props.note.source, props.note.emojis, navigate, props.note.actor.domain);
         } else {
           el.innerHTML = sanitizeHtml(props.note.content);
           mentionify(el, navigate);
@@ -452,7 +452,7 @@ export default function NoteCard(props: Props) {
             <div class="note-content" ref={(el) => {
               const src = noteSource();
               if (src !== null && src !== undefined) {
-                renderMfm(el, src, note().emojis, navigate);
+                renderMfm(el, src, note().emojis, navigate, note().actor.domain);
               } else {
                 el.innerHTML = sanitizeHtml(noteContent());
                 mentionify(el, navigate);
