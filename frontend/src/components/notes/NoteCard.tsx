@@ -13,6 +13,7 @@ import { twemojify } from "../../utils/twemojify";
 import { emojify } from "../../utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "../../utils/mentionify";
+import { formatTimestamp, useTimeTick } from "../../utils/formatTime";
 import { sanitizeHtml } from "../../utils/sanitize";
 import { renderMfm } from "../../utils/mfm";
 import { defaultAvatar } from "../../stores/instance";
@@ -24,12 +25,6 @@ interface Props {
   onDelete?: (noteId: string) => void;
   onReply?: (note: Note) => void;
   inReplyToActor?: { username: string; domain: string | null } | null;
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  const pad = (n: number) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
 function actorHandle(actor: Note["actor"]): string {
@@ -166,7 +161,7 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
           {poll().votes_count} {t("poll.votes")}
           <Show when={poll().expires_at}>
             {" · "}
-            {poll().expired ? t("poll.expired") : t("poll.expiresAt") + " " + formatTime(poll().expires_at!)}
+            {poll().expired ? t("poll.expired") : t("poll.expiresAt") + " " + formatTimestamp(poll().expires_at!, t)}
           </Show>
         </span>
       </div>
@@ -632,7 +627,7 @@ export default function NoteCard(props: Props) {
             </a>
           </Show>
           <a href={`/notes/${note().id}`} class="note-time-link">
-            <span class="note-time">{formatTime(note().published)}</span>
+            <span class="note-time">{(() => { useTimeTick(); return formatTimestamp(note().published, t); })()}</span>
           </a>
         </div>
       </div>

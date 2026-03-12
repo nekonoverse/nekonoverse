@@ -5,8 +5,9 @@ import { currentUser, authLoading, logout } from "../stores/auth";
 import {
   theme, setTheme, fontSize, setFontSize,
   fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
+  timeFormat, setTimeFormat,
   FONT_FAMILY_MAP,
-  type Theme, type FontSize, type FontFamily,
+  type Theme, type FontSize, type FontFamily, type TimeFormat,
 } from "../stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
@@ -214,6 +215,25 @@ function AppearanceTab() {
             style={{ "font-family": customFontFamily() || "inherit" }}
           />
         </Show>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.timeFormat")}</h3>
+        <div class="theme-selector">
+          {([
+            { key: "absolute" as TimeFormat, label: t("settings.timeAbsolute") },
+            { key: "relative" as TimeFormat, label: t("settings.timeRelative") },
+            { key: "combined" as TimeFormat, label: t("settings.timeCombined") },
+            { key: "unixtime" as TimeFormat, label: t("settings.timeUnixtime") },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${timeFormat() === item.key ? " theme-active" : ""}`}
+              onClick={() => setTimeFormat(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
       </div>
 
     </>

@@ -504,6 +504,17 @@ export const ja = {
   "entrance.footer.closed": "現在、新規登録は受け付けていません。",
   "profile.followsYou": "フォローされています",
   "profile.postsCount": "投稿",
+  "settings.timeFormat": "時刻の表示形式",
+  "settings.timeAbsolute": "絶対時刻",
+  "settings.timeRelative": "相対時刻",
+  "settings.timeCombined": "併記",
+  "settings.timeUnixtime": "Unixtime",
+  "time.justNow": "たった今",
+  "time.minutesAgo": "{n}分前",
+  "time.hoursAgo": "{n}時間前",
+  "time.daysAgo": "{n}日前",
+  "time.monthsAgo": "{n}ヶ月前",
+  "time.yearsAgo": "{n}年前",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

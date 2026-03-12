@@ -4,6 +4,7 @@ import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
 import { emojify } from "../utils/emojify";
 import { twemojify } from "../utils/twemojify";
+import { formatTimestamp, useTimeTick } from "../utils/formatTime";
 import { getNote } from "../api/statuses";
 import { onNotification, onReaction, resetUnread } from "../stores/streaming";
 import { useI18n } from "../i18n";
@@ -183,7 +184,7 @@ export default function Notifications() {
                         </Show>
                       </div>
                       <span class="notification-time">
-                        {new Date(notif.created_at).toLocaleString()}
+                        {(() => { useTimeTick(); return formatTimestamp(notif.created_at, t); })()}
                       </span>
                       <Show when={notif.status}>
                         <div class="notification-note">
