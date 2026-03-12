@@ -81,17 +81,6 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
     note.spoiler_text = data.get("summary", note.spoiler_text)
     note.updated_at = datetime.now(timezone.utc)
 
-    # Update url if provided
-    note_url = data.get("url")
-    if isinstance(note_url, list):
-        note_url = (
-            note_url[0].get("href")
-            if note_url and isinstance(note_url[0], dict)
-            else (note_url[0] if note_url else None)
-        )
-    if isinstance(note_url, str):
-        note.url = note_url
-
     # Update poll data if Question type
     if data.get("type") == "Question" and note.is_poll:
         one_of = data.get("oneOf")

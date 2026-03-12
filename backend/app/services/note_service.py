@@ -860,20 +860,8 @@ async def fetch_remote_note(
             except ValueError:
                 pass
 
-    # Prefer url field for human-readable web page link
-    note_url = data.get("url")
-    if isinstance(note_url, list):
-        note_url = (
-            note_url[0].get("href")
-            if note_url and isinstance(note_url[0], dict)
-            else (note_url[0] if note_url else None)
-        )
-    if not isinstance(note_url, str):
-        note_url = None
-
     note = Note(
         ap_id=note_ap_id,
-        url=note_url,
         actor_id=actor.id,
         content=content,
         source=source,

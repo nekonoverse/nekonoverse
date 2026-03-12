@@ -13,7 +13,6 @@ class Note(Base):
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     ap_id: Mapped[str] = mapped_column(String(2048), unique=True, nullable=False, index=True)
-    url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     actor_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("actors.id"), nullable=False, index=True
     )

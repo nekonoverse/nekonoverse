@@ -105,7 +105,6 @@ class NoteEditHistoryEntry(BaseModel):
 class NoteResponse(BaseModel):
     id: uuid.UUID
     ap_id: str
-    url: str | None = None
     content: str
     source: str | None
     visibility: str
