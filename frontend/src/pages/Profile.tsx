@@ -13,6 +13,7 @@ import { sanitizeHtml } from "../utils/sanitize";
 import { emojify } from "../utils/emojify";
 import { twemojify } from "../utils/twemojify";
 import { defaultAvatar } from "../stores/instance";
+import { formatTimestamp, useTimeTick } from "../utils/formatTime";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -252,11 +253,6 @@ export default function Profile() {
     }
   });
   onCleanup(() => unsubReaction());
-
-  const formatDate = (iso?: string) => {
-    if (!iso) return "";
-    return new Date(iso).toLocaleDateString();
-  };
 
   return (
     <div class="page-container">
@@ -577,7 +573,7 @@ export default function Profile() {
                   </Show>
                   <Show when={acc.created_at}>
                     <span class="profile-joined">
-                      {acc.domain ? t("profile.firstSeen") : t("profile.joined")} {formatDate(acc.created_at)}
+                      {acc.domain ? t("profile.firstSeen") : t("profile.joined")} {(() => { useTimeTick(); return formatTimestamp(acc.created_at!, t, true); })()}
                     </span>
                   </Show>
                 </div>

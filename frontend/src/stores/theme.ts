@@ -3,10 +3,12 @@ import { createSignal } from "solid-js";
 export type Theme = "dark" | "light" | "novel";
 export type FontSize = "small" | "medium" | "large" | "xlarge" | "xxlarge";
 export type FontFamily = "noto" | "hiragino" | "yu-mac" | "yu-win" | "meiryo" | "ipa" | "system" | "custom";
+export type TimeFormat = "absolute" | "relative" | "combined" | "unixtime";
 
 const THEMES: Theme[] = ["dark", "light", "novel"];
 const FONT_SIZES: FontSize[] = ["small", "medium", "large", "xlarge", "xxlarge"];
 const FONT_FAMILIES: FontFamily[] = ["noto", "hiragino", "yu-mac", "yu-win", "meiryo", "ipa", "system", "custom"];
+const TIME_FORMATS: TimeFormat[] = ["absolute", "relative", "combined", "unixtime"];
 const FONT_SIZE_MAP: Record<FontSize, string> = {
   small: "14px",
   medium: "16px",
@@ -46,6 +48,12 @@ function loadCustomFontFamily(): string {
   return localStorage.getItem("customFontFamily") || "";
 }
 
+function loadTimeFormat(): TimeFormat {
+  const saved = localStorage.getItem("timeFormat");
+  if (saved && TIME_FORMATS.includes(saved as TimeFormat)) return saved as TimeFormat;
+  return "absolute";
+}
+
 function applyTheme(t: Theme) {
   if (t === "dark") {
     document.documentElement.removeAttribute("data-theme");
@@ -69,8 +77,9 @@ const [theme, setThemeSignal] = createSignal<Theme>(loadTheme());
 const [fontSize, setFontSizeSignal] = createSignal<FontSize>(loadFontSize());
 const [fontFamily, setFontFamilySignal] = createSignal<FontFamily>(loadFontFamily());
 const [customFontFamily, setCustomFontFamilySignal] = createSignal<string>(loadCustomFontFamily());
+const [timeFormat, setTimeFormatSignal] = createSignal<TimeFormat>(loadTimeFormat());
 
-export { theme, fontSize, fontFamily, customFontFamily };
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat };
 
 export function setTheme(t: Theme) {
   setThemeSignal(t);
@@ -96,6 +105,11 @@ export function setCustomFontFamily(v: string) {
   if (fontFamily() === "custom") {
     applyFontFamily("custom", v);
   }
+}
+
+export function setTimeFormat(f: TimeFormat) {
+  setTimeFormatSignal(f);
+  localStorage.setItem("timeFormat", f);
 }
 
 export function initTheme() {
