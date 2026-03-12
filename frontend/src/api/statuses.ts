@@ -61,6 +61,7 @@ export interface TagInfo {
 export interface Note {
   id: string;
   ap_id: string;
+  url: string | null;
   content: string;
   source: string | null;
   visibility: string;

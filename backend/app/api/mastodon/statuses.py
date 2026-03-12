@@ -280,6 +280,7 @@ async def note_to_response(
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
+        url=note.url,
         content=note.content,
         source=note.source,
         visibility=note.visibility,
