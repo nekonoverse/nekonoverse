@@ -782,37 +782,39 @@ function UsersTab() {
                           <option value="admin">admin</option>
                         </select>
                       </Show>
-                      <Show when={!u.suspended}>
-                        <button
-                          class="btn btn-small btn-danger"
-                          onClick={() => openConfirm("suspend", u.id, u.username)}
-                        >
-                          {t("admin.suspend")}
-                        </button>
-                      </Show>
-                      <Show when={u.suspended}>
-                        <button
-                          class="btn btn-small"
-                          onClick={() => handleUnsuspend(u.id)}
-                        >
-                          {t("admin.unsuspend")}
-                        </button>
-                      </Show>
-                      <Show when={!u.silenced}>
-                        <button
-                          class="btn btn-small"
-                          onClick={() => openConfirm("silence", u.id, u.username)}
-                        >
-                          {t("admin.silence")}
-                        </button>
-                      </Show>
-                      <Show when={u.silenced}>
-                        <button
-                          class="btn btn-small"
-                          onClick={() => handleUnsilence(u.id)}
-                        >
-                          {t("admin.unsilence")}
-                        </button>
+                      <Show when={isAdmin() || (u.role !== "admin" && u.role !== "moderator")}>
+                        <Show when={!u.suspended}>
+                          <button
+                            class="btn btn-small btn-danger"
+                            onClick={() => openConfirm("suspend", u.id, u.username)}
+                          >
+                            {t("admin.suspend")}
+                          </button>
+                        </Show>
+                        <Show when={u.suspended}>
+                          <button
+                            class="btn btn-small"
+                            onClick={() => handleUnsuspend(u.id)}
+                          >
+                            {t("admin.unsuspend")}
+                          </button>
+                        </Show>
+                        <Show when={!u.silenced}>
+                          <button
+                            class="btn btn-small"
+                            onClick={() => openConfirm("silence", u.id, u.username)}
+                          >
+                            {t("admin.silence")}
+                          </button>
+                        </Show>
+                        <Show when={u.silenced}>
+                          <button
+                            class="btn btn-small"
+                            onClick={() => handleUnsilence(u.id)}
+                          >
+                            {t("admin.unsilence")}
+                          </button>
+                        </Show>
                       </Show>
                     </div>
                   </Show>
