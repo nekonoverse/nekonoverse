@@ -19,6 +19,7 @@ from app.schemas.note import (
     NoteEditRequest,
     NoteMediaAttachment,
     NoteResponse,
+    PollResponse,
     ReactionSummary,
     TagInfo,
 )
@@ -267,6 +268,15 @@ async def note_to_response(
     if note.updated_at:
         edited_at = note.updated_at.isoformat()
 
+    # Build poll response
+    poll_response = None
+    if note.is_poll and note.poll_options:
+        from app.services.poll_service import get_poll_data
+
+        poll_data = await get_poll_data(db, note.id, actor_id) if db else None
+        if poll_data:
+            poll_response = PollResponse(**poll_data)
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -295,6 +305,7 @@ async def note_to_response(
         reblog=reblog,
         media_attachments=media_attachments,
         quote=quote,
+        poll=poll_response,
         emojis=emojis,
         tags=tags,
     )
