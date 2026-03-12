@@ -464,11 +464,24 @@ export const en: Dictionary = {
   "admin.descRegistrations": "Manage pending registration requests",
   "admin.noRegistrations": "No pending registrations",
   "admin.approve": "Approve",
-  "admin.confirmRejectRegistration": "Reject this registration? The user data will be deleted.",
+  "admin.confirmRejectRegistration":
+    "Reject this registration? The user data will be deleted.",
   "auth.approvalNotice": "Registration requires administrator approval.",
   "auth.reason": "Motivation",
   "auth.reasonPlaceholder": "Share your enthusiasm for joining",
   "auth.registrationPending": "Registration submitted",
-  "auth.registrationPendingDesc": "Please wait for an administrator to approve your request. You will be able to log in once approved.",
+  "auth.registrationPendingDesc":
+    "Please wait for an administrator to approve your request. You will be able to log in once approved.",
   "auth.pendingApproval": "Pending approval",
+  "entrance.stats.users": "Users",
+  "entrance.stats.posts": "Posts",
+  "entrance.stats.servers": "Federated Servers",
+  "entrance.preview.title": "Recent Posts",
+  "entrance.cta.join": "Join Now",
+  "entrance.footer.joinCommunity": "Join Our Community",
+  "entrance.footer.inviteRequired":
+    "An invitation code is required to register.",
+  "entrance.footer.approvalRequired":
+    "Registration requires administrator approval.",
+  "entrance.footer.closed": "Registration is currently closed.",
 };

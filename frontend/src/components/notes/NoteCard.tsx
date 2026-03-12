@@ -583,7 +583,7 @@ export default function NoteCard(props: Props) {
         <Show when={!currentUser() && note().reactions.length > 0}>
           <div class="note-reactions">
             {note().reactions.map((r) => (
-              <span class="reaction-badge">
+              <span class="reaction-badge reaction-badge-static">
                 <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
               </span>
             ))}
