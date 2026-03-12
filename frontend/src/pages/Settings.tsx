@@ -2,7 +2,12 @@ import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "s
 import QRCode from "qrcode";
 import { useNavigate, useParams, A } from "@solidjs/router";
 import { currentUser, authLoading, logout } from "../stores/auth";
-import { theme, setTheme, fontSize, setFontSize, type Theme, type FontSize } from "../stores/theme";
+import {
+  theme, setTheme, fontSize, setFontSize,
+  fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
+  FONT_FAMILY_MAP,
+  type Theme, type FontSize, type FontFamily,
+} from "../stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
   rememberVisibility, setRememberVisibility,
@@ -175,6 +180,40 @@ function AppearanceTab() {
             </button>
           ))}
         </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.fontFamily")}</h3>
+        <div class="theme-selector" style={{ "flex-wrap": "wrap" }}>
+          {([
+            { key: "noto" as FontFamily, label: t("settings.fontNoto"), css: FONT_FAMILY_MAP.noto },
+            { key: "hiragino" as FontFamily, label: t("settings.fontHiragino"), css: FONT_FAMILY_MAP.hiragino },
+            { key: "yu-mac" as FontFamily, label: t("settings.fontYuMac"), css: FONT_FAMILY_MAP["yu-mac"] },
+            { key: "yu-win" as FontFamily, label: t("settings.fontYuWin"), css: FONT_FAMILY_MAP["yu-win"] },
+            { key: "meiryo" as FontFamily, label: t("settings.fontMeiryo"), css: FONT_FAMILY_MAP.meiryo },
+            { key: "ipa" as FontFamily, label: t("settings.fontIPA"), css: FONT_FAMILY_MAP.ipa },
+            { key: "system" as FontFamily, label: t("settings.fontSystem"), css: FONT_FAMILY_MAP.system },
+            { key: "custom" as FontFamily, label: t("settings.fontCustom"), css: undefined },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${fontFamily() === item.key ? " theme-active" : ""}`}
+              style={item.css ? { "font-family": item.css } : {}}
+              onClick={() => setFontFamily(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+        <Show when={fontFamily() === "custom"}>
+          <input
+            type="text"
+            class="font-custom-input"
+            placeholder={t("settings.fontCustomPlaceholder")}
+            value={customFontFamily()}
+            onInput={(e) => setCustomFontFamily(e.currentTarget.value)}
+            style={{ "font-family": customFontFamily() || "inherit" }}
+          />
+        </Show>
       </div>
 
     </>

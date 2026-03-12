@@ -11,6 +11,7 @@
   --reblog: #2ecc71;
   --radius: 8px;
   --font-size-base: 16px;
+  --font-family: "Noto Sans JP", sans-serif;
 }
 
 [data-theme="light"] {
@@ -46,13 +47,7 @@
 }
 
 body {
-  font-family:
-    "Noto Sans JP",
-    -apple-system,
-    BlinkMacSystemFont,
-    "Segoe UI",
-    Roboto,
-    sans-serif;
+  font-family: var(--font-family);
   background-color: var(--bg-primary);
   color: var(--text-primary);
   font-size: var(--font-size-base);
@@ -2488,6 +2483,22 @@ a:hover {
   border-color: var(--accent);
   background: rgba(233, 69, 96, 0.15);
   color: var(--accent);
+}
+
+.font-custom-input {
+  width: 100%;
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-size: 0.875em;
+}
+
+.font-custom-input:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 
 /* Passkey Manager */
