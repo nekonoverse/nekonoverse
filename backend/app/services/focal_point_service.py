@@ -232,7 +232,6 @@ async def _publish_update(note_id: uuid.UUID) -> None:
 
     try:
         event = json.dumps({"event": "update", "payload": {"id": str(note_id)}})
-        await valkey_client.publish("timeline:public", event)
 
         from sqlalchemy import select
 
@@ -241,10 +240,15 @@ async def _publish_update(note_id: uuid.UUID) -> None:
         from app.services.follow_service import get_follower_ids
 
         async with async_session() as db:
-            actor_id = (
-                await db.execute(select(Note.actor_id).where(Note.id == note_id))
-            ).scalar_one_or_none()
-            if actor_id:
+            row = (
+                await db.execute(
+                    select(Note.actor_id, Note.visibility).where(Note.id == note_id)
+                )
+            ).one_or_none()
+            if row:
+                actor_id, visibility = row
+                if visibility == "public":
+                    await valkey_client.publish("timeline:public", event)
                 for fid in await get_follower_ids(db, actor_id):
                     await valkey_client.publish(f"timeline:home:{fid}", event)
     except Exception:

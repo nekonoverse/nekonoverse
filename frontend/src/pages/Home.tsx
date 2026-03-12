@@ -165,12 +165,8 @@ export default function Home() {
     if (!id) return;
     try {
       const note = await getNote(id);
-      // On public timeline, only show public/unlisted notes (match REST API filtering)
-      if (
-        !isHomeTL() &&
-        note.visibility !== "public" &&
-        note.visibility !== "unlisted"
-      ) {
+      // On public timeline, only show public notes (match REST API filtering)
+      if (!isHomeTL() && note.visibility !== "public") {
         return;
       }
       // If this note already exists, update it in-place
