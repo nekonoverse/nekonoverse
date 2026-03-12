@@ -1173,13 +1173,18 @@ a:hover {
   color: var(--text-primary);
 }
 
-/* Visibility indicator */
-.note-visibility-indicator {
+/* Visibility badge (header) */
+.note-visibility-badge {
   display: inline-flex;
   align-items: center;
+  justify-content: center;
   color: var(--text-secondary);
-  margin-right: 8px;
+  background: var(--bg-secondary);
+  border-radius: 4px;
+  padding: 2px 4px;
+  margin-right: 4px;
   line-height: 1;
+  font-size: 12px;
 }
 
 /* Edited label */
