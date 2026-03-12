@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app import __version__
+from app import VERSION as __version__
 from app.config import settings
 from app.dependencies import get_db
 from app.models.actor import Actor

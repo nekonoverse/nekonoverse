@@ -1,3 +1,4 @@
+import { execSync } from "child_process";
 import { defineConfig } from "vite";
 import solidPlugin from "vite-plugin-solid";
 import { VitePWA } from "vite-plugin-pwa";
@@ -5,9 +6,20 @@ import packageJson from "./package.json" with { type: "json" };
 
 const backendUrl = process.env.VITE_BACKEND_URL || "http://localhost:8000";
 
+function resolveVersion(): string {
+  try {
+    const branch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8" }).trim();
+    if (branch === "main") return packageJson.version;
+    const hash = execSync("git rev-parse --short HEAD", { encoding: "utf-8" }).trim();
+    return `${packageJson.version}+git-${hash}`;
+  } catch {
+    return packageJson.version;
+  }
+}
+
 export default defineConfig({
   define: {
-    __APP_VERSION__: JSON.stringify(packageJson.version),
+    __APP_VERSION__: JSON.stringify(resolveVersion()),
   },
   plugins: [
     solidPlugin(),

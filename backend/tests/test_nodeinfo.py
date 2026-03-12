@@ -1,5 +1,5 @@
 
-from app import __version__
+from app import VERSION as __version__
 from tests.conftest import make_note
 
 
