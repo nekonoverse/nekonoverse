@@ -104,11 +104,17 @@ export default function Profile() {
     return acc && currentUser()?.username === acc.username && !acc.acct.includes("@");
   };
 
+  const htmlToPlainText = (html: string): string => {
+    const el = document.createElement("div");
+    el.innerHTML = html.replace(/<br\s*\/?>/gi, "\n");
+    return el.textContent?.trim() || "";
+  };
+
   const startEditing = () => {
     const acc = account()!;
     const user = currentUser();
     setEditName(acc.display_name || "");
-    setEditBio(user?.summary || "");
+    setEditBio(htmlToPlainText(user?.summary || ""));
     setEditBirthday(user?.birthday || "");
     setEditFields(user?.fields?.length ? [...user.fields] : []);
     setEditIsCat(user?.is_cat || false);
