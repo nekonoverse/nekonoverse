@@ -108,7 +108,10 @@ export default function EmojiPicker(props: Props) {
       .then((emojis) => setCustomEmojis(emojis))
       .catch(() => {});
 
-    setTimeout(() => searchRef?.focus(), 0);
+    const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    if (!isTouch) {
+      setTimeout(() => searchRef?.focus(), 0);
+    }
   });
 
   // --- Searching ---
