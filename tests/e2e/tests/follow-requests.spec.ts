@@ -28,7 +28,6 @@ async function clearPendingRequests(page: import("@playwright/test").Page) {
 
 test.describe("Follow Requests", () => {
   test.afterEach(async ({ page }) => {
-    await loginAsAdmin(page);
     await clearPendingRequests(page);
     await setLocked(page, false);
   });
