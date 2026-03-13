@@ -57,6 +57,7 @@ import {
   getPendingRegistrations,
   approveRegistration,
   rejectRegistration,
+  generateVapidKey,
   type AdminStats,
   type ServerSettings,
   type AdminUser,
@@ -330,6 +331,9 @@ function ServerSettingsTab() {
   const [themeColor, setThemeColor] = createSignal("");
   const [iconUrl, setIconUrl] = createSignal("");
   const [uploadingIcon, setUploadingIcon] = createSignal(false);
+  const [pushEnabled, setPushEnabled] = createSignal(true);
+  const [vapidKey, setVapidKey] = createSignal<string | null>(null);
+  const [generatingKey, setGeneratingKey] = createSignal(false);
   let iconInput!: HTMLInputElement;
 
   // Use createEffect for reliable initialization inside Switch/Match
@@ -348,6 +352,8 @@ function ServerSettingsTab() {
           setInviteRole(s.invite_create_role || "admin");
           setThemeColor(s.server_theme_color || "");
           if (s.server_icon_url) setIconUrl(s.server_icon_url);
+          setPushEnabled(s.push_enabled ?? true);
+          setVapidKey(s.vapid_public_key ?? null);
         } catch (e) {
           console.error("Failed to load server settings:", e);
         }
@@ -366,6 +372,7 @@ function ServerSettingsTab() {
         registration_mode: regMode(),
         invite_create_role: inviteRole(),
         server_theme_color: themeColor() || null,
+        push_enabled: pushEnabled(),
       } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
@@ -486,6 +493,52 @@ function ServerSettingsTab() {
             (e.currentTarget as HTMLInputElement).value = "";
           }}
         />
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("admin.pushSettings")}</h3>
+        <div class="settings-form-group">
+          <label style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+            <input
+              type="checkbox"
+              checked={pushEnabled()}
+              onChange={(e) => setPushEnabled(e.currentTarget.checked)}
+            />
+            {t("admin.pushEnabled")}
+          </label>
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.vapidPublicKey")}</label>
+          <Show when={vapidKey()} fallback={<p style={{ color: "var(--text-muted)" }}>{t("admin.vapidNotGenerated")}</p>}>
+            <input
+              type="text"
+              value={vapidKey()!}
+              readOnly
+              style={{ "font-family": "monospace", "font-size": "0.85em" }}
+              onClick={(e) => e.currentTarget.select()}
+            />
+          </Show>
+        </div>
+        <button
+          class="btn btn-small"
+          onClick={async () => {
+            if (!confirm(t("admin.vapidConfirmGenerate"))) return;
+            setGeneratingKey(true);
+            try {
+              const res = await generateVapidKey();
+              setVapidKey(res.vapid_public_key);
+            } catch (e) {
+              console.error("Failed to generate VAPID key:", e);
+            }
+            setGeneratingKey(false);
+          }}
+          disabled={generatingKey()}
+        >
+          {generatingKey() ? t("common.loading") : t("admin.vapidGenerate")}
+        </button>
+        <p style={{ "font-size": "0.85em", color: "var(--text-muted)", "margin-top": "8px" }}>
+          {t("admin.vapidGenerateWarning")}
+        </p>
       </div>
     </Show>
   );

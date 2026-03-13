@@ -18,6 +18,7 @@ from app.api.mastodon.follow_requests import router as follow_requests_router
 from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.mastodon.notifications import router as notifications_router
 from app.api.mastodon.polls import router as polls_router
+from app.api.mastodon.push import router as push_router
 from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.streaming import router as streaming_router
 from app.api.mastodon.timelines import router as timelines_router
@@ -50,6 +51,16 @@ async def lifespan(app: FastAPI):
         follow_redirects=True,
         limits=httpx.Limits(max_connections=100, max_keepalive_connections=20),
     )
+
+    # 起動時にDB保存されたVAPID鍵をメモリキャッシュにロード
+    try:
+        from app.database import async_session
+        from app.services.push_service import load_db_vapid_key_async
+
+        async with async_session() as startup_db:
+            await load_db_vapid_key_async(startup_db)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not load VAPID key: %s", e)
 
     from app.pubsub_hub import pubsub_hub
 
@@ -146,6 +157,16 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
+    # VAPID公開鍵 (Web Push用、push_enabledの場合のみ)
+    vapid_key = None
+    try:
+        from app.services.push_service import get_vapid_public_key_base64url, is_push_enabled
+
+        if await is_push_enabled(db):
+            vapid_key = get_vapid_public_key_base64url()
+    except Exception:
+        pass
+
     resp: dict = {
         "uri": settings.domain,
         "title": title,
@@ -160,6 +181,8 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "registrations": registration_open,
         "registration_mode": registration_mode,
     }
+    if vapid_key:
+        resp["vapid_key"] = vapid_key
     if thumbnail_url:
         resp["thumbnail"] = {"url": thumbnail_url}
     if theme_color:
@@ -283,6 +306,7 @@ app.include_router(auth_router)
 app.include_router(accounts_router)
 app.include_router(relationships_router)
 app.include_router(notifications_router)
+app.include_router(push_router)
 app.include_router(bookmarks_router)
 app.include_router(follow_requests_router)
 app.include_router(polls_router)

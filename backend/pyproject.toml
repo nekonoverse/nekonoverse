@@ -21,6 +21,7 @@ dependencies = [
     "email-validator>=2.0.0",
     "webauthn>=2.0.0",
     "pyotp>=2.9.0",
+    "pywebpush>=2.0.0",
 ]
 
 [project.optional-dependencies]

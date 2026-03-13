@@ -538,6 +538,19 @@ export const ja = {
   "time.inMinutes": "あと{n}分",
   "time.inHours": "あと{n}時間",
   "time.inDays": "あと{n}日",
+  "push.enable": "プッシュ通知を有効にする",
+  "push.disable": "プッシュ通知を無効にする",
+  "push.enabled": "プッシュ通知: ON",
+  "push.disabled": "プッシュ通知: OFF",
+  "push.unsupported": "このブラウザはプッシュ通知に対応していません",
+  "push.denied": "通知の権限がブロックされています",
+  "admin.pushSettings": "プッシュ通知設定",
+  "admin.pushEnabled": "プッシュ通知を有効にする",
+  "admin.vapidPublicKey": "VAPID公開鍵",
+  "admin.vapidNotGenerated": "VAPID鍵がまだ生成されていません",
+  "admin.vapidGenerate": "新しいVAPID鍵を生成",
+  "admin.vapidConfirmGenerate": "新しいVAPID鍵を生成しますか？既存の購読は無効になります。",
+  "admin.vapidGenerateWarning": "鍵を再生成すると、既存のプッシュ通知の購読はすべて無効になります。ユーザーは再度購読する必要があります。",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

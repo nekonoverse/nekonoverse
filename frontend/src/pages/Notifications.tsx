@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
+import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
 import { getNotifications, dismissNotification, clearNotifications, type Notification } from "../api/notifications";
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
@@ -10,6 +10,7 @@ import { onNotification, onReaction, resetUnread } from "../stores/streaming";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 import { defaultAvatar } from "../stores/instance";
+import { isPushSupported, getPermissionState, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "../utils/pushNotification";
 
 function actorHandle(account: Notification["account"]): string {
   if (!account) return "";
@@ -29,6 +30,30 @@ export default function Notifications() {
   const [loading, setLoading] = createSignal(true);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
+  const [pushSubscribed, setPushSubscribed] = createSignal(false);
+  const [pushToggling, setPushToggling] = createSignal(false);
+
+  // プッシュ通知の状態を確認
+  createEffect(async () => {
+    if (currentUser() && isPushSupported()) {
+      const subscribed = await isSubscribedToPush();
+      setPushSubscribed(subscribed);
+    }
+  });
+
+  const togglePush = async () => {
+    setPushToggling(true);
+    try {
+      if (pushSubscribed()) {
+        await unsubscribeFromPush();
+        setPushSubscribed(false);
+      } else {
+        const result = await subscribeToPush();
+        setPushSubscribed(result !== null);
+      }
+    } catch { /* ignore */ }
+    setPushToggling(false);
+  };
 
   const load = async () => {
     try {
@@ -131,11 +156,33 @@ export default function Notifications() {
     <div class="page-container">
       <div class="notifications-header">
         <h2>{t("notifications.title")}</h2>
-        <Show when={notifications().length > 0}>
-          <button class="btn btn-small" onClick={handleClearAll}>
-            {t("notifications.clearAll")}
-          </button>
-        </Show>
+        <div class="notifications-actions">
+          <Show when={currentUser() && isPushSupported()}>
+            <button
+              class={`btn btn-small${pushSubscribed() ? " btn-active" : ""}`}
+              onClick={togglePush}
+              disabled={pushToggling() || getPermissionState() === "denied"}
+              title={
+                getPermissionState() === "denied"
+                  ? t("push.denied")
+                  : pushSubscribed()
+                    ? t("push.disable")
+                    : t("push.enable")
+              }
+            >
+              {pushToggling()
+                ? t("common.loading")
+                : pushSubscribed()
+                  ? t("push.enabled")
+                  : t("push.disabled")}
+            </button>
+          </Show>
+          <Show when={notifications().length > 0}>
+            <button class="btn btn-small" onClick={handleClearAll}>
+              {t("notifications.clearAll")}
+            </button>
+          </Show>
+        </div>
       </div>
 
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>

@@ -62,6 +62,32 @@ async def create_notification(
     except Exception:
         pass  # Don't fail notification creation if pub/sub fails
 
+    # Web Push通知を送信
+    try:
+        from app.services.push_service import send_web_push
+
+        sender_name = None
+        if sender_id:
+            from app.models.actor import Actor
+
+            result = await db.execute(
+                select(Actor).where(Actor.id == sender_id)
+            )
+            sender = result.scalar_one_or_none()
+            if sender:
+                sender_name = sender.display_name or sender.preferred_username
+
+        await send_web_push(
+            db=db,
+            recipient_id=recipient_id,
+            notification_type=type,
+            sender_display_name=sender_name,
+            notification_id=str(notification.id),
+            sender_id=sender_id,
+        )
+    except Exception:
+        pass  # Don't fail notification creation if push fails
+
     return notification
 
 

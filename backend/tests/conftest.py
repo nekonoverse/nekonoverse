@@ -41,6 +41,7 @@ import app.models.notification  # noqa: F401
 import app.models.oauth  # noqa: F401
 import app.models.pinned_note  # noqa: F401
 import app.models.poll_vote  # noqa: F401
+import app.models.push_subscription  # noqa: F401
 import app.models.passkey  # noqa: F401
 import app.models.reaction  # noqa: F401
 import app.models.report  # noqa: F401

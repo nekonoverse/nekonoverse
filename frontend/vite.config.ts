@@ -24,28 +24,17 @@ export default defineConfig({
   plugins: [
     solidPlugin(),
     VitePWA({
+      strategies: "injectManifest",
+      srcDir: "src",
+      filename: "sw.ts",
       registerType: "autoUpdate",
       includeAssets: [
         "default-avatar.svg",
         "apple-touch-icon.svg",
       ],
       manifest: false,
-      workbox: {
+      injectManifest: {
         globPatterns: ["**/*.{js,css,html,svg,woff,woff2}"],
-        runtimeCaching: [
-          {
-            urlPattern: /^\/api\/(?!v1\/streaming|v1\/instance)/,
-            handler: "NetworkFirst",
-            options: {
-              cacheName: "api-cache",
-              expiration: {
-                maxEntries: 100,
-                maxAgeSeconds: 60 * 5,
-              },
-              networkTimeoutSeconds: 3,
-            },
-          },
-        ],
       },
     }),
   ],

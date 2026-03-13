@@ -7,6 +7,7 @@ interface InstanceInfo {
   version: string;
   registrations: boolean;
   registration_mode?: string;
+  vapid_key?: string;
   thumbnail?: { url: string };
   stats?: {
     user_count: number;

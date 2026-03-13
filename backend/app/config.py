@@ -30,6 +30,9 @@ class Settings(BaseSettings):
 
     use_https: bool = True
 
+    # Web Push (VAPID)
+    vapid_private_key: str | None = None
+
     def derive_key(self, purpose: str) -> str:
         """Derive a purpose-specific key from secret_key using HMAC."""
         import hashlib
