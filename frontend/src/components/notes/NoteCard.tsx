@@ -211,7 +211,7 @@ export default function NoteCard(props: Props) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = createSignal(false);
-  const [boosted, setBoosted] = createSignal(false);
+  const [boosted, setBoosted] = createSignal(props.note.reblogged || (props.note.reblog?.reblogged ?? false));
   const [boostLoading, setBoostLoading] = createSignal(false);
   const [boostCount, setBoostCount] = createSignal(0);
   const [bookmarked, setBookmarked] = createSignal(false);

@@ -79,6 +79,7 @@ export interface Note {
   reblog: Note | null;
   quote: Note | null;
   poll: Poll | null;
+  reblogged: boolean;
   pinned: boolean;
   emojis: CustomEmoji[];
   tags: TagInfo[];
