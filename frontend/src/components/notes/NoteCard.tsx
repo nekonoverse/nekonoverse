@@ -714,10 +714,14 @@ export default function NoteCard(props: Props) {
               </Show>
             </button>
             <button
-              class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}`}
+              class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${note().visibility === "followers" || note().visibility === "direct" ? " disabled" : ""}`}
               onClick={handleBoost}
-              disabled={boostLoading()}
-              title={t(boosted() ? "boost.unboost" : "boost.boost")}
+              disabled={boostLoading() || note().visibility === "followers" || note().visibility === "direct"}
+              title={
+                note().visibility === "followers" || note().visibility === "direct"
+                  ? t("boost.cannotRenote")
+                  : t(boosted() ? "boost.unboost" : "boost.boost")
+              }
             >
               <svg
                 width="18"
@@ -739,9 +743,14 @@ export default function NoteCard(props: Props) {
               </Show>
             </button>
             <button
-              class="note-action-btn note-quote-btn"
+              class={`note-action-btn note-quote-btn${note().visibility === "followers" || note().visibility === "direct" ? " disabled" : ""}`}
               onClick={handleQuote}
-              title={t("boost.quote")}
+              disabled={note().visibility === "followers" || note().visibility === "direct"}
+              title={
+                note().visibility === "followers" || note().visibility === "direct"
+                  ? t("boost.cannotRenote")
+                  : t("boost.quote")
+              }
             >
               <svg
                 width="18"

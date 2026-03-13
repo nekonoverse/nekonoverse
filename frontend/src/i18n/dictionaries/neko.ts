@@ -214,6 +214,7 @@ export const neko: Dictionary = {
   "boost.unboost": "ブーストやめるにゃ",
   "boost.boosted": "がブーストしたにゃ",
   "boost.quote": "いんようにゃ",
+  "boost.cannotRenote": "ひこうかいのとうこうはブーストできないにゃ",
   "boost.quoting": "いんようちゅうにゃ:",
   "note.delete": "けすにゃ",
   "note.confirmDelete": "このとうこうけすにゃ？",

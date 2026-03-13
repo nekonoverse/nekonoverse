@@ -208,6 +208,39 @@ async def test_unreblog_not_reblogged(authed_client, mock_valkey):
     assert resp.status_code == 422
 
 
+async def test_reblog_followers_only_rejected(authed_client, mock_valkey):
+    """Reblogging a followers-only note should be rejected with 422."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Followers only post", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 422
+    assert "private" in resp.json()["detail"].lower()
+
+
+async def test_reblog_direct_rejected(authed_client, mock_valkey):
+    """Reblogging a direct message should be rejected with 422."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Direct message", "visibility": "direct"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 422
+    assert "private" in resp.json()["detail"].lower()
+
+
+async def test_reblog_unlisted_allowed(authed_client, mock_valkey):
+    """Reblogging an unlisted note should be allowed."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unlisted post", "visibility": "unlisted"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 200
+    assert resp.json()["reblog"] is not None
+
+
 # --- Delete tests ---
 
 
