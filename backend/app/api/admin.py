@@ -3,12 +3,14 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.dependencies import get_admin_user, get_db, get_staff_user
 from app.models.actor import Actor
+from app.models.delivery import DeliveryJob
+from app.models.follow import Follow
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
 from app.models.user import User
@@ -156,13 +158,37 @@ async def get_admin_stats(
     db: AsyncSession = Depends(get_db),
 ):
     user_count = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    # ローカルユーザーの投稿のみカウント
     note_count = (
-        await db.execute(select(func.count(Note.id)).where(Note.deleted_at.is_(None)))
-    ).scalar() or 0
-    domain_count = (
         await db.execute(
-            select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
+            select(func.count(Note.id)).where(
+                Note.deleted_at.is_(None),
+                Note.local.is_(True),
+            )
         )
+    ).scalar() or 0
+    # 配送中/購読中のアクティブな連合ドメインのみカウント
+    # 配送先ドメイン（delivered/pending/processing）
+    delivery_domains = select(
+        func.substring(DeliveryJob.target_inbox_url, r"https?://([^/]+)").label("domain")
+    ).where(DeliveryJob.status.in_(["delivered", "pending", "processing"]))
+    # フォロー関係のあるリモートドメイン（ローカル→リモート、リモート→ローカル）
+    local_actor_ids = select(Actor.id).where(Actor.domain.is_(None))
+    # ローカルユーザーがフォローしているリモートActorのドメイン
+    following_domains = (
+        select(Actor.domain.label("domain"))
+        .join(Follow, Follow.following_id == Actor.id)
+        .where(Follow.follower_id.in_(local_actor_ids), Actor.domain.isnot(None))
+    )
+    # リモートActorがローカルユーザーをフォローしているドメイン
+    follower_domains = (
+        select(Actor.domain.label("domain"))
+        .join(Follow, Follow.follower_id == Actor.id)
+        .where(Follow.following_id.in_(local_actor_ids), Actor.domain.isnot(None))
+    )
+    active_domains = union(delivery_domains, following_domains, follower_domains).subquery()
+    domain_count = (
+        await db.execute(select(func.count(func.distinct(active_domains.c.domain))))
     ).scalar() or 0
     return AdminStatsResponse(
         user_count=user_count,
