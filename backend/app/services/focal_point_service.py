@@ -212,16 +212,9 @@ async def _call_face_detect(
         resp.raise_for_status()
         results = resp.json()
 
-    if not results:
-        return None
+    from app.utils.focal import focal_from_detections
 
-    box = results[0]["box"]
-    cx = (box["xmin"] + box["xmax"]) / 2
-    cy = (box["ymin"] + box["ymax"]) / 2
-
-    focal_x = max(-1.0, min(1.0, (cx / width) * 2 - 1))
-    focal_y = max(-1.0, min(1.0, 1 - (cy / height) * 2))
-    return (focal_x, focal_y)
+    return focal_from_detections(results, width, height)
 
 
 async def _publish_update(note_id: uuid.UUID) -> None:

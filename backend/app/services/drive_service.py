@@ -193,19 +193,15 @@ async def auto_detect_focal_point(db: AsyncSession, drive_file: DriveFile) -> No
             resp.raise_for_status()
             results = resp.json()
 
-        if not results:
+        from app.utils.focal import focal_from_detections
+
+        focal = focal_from_detections(
+            results, drive_file.width or 1, drive_file.height or 1
+        )
+        if not focal:
             return
 
-        # Use the highest-score detection
-        best = results[0]
-        box = best["box"]
-        cx = (box["xmin"] + box["xmax"]) / 2
-        cy = (box["ymin"] + box["ymax"]) / 2
-
-        w = drive_file.width or 1
-        h = drive_file.height or 1
-        drive_file.focal_x = max(-1.0, min(1.0, (cx / w) * 2 - 1))
-        drive_file.focal_y = max(-1.0, min(1.0, 1 - (cy / h) * 2))
+        drive_file.focal_x, drive_file.focal_y = focal
         await db.commit()
     except Exception:
         logger.debug("Face detection failed for %s, skipping", drive_file.id, exc_info=True)
