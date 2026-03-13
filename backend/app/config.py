@@ -26,6 +26,8 @@ class Settings(BaseSettings):
     https_proxy: str | None = None
     no_proxy: str = ""
 
+    valkey_max_connections: int = 1000
+
     use_https: bool = True
 
     def derive_key(self, purpose: str) -> str:
