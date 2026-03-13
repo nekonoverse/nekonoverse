@@ -236,6 +236,11 @@ async def import_remote_emoji_to_local(db: AsyncSession, emoji_id: uuid.UUID) ->
         raise ValueError(f"Local emoji :{remote.shortcode}: already exists")
 
     # Download image from remote URL
+    from app.utils.network import is_safe_url
+
+    if not is_safe_url(remote.url):
+        raise ValueError("Remote emoji URL points to a private or invalid host")
+
     from app.utils.http_client import make_async_client
 
     async with make_async_client(timeout=30.0, follow_redirects=True) as client:

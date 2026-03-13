@@ -87,26 +87,46 @@ async def _detect_single(att) -> bool:
 
 
 async def _download_image(url: str) -> bytes | None:
-    """Download remote image with SSRF protection and size limit."""
-    from urllib.parse import urlparse
+    """Download remote image with SSRF protection and size limit.
 
-    from app.api.mastodon.media_proxy import _is_private_host
+    Manually follows redirects to validate each hop against private hosts.
+    """
+    from urllib.parse import urljoin, urlparse
+
+    from app.utils.network import is_private_host
 
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return None
-    if _is_private_host(parsed.hostname):
+    if is_private_host(parsed.hostname):
         return None
 
     from app.utils.http_client import make_async_client
 
     async with make_async_client(
         timeout=httpx.Timeout(15.0, connect=5.0),
-        follow_redirects=True,
-        max_redirects=3,
+        follow_redirects=False,
         verify=not settings.skip_ssl_verify,
     ) as client:
-        resp = await client.get(url)
+        current_url = url
+        for _ in range(3):
+            resp = await client.get(current_url)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                location = resp.headers.get("location")
+                if not location:
+                    return None
+                resolved = urljoin(current_url, location)
+                rp = urlparse(resolved)
+                if rp.scheme not in ("http", "https") or not rp.hostname:
+                    return None
+                if is_private_host(rp.hostname):
+                    return None
+                current_url = resolved
+            else:
+                break
+        else:
+            return None
+
         if resp.status_code != 200:
             return None
         if len(resp.content) > _MAX_DOWNLOAD_BYTES:

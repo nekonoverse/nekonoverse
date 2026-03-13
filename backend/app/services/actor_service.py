@@ -82,6 +82,12 @@ async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
 
 async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
     """Perform a signed HTTP GET (Authorized Fetch / Secure Mode)."""
+    from app.utils.network import is_safe_url
+
+    if not is_safe_url(url):
+        logger.debug("Blocked signed fetch to unsafe URL: %s", url)
+        return None
+
     from app.activitypub.http_signature import sign_request
 
     signing = await _get_signing_key(db)
@@ -319,6 +325,12 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
     existing = await get_actor_by_username(db, username, domain)
     if existing:
         return existing
+
+    from app.utils.network import is_private_host
+
+    if is_private_host(domain):
+        logger.debug("Blocked WebFinger to private host: %s", domain)
+        return None
 
     webfinger_url = f"https://{domain}/.well-known/webfinger?resource=acct:{username}@{domain}"
     try:
