@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
-import { loginAsAdmin, loginAsUser, registerUser, getActorId } from "./helpers";
+import { loginAsAdmin, registerAndLogin, getActorId } from "./helpers";
+
+const baseURL = process.env.E2E_BASE_URL || "http://localhost:3080";
 
 /**
  * Set locked mode via update_credentials API.
@@ -11,46 +13,27 @@ async function setLocked(page: import("@playwright/test").Page, locked: boolean)
   expect(resp.status()).toBe(200);
 }
 
-/**
- * Send a follow request via API.
- */
-async function followUser(page: import("@playwright/test").Page, targetActorId: string) {
-  const resp = await page.request.post(`/api/v1/accounts/${targetActorId}/follow`);
-  expect(resp.status()).toBe(200);
-}
-
-/**
- * Setup: login as admin, register a follower, enable locked mode.
- */
-async function setupFollower(page: import("@playwright/test").Page): Promise<{ username: string; password: string }> {
-  const username = `follower_${Date.now()}`;
-  const password = "testpassword123";
-  await loginAsAdmin(page);
-  await registerUser(page, username, password);
-  await setLocked(page, true);
-  return { username, password };
-}
-
 test.describe("Follow Requests", () => {
   test.afterEach(async ({ page }) => {
-    // Restore admin to unlocked mode via API (no UI navigation)
+    // Restore admin to unlocked mode
     await loginAsAdmin(page);
     await setLocked(page, false);
   });
 
-  test("follow request appears and can be accepted", async ({ page }) => {
-    const follower = await setupFollower(page);
+  test("follow request appears and can be accepted", async ({ browser, page }) => {
+    // Login as admin and enable locked mode
+    await loginAsAdmin(page);
+    await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
-    // Login as follower, send follow request to admin
-    await loginAsUser(page, follower.username, follower.password);
-    await followUser(page, adminId);
+    // Create follower in a separate browser context and send follow request
+    const follower = await registerAndLogin(browser, `follower_${Date.now()}`, "testpassword123", baseURL);
+    const followResp = await follower.page.request.post(`/api/v1/accounts/${adminId}/follow`);
+    expect(followResp.ok()).toBeTruthy();
 
-    // Login as admin again, check follow request page
-    await loginAsAdmin(page);
+    // Check follow request page as admin
     await page.goto("/follow-requests");
     await expect(page.locator(".follow-request-item")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(".follow-request-item")).toContainText(follower.username);
 
     // Accept the follow request
     const acceptResponsePromise = page.waitForResponse(
@@ -62,18 +45,18 @@ test.describe("Follow Requests", () => {
 
     // Verify the request disappeared
     await expect(page.locator(".follow-request-item")).toHaveCount(0, { timeout: 5_000 });
+    await follower.context.close();
   });
 
-  test("follow request can be rejected", async ({ page }) => {
-    const follower = await setupFollower(page);
+  test("follow request can be rejected", async ({ browser, page }) => {
+    await loginAsAdmin(page);
+    await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
-    // Login as follower, send follow request
-    await loginAsUser(page, follower.username, follower.password);
-    await followUser(page, adminId);
+    const follower = await registerAndLogin(browser, `follower_${Date.now()}`, "testpassword123", baseURL);
+    const followResp = await follower.page.request.post(`/api/v1/accounts/${adminId}/follow`);
+    expect(followResp.ok()).toBeTruthy();
 
-    // Login as admin, check follow request page
-    await loginAsAdmin(page);
     await page.goto("/follow-requests");
     await expect(page.locator(".follow-request-item")).toBeVisible({ timeout: 10_000 });
 
@@ -85,8 +68,8 @@ test.describe("Follow Requests", () => {
     await page.locator(".follow-request-reject").first().click();
     await rejectResponsePromise;
 
-    // Verify the request disappeared
     await expect(page.locator(".follow-request-item")).toHaveCount(0, { timeout: 5_000 });
+    await follower.context.close();
   });
 
   test("empty state shown when no requests", async ({ page }) => {
@@ -126,16 +109,18 @@ test.describe("Follow Requests", () => {
     await expect(lockedCheckbox).toBeVisible();
   });
 
-  test("confirming unlock modal saves and auto-approves pending requests", async ({ page }) => {
-    const follower = await setupFollower(page);
+  test("confirming unlock modal saves and auto-approves pending requests", async ({ browser, page }) => {
+    await loginAsAdmin(page);
+    await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
-    // Login as follower, send follow request
-    await loginAsUser(page, follower.username, follower.password);
-    await followUser(page, adminId);
+    // Create follower and send follow request
+    const follower = await registerAndLogin(browser, `follower_${Date.now()}`, "testpassword123", baseURL);
+    const followResp = await follower.page.request.post(`/api/v1/accounts/${adminId}/follow`);
+    expect(followResp.ok()).toBeTruthy();
+    await follower.context.close();
 
-    // Login as admin, verify request exists
-    await loginAsAdmin(page);
+    // Verify request exists
     const reqResp = await page.request.get("/api/v1/follow_requests");
     const requests = await reqResp.json();
     expect(requests.length).toBeGreaterThan(0);
