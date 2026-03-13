@@ -1856,6 +1856,15 @@ function FederationTab() {
   const [detailLoading, setDetailLoading] = createSignal(false);
   const limit = 40;
 
+  // Domain action state
+  const [domainAction, setDomainAction] = createSignal<{
+    type: "suspend" | "silence";
+    domain: string;
+  } | null>(null);
+  const [domainConfirmInput, setDomainConfirmInput] = createSignal("");
+  const [domainActionReason, setDomainActionReason] = createSignal("");
+  const [domainActionLoading, setDomainActionLoading] = createSignal(false);
+
   const load = async () => {
     setLoading(true);
     try {
@@ -1921,6 +1930,58 @@ function FederationTab() {
     setDetailLoading(false);
   };
 
+  const openDomainAction = (type: "suspend" | "silence", domain: string) => {
+    setDomainConfirmInput("");
+    setDomainActionReason("");
+    setDomainAction({ type, domain });
+  };
+
+  const closeDomainAction = () => {
+    setDomainAction(null);
+    setDomainConfirmInput("");
+    setDomainActionReason("");
+    setDomainActionLoading(false);
+  };
+
+  const executeDomainAction = async () => {
+    const action = domainAction();
+    if (!action) return;
+    setDomainActionLoading(true);
+    try {
+      // If escalating from silence to suspend, remove existing block first
+      const currentServer = servers().find((s) => s.domain === action.domain);
+      if (currentServer?.block_severity && currentServer.block_severity !== action.type) {
+        await removeDomainBlock(action.domain);
+      }
+      await createDomainBlock(action.domain, action.type, domainActionReason() || undefined);
+      closeDomainAction();
+      await load();
+      // Refresh detail if expanded
+      if (expandedDomain() === action.domain) {
+        setDetail(await getFederatedServerDetail(action.domain));
+      }
+    } catch {
+      setDomainActionLoading(false);
+    }
+  };
+
+  const domainConfirmMatches = () => {
+    const action = domainAction();
+    if (!action) return false;
+    return domainConfirmInput() === action.domain;
+  };
+
+  const handleRemoveDomainBlock = async (domain: string) => {
+    try {
+      await removeDomainBlock(domain);
+      await load();
+      // Refresh detail if expanded
+      if (expandedDomain() === domain) {
+        setDetail(await getFederatedServerDetail(domain));
+      }
+    } catch {}
+  };
+
   const totalPages = createMemo(() => Math.max(1, Math.ceil(total() / limit)));
   const currentPage = createMemo(() => Math.floor(offset() / limit) + 1);
 
@@ -1968,6 +2029,7 @@ function FederationTab() {
   };
 
   return (
+    <>
     <div class="settings-section">
       <h3>{t("admin.tabFederation")}</h3>
 
@@ -2122,6 +2184,52 @@ function FederationTab() {
                                         </For>
                                       </div>
                                     </Show>
+                                    <div class="admin-federation-actions" style="margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap;">
+                                      <Show when={d().block_severity === "suspend"}>
+                                        <button
+                                          class="btn btn-small"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRemoveDomainBlock(d().domain);
+                                          }}
+                                        >
+                                          {t("admin.federationUnsuspendDomain")}
+                                        </button>
+                                      </Show>
+                                      <Show when={d().block_severity === "silence"}>
+                                        <button
+                                          class="btn btn-small"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleRemoveDomainBlock(d().domain);
+                                          }}
+                                        >
+                                          {t("admin.federationUnsilenceDomain")}
+                                        </button>
+                                      </Show>
+                                      <Show when={d().block_severity !== "suspend"}>
+                                        <button
+                                          class="btn btn-small btn-danger"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openDomainAction("suspend", d().domain);
+                                          }}
+                                        >
+                                          {t("admin.federationSuspendDomain")}
+                                        </button>
+                                      </Show>
+                                      <Show when={!d().block_severity}>
+                                        <button
+                                          class="btn btn-small btn-danger"
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            openDomainAction("silence", d().domain);
+                                          }}
+                                        >
+                                          {t("admin.federationSilenceDomain")}
+                                        </button>
+                                      </Show>
+                                    </div>
                                   </div>
                                 )}
                               </Show>
@@ -2166,6 +2274,69 @@ function FederationTab() {
         </Show>
       </Show>
     </div>
+
+      {/* Confirmation modal for domain suspend/silence */}
+      <Show when={domainAction()}>
+        {(action) => (
+          <div class="modal-overlay" onClick={closeDomainAction}>
+            <div
+              class="modal-content"
+              style="max-width: 420px"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div class="modal-header">
+                <h3>
+                  {action().type === "suspend"
+                    ? t("admin.federationConfirmSuspendTitle")
+                    : t("admin.federationConfirmSilenceTitle")}
+                </h3>
+                <button class="modal-close" onClick={closeDomainAction}>
+                  ✕
+                </button>
+              </div>
+              <div style="padding: 16px">
+                <p class="confirm-input-hint">
+                  {t("admin.federationTypeDomainToConfirm").replace(
+                    "{domain}",
+                    action().domain,
+                  )}
+                </p>
+                <input
+                  class="confirm-input"
+                  type="text"
+                  value={domainConfirmInput()}
+                  onInput={(e) => setDomainConfirmInput(e.currentTarget.value)}
+                  placeholder={action().domain}
+                  autofocus
+                />
+                <input
+                  class="confirm-input"
+                  type="text"
+                  value={domainActionReason()}
+                  onInput={(e) => setDomainActionReason(e.currentTarget.value)}
+                  placeholder={t("admin.federationReasonPlaceholder")}
+                  style="margin-top: 8px"
+                />
+                <div style="display: flex; gap: 8px; justify-content: flex-end; margin-top: 16px">
+                  <button class="btn btn-small" onClick={closeDomainAction}>
+                    {t("common.cancel")}
+                  </button>
+                  <button
+                    class="btn btn-small btn-danger"
+                    disabled={!domainConfirmMatches() || domainActionLoading()}
+                    onClick={executeDomainAction}
+                  >
+                    {action().type === "suspend"
+                      ? t("admin.federationSuspendDomain")
+                      : t("admin.federationSilenceDomain")}
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </Show>
+    </>
   );
 }
 
