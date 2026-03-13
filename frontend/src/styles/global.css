@@ -703,23 +703,28 @@ a:hover {
 }
 
 .composer-emoji-wrap .emoji-picker {
-  bottom: 36px;
+  top: 100%;
+  bottom: auto;
   left: 0;
+  margin-top: 4px;
+  max-height: min(400px, calc(100vh - 200px));
 }
 
 @media (max-width: 600px) {
   .composer-emoji-wrap .emoji-picker {
     position: fixed;
+    top: auto;
     bottom: 0;
     left: 0;
     right: 0;
-    top: auto;
+    margin-top: 0;
     min-width: unset;
     max-width: unset;
     width: 100%;
-    max-height: 50vh;
+    max-height: 60vh;
     border-radius: var(--radius) var(--radius) 0 0;
     z-index: 200;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 
   .composer-emoji-backdrop {
@@ -1987,6 +1992,8 @@ a:hover {
 }
 
 .emoji-scroll-area {
+  flex: 1;
+  min-height: 0;
   max-height: 320px;
   overflow-y: auto;
   overflow-x: hidden;
