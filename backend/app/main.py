@@ -14,6 +14,7 @@ from app.api.invites import router as invites_router
 from app.api.mastodon.accounts import relationships_router
 from app.api.mastodon.accounts import router as accounts_router
 from app.api.mastodon.bookmarks import router as bookmarks_router
+from app.api.mastodon.compat import router as compat_router
 from app.api.mastodon.follow_requests import router as follow_requests_router
 from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.mastodon.notifications import router as notifications_router
@@ -172,8 +173,11 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "uri": settings.domain,
         "title": title,
         "description": description,
+        "short_description": description,
         "version": __version__,
-        "urls": {},
+        "urls": {
+            "streaming_api": f"wss://{settings.domain}/api/v1/streaming",
+        },
         "stats": {
             "user_count": user_count,
             "status_count": status_count,
@@ -181,6 +185,32 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         },
         "registrations": registration_open,
         "registration_mode": registration_mode,
+        "languages": ["ja", "en"],
+        "rules": [],
+        "contact": {
+            "email": "",
+            "account": None,
+        },
+        "configuration": {
+            "statuses": {
+                "max_characters": 5000,
+                "max_media_attachments": 4,
+                "characters_reserved_per_url": 23,
+            },
+            "media_attachments": {
+                "supported_mime_types": [
+                    "image/jpeg", "image/png", "image/gif", "image/webp",
+                ],
+                "image_size_limit": 10485760,
+                "image_matrix_limit": 16777216,
+            },
+            "polls": {
+                "max_options": 10,
+                "max_characters_per_option": 200,
+                "min_expiration": 300,
+                "max_expiration": 2592000,
+            },
+        },
     }
     if vapid_key:
         resp["vapid_key"] = vapid_key
@@ -315,6 +345,7 @@ app.include_router(statuses_router)
 app.include_router(timelines_router)
 app.include_router(streaming_router)
 app.include_router(search_router)
+app.include_router(compat_router)
 app.include_router(oauth_router)
 app.include_router(passkey_router)
 app.include_router(media_proxy_router)
