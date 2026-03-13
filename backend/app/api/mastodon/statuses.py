@@ -823,6 +823,13 @@ async def reblog_status(
     if not original:
         raise HTTPException(status_code=404, detail="Note not found")
 
+    # Reject reblog for non-public/unlisted notes (followers-only, direct)
+    if original.visibility in ("followers", "direct"):
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot reblog a private post",
+        )
+
     actor = user.actor
 
     # Check for existing reblog

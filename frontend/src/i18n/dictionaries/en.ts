@@ -214,6 +214,7 @@ export const en: Dictionary = {
   "boost.unboost": "Unboost",
   "boost.boosted": "boosted",
   "boost.quote": "Quote",
+  "boost.cannotRenote": "Cannot boost a private post",
   "boost.quoting": "Quoting:",
   "note.delete": "Delete",
   "note.confirmDelete": "Delete this post?",
