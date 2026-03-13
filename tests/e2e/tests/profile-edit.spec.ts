@@ -246,4 +246,81 @@ test.describe("Profile Editing", () => {
     await expect(reFieldInputs.nth(0)).toHaveValue(fieldLabel);
     await expect(reFieldInputs.nth(1)).toHaveValue(fieldValue);
   });
+
+  test("field values with special characters survive save-edit round-trip", async ({ page }) => {
+    // Characters that get HTML-escaped by bleach.clean: & < > " '
+    const fieldLabel = "A & B";
+    const fieldValue = `<tag> & "quotes" ${Date.now()}`;
+
+    await page.goto("/@admin");
+    await expect(page.locator(".profile-info")).toBeVisible({ timeout: 10_000 });
+    await page.click('button:has-text("Edit Profile")');
+
+    // Remove any existing fields first
+    while (await page.locator('button:has-text("Remove")').count() > 0) {
+      await page.locator('button:has-text("Remove")').first().click();
+    }
+
+    // Add a new field
+    await page.click('button:has-text("Add Field")');
+    await expect(page.locator(".profile-edit-field-row")).toBeVisible({ timeout: 5_000 });
+
+    const fieldInputs = page.locator(".profile-edit-field-row .profile-edit-field-input");
+    await fieldInputs.nth(0).fill(fieldLabel);
+    await fieldInputs.nth(1).fill(fieldValue);
+
+    // Save
+    const saveResponsePromise = page.waitForResponse(
+      (resp) => resp.url().includes("/update_credentials") && resp.status() === 200,
+      { timeout: 10_000 },
+    );
+    await page.click('button:has-text("Save")');
+    await saveResponsePromise;
+
+    // Re-enter edit mode and verify values are NOT double-escaped
+    await page.click('button:has-text("Edit Profile")');
+    await expect(page.locator(".profile-edit-field-row")).toBeVisible({ timeout: 5_000 });
+    const reFieldInputs = page.locator(".profile-edit-field-row .profile-edit-field-input");
+    await expect(reFieldInputs.nth(0)).toHaveValue(fieldLabel);
+    await expect(reFieldInputs.nth(1)).toHaveValue(fieldValue);
+
+    // Save again and re-edit to verify no double-escape accumulation
+    const save2Promise = page.waitForResponse(
+      (resp) => resp.url().includes("/update_credentials") && resp.status() === 200,
+      { timeout: 10_000 },
+    );
+    await page.click('button:has-text("Save")');
+    await save2Promise;
+
+    await page.click('button:has-text("Edit Profile")');
+    await expect(page.locator(".profile-edit-field-row")).toBeVisible({ timeout: 5_000 });
+    const re2FieldInputs = page.locator(".profile-edit-field-row .profile-edit-field-input");
+    await expect(re2FieldInputs.nth(0)).toHaveValue(fieldLabel);
+    await expect(re2FieldInputs.nth(1)).toHaveValue(fieldValue);
+  });
+
+  test("bio with special characters survives save-edit round-trip", async ({ page }) => {
+    const bio = `A & B <not html> "quoted" ${Date.now()}`;
+
+    await page.goto("/@admin");
+    await expect(page.locator(".profile-info")).toBeVisible({ timeout: 10_000 });
+    await page.click('button:has-text("Edit Profile")');
+
+    const bioTextarea = page.locator("textarea.profile-edit-textarea");
+    await expect(bioTextarea).toBeVisible({ timeout: 5_000 });
+    await bioTextarea.fill(bio);
+
+    // Save
+    const saveResponsePromise = page.waitForResponse(
+      (resp) => resp.url().includes("/update_credentials") && resp.status() === 200,
+      { timeout: 10_000 },
+    );
+    await page.click('button:has-text("Save")');
+    await saveResponsePromise;
+
+    // Re-enter edit mode and verify bio is not double-escaped
+    await page.click('button:has-text("Edit Profile")');
+    await expect(bioTextarea).toBeVisible({ timeout: 5_000 });
+    await expect(bioTextarea).toHaveValue(bio);
+  });
 });

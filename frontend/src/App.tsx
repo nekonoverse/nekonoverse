@@ -26,6 +26,7 @@ const Bookmarks = lazy(() => import("./pages/Bookmarks"));
 const Search = lazy(() => import("./pages/Search"));
 const Profile = lazy(() => import("./pages/Profile"));
 const FollowList = lazy(() => import("./pages/FollowList"));
+const FollowRequests = lazy(() => import("./pages/FollowRequests"));
 const TagTimeline = lazy(() => import("./pages/TagTimeline"));
 const NoteThread = lazy(() => import("./pages/NoteThread"));
 
@@ -60,6 +61,7 @@ export default function App() {
         <Route path="/admin/*section" component={Admin} />
         <Route path="/drive" component={Drive} />
         <Route path="/bookmarks" component={Bookmarks} />
+        <Route path="/follow-requests" component={FollowRequests} />
         <Route path="/search" component={Search} />
         <Route path="/tags/:tag" component={TagTimeline} />
         <Route path="/notes/:id" component={NoteThread} />

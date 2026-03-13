@@ -26,7 +26,7 @@ async def _publish_reaction_event(db: AsyncSession, note: Note) -> None:
             }
         )
 
-        if note.visibility in ("public", "unlisted"):
+        if note.visibility == "public":
             await valkey_client.publish("timeline:public", event)
 
         await valkey_client.publish(f"timeline:home:{note.actor_id}", event)

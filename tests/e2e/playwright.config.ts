@@ -1,8 +1,10 @@
 import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
+  globalSetup: "./global-setup.ts",
   testDir: "./tests",
   timeout: 30_000,
+  workers: 1,
   retries: process.env.CI ? 0 : 1,
   expect: {
     toHaveScreenshot: { maxDiffPixelRatio: 0.01 },

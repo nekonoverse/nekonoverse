@@ -282,7 +282,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         from app.valkey_client import valkey as valkey_client
 
         event = json.dumps({"event": "update", "payload": {"id": str(note.id)}})
-        if visibility in ("public", "unlisted"):
+        if visibility == "public":
             await valkey_client.publish("timeline:public", event)
         # Deliver to followers of this remote actor (local users who follow them)
         follower_ids = await get_follower_ids(db, actor.id)

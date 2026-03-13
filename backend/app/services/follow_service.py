@@ -39,12 +39,15 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
     follow_id = uuid.uuid4()
     ap_id = f"{settings.server_url}/activities/{follow_id}"
 
+    # ロックアカウントへのローカルフォローはペンディング状態にする
+    auto_accept = target_actor.is_local and not target_actor.manually_approves_followers
+
     follow = Follow(
         id=follow_id,
         ap_id=ap_id,
         follower_id=actor.id,
         following_id=target_actor.id,
-        accepted=target_actor.is_local,  # Local follows are auto-accepted
+        accepted=auto_accept,
     )
     db.add(follow)
     await db.commit()

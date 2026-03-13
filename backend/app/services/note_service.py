@@ -254,7 +254,7 @@ async def create_note(
         from app.valkey_client import valkey as valkey_client
 
         event = json.dumps({"event": "update", "payload": {"id": str(note_id)}})
-        if visibility in ("public", "unlisted"):
+        if visibility == "public":
             await valkey_client.publish("timeline:public", event)
         follower_ids = await get_follower_ids(db, actor.id)
         for fid in follower_ids:

@@ -9,6 +9,7 @@ COPY pyproject.toml .
 
 # --- Development stage ---
 FROM base AS dev
+RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 RUN uv pip install --system -e ".[dev]" 2>/dev/null || true
 COPY . .
 EXPOSE 8000

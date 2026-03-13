@@ -35,6 +35,7 @@ export default function Profile() {
   const [blockMuteLoading, setBlockMuteLoading] = createSignal(false);
   const [moreOpen, setMoreOpen] = createSignal(false);
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
+  const [showUnlockModal, setShowUnlockModal] = createSignal(false);
 
   // Inline edit state
   const [editing, setEditing] = createSignal(false);
@@ -95,6 +96,7 @@ export default function Profile() {
       setEditing(false);
       setMoreOpen(false);
       setShowUnfollowModal(false);
+      setShowUnlockModal(false);
     });
     loadProfile();
   }));
@@ -110,13 +112,26 @@ export default function Profile() {
     return el.textContent?.trim() || "";
   };
 
+  const decodeHtmlEntities = (text: string): string => {
+    const el = document.createElement("div");
+    el.innerHTML = text;
+    return el.textContent || "";
+  };
+
   const startEditing = () => {
     const acc = account()!;
     const user = currentUser();
     setEditName(acc.display_name || "");
     setEditBio(htmlToPlainText(user?.summary || ""));
     setEditBirthday(user?.birthday || "");
-    setEditFields(user?.fields?.length ? [...user.fields] : []);
+    setEditFields(
+      user?.fields?.length
+        ? user.fields.map((f) => ({
+            name: decodeHtmlEntities(f.name),
+            value: decodeHtmlEntities(f.value),
+          }))
+        : [],
+    );
     setEditIsCat(user?.is_cat || false);
     setEditIsBot(user?.is_bot || false);
     setEditLocked(user?.locked || false);
@@ -149,7 +164,7 @@ export default function Profile() {
     setEditFields(editFields().map((f, i) => (i === index ? { ...f, [key]: val } : f)));
   };
 
-  const handleSave = async () => {
+  const doSave = async () => {
     setSaving(true);
     try {
       await updateProfile({
@@ -168,6 +183,15 @@ export default function Profile() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const handleSave = async () => {
+    const acc = account();
+    if (acc && acc.locked && !editLocked()) {
+      setShowUnlockModal(true);
+      return;
+    }
+    await doSave();
   };
 
   const handleAvatarChange = async (e: Event) => {
@@ -650,6 +674,36 @@ export default function Profile() {
               >
                 {t("profile.unfollow")}
               </button>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Unlock confirmation modal */}
+      <Show when={showUnlockModal()}>
+        <div class="modal-overlay" onClick={() => setShowUnlockModal(false)}>
+          <div class="modal-content" style="max-width: 400px" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3>{t("followRequest.confirmUnlockTitle")}</h3>
+              <button class="modal-close" onClick={() => setShowUnlockModal(false)}>✕</button>
+            </div>
+            <div style="padding: 16px">
+              <p style="margin: 0 0 16px 0">{t("followRequest.confirmUnlock")}</p>
+              <div style="display: flex; gap: 8px; justify-content: flex-end">
+                <button class="btn btn-small" onClick={() => setShowUnlockModal(false)}>
+                  {t("common.cancel")}
+                </button>
+                <button
+                  class="btn btn-small btn-danger"
+                  disabled={saving()}
+                  onClick={async () => {
+                    setShowUnlockModal(false);
+                    await doSave();
+                  }}
+                >
+                  {t("common.confirm")}
+                </button>
+              </div>
             </div>
           </div>
         </div>
