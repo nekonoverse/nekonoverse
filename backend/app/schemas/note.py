@@ -123,6 +123,7 @@ class NoteResponse(BaseModel):
     media_attachments: list[NoteMediaAttachment] = []
     quote: "NoteResponse | None" = None
     poll: PollResponse | None = None
+    reblogged: bool = False
     pinned: bool = False
     emojis: list[CustomEmojiInfo] = []
     tags: list[TagInfo] = []

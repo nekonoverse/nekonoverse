@@ -92,6 +92,7 @@ async def note_to_response(
     hashtags_cache: dict | None = None,
     actor_id=None,
     reactions_map: dict | None = None,
+    reblogged_set: set | None = None,
 ) -> NoteResponse:
     """Convert a Note model to a NoteResponse.
 
@@ -135,6 +136,7 @@ async def note_to_response(
             hashtags_cache=hashtags_cache,
             actor_id=actor_id,
             reactions_map=reactions_map,
+            reblogged_set=reblogged_set,
         )
 
     # Build media attachments
@@ -302,6 +304,7 @@ async def note_to_response(
             emojis=actor_emojis,
         ),
         reactions=[ReactionSummary(**r) for r in (reactions or [])],
+        reblogged=bool(reblogged_set and note.id in reblogged_set),
         reblog=reblog,
         media_attachments=media_attachments,
         quote=quote,
@@ -424,6 +427,21 @@ async def notes_to_responses(
         inner_reactions = await get_reaction_summaries(db, inner_ids, actor_id)
         reactions_map.update(inner_reactions)
 
+    # Batch-check which notes the current user has reblogged
+    reblogged_set: set = set()
+    if actor_id:
+        from sqlalchemy import select
+        from app.models.note import Note as NoteModel
+
+        reblog_result = await db.execute(
+            select(NoteModel.renote_of_id).where(
+                NoteModel.actor_id == actor_id,
+                NoteModel.renote_of_id.in_(unique_ids),
+                NoteModel.deleted_at.is_(None),
+            )
+        )
+        reblogged_set = {row[0] for row in reblog_result.all()}
+
     result = []
     for n in notes:
         reactions = reactions_map.get(n.id, [])
@@ -435,6 +453,7 @@ async def notes_to_responses(
             hashtags_cache=hashtags_cache,
             actor_id=actor_id,
             reactions_map=reactions_map,
+            reblogged_set=reblogged_set,
         )
         result.append(resp)
     return result
