@@ -440,6 +440,7 @@ async def notes_to_responses(
     reblogged_set: set = set()
     if actor_id:
         from sqlalchemy import select
+
         from app.models.note import Note as NoteModel
 
         reblog_result = await db.execute(
@@ -776,6 +777,9 @@ async def favourite_status(
     if not note:
         raise HTTPException(status_code=404, detail="Note not found")
 
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
     try:
         await add_reaction(db, user, note, "\u2b50")
     except ValueError:
@@ -806,6 +810,9 @@ async def unfavourite_status(
 
     note = await get_note_by_id(db, note_id)
     if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
         raise HTTPException(status_code=404, detail="Note not found")
 
     try:
@@ -841,6 +848,7 @@ async def favourited_by(
         .options(selectinload(Reaction.actor))
         .where(Reaction.note_id == note.id, Reaction.emoji == "\u2b50")
         .order_by(Reaction.created_at.desc())
+        .limit(80)
     )
     reactions = result.scalars().all()
 

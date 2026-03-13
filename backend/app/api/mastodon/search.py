@@ -13,6 +13,11 @@ from app.services.note_service import _note_load_options, get_reaction_summaries
 router = APIRouter(prefix="/api/v2", tags=["search"])
 
 
+def _escape_like(value: str) -> str:
+    """Escape special characters for LIKE/ILIKE patterns."""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
 @router.get("/search")
 async def search(
     q: str = Query(min_length=1),
@@ -73,7 +78,7 @@ async def _search_accounts(
             accounts.append(await _actor_to_account(actor, db=db))
     else:
         # ユーザー名またはdisplay_nameでILIKE検索
-        pattern = f"%{query_str}%"
+        pattern = f"%{_escape_like(query_str)}%"
         result = await db.execute(
             select(Actor)
             .where(
@@ -96,7 +101,7 @@ async def _search_statuses(
     """Search public statuses by content."""
     from app.api.mastodon.statuses import notes_to_responses
 
-    pattern = f"%{q}%"
+    pattern = f"%{_escape_like(q)}%"
     query = (
         select(Note)
         .join(Actor, Note.actor_id == Actor.id)
@@ -123,7 +128,7 @@ async def _search_statuses(
 
 async def _search_hashtags(db: AsyncSession, q: str, limit: int) -> list[dict]:
     """Search hashtags by name."""
-    pattern = f"%{q.lower()}%"
+    pattern = f"%{_escape_like(q.lower())}%"
     result = await db.execute(
         select(Hashtag)
         .where(Hashtag.name.ilike(pattern))

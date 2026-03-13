@@ -552,6 +552,13 @@ async def get_relationship(
         "blocking": blocking,
         "muting": muting,
         "requested": requested,
+        "showing_reblogs": True,
+        "notifying": False,
+        "domain_blocking": False,
+        "endorsed": False,
+        "muting_notifications": False,
+        "note": "",
+        "languages": None,
     }
 
 
@@ -613,6 +620,13 @@ async def get_relationships_batch(
             "blocking": aid in blocked_ids,
             "muting": aid in muted_ids,
             "requested": requested,
+            "showing_reblogs": True,
+            "notifying": False,
+            "domain_blocking": False,
+            "endorsed": False,
+            "muting_notifications": False,
+            "note": "",
+            "languages": None,
         })
 
     return results
