@@ -1090,13 +1090,21 @@ a:hover {
 
 .note-footer {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   margin-top: 8px;
 }
 
 .note-time {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   font-size: 0.75em;
   color: var(--text-secondary);
+}
+
+.note-time-icon {
+  flex-shrink: 0;
 }
 
 .note-content {
@@ -1194,6 +1202,8 @@ a:hover {
 
 /* Edited label */
 .note-edited-label {
+  display: inline-flex;
+  align-items: center;
   font-size: 0.75em;
   color: var(--text-secondary);
   font-style: italic;
