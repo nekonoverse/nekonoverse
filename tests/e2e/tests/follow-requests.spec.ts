@@ -1,0 +1,218 @@
+import { test, expect } from "@playwright/test";
+import { loginAsAdmin } from "./helpers";
+
+/**
+ * Register a user via browser fetch (avoids page.request baseURL issues).
+ */
+async function registerUserViaFetch(
+  page: import("@playwright/test").Page,
+  username: string,
+  password: string,
+) {
+  const result = await page.evaluate(
+    async ({ username, password }) => {
+      const resp = await fetch("/api/v1/accounts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username,
+          email: `${username}@test.example.com`,
+          password,
+        }),
+      });
+      return { status: resp.status, body: await resp.text() };
+    },
+    { username, password },
+  );
+  expect(result.status, `Registration failed: ${result.body}`).toBe(201);
+}
+
+/**
+ * Login as a specific user via API.
+ */
+async function loginAs(page: import("@playwright/test").Page, username: string, password: string) {
+  const resp = await page.request.post("/api/v1/auth/login", {
+    data: { username, password },
+  });
+  expect(resp.status()).toBe(200);
+}
+
+/**
+ * Set locked mode via update_credentials API.
+ */
+async function setLocked(page: import("@playwright/test").Page, locked: boolean) {
+  const resp = await page.request.patch("/api/v1/accounts/update_credentials", {
+    multipart: { locked: locked.toString() },
+  });
+  expect(resp.status()).toBe(200);
+}
+
+/**
+ * Get the current user's actor_id.
+ */
+async function getMyActorId(page: import("@playwright/test").Page): Promise<string> {
+  const resp = await page.request.get("/api/v1/accounts/verify_credentials");
+  expect(resp.status()).toBe(200);
+  const body = await resp.json();
+  return body.id;
+}
+
+/**
+ * Send a follow request via API.
+ */
+async function followUser(page: import("@playwright/test").Page, targetActorId: string) {
+  const resp = await page.request.post(`/api/v1/accounts/${targetActorId}/follow`);
+  expect(resp.status()).toBe(200);
+}
+
+/**
+ * Setup: login as admin, register a follower, enable locked mode.
+ */
+async function setupFollower(page: import("@playwright/test").Page): Promise<{ username: string; password: string }> {
+  const username = `follower_${Date.now()}`;
+  const password = "testpassword123";
+  await loginAsAdmin(page);
+  await registerUserViaFetch(page, username, password);
+  await setLocked(page, true);
+  return { username, password };
+}
+
+test.describe("Follow Requests", () => {
+  test.afterEach(async ({ page }) => {
+    // Restore admin to unlocked mode via API (no UI navigation)
+    await loginAs(page, "admin", "testpassword123");
+    await setLocked(page, false);
+  });
+
+  test("follow request appears and can be accepted", async ({ page }) => {
+    const follower = await setupFollower(page);
+    const adminId = await getMyActorId(page);
+
+    // Login as follower, send follow request to admin
+    await loginAs(page, follower.username, follower.password);
+    await followUser(page, adminId);
+
+    // Login as admin again, check follow request page
+    await loginAsAdmin(page);
+    await page.goto("/follow-requests");
+    await expect(page.locator(".follow-request-item")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".follow-request-item")).toContainText(follower.username);
+
+    // Accept the follow request
+    const acceptResponsePromise = page.waitForResponse(
+      (resp) => resp.url().includes("/authorize") && resp.status() === 200,
+      { timeout: 10_000 },
+    );
+    await page.locator(".follow-request-accept").first().click();
+    await acceptResponsePromise;
+
+    // Verify the request disappeared
+    await expect(page.locator(".follow-request-item")).toHaveCount(0, { timeout: 5_000 });
+  });
+
+  test("follow request can be rejected", async ({ page }) => {
+    const follower = await setupFollower(page);
+    const adminId = await getMyActorId(page);
+
+    // Login as follower, send follow request
+    await loginAs(page, follower.username, follower.password);
+    await followUser(page, adminId);
+
+    // Login as admin, check follow request page
+    await loginAsAdmin(page);
+    await page.goto("/follow-requests");
+    await expect(page.locator(".follow-request-item")).toBeVisible({ timeout: 10_000 });
+
+    // Reject the follow request
+    const rejectResponsePromise = page.waitForResponse(
+      (resp) => resp.url().includes("/reject") && resp.status() === 200,
+      { timeout: 10_000 },
+    );
+    await page.locator(".follow-request-reject").first().click();
+    await rejectResponsePromise;
+
+    // Verify the request disappeared
+    await expect(page.locator(".follow-request-item")).toHaveCount(0, { timeout: 5_000 });
+  });
+
+  test("empty state shown when no requests", async ({ page }) => {
+    await loginAsAdmin(page);
+    await page.goto("/follow-requests");
+    await expect(page.locator(".empty")).toBeVisible({ timeout: 10_000 });
+  });
+
+  test("confirmation modal appears when disabling locked mode", async ({ page }) => {
+    await loginAsAdmin(page);
+    await setLocked(page, true);
+
+    // Go to profile and enter edit mode
+    await page.goto("/@admin");
+    await expect(page.locator(".profile-info")).toBeVisible({ timeout: 10_000 });
+    await page.click('button:has-text("Edit Profile")');
+
+    // Find the locked checkbox (3rd checkbox in the group)
+    const lockedCheckbox = page.locator(".profile-edit-checkboxes input[type='checkbox']").nth(2);
+    await expect(lockedCheckbox).toBeVisible({ timeout: 5_000 });
+    await expect(lockedCheckbox).toBeChecked();
+
+    // Uncheck locked
+    await lockedCheckbox.uncheck();
+
+    // Click Save - should show modal instead of saving
+    await page.click('button:has-text("Save")');
+
+    // Modal should appear
+    await expect(page.locator(".modal-overlay")).toBeVisible({ timeout: 5_000 });
+
+    // Cancel - should close modal without saving
+    await page.locator(".modal-content .btn:not(.btn-danger)").click();
+    await expect(page.locator(".modal-overlay")).toHaveCount(0, { timeout: 3_000 });
+
+    // Still in edit mode
+    await expect(lockedCheckbox).toBeVisible();
+  });
+
+  test("confirming unlock modal saves and auto-approves pending requests", async ({ page }) => {
+    const follower = await setupFollower(page);
+    const adminId = await getMyActorId(page);
+
+    // Login as follower, send follow request
+    await loginAs(page, follower.username, follower.password);
+    await followUser(page, adminId);
+
+    // Login as admin, verify request exists
+    await loginAsAdmin(page);
+    const reqResp = await page.request.get("/api/v1/follow_requests");
+    const requests = await reqResp.json();
+    expect(requests.length).toBeGreaterThan(0);
+
+    // Go to profile, enter edit mode, uncheck locked, save
+    await page.goto("/@admin");
+    await expect(page.locator(".profile-info")).toBeVisible({ timeout: 10_000 });
+    await page.click('button:has-text("Edit Profile")');
+
+    const lockedCheckbox = page.locator(".profile-edit-checkboxes input[type='checkbox']").nth(2);
+    await expect(lockedCheckbox).toBeChecked({ timeout: 5_000 });
+    await lockedCheckbox.uncheck();
+
+    await page.click('button:has-text("Save")');
+
+    // Modal should appear - confirm this time
+    await expect(page.locator(".modal-overlay")).toBeVisible({ timeout: 5_000 });
+
+    const saveResponsePromise = page.waitForResponse(
+      (resp) => resp.url().includes("/update_credentials") && resp.status() === 200,
+      { timeout: 10_000 },
+    );
+    await page.locator(".modal-content button.btn-danger").click();
+    await saveResponsePromise;
+
+    // Should exit edit mode
+    await expect(page.locator(".profile-edit-checkboxes")).toHaveCount(0, { timeout: 5_000 });
+
+    // Verify follow requests are now empty (auto-approved)
+    const reqResp2 = await page.request.get("/api/v1/follow_requests");
+    const requests2 = await reqResp2.json();
+    expect(requests2.length).toBe(0);
+  });
+});
