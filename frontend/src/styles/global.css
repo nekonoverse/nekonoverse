@@ -721,6 +721,7 @@ a:hover {
     min-width: unset;
     max-width: unset;
     width: 100%;
+    min-height: 40vh;
     max-height: 60vh;
     border-radius: var(--radius) var(--radius) 0 0;
     z-index: 200;
