@@ -5,6 +5,7 @@ import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
 import EmojiPicker from "../reactions/EmojiPicker";
 import { sanitizeHtml } from "../../utils/sanitize";
+import { stripExifFromFile } from "../../utils/stripExif";
 import type { DriveFile } from "../../api/drive";
 import {
   getInitialVisibility,
@@ -113,7 +114,9 @@ export default function NoteComposer(props: Props) {
 
     for (const file of toUpload) {
       try {
-        const media = await uploadMedia(file);
+        // Strip EXIF metadata (GPS, camera info, etc.) from images before upload
+        const processed = await stripExifFromFile(file);
+        const media = await uploadMedia(processed);
         setAttachments((prev) => [...prev, media]);
       } catch (err) {
         setError(err instanceof Error ? err.message : t("composer.uploadFailed"));
