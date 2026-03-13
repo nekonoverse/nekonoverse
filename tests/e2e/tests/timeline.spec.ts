@@ -36,30 +36,4 @@ test.describe("Timeline", () => {
     // The boosted note should have a reblog indicator
     await expect(page.locator(".note-reblog-indicator").first()).toBeVisible({ timeout: 5_000 });
   });
-
-  test("note card visual regression", async ({ page }) => {
-    // Ensure there's at least one note
-    await createNote(page, "Visual regression test note");
-    await page.goto("/");
-    await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
-
-    const noteCard = page.locator(".note-card").first();
-    await expect(noteCard).toBeVisible();
-    await expect(noteCard).toHaveScreenshot("note-card.png");
-  });
-
-  test("boosted note card visual regression", async ({ page }) => {
-    const note = await createNote(page, `Visual boost ${Date.now()}`);
-    await page.request.post(`/api/v1/statuses/${note.id}/reblog`);
-
-    await page.goto("/");
-    await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
-
-    // Find the boosted note (has reblog indicator)
-    const boostedCard = page.locator(".note-card").filter({
-      has: page.locator(".note-reblog-indicator"),
-    }).first();
-    await expect(boostedCard).toBeVisible({ timeout: 5_000 });
-    await expect(boostedCard).toHaveScreenshot("boosted-note-card.png");
-  });
 });

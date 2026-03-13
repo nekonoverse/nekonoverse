@@ -1,41 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { loginAsAdmin } from "./helpers";
-
-/**
- * Register a user via browser fetch (avoids page.request baseURL issues).
- */
-async function registerUserViaFetch(
-  page: import("@playwright/test").Page,
-  username: string,
-  password: string,
-) {
-  const result = await page.evaluate(
-    async ({ username, password }) => {
-      const resp = await fetch("/api/v1/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          username,
-          email: `${username}@test.example.com`,
-          password,
-        }),
-      });
-      return { status: resp.status, body: await resp.text() };
-    },
-    { username, password },
-  );
-  expect(result.status, `Registration failed: ${result.body}`).toBe(201);
-}
-
-/**
- * Login as a specific user via API.
- */
-async function loginAs(page: import("@playwright/test").Page, username: string, password: string) {
-  const resp = await page.request.post("/api/v1/auth/login", {
-    data: { username, password },
-  });
-  expect(resp.status()).toBe(200);
-}
+import { loginAsAdmin, loginAsUser, registerUser, getActorId } from "./helpers";
 
 /**
  * Set locked mode via update_credentials API.
@@ -45,16 +9,6 @@ async function setLocked(page: import("@playwright/test").Page, locked: boolean)
     multipart: { locked: locked.toString() },
   });
   expect(resp.status()).toBe(200);
-}
-
-/**
- * Get the current user's actor_id.
- */
-async function getMyActorId(page: import("@playwright/test").Page): Promise<string> {
-  const resp = await page.request.get("/api/v1/accounts/verify_credentials");
-  expect(resp.status()).toBe(200);
-  const body = await resp.json();
-  return body.id;
 }
 
 /**
@@ -72,7 +26,7 @@ async function setupFollower(page: import("@playwright/test").Page): Promise<{ u
   const username = `follower_${Date.now()}`;
   const password = "testpassword123";
   await loginAsAdmin(page);
-  await registerUserViaFetch(page, username, password);
+  await registerUser(page, username, password);
   await setLocked(page, true);
   return { username, password };
 }
@@ -80,16 +34,16 @@ async function setupFollower(page: import("@playwright/test").Page): Promise<{ u
 test.describe("Follow Requests", () => {
   test.afterEach(async ({ page }) => {
     // Restore admin to unlocked mode via API (no UI navigation)
-    await loginAs(page, "admin", "testpassword123");
+    await loginAsAdmin(page);
     await setLocked(page, false);
   });
 
   test("follow request appears and can be accepted", async ({ page }) => {
     const follower = await setupFollower(page);
-    const adminId = await getMyActorId(page);
+    const adminId = await getActorId(page, "admin");
 
     // Login as follower, send follow request to admin
-    await loginAs(page, follower.username, follower.password);
+    await loginAsUser(page, follower.username, follower.password);
     await followUser(page, adminId);
 
     // Login as admin again, check follow request page
@@ -112,10 +66,10 @@ test.describe("Follow Requests", () => {
 
   test("follow request can be rejected", async ({ page }) => {
     const follower = await setupFollower(page);
-    const adminId = await getMyActorId(page);
+    const adminId = await getActorId(page, "admin");
 
     // Login as follower, send follow request
-    await loginAs(page, follower.username, follower.password);
+    await loginAsUser(page, follower.username, follower.password);
     await followUser(page, adminId);
 
     // Login as admin, check follow request page
@@ -174,10 +128,10 @@ test.describe("Follow Requests", () => {
 
   test("confirming unlock modal saves and auto-approves pending requests", async ({ page }) => {
     const follower = await setupFollower(page);
-    const adminId = await getMyActorId(page);
+    const adminId = await getActorId(page, "admin");
 
     // Login as follower, send follow request
-    await loginAs(page, follower.username, follower.password);
+    await loginAsUser(page, follower.username, follower.password);
     await followUser(page, adminId);
 
     // Login as admin, verify request exists
