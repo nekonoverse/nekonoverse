@@ -54,6 +54,7 @@ export default function NoteComposer(props: Props) {
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
   const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = createSignal(false);
+  const [kbOffset, setKbOffset] = createSignal(0);
   const [pollOpen, setPollOpen] = createSignal(false);
   const [pollOptions, setPollOptions] = createSignal<string[]>(["", ""]);
   const [pollMultiple, setPollMultiple] = createSignal(false);
@@ -61,6 +62,22 @@ export default function NoteComposer(props: Props) {
 
   let fileInput!: HTMLInputElement;
   let textareaRef!: HTMLTextAreaElement;
+
+  // Track keyboard height via visualViewport for mobile emoji picker positioning
+  createEffect(() => {
+    if (emojiPickerOpen()) {
+      const vv = window.visualViewport;
+      if (!vv) return;
+      const update = () => {
+        setKbOffset(Math.max(0, window.innerHeight - vv.height));
+      };
+      update();
+      vv.addEventListener("resize", update);
+      onCleanup(() => vv.removeEventListener("resize", update));
+    } else {
+      setKbOffset(0);
+    }
+  });
 
   // Auto-set visibility to match parent note when replying
   createEffect(() => {
@@ -413,7 +430,7 @@ export default function NoteComposer(props: Props) {
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
           </button>
-          <div class="composer-emoji-wrap">
+          <div class="composer-emoji-wrap" style={{ "--kb-offset": `${kbOffset()}px` }}>
             <button
               type="button"
               class="composer-attach-btn"
