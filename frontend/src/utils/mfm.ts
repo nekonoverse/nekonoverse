@@ -6,6 +6,11 @@ import { emojiToUrl } from "./twemoji";
 const HEX_COLOR_RE = /^[0-9a-fA-F]{3,6}$/;
 const SAFE_FONTS = new Set(["serif", "monospace", "cursive", "fantasy", "math"]);
 const SAFE_URL_PROTOCOLS = new Set(["http:", "https:"]);
+const SAFE_BORDER_STYLES = new Set([
+  "solid", "dashed", "dotted", "double", "groove", "ridge", "inset", "outset", "none",
+]);
+const NUMERIC_RE = /^\d+(\.\d+)?$/;
+const CSS_DURATION_RE = /^\d+(\.\d+)?(s|ms)$/;
 
 /**
  * Check whether a URL uses a safe protocol (http/https only).
@@ -294,8 +299,8 @@ function renderFn(
   const el = document.createElement("span");
   el.classList.add("mfm-fn");
 
-  // Speed custom property
-  if (typeof args.speed === "string") {
+  // Speed custom property (validate as CSS duration)
+  if (typeof args.speed === "string" && CSS_DURATION_RE.test(args.speed)) {
     el.style.setProperty("--mfm-speed", args.speed);
   }
 
@@ -393,9 +398,12 @@ function renderFn(
     }
 
     case "border": {
-      const style = typeof args.style === "string" ? args.style : "solid";
-      const width = typeof args.width === "string" ? args.width : "1";
-      const radius = typeof args.radius === "string" ? args.radius : "0";
+      const rawStyle = typeof args.style === "string" ? args.style : "solid";
+      const style = SAFE_BORDER_STYLES.has(rawStyle) ? rawStyle : "solid";
+      const rawWidth = typeof args.width === "string" ? args.width : "1";
+      const width = NUMERIC_RE.test(rawWidth) ? rawWidth : "1";
+      const rawRadius = typeof args.radius === "string" ? args.radius : "0";
+      const radius = NUMERIC_RE.test(rawRadius) ? rawRadius : "0";
       const color = typeof args.color === "string" && HEX_COLOR_RE.test(args.color)
         ? `#${args.color}`
         : "var(--border)";

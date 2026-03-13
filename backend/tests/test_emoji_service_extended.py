@@ -265,6 +265,7 @@ async def test_import_success(db):
     mock_http_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
+        patch("app.utils.network.is_safe_url", return_value=True),
         patch("httpx.AsyncClient", return_value=mock_http_client),
         patch(
             "app.services.drive_service.upload_drive_file",
@@ -352,6 +353,9 @@ async def test_import_unsupported_mime_type_raises(db):
     mock_http_client.__aenter__ = AsyncMock(return_value=mock_http_client)
     mock_http_client.__aexit__ = AsyncMock(return_value=False)
 
-    with patch("httpx.AsyncClient", return_value=mock_http_client):
+    with (
+        patch("app.utils.network.is_safe_url", return_value=True),
+        patch("httpx.AsyncClient", return_value=mock_http_client),
+    ):
         with pytest.raises(ValueError, match="Unsupported image type"):
             await import_remote_emoji_to_local(db, remote.id)

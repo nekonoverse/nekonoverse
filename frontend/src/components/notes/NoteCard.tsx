@@ -805,7 +805,7 @@ export default function NoteCard(props: Props) {
           <Show when={noteEditedAt()}>
             <span class="note-edited-label">{t("note.edited")}</span>
           </Show>
-          <Show when={note().actor.domain && note().ap_id}>
+          <Show when={note().actor.domain && note().ap_id && /^https?:\/\//.test(note().ap_id!)}>
             <a
               class="remote-view-link"
               href={note().ap_id}

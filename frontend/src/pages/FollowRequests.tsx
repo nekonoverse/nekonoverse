@@ -43,7 +43,7 @@ export default function FollowRequests() {
                 <For each={requests()}>
                   {(account) => (
                     <div class="follow-request-item">
-                      <a href={account.url?.startsWith("http") ? `/@${account.acct}` : account.url} class="follow-request-user">
+                      <a href={`/@${account.acct}`} class="follow-request-user">
                         <img
                           src={account.avatar || defaultAvatar()}
                           alt={account.username}

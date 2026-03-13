@@ -477,7 +477,7 @@ export default function Profile() {
                   <Show when={!isOwn() && currentUser() && isFollowedBy()}>
                     <span class="follows-you-badge">{t("profile.followsYou")}</span>
                   </Show>
-                  <Show when={acc.acct.includes("@") && acc.url}>
+                  <Show when={acc.acct.includes("@") && acc.url && /^https?:\/\//.test(acc.url)}>
                     <a
                       class="remote-view-link"
                       href={acc.url}

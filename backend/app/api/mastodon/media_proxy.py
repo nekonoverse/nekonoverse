@@ -1,5 +1,3 @@
-import ipaddress
-import socket
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -7,24 +5,13 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import StreamingResponse
 
 from app.utils.media_proxy import verify_proxy_hmac
+from app.utils.network import is_private_host as _is_private_host
 
 router = APIRouter(prefix="/api/v1/media", tags=["media_proxy"])
 
 _MAX_SIZE = 20 * 1024 * 1024  # 20 MB
 _ALLOWED_CONTENT_PREFIXES = ("image/", "video/", "audio/")
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
-
-
-def _is_private_host(hostname: str) -> bool:
-    """Block requests to private/loopback IP ranges (SSRF protection)."""
-    try:
-        for info in socket.getaddrinfo(hostname, None):
-            addr = ipaddress.ip_address(info[4][0])
-            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
-                return True
-    except (socket.gaierror, ValueError):
-        return True  # can't resolve → block
-    return False
 
 
 @router.get("/proxy")
