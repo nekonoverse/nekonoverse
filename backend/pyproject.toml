@@ -17,6 +17,7 @@ dependencies = [
     "valkey>=6.0.0",
     "bleach>=6.2.0",
     "python-multipart>=0.0.18",
+    "Pillow>=10.0.0",
     "email-validator>=2.0.0",
     "webauthn>=2.0.0",
     "pyotp>=2.9.0",

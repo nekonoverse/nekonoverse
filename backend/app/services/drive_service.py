@@ -1,6 +1,7 @@
 """Drive file management service."""
 
 import base64
+import io
 import logging
 import math
 import uuid
@@ -27,6 +28,50 @@ ALLOWED_IMAGE_TYPES = {
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
+# MIME types where EXIF stripping is safe (skip GIF/WebP/AVIF which may be animated)
+_EXIF_STRIP_TYPES = {"image/jpeg", "image/png"}
+
+# Mapping from MIME type to Pillow save format
+_MIME_TO_PILLOW_FORMAT = {
+    "image/jpeg": "JPEG",
+    "image/png": "PNG",
+}
+
+
+def strip_exif(data: bytes, mime_type: str) -> bytes:
+    """Remove EXIF metadata from image data, preserving orientation.
+
+    Only processes JPEG and PNG images. GIF, WebP, and AVIF are returned
+    unchanged because they may contain animation data.
+
+    The EXIF Orientation tag is applied via ``ImageOps.exif_transpose()``
+    before stripping so the image still renders with the correct rotation.
+    Pillow's ``save()`` does not include EXIF by default.
+    """
+    if mime_type not in _EXIF_STRIP_TYPES:
+        return data
+
+    try:
+        from PIL import Image, ImageOps
+
+        img = Image.open(io.BytesIO(data))
+
+        # Apply EXIF orientation so the image looks correct after stripping
+        img = ImageOps.exif_transpose(img)
+
+        # Save without EXIF (Pillow omits EXIF by default)
+        buf = io.BytesIO()
+        save_format = _MIME_TO_PILLOW_FORMAT[mime_type]
+        save_kwargs: dict = {"format": save_format}
+        if save_format == "PNG":
+            # Preserve PNG optimization level
+            save_kwargs["optimize"] = False
+        img.save(buf, **save_kwargs)
+        return buf.getvalue()
+    except Exception:
+        logger.warning("Failed to strip EXIF from %s image, using original", mime_type)
+        return data
+
 
 async def upload_drive_file(
     db: AsyncSession,
@@ -42,6 +87,9 @@ async def upload_drive_file(
 
     if mime_type not in ALLOWED_IMAGE_TYPES:
         raise ValueError(f"Unsupported file type: {mime_type}")
+
+    # Strip EXIF metadata before storing (defense-in-depth for privacy)
+    data = strip_exif(data, mime_type)
 
     file_id = uuid.uuid4()
     ext = _extension_for_mime(mime_type)
