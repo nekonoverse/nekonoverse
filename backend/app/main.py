@@ -19,6 +19,7 @@ from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.mastodon.notifications import router as notifications_router
 from app.api.mastodon.polls import router as polls_router
 from app.api.mastodon.push import router as push_router
+from app.api.mastodon.search import router as search_router
 from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.streaming import router as streaming_router
 from app.api.mastodon.timelines import router as timelines_router
@@ -303,8 +304,8 @@ async def health():
 
 
 app.include_router(auth_router)
-app.include_router(accounts_router)
 app.include_router(relationships_router)
+app.include_router(accounts_router)
 app.include_router(notifications_router)
 app.include_router(push_router)
 app.include_router(bookmarks_router)
@@ -313,6 +314,7 @@ app.include_router(polls_router)
 app.include_router(statuses_router)
 app.include_router(timelines_router)
 app.include_router(streaming_router)
+app.include_router(search_router)
 app.include_router(oauth_router)
 app.include_router(passkey_router)
 app.include_router(media_proxy_router)
