@@ -721,11 +721,12 @@ a:hover {
     min-width: unset;
     max-width: unset;
     width: 100%;
-    max-height: calc(60vh - var(--kb-offset, 0px));
+    max-height: min(60vh, calc(100vh - var(--kb-offset, 0px) - 80px));
+    min-height: min(40vh, calc(100vh - var(--kb-offset, 0px) - 80px));
     border-radius: var(--radius) var(--radius) 0 0;
     z-index: 200;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
-    transition: bottom 0.2s ease, max-height 0.2s ease;
+    transition: bottom 0.15s ease, max-height 0.15s ease, min-height 0.15s ease;
   }
 
   .composer-emoji-backdrop {
