@@ -714,19 +714,17 @@ a:hover {
   .composer-emoji-wrap .emoji-picker {
     position: fixed;
     top: auto;
-    bottom: var(--kb-offset, 0px);
+    bottom: 0;
     left: 0;
     right: 0;
     margin-top: 0;
     min-width: unset;
     max-width: unset;
     width: 100%;
-    max-height: min(60vh, calc(100vh - var(--kb-offset, 0px) - 80px));
-    min-height: min(40vh, calc(100vh - var(--kb-offset, 0px) - 80px));
+    max-height: 60vh;
     border-radius: var(--radius) var(--radius) 0 0;
     z-index: 200;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
-    transition: bottom 0.15s ease, max-height 0.15s ease, min-height 0.15s ease;
   }
 
   .composer-emoji-backdrop {
