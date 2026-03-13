@@ -28,6 +28,8 @@ class Settings(BaseSettings):
 
     use_https: bool = True
 
+    valkey_max_connections: int = 1000
+
     def derive_key(self, purpose: str) -> str:
         """Derive a purpose-specific key from secret_key using HMAC."""
         import hashlib
