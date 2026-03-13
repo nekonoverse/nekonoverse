@@ -14,7 +14,8 @@ export async function loginAsAdmin(page: Page) {
 
   // Listen for the verify_credentials response that confirms login
   const credentialsPromise = page.waitForResponse(
-    (resp) => resp.url().includes("/verify_credentials") && resp.status() === 200,
+    (resp) =>
+      resp.url().includes("/verify_credentials") && resp.status() === 200,
     { timeout: 15_000 },
   );
 
@@ -29,16 +30,16 @@ export async function loginAsAdmin(page: Page) {
  * Tab text to URL section mapping for the admin card menu.
  */
 const adminSectionMap: Record<string, string> = {
-  "Overview": "",
+  Overview: "",
   "Server Settings": "settings",
-  "Users": "users",
+  Users: "users",
   "Domain Blocks": "domains",
-  "Federation": "federation",
-  "Reports": "reports",
+  Federation: "federation",
+  Reports: "reports",
   "Moderation Log": "log",
-  "Emoji": "emoji",
-  "Files": "files",
-  "Invitations": "invites",
+  Emoji: "emoji",
+  Files: "files",
+  Invitations: "invites",
 };
 
 /**
@@ -88,13 +89,84 @@ export async function registerUser(
   username: string,
   password: string,
 ) {
-  const resp = await page.request.post("/api/v1/auth/register", {
-    data: {
-      username,
-      email: `${username}@test.example.com`,
-      password,
-    },
-  });
-  expect(resp.status()).toBe(201);
-  return resp.json();
+  // レートリミット(429)対策: リトライ付き
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const resp = await page.request.post("/api/v1/accounts", {
+      data: {
+        username,
+        email: `${username}@test.example.com`,
+        password,
+      },
+    });
+    if (resp.status() === 429) {
+      await new Promise((r) => setTimeout(r, 1000 * (attempt + 1)));
+      continue;
+    }
+    expect(resp.status()).toBe(201);
+    return resp.json();
+  }
+  throw new Error(
+    `registerUser: rate limited after 5 attempts for ${username}`,
+  );
+}
+
+/**
+ * Log in as any user via the login form.
+ * Navigates to /login, fills the form, submits, and waits for
+ * verify_credentials to confirm the session is established.
+ */
+export async function loginAsUser(
+  page: Page,
+  username: string,
+  password: string,
+) {
+  await page.goto("/login");
+  await page.waitForSelector("#username", { timeout: 15_000 });
+  await page.fill("#username", username);
+  await page.fill("#password", password);
+
+  const credentialsPromise = page.waitForResponse(
+    (resp) =>
+      resp.url().includes("/verify_credentials") && resp.status() === 200,
+    { timeout: 15_000 },
+  );
+
+  await page.click('button[type="submit"]');
+  await credentialsPromise;
+  await page.waitForURL("/", { timeout: 10_000 });
+}
+
+/**
+ * Register a user and log in, returning the page ready for that user.
+ * Uses a separate browser context to avoid polluting the caller's session.
+ * Returns { page, context, user } for the newly created user.
+ */
+export async function registerAndLogin(
+  browser: import("@playwright/test").Browser,
+  username: string,
+  password: string,
+  baseURL: string,
+) {
+  const context = await browser.newContext({ baseURL });
+  const page = await context.newPage();
+
+  // registerUser を呼ぶとセッションクッキーが設定される
+  const user = await registerUser(page, username, password);
+  // ログインページを経由してSPAセッションを確立する
+  await loginAsUser(page, username, password);
+  return { page, context, user };
+}
+
+/**
+ * Look up an account by username and return the actor_id.
+ * verify_credentialsはuser.idを返すが、follow等のAPIはactor_idを要求するため
+ * accounts/lookupを使ってactor_idを取得する。
+ */
+export async function getActorId(page: Page, username: string) {
+  const resp = await page.request.get(
+    `/api/v1/accounts/lookup?acct=${username}`,
+  );
+  expect(resp.ok()).toBeTruthy();
+  const account = await resp.json();
+  return account.id as string;
 }
