@@ -13,6 +13,8 @@ class ServerSettingsResponse(BaseModel):
     invite_create_role: str = "admin"
     server_icon_url: str | None = None
     server_theme_color: str | None = None
+    push_enabled: bool = True
+    vapid_public_key: str | None = None
 
 
 class ServerSettingsUpdate(BaseModel):
@@ -25,6 +27,7 @@ class ServerSettingsUpdate(BaseModel):
     server_theme_color: str | None = Field(
         None, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$"
     )
+    push_enabled: bool | None = None
 
 
 class AdminUserResponse(BaseModel):

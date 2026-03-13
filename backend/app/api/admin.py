@@ -91,6 +91,13 @@ async def get_server_settings(
     if mode is None:
         reg_open = settings.get("registration_open", "true") == "true"
         mode = "open" if reg_open else "closed"
+    from app.services.push_service import get_vapid_public_key_base64url
+
+    try:
+        vapid_key = get_vapid_public_key_base64url()
+    except Exception:
+        vapid_key = None
+
     return ServerSettingsResponse(
         server_name=settings.get("server_name"),
         server_description=settings.get("server_description"),
@@ -100,6 +107,8 @@ async def get_server_settings(
         invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
         server_theme_color=settings.get("server_theme_color"),
+        push_enabled=settings.get("push_enabled", "true") == "true",
+        vapid_public_key=vapid_key,
     )
 
 
@@ -125,6 +134,8 @@ async def update_server_settings(
                 await _resolve_pending_users(db, user, value)
         elif key == "invite_create_role":
             await set_setting(db, key, value)
+        elif key == "push_enabled":
+            await set_setting(db, key, "true" if value else "false")
         else:
             await set_setting(db, key, value)
     await db.commit()
@@ -137,6 +148,13 @@ async def update_server_settings(
     if mode is None:
         reg_open = settings.get("registration_open", "true") == "true"
         mode = "open" if reg_open else "closed"
+    from app.services.push_service import get_vapid_public_key_base64url
+
+    try:
+        vapid_key = get_vapid_public_key_base64url()
+    except Exception:
+        vapid_key = None
+
     return ServerSettingsResponse(
         server_name=settings.get("server_name"),
         server_description=settings.get("server_description"),
@@ -146,7 +164,53 @@ async def update_server_settings(
         invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
         server_theme_color=settings.get("server_theme_color"),
+        push_enabled=settings.get("push_enabled", "true") == "true",
+        vapid_public_key=vapid_key,
     )
+
+
+# --- VAPID Key Management ---
+
+
+@router.post("/push/generate-vapid-key")
+async def generate_vapid_key(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a new VAPID key pair and store the private key in server settings."""
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from app.services.moderation_service import log_action
+    from app.services.server_settings_service import set_setting
+
+    # 新しいP-256鍵ペアを生成
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    private_bytes = private_key.private_numbers().private_value.to_bytes(32, "big")
+    private_key_b64 = base64.urlsafe_b64encode(private_bytes).rstrip(b"=").decode()
+
+    # 公開鍵を算出
+    pub_numbers = private_key.public_key().public_numbers()
+    x_bytes = pub_numbers.x.to_bytes(32, "big")
+    y_bytes = pub_numbers.y.to_bytes(32, "big")
+    raw_public = b"\x04" + x_bytes + y_bytes
+    public_key_b64 = base64.urlsafe_b64encode(raw_public).rstrip(b"=").decode()
+
+    # DB保存 + インメモリキャッシュ更新
+    await set_setting(db, "vapid_private_key", private_key_b64)
+    await db.commit()
+
+    from app.services.push_service import set_db_vapid_key
+
+    set_db_vapid_key(private_key_b64)
+
+    await log_action(db, user, "generate_vapid_key", "server", "push")
+    await db.commit()
+
+    return {
+        "vapid_public_key": public_key_b64,
+    }
 
 
 # --- Stats ---

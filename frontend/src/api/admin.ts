@@ -15,6 +15,8 @@ export interface ServerSettings {
   invite_create_role: string;
   server_icon_url: string | null;
   server_theme_color: string | null;
+  push_enabled: boolean;
+  vapid_public_key: string | null;
 }
 
 export interface AdminUser {
@@ -477,4 +479,11 @@ export interface SystemStats {
 
 export async function getSystemStats(): Promise<SystemStats> {
   return apiRequest<SystemStats>("/api/v1/admin/system/stats");
+}
+
+// Push / VAPID Key Management
+export async function generateVapidKey(): Promise<{ vapid_public_key: string }> {
+  return apiRequest<{ vapid_public_key: string }>("/api/v1/admin/push/generate-vapid-key", {
+    method: "POST",
+  });
 }
