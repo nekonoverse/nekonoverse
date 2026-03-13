@@ -15,14 +15,14 @@ async function setLocked(page: import("@playwright/test").Page, locked: boolean)
 
 test.describe("Follow Requests", () => {
   test.afterEach(async ({ page }) => {
-    // Restore admin to unlocked mode
-    await loginAsAdmin(page);
+    // page is still logged in as admin (follower used separate context)
     await setLocked(page, false);
   });
 
   test("follow request appears and can be accepted", async ({ browser, page }) => {
-    // Login as admin and enable locked mode
     await loginAsAdmin(page);
+    // Clear any leftover state: unlock (auto-approves pending), then re-lock
+    await setLocked(page, false);
     await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
@@ -50,6 +50,7 @@ test.describe("Follow Requests", () => {
 
   test("follow request can be rejected", async ({ browser, page }) => {
     await loginAsAdmin(page);
+    await setLocked(page, false);
     await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
@@ -111,6 +112,7 @@ test.describe("Follow Requests", () => {
 
   test("confirming unlock modal saves and auto-approves pending requests", async ({ browser, page }) => {
     await loginAsAdmin(page);
+    await setLocked(page, false);
     await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
