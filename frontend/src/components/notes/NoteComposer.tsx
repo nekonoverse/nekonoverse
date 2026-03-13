@@ -55,6 +55,7 @@ export default function NoteComposer(props: Props) {
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
   const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
   const [emojiPickerOpen, setEmojiPickerOpen] = createSignal(false);
+  const [dragging, setDragging] = createSignal(false);
   const [pollOpen, setPollOpen] = createSignal(false);
   const [pollOptions, setPollOptions] = createSignal<string[]>(["", ""]);
   const [pollMultiple, setPollMultiple] = createSignal(false);
@@ -247,7 +248,19 @@ export default function NoteComposer(props: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit} class="note-composer">
+    <form
+      onSubmit={handleSubmit}
+      class={`note-composer${dragging() ? " drag-over" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files);
+      }}
+    >
       {error() && <div class="error">{error()}</div>}
       <Show when={replyToActor()}>
         {(actor) => (

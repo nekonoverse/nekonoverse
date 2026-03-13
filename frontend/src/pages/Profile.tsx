@@ -5,6 +5,7 @@ import { updateAvatar, updateHeader, updateProfile } from "../api/settings";
 import type { Note } from "../api/statuses";
 import { getNote } from "../api/statuses";
 import NoteCard from "../components/notes/NoteCard";
+import ComposeModal from "../components/notes/ComposeModal";
 import { useI18n } from "../i18n";
 import { currentUser, fetchCurrentUser } from "../stores/auth";
 import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
@@ -36,6 +37,10 @@ export default function Profile() {
   const [moreOpen, setMoreOpen] = createSignal(false);
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
   const [showUnlockModal, setShowUnlockModal] = createSignal(false);
+
+  // Compose modal state
+  const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
+  const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
 
   // Inline edit state
   const [editing, setEditing] = createSignal(false);
@@ -617,6 +622,8 @@ export default function Profile() {
                           note={note}
                           onReactionUpdate={() => refreshNote(note.id)}
                           onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
+                          onReply={(n) => setReplyTarget(n)}
+                          onQuote={(n) => setQuoteTarget(n)}
                         />
                       )}
                     </For>
@@ -634,6 +641,8 @@ export default function Profile() {
                           note={note}
                           onReactionUpdate={() => refreshNote(note.id)}
                           onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
+                          onReply={(n) => setReplyTarget(n)}
+                          onQuote={(n) => setQuoteTarget(n)}
                         />
                       )}
                     </For>
@@ -678,6 +687,14 @@ export default function Profile() {
           </div>
         </div>
       </Show>
+
+      {/* Compose modal (reply / quote) */}
+      <ComposeModal
+        open={!!replyTarget() || !!quoteTarget()}
+        onClose={() => { setReplyTarget(null); setQuoteTarget(null); }}
+        replyTo={replyTarget()}
+        quoteNote={quoteTarget()}
+      />
 
       {/* Unlock confirmation modal */}
       <Show when={showUnlockModal()}>
