@@ -1,12 +1,8 @@
 """Tests for Web Push subscription API and push service."""
 
-import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
-
-from tests.conftest import make_remote_actor
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -75,7 +71,7 @@ async def test_create_subscription(db, test_user):
 async def test_create_replaces_existing(db, test_user):
     from app.services.push_service import create_subscription, get_subscription_by_session
 
-    sub1 = await create_subscription(
+    await create_subscription(
         db,
         actor_id=test_user.actor_id,
         session_id="sess-replace",
@@ -268,7 +264,10 @@ async def test_send_web_push_filters_alerts(db, test_user):
     )
     await db.commit()
 
-    with patch("app.services.push_service.webpush") as mock_wp:
+    with (
+        patch("pywebpush.webpush") as mock_wp,
+        patch("app.services.push_service.is_push_enabled", return_value=True),
+    ):
         await send_web_push(
             db,
             recipient_id=test_user.actor_id,
@@ -294,7 +293,10 @@ async def test_send_web_push_calls_webpush(db, test_user):
     )
     await db.commit()
 
-    with patch("app.services.push_service.webpush") as mock_wp:
+    with (
+        patch("pywebpush.webpush") as mock_wp,
+        patch("app.services.push_service.is_push_enabled", return_value=True),
+    ):
         await send_web_push(
             db,
             recipient_id=test_user.actor_id,
@@ -332,7 +334,10 @@ async def test_send_web_push_removes_stale_410(db, test_user):
     mock_response = type("Response", (), {"status_code": 410})()
     error = WebPushException("Gone", response=mock_response)
 
-    with patch("app.services.push_service.webpush", side_effect=error):
+    with (
+        patch("pywebpush.webpush", side_effect=error),
+        patch("app.services.push_service.is_push_enabled", return_value=True),
+    ):
         await send_web_push(
             db,
             recipient_id=test_user.actor_id,
@@ -360,7 +365,10 @@ async def test_send_web_push_policy_filter(db, test_user, test_user_b):
     )
     await db.commit()
 
-    with patch("app.services.push_service.webpush") as mock_wp:
+    with (
+        patch("pywebpush.webpush") as mock_wp,
+        patch("app.services.push_service.is_push_enabled", return_value=True),
+    ):
         await send_web_push(
             db,
             recipient_id=test_user.actor_id,
