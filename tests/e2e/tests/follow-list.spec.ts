@@ -38,6 +38,12 @@ test.describe("Follow List", () => {
   test("followers tab shows follower", async ({ browser, page }) => {
     const baseURL = process.env.E2E_BASE_URL || "http://localhost:3080";
 
+    // Ensure admin is unlocked so follows are auto-accepted
+    await loginAsAdmin(page);
+    await page.request.patch("/api/v1/accounts/update_credentials", {
+      multipart: { locked: "false" },
+    });
+
     const follower = `follower_${uid}`;
     const followerSession = await registerAndLogin(
       browser,
@@ -56,7 +62,6 @@ test.describe("Follow List", () => {
     expect(followResp.ok()).toBeTruthy();
 
     // adminのfollowersタブを確認
-    await loginAsAdmin(page);
     await page.goto("/@admin/followers");
     await page.waitForSelector(".follow-list-item", { timeout: 10_000 });
 
