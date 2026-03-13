@@ -208,10 +208,12 @@ services:
   #             capabilities: [gpu]
 
   # Optional: Cloudflare Tunnel (uncomment to use)
+  # cp .env.cloudflared.example .env.cloudflared してトークンを設定
   # cloudflared:
   #   image: cloudflare/cloudflared:latest
   #   restart: unless-stopped
-  #   command: tunnel run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+  #   command: tunnel run
+  #   env_file: .env.cloudflared
   #   environment:
   #     TUNNEL_TRANSPORT_PROTOCOL: http2
 
