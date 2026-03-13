@@ -1,0 +1,68 @@
+import { test, expect } from "@playwright/test";
+import { loginAsAdmin, createNote } from "./helpers";
+
+test.describe("Note Actions", () => {
+  test("reblog button toggles boost state", async ({ page }) => {
+    await loginAsAdmin(page);
+    const uid = Date.now();
+    const note = await createNote(page, `reblog-test-${uid}`);
+
+    await page.goto("/");
+    await page.waitForSelector(".note-card", { timeout: 10_000 });
+
+    // 該当ノートのブーストボタンを見つける
+    const noteCard = page
+      .locator(`.note-card`)
+      .filter({ hasText: `reblog-test-${uid}` })
+      .first();
+    const boostBtn = noteCard.locator(".note-boost-btn");
+    await boostBtn.click();
+
+    // boosted クラスが付与される
+    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 5_000 });
+
+    // もう一度クリックでunboost
+    await boostBtn.click();
+    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 5_000 });
+  });
+
+  test("bookmark button toggles bookmarked state", async ({ page }) => {
+    await loginAsAdmin(page);
+    const uid = Date.now();
+    const note = await createNote(page, `bookmark-action-${uid}`);
+
+    await page.goto("/");
+    await page.waitForSelector(".note-card", { timeout: 10_000 });
+
+    const noteCard = page
+      .locator(`.note-card`)
+      .filter({ hasText: `bookmark-action-${uid}` })
+      .first();
+    const bookmarkBtn = noteCard.locator(".note-bookmark-btn");
+    await bookmarkBtn.click();
+
+    await expect(bookmarkBtn).toHaveClass(/bookmarked/, { timeout: 5_000 });
+
+    // 解除
+    await bookmarkBtn.click();
+    await expect(bookmarkBtn).not.toHaveClass(/bookmarked/, { timeout: 5_000 });
+  });
+
+  test("delete note removes it from timeline", async ({ page }) => {
+    await loginAsAdmin(page);
+    const uid = Date.now();
+    const note = await createNote(page, `delete-test-${uid}`);
+
+    // APIで削除してからタイムラインで確認する方式(UIのconfirmダイアログの不安定さを回避)
+    const delResp = await page.request.delete(`/api/v1/statuses/${note.id}`);
+    expect(delResp.ok()).toBeTruthy();
+
+    await page.goto("/");
+    await page.waitForSelector(".note-card, .empty", { timeout: 10_000 });
+
+    // 削除済みノートがタイムラインに表示されないこと
+    await expect(
+      page.locator(`.note-card:has-text("delete-test-${uid}")`),
+    ).toHaveCount(0, { timeout: 5_000 });
+  });
+});
