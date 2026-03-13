@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -552,7 +552,84 @@ async def get_relationship(
         "blocking": blocking,
         "muting": muting,
         "requested": requested,
+        "showing_reblogs": True,
+        "notifying": False,
+        "domain_blocking": False,
+        "endorsed": False,
+        "muting_notifications": False,
+        "note": "",
+        "languages": None,
     }
+
+
+@relationships_router.get("/accounts/relationships")
+async def get_relationships_batch(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    ids: list[str] = Query(default=[], alias="id[]"),
+):
+    """Batch-check follow/block/mute status with multiple accounts."""
+    if not ids:
+        return []
+
+    # UUIDへの変換 (無効なIDは無視)
+    actor_ids: list[uuid.UUID] = []
+    for id_str in ids[:40]:  # 最大40件
+        try:
+            actor_ids.append(uuid.UUID(id_str))
+        except ValueError:
+            continue
+
+    if not actor_ids:
+        return []
+
+    from app.services.block_service import get_blocked_ids
+    from app.services.mute_service import get_muted_ids
+
+    # 一括クエリでFollow, Block, Mute状態を取得
+    follow_out_result = await db.execute(
+        select(Follow).where(
+            Follow.follower_id == user.actor_id,
+            Follow.following_id.in_(actor_ids),
+        )
+    )
+    outgoing_follows = {f.following_id: f for f in follow_out_result.scalars().all()}
+
+    follow_in_result = await db.execute(
+        select(Follow.follower_id).where(
+            Follow.follower_id.in_(actor_ids),
+            Follow.following_id == user.actor_id,
+            Follow.accepted.is_(True),
+        )
+    )
+    followed_by_ids = {row[0] for row in follow_in_result.all()}
+
+    blocked_ids = set(await get_blocked_ids(db, user.actor_id))
+    muted_ids = set(await get_muted_ids(db, user.actor_id))
+
+    results = []
+    for aid in actor_ids:
+        outgoing = outgoing_follows.get(aid)
+        following = outgoing.accepted if outgoing else False
+        requested = (not outgoing.accepted) if outgoing else False
+
+        results.append({
+            "id": str(aid),
+            "following": following,
+            "followed_by": aid in followed_by_ids,
+            "blocking": aid in blocked_ids,
+            "muting": aid in muted_ids,
+            "requested": requested,
+            "showing_reblogs": True,
+            "notifying": False,
+            "domain_blocking": False,
+            "endorsed": False,
+            "muting_notifications": False,
+            "note": "",
+            "languages": None,
+        })
+
+    return results
 
 
 class MoveRequest(BaseModel):

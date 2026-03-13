@@ -279,6 +279,14 @@ async def note_to_response(
         if poll_data:
             poll_response = PollResponse(**poll_data)
 
+    # favourited判定: リアクション一覧から⭐のmeフラグを確認
+    favourited = False
+    if reactions:
+        for r in reactions:
+            if r.get("emoji") == "\u2b50" and r.get("me"):
+                favourited = True
+                break
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -304,6 +312,7 @@ async def note_to_response(
             emojis=actor_emojis,
         ),
         reactions=[ReactionSummary(**r) for r in (reactions or [])],
+        favourited=favourited,
         reblogged=bool(reblogged_set and note.id in reblogged_set),
         reblog=reblog,
         media_attachments=media_attachments,
@@ -431,6 +440,7 @@ async def notes_to_responses(
     reblogged_set: set = set()
     if actor_id:
         from sqlalchemy import select
+
         from app.models.note import Note as NoteModel
 
         reblog_result = await db.execute(
@@ -752,6 +762,97 @@ async def unreact_to_note(
         raise HTTPException(status_code=422, detail=str(e))
 
     return {"ok": True}
+
+
+@router.post("/{note_id}/favourite", response_model=NoteResponse)
+async def favourite_status(
+    note_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Favourite a status (alias for ⭐ reaction)."""
+    from app.services.reaction_service import add_reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await add_reaction(db, user, note, "\u2b50")
+    except ValueError:
+        pass  # 既にリアクション済みの場合は無視
+
+    # 通知作成 (ローカルユーザーの場合)
+    if note.actor.is_local and note.actor_id != user.actor_id:
+        from app.services.notification_service import create_notification
+
+        await create_notification(
+            db, "reaction", note.actor_id, user.actor_id, note.id, reaction_emoji="\u2b50"
+        )
+        await db.commit()
+
+    note = await get_note_by_id(db, note_id)
+    reactions = await get_reaction_summary(db, note.id, user.actor_id)
+    return await note_to_response(note, reactions, db=db, actor_id=user.actor_id)
+
+
+@router.post("/{note_id}/unfavourite", response_model=NoteResponse)
+async def unfavourite_status(
+    note_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unfavourite a status (remove ⭐ reaction)."""
+    from app.services.reaction_service import remove_reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await remove_reaction(db, user, note, "\u2b50")
+    except ValueError:
+        pass  # リアクションが存在しない場合は無視
+
+    note = await get_note_by_id(db, note_id)
+    reactions = await get_reaction_summary(db, note.id, user.actor_id)
+    return await note_to_response(note, reactions, db=db, actor_id=user.actor_id)
+
+
+@router.get("/{note_id}/favourited_by")
+async def favourited_by(
+    note_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List accounts that favourited (⭐ reacted) a status."""
+    from app.api.mastodon.accounts import _actor_to_account
+    from app.models.reaction import Reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    actor_id = user.actor_id if user else None
+    if not await check_note_visible(db, note, actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    result = await db.execute(
+        select(Reaction)
+        .options(selectinload(Reaction.actor))
+        .where(Reaction.note_id == note.id, Reaction.emoji == "\u2b50")
+        .order_by(Reaction.created_at.desc())
+        .limit(80)
+    )
+    reactions = result.scalars().all()
+
+    return [await _actor_to_account(r.actor, db=db) for r in reactions]
 
 
 @router.get("/{note_id}/reacted_by")
