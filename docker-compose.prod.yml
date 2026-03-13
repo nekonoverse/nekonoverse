@@ -104,6 +104,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # VALKEY_MAX_CONNECTIONS: ${VALKEY_MAX_CONNECTIONS:-1000}
       # face-detect via UDS (同一マシン)
       # FACE_DETECT_URL: http://localhost/object-detection
       # FACE_DETECT_UDS: /var/run/nekonoverse-face-detect/uvicorn.sock
@@ -141,6 +142,7 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # VALKEY_MAX_CONNECTIONS: ${VALKEY_MAX_CONNECTIONS:-1000}
       # Forward proxy for outbound federation requests (origin IP concealment)
       # HTTP_PROXY: http://squid:3128
       # HTTPS_PROXY: http://squid:3128
