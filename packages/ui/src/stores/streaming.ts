@@ -19,8 +19,10 @@ let intentionalClose = false;
 
 const [connected, setConnected] = createSignal(false);
 const [unreadCount, setUnreadCount] = createSignal(0);
+const [unreadMentions, setUnreadMentions] = createSignal(0);
+const [unreadOther, setUnreadOther] = createSignal(0);
 
-export { connected, unreadCount, setUnreadCount };
+export { connected, unreadCount, setUnreadCount, unreadMentions, unreadOther };
 
 function doConnect(path: string) {
   if (es) return;
@@ -44,6 +46,12 @@ function doConnect(path: string) {
     try {
       const data = JSON.parse(e.data);
       setUnreadCount((c) => c + 1);
+      const type = (data as { type?: string }).type;
+      if (type === "mention" || type === "reply") {
+        setUnreadMentions((c) => c + 1);
+      } else {
+        setUnreadOther((c) => c + 1);
+      }
       notificationHandlers.forEach((h) => h(data));
     } catch { /* ignore */ }
   });
@@ -114,4 +122,14 @@ export function onReaction(handler: Handler): () => void {
 
 export function resetUnread() {
   setUnreadCount(0);
+  setUnreadMentions(0);
+  setUnreadOther(0);
+}
+
+export function resetUnreadMentions() {
+  setUnreadMentions(0);
+}
+
+export function resetUnreadOther() {
+  setUnreadOther(0);
 }

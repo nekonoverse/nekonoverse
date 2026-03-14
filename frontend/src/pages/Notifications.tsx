@@ -6,7 +6,7 @@ import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 import { getNote } from "@nekonoverse/ui/api/statuses";
-import { onNotification, onReaction, resetUnread } from "@nekonoverse/ui/stores/streaming";
+import { onNotification, onReaction, resetUnread, unreadMentions, unreadOther, resetUnreadMentions, resetUnreadOther } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
@@ -24,7 +24,9 @@ function profileUrl(account: Notification["account"]): string {
 
 export default function Notifications() {
   const { t } = useI18n();
-  const [tab, setTab] = createSignal<Tab>("mentions");
+  // 未読がある方のタブを初期表示（メンションに未読がなく、その他に未読がある場合のみ切り替え）
+  const initialTab: Tab = unreadMentions() === 0 && unreadOther() > 0 ? "other" : "mentions";
+  const [tab, setTab] = createSignal<Tab>(initialTab);
   const [allNotifs, setAllNotifs] = createSignal<Notification[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [loadingMore, setLoadingMore] = createSignal(false);
@@ -198,15 +200,25 @@ export default function Notifications() {
       <div class="notif-tabs">
         <button
           class={`notif-tab${tab() === "mentions" ? " active" : ""}`}
-          onClick={() => setTab("mentions")}
+          onClick={() => { setTab("mentions"); resetUnreadMentions(); }}
         >
           {t("notifications.tabMentions" as keyof Dictionary)}
+          <Show when={unreadMentions() > 0}>
+            <span class="notif-tab-badge">{unreadMentions() > 99 ? "99+" : unreadMentions()}</span>
+          </Show>
         </button>
         <button
           class={`notif-tab${tab() === "other" ? " active" : ""}`}
-          onClick={() => setTab("other")}
+          onClick={() => { setTab("other"); resetUnreadOther(); }}
         >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
           {t("notifications.tabOther" as keyof Dictionary)}
+          <Show when={unreadOther() > 0}>
+            <span class="notif-tab-badge">{unreadOther() > 99 ? "99+" : unreadOther()}</span>
+          </Show>
         </button>
       </div>
 
