@@ -8,6 +8,15 @@ import packageJson from "./package.json" with { type: "json" };
 const backendUrl = process.env.VITE_BACKEND_URL || "http://localhost:8000";
 
 function resolveVersion(): string {
+  // 1. 環境変数から取得 (Dockerビルド時にARGから注入)
+  const envHash = process.env.VITE_GIT_HASH;
+  const envBranch = process.env.VITE_GIT_BRANCH;
+  if (envHash && envBranch) {
+    if (envBranch === "main") return packageJson.version;
+    return `${packageJson.version}+git-${envHash.slice(0, 7)}`;
+  }
+
+  // 2. gitコマンドから取得 (dev環境)
   try {
     const branch = execSync("git rev-parse --abbrev-ref HEAD", { encoding: "utf-8" }).trim();
     if (branch === "main") return packageJson.version;

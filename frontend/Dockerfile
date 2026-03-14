@@ -13,6 +13,10 @@ CMD ["npx", "vite", "dev", "--host", "0.0.0.0", "--port", "3000"]
 
 # --- Production stage ---
 FROM base AS production
+ARG GIT_HASH=""
+ARG GIT_BRANCH=""
+ENV VITE_GIT_HASH=${GIT_HASH}
+ENV VITE_GIT_BRANCH=${GIT_BRANCH}
 RUN npx vite build
 EXPOSE 3000
 CMD ["npx", "vite", "preview", "--host", "0.0.0.0", "--port", "3000"]

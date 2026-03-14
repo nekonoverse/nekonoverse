@@ -80,3 +80,6 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+          build-args: |
+            GIT_HASH=${{ github.sha }}
+            GIT_BRANCH=${{ github.ref_name }}
