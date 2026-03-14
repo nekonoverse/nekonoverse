@@ -42,7 +42,15 @@ export default function KeyboardShortcuts(props: Props) {
     if (index >= 0 && index < cards.length) {
       const card = cards[index];
       card.classList.add("keyboard-focused");
-      card.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      // Account for sticky navbar height when scrolling
+      const navbar = document.querySelector(".navbar");
+      const navbarHeight = navbar ? navbar.getBoundingClientRect().height : 0;
+      const cardRect = card.getBoundingClientRect();
+      if (cardRect.top < navbarHeight) {
+        window.scrollBy({ top: cardRect.top - navbarHeight - 8, behavior: "smooth" });
+      } else if (cardRect.bottom > window.innerHeight) {
+        card.scrollIntoView({ block: "end", behavior: "smooth" });
+      }
     }
   };
 
@@ -106,6 +114,15 @@ export default function KeyboardShortcuts(props: Props) {
           e.preventDefault();
           clickButton(cards[currentIndex], ".note-quote-btn");
         }
+        break;
+      }
+      case "g": {
+        e.preventDefault();
+        window.scrollTo({ top: 0, behavior: "smooth" });
+        // Clear focus when going to top
+        document.querySelectorAll(".note-card.keyboard-focused").forEach((el) => {
+          el.classList.remove("keyboard-focused");
+        });
         break;
       }
     }
