@@ -4,9 +4,9 @@ import { getAccount, followAccount, unfollowAccount, type Account } from "../api
 import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { currentUser } from "../stores/auth";
 import { useI18n } from "../i18n";
-import { sanitizeHtml } from "../utils/sanitize";
-import { emojify } from "../utils/emojify";
-import { twemojify } from "../utils/twemojify";
+import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { emojify } from "@nekonoverse/ui/utils/emojify";
+import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { defaultAvatar } from "../stores/instance";
 
 interface Props {

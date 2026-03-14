@@ -2,8 +2,8 @@ import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid
 import { getNotifications, dismissNotification, clearNotifications, type Notification } from "../api/notifications";
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
-import { emojify } from "../utils/emojify";
-import { twemojify } from "../utils/twemojify";
+import { emojify } from "@nekonoverse/ui/utils/emojify";
+import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { formatTimestamp, useTimeTick } from "../utils/formatTime";
 import { getNote } from "../api/statuses";
 import { onNotification, onReaction, resetUnread } from "../stores/streaming";

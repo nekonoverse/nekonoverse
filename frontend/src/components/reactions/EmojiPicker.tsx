@@ -18,7 +18,7 @@ import {
   getRecentEmojis,
   addRecentEmoji,
   type RecentEmoji,
-} from "../../utils/recentEmojis";
+} from "@nekonoverse/ui/utils/recentEmojis";
 import Emoji from "../Emoji";
 import { useI18n } from "../../i18n";
 

@@ -109,12 +109,13 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
       target: dev
     command: npx --yes vite dev --host 0.0.0.0 --port 3000
     volumes:
       - ./frontend:/app
+      - ./packages:/packages
       - /app/node_modules
     depends_on:
       app:

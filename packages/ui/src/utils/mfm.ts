@@ -1,6 +1,6 @@
 import * as mfm from "mfm-js";
 import type { MfmNode } from "mfm-js";
-import type { CustomEmoji } from "../api/statuses";
+import type { CustomEmoji } from "../types/emoji";
 import { emojiToUrl } from "./twemoji";
 
 const HEX_COLOR_RE = /^[0-9a-fA-F]{3,6}$/;

@@ -1,4 +1,5 @@
 import { execSync } from "child_process";
+import path from "path";
 import { defineConfig } from "vite";
 import solidPlugin from "vite-plugin-solid";
 import { VitePWA } from "vite-plugin-pwa";
@@ -41,6 +42,12 @@ export default defineConfig({
   server: {
     port: 3000,
     allowedHosts: true,
+    fs: {
+      allow: [
+        path.resolve(__dirname),
+        path.resolve(__dirname, "../packages"),
+      ],
+    },
     proxy: {
       "/api": {
         target: backendUrl,
@@ -66,6 +73,13 @@ export default defineConfig({
         target: backendUrl,
         changeOrigin: true,
       },
+    },
+  },
+  resolve: {
+    alias: {
+      "@nekonoverse/ui": path.resolve(__dirname, "../packages/ui/src"),
+      "mfm-js": path.resolve(__dirname, "node_modules/mfm-js"),
+      "dompurify": path.resolve(__dirname, "node_modules/dompurify"),
     },
   },
   build: {

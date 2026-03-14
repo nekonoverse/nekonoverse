@@ -4,8 +4,8 @@ import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
 import EmojiPicker from "../reactions/EmojiPicker";
-import { sanitizeHtml } from "../../utils/sanitize";
-import { stripExifFromFile } from "../../utils/stripExif";
+import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { stripExifFromFile } from "@nekonoverse/ui/utils/stripExif";
 import type { DriveFile } from "../../api/drive";
 import {
   getInitialVisibility,

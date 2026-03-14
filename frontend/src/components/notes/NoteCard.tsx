@@ -18,15 +18,15 @@ import ImageLightbox from "../ImageLightbox";
 import { currentUser } from "../../stores/auth";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "../../i18n";
-import { focalPointToObjectPosition } from "../../utils/focalPoint";
-import { twemojify } from "../../utils/twemojify";
-import { emojify } from "../../utils/emojify";
+import { focalPointToObjectPosition } from "@nekonoverse/ui/utils/focalPoint";
+import { twemojify } from "@nekonoverse/ui/utils/twemojify";
+import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { useNavigate } from "@solidjs/router";
-import { mentionify } from "../../utils/mentionify";
+import { mentionify } from "@nekonoverse/ui/utils/mentionify";
 import { formatTimestamp, useTimeTick } from "../../utils/formatTime";
 import { timeFormat } from "../../stores/theme";
-import { sanitizeHtml } from "../../utils/sanitize";
-import { renderMfm } from "../../utils/mfm";
+import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { renderMfm } from "@nekonoverse/ui/utils/mfm";
 import { defaultAvatar } from "../../stores/instance";
 
 interface Props {

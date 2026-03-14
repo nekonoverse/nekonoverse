@@ -11,7 +11,11 @@
     "types": ["vite/client", "vite-plugin-pwa/client"],
     "noEmit": true,
     "isolatedModules": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "baseUrl": ".",
+    "paths": {
+      "@nekonoverse/ui/*": ["../packages/ui/src/*"]
+    }
   },
-  "include": ["src"]
+  "include": ["src", "../packages/ui/src"]
 }

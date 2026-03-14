@@ -70,13 +70,11 @@ describe("mentionify", () => {
   });
 
   it("handles Pleroma/GoToSocial format (no inner span)", () => {
-    // Pleroma uses /users/charlie path
     const el = createPleromaMention("https://pleroma.example.com/users/charlie", "charlie");
 
     mentionify(el);
 
     const link = el.querySelector("a")!;
-    // pathUser = "users/charlie" (regex strips leading /@), so local path includes the full path
     expect(link.getAttribute("href")).toBe("/@users/charlie@pleroma.example.com");
 
     const domain = el.querySelector(".mention-domain");
