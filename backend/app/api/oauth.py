@@ -6,7 +6,7 @@ import html as html_mod
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
-from urllib.parse import urlencode, urlparse
+from urllib.parse import quote, urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse
@@ -48,10 +48,13 @@ async def create_app(body: AppCreateRequest, db: AsyncSession = Depends(get_db))
     return {
         "id": str(app.id),
         "name": app.name,
+        "website": app.website,
+        "scopes": app.scopes.split(),
+        "redirect_uris": [u.strip() for u in app.redirect_uris.split() if u.strip()],
+        "redirect_uri": app.redirect_uris,
         "client_id": app.client_id,
         "client_secret": app.client_secret,
-        "redirect_uri": app.redirect_uris,
-        "website": app.website,
+        "client_secret_expires_at": 0,
     }
 
 
@@ -86,49 +89,157 @@ async def authorize_form(
     if parsed_redirect.scheme not in ("https", "http", "urn"):
         raise HTTPException(status_code=400, detail="Invalid redirect_uri scheme")
 
-    # Check if user is logged in
+    # セッションからユーザーを取得
+    user_id = await _get_session_user_id(request)
+
+    if not user_id:
+        # 未ログイン: ログインフォームを表示
+        return _render_login_form(
+            app_name=app.name,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            scope=scope,
+            response_type=response_type,
+            state=state,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+        )
+
+    return await _issue_authorization_code(
+        db=db,
+        app=app,
+        user_id=user_id,
+        redirect_uri=redirect_uri,
+        scope=scope,
+        state=state,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+    )
+
+
+@router.post("/oauth/authorize")
+async def authorize_submit(
+    request: Request,
+    client_id: str = Form(...),
+    redirect_uri: str = Form(...),
+    scope: str = Form("read"),
+    response_type: str = Form("code"),
+    state: str | None = Form(None),
+    code_challenge: str | None = Form(None),
+    code_challenge_method: str | None = Form(None),
+    username: str | None = Form(None),
+    password: str | None = Form(None),
+    db: AsyncSession = Depends(get_db),
+):
+    """Handle login form submission and issue authorization code."""
+    # アプリケーション検証
+    result = await db.execute(
+        select(OAuthApplication).where(OAuthApplication.client_id == client_id)
+    )
+    app = result.scalar_one_or_none()
+    if not app:
+        raise HTTPException(status_code=400, detail="Invalid client_id")
+
+    allowed_uris = [u.strip() for u in app.redirect_uris.split() if u.strip()]
+    if redirect_uri not in allowed_uris:
+        raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+
+    # セッションからユーザーを取得(既にログイン済みの場合)
+    user_id = await _get_session_user_id(request)
+
+    # セッションがなければフォームからログイン
+    if not user_id:
+        if not username or not password:
+            return _render_login_form(
+                app_name=app.name,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                scope=scope,
+                response_type=response_type,
+                state=state,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                error="Username and password are required",
+            )
+
+        from app.services.user_service import authenticate_user
+
+        user = await authenticate_user(db, username, password)
+        if not user:
+            return _render_login_form(
+                app_name=app.name,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                scope=scope,
+                response_type=response_type,
+                state=state,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                error="Invalid username or password",
+            )
+
+        if user.actor and user.actor.is_suspended:
+            raise HTTPException(status_code=403, detail="Account is suspended")
+        if user.approval_status == "pending":
+            raise HTTPException(
+                status_code=403, detail="Your registration is pending approval"
+            )
+
+        user_id = user.id
+
+    return await _issue_authorization_code(
+        db=db,
+        app=app,
+        user_id=user_id,
+        redirect_uri=redirect_uri,
+        scope=scope,
+        state=state,
+        code_challenge=code_challenge,
+        code_challenge_method=code_challenge_method,
+    )
+
+
+async def _get_session_user_id(request: Request) -> uuid.UUID | None:
+    """Extract user ID from session cookie. Returns None if not logged in."""
     session_id = request.cookies.get("nekonoverse_session")
     if not session_id:
-        # Return a simple login form (escape all user-controlled values)
-        esc = html_mod.escape
-        return HTMLResponse(
-            "<html><body style='font-family:sans-serif;"
-            "max-width:400px;margin:40px auto'>"
-            f"<h2>Authorize {esc(app.name)}</h2>"
-            '<p>Please <a href="/login?redirect=/oauth/authorize'
-            f"?client_id={esc(client_id)}"
-            f"&redirect_uri={esc(redirect_uri)}"
-            f"&scope={esc(scope)}"
-            f"&response_type={esc(response_type)}"
-            '">log in</a> first.</p>'
-            "</body></html>"
-        )
+        return None
 
     from app.valkey_client import valkey
 
     user_id_str = await valkey.get(f"session:{session_id}")
     if not user_id_str:
-        raise HTTPException(status_code=401, detail="Session expired")
+        return None
+    return uuid.UUID(user_id_str)
 
-    # ユーザーの状態を検証(停止・承認待ちチェック)
+
+async def _issue_authorization_code(
+    *,
+    db: AsyncSession,
+    app: OAuthApplication,
+    user_id: uuid.UUID,
+    redirect_uri: str,
+    scope: str,
+    state: str | None,
+    code_challenge: str | None,
+    code_challenge_method: str | None,
+) -> RedirectResponse:
+    """Generate an authorization code and redirect to the client."""
     from app.services.user_service import get_user_by_id
 
-    user = await get_user_by_id(db, uuid.UUID(user_id_str))
+    user = await get_user_by_id(db, user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
     if user.actor and user.actor.is_suspended:
-        await valkey.delete(f"session:{session_id}")
         raise HTTPException(status_code=403, detail="Account is suspended")
     if user.approval_status == "pending":
-        await valkey.delete(f"session:{session_id}")
         raise HTTPException(status_code=403, detail="Your registration is pending approval")
 
-    # Generate authorization code
     code = secrets.token_urlsafe(32)
     auth_code = OAuthAuthorizationCode(
         code=code,
         application_id=app.id,
-        user_id=uuid.UUID(user_id_str),
+        user_id=user_id,
         redirect_uri=redirect_uri,
         scopes=scope,
         code_challenge=code_challenge,
@@ -138,13 +249,78 @@ async def authorize_form(
     db.add(auth_code)
     await db.commit()
 
-    # Redirect with code
     separator = "&" if "?" in redirect_uri else "?"
     location = f"{redirect_uri}{separator}code={code}"
     if state:
         location += "&" + urlencode({"state": state})
 
     return RedirectResponse(location, status_code=302)
+
+
+def _render_login_form(
+    *,
+    app_name: str,
+    client_id: str,
+    redirect_uri: str,
+    scope: str,
+    response_type: str,
+    state: str | None,
+    code_challenge: str | None,
+    code_challenge_method: str | None,
+    error: str | None = None,
+) -> HTMLResponse:
+    """Render a self-contained login form that POSTs to /oauth/authorize."""
+    esc = html_mod.escape
+    error_html = f'<p style="color:red">{esc(error)}</p>' if error else ""
+
+    hidden_fields = [
+        ("client_id", client_id),
+        ("redirect_uri", redirect_uri),
+        ("scope", scope),
+        ("response_type", response_type),
+    ]
+    if state:
+        hidden_fields.append(("state", state))
+    if code_challenge:
+        hidden_fields.append(("code_challenge", code_challenge))
+    if code_challenge_method:
+        hidden_fields.append(("code_challenge_method", code_challenge_method))
+
+    hidden_inputs = "\n".join(
+        f'<input type="hidden" name="{esc(k)}" value="{esc(v)}">'
+        for k, v in hidden_fields
+    )
+
+    return HTMLResponse(
+        f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Authorize {esc(app_name)}</title>
+<style>
+body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0 16px; }}
+h2 {{ margin-bottom: 4px; }}
+.app-name {{ color: #666; margin-top: 0; }}
+label {{ display: block; margin-top: 12px; font-weight: bold; }}
+input[type=text], input[type=password] {{
+  width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box;
+  border: 1px solid #ccc; border-radius: 4px;
+}}
+button {{ margin-top: 16px; padding: 10px 20px; width: 100%;
+  background: #6364ff; color: white; border: none; border-radius: 4px;
+  font-size: 16px; cursor: pointer; }}
+button:hover {{ background: #4f50e6; }}
+</style></head><body>
+<h2>Authorize</h2>
+<p class="app-name">{esc(app_name)}</p>
+{error_html}
+<form method="POST" action="/oauth/authorize">
+{hidden_inputs}
+<label for="username">Username</label>
+<input type="text" id="username" name="username" required autofocus>
+<label for="password">Password</label>
+<input type="password" id="password" name="password" required>
+<button type="submit">Log in and Authorize</button>
+</form></body></html>"""
+    )
 
 
 @router.post("/oauth/token")
