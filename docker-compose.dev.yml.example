@@ -77,6 +77,12 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-changeme-s3}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # Forward proxy for outbound federation requests (origin IP concealment)
+      # HTTP_PROXY: http://squid:3128
+      # HTTPS_PROXY: http://squid:3128
+      # NO_PROXY: nekono3s,face-detect,valkey,postgresql,localhost
+      # Face detection (optional)
+      # FACE_DETECT_URL: http://face-detect:8001/object-detection
     volumes:
       - ./backend:/app
     ports:
@@ -106,6 +112,10 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-changeme-s3}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # Forward proxy for outbound federation requests (origin IP concealment)
+      # HTTP_PROXY: http://squid:3128
+      # HTTPS_PROXY: http://squid:3128
+      # NO_PROXY: nekono3s,face-detect,valkey,postgresql,localhost
     volumes:
       - ./backend:/app
     depends_on:
