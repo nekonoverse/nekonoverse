@@ -30,5 +30,9 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
     throw new Error(error.detail || error.error || `HTTP ${response.status}`);
   }
 
+  if (response.status === 204) {
+    return undefined as T;
+  }
+
   return response.json();
 }
