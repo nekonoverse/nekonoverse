@@ -71,6 +71,14 @@ async def upload_server_icon(
     from app.services.server_settings_service import set_setting
 
     await set_setting(db, "server_icon_url", url)
+
+    # Generate favicon.ico from the uploaded icon
+    from app.services.favicon_service import generate_favicon_ico
+
+    favicon_url = await generate_favicon_ico(db, data, file.content_type or "image/png")
+    if favicon_url:
+        await set_setting(db, "favicon_ico_url", favicon_url)
+
     await db.commit()
 
     return {"ok": True, "url": url}
