@@ -51,7 +51,9 @@ test.describe("Authentication", () => {
     // ナビバーのユーザーメニューからログアウト
     await page.locator(".navbar-avatar").click();
     await page.locator(".navbar-dropdown-logout").click();
-    await page.waitForURL("/", { timeout: 10_000 });
+
+    // ログアウト完了をUI状態で確認（ログインボタンが表示される）
+    await expect(page.locator(".navbar-login-btn")).toBeVisible({ timeout: 10_000 });
 
     // localStorageからキャッシュがクリアされていることを確認
     const clearedCache = await page.evaluate(() => localStorage.getItem("nekonoverse_cached_user"));
