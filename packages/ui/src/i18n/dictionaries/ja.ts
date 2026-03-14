@@ -529,6 +529,8 @@ export const ja = {
   "profile.deleteAvatar": "アイコンを削除",
   "profile.deleteHeader": "ヘッダーを削除",
   "profile.setFocalPoint": "フォーカルポイントを設定",
+  "profile.cropHeader": "ヘッダーを切り抜き",
+  "profile.cropPreview": "プレビュー",
   "settings.timeFormat": "時刻の表示形式",
   "settings.timeAbsolute": "絶対時刻",
   "settings.timeRelative": "相対時刻",

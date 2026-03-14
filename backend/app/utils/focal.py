@@ -15,7 +15,8 @@ def focal_from_detections(
     ymax = max(r["box"]["ymax"] for r in results)
 
     cx = (xmin + xmax) / 2
-    cy = (ymin + ymax) / 2
+    # Bias toward top of face box (1/3 from top) to prevent head/hair cropping
+    cy = ymin + (ymax - ymin) / 3
 
     focal_x = max(-1.0, min(1.0, (cx / width) * 2 - 1))
     focal_y = max(-1.0, min(1.0, 1 - (cy / height) * 2))

@@ -531,6 +531,8 @@ export const neko: Dictionary = {
   "profile.deleteAvatar": "アイコンけすにゃ",
   "profile.deleteHeader": "ヘッダーけすにゃ",
   "profile.setFocalPoint": "ちゅうもくポイントにゃ",
+  "profile.cropHeader": "ヘッダーきりぬきにゃ",
+  "profile.cropPreview": "プレビューにゃ",
   "settings.timeFormat": "じかんのみせかたにゃ",
   "settings.timeAbsolute": "ぜったいにゃ",
   "settings.timeRelative": "そうたいにゃ",
