@@ -2,8 +2,11 @@
 
 Requires the Squid proxy to be running (docker-compose.federation.yml).
 The test runner container mounts squid-logs at /squid-logs (read-only).
+
+Run with:  pytest test_proxy.py  (skipped by default unless --run-proxy is passed)
 """
 
+import os
 import time
 
 import pytest
@@ -16,6 +19,12 @@ from conftest import (
 )
 
 SQUID_LOG = "/squid-logs/access.log"
+
+# Skip all proxy tests unless explicitly requested
+pytestmark = pytest.mark.skipif(
+    os.environ.get("RUN_PROXY_TESTS", "") != "1",
+    reason="Proxy tests skipped (set RUN_PROXY_TESTS=1 to enable)",
+)
 
 
 def read_squid_log() -> str:
