@@ -446,7 +446,8 @@ a:hover {
   transition: border-color 0.15s, background 0.15s;
 }
 
-.note-composer.drag-over {
+.note-composer.drag-over,
+.compose-modal-content.drag-over {
   border-color: var(--accent);
   border-style: dashed;
   background: color-mix(in srgb, var(--accent) 8%, var(--bg-secondary));

@@ -5,6 +5,7 @@ Usage:
     python -m app.cli reset-password
     python -m app.cli detect-focal-points
     python -m app.cli redetect-focal <note_id>
+    python -m app.cli regenerate-icons [--from-default]
     python -m app.cli create-admin --username neko --email neko@example.com --password mypassword
 """
 
@@ -341,6 +342,40 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
     await engine.dispose()
 
 
+async def _regenerate_icons(args: argparse.Namespace) -> None:
+    from app.services.icon_service import _load_default_icon, generate_all_icons
+    from app.services.server_settings_service import get_setting
+
+    async with async_session() as db:
+        if args.from_default:
+            print("Using bundled default icon...")
+            image_data = _load_default_icon()
+        else:
+            icon_url = await get_setting(db, "server_icon_url")
+            if not icon_url:
+                print("No server_icon_url configured. Use --from-default to use bundled icon.")
+                sys.exit(1)
+
+            # Download current server icon from S3
+            print(f"Downloading current server icon: {icon_url}")
+            import httpx
+
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(icon_url)
+                if resp.status_code != 200:
+                    print(f"Error: Failed to download icon (HTTP {resp.status_code})")
+                    sys.exit(1)
+                image_data = resp.content
+
+        print("Generating icons...")
+        urls = await generate_all_icons(db, image_data, set_server_icon=args.from_default)
+        for key, url in urls.items():
+            print(f"  {key}: {url}")
+
+    await engine.dispose()
+    print("Done.")
+
+
 async def _reset_password(args: argparse.Namespace) -> None:
     async with async_session() as db:
         try:
@@ -374,6 +409,12 @@ def main() -> None:
     redetect = sub.add_parser("redetect-focal", help="Force re-detect focal point for a specific note")
     redetect.add_argument("note_id", type=str, help="Note ID (UUID)")
 
+    regen_icons = sub.add_parser("regenerate-icons", help="Regenerate favicon and PWA icons")
+    regen_icons.add_argument(
+        "--from-default", action="store_true",
+        help="Use bundled default icon instead of current server icon",
+    )
+
     args = parser.parse_args()
 
     if args.command == "create-admin":
@@ -388,6 +429,8 @@ def main() -> None:
         asyncio.run(_detect_focal_points(args))
     elif args.command == "redetect-focal":
         asyncio.run(_redetect_focal(args))
+    elif args.command == "regenerate-icons":
+        asyncio.run(_regenerate_icons(args))
     else:
         parser.print_help()
         sys.exit(1)
