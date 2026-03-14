@@ -309,11 +309,9 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         )
         att_ids = [row[0] for row in att_rows.all()]
         if att_ids:
-            import asyncio
+            from app.services.face_detect_queue import enqueue_remote
 
-            from app.services.focal_point_service import detect_remote_focal_points
-
-            asyncio.create_task(detect_remote_focal_points(note.id, att_ids))
+            await enqueue_remote(note.id, att_ids)
 
 
 async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):

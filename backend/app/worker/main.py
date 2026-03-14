@@ -9,7 +9,13 @@ logger = logging.getLogger("nekonoverse.worker")
 
 async def run_worker():
     logger.info("Nekonoverse worker started")
-    await run_delivery_loop()
+
+    from app.services.face_detect_queue import run_face_detect_loop
+
+    await asyncio.gather(
+        run_delivery_loop(),
+        run_face_detect_loop(),
+    )
 
 
 def main():
