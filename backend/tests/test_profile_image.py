@@ -255,7 +255,7 @@ class TestFocalPoint:
         """Upload avatar then delete it — avatar returns to default."""
         from unittest.mock import AsyncMock, patch
 
-        with patch("app.storage.upload_file", new_callable=AsyncMock):
+        with patch("app.services.drive_service.upload_file", new_callable=AsyncMock):
             resp = await authed_client.patch(
                 "/api/v1/accounts/update_credentials",
                 files={"avatar": ("test.png", io.BytesIO(tiny_png), "image/png")},
