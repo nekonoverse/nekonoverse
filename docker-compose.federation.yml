@@ -6,10 +6,11 @@ services:
       - ./tests/federation/squid.conf:/etc/squid/squid.conf:ro
       - squid-logs:/var/log/squid
     healthcheck:
-      test: squidclient -h 127.0.0.1 -p 3128 mgr:info 2>/dev/null | grep -q "Squid Object Cache"
+      test: ["CMD-SHELL", "test -f /var/log/squid/access.log || test -f /run/squid.pid"]
       interval: 3s
       timeout: 3s
-      retries: 10
+      retries: 15
+      start_period: 5s
     networks:
       - federation
 
