@@ -213,6 +213,8 @@ export const en: Dictionary = {
   "notifications.type.reblog": "boosted your post",
   "notifications.type.favourite": "favorited your post",
   "notifications.type.reaction": "reacted to your post",
+  "mentions.title": "Mentions",
+  "mentions.empty": "No mentions yet",
   "boost.boost": "Boost",
   "boost.unboost": "Unboost",
   "boost.boosted": "boosted",

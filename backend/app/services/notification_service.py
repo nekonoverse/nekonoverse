@@ -112,6 +112,7 @@ async def get_notifications(
     actor_id: uuid.UUID,
     limit: int = 20,
     max_id: uuid.UUID | None = None,
+    types: list[str] | None = None,
 ) -> list[Notification]:
     query = (
         select(Notification)
@@ -121,6 +122,8 @@ async def get_notifications(
         )
         .where(Notification.recipient_id == actor_id)
     )
+    if types:
+        query = query.where(Notification.type.in_(types))
     if max_id:
         sub = select(Notification.created_at).where(Notification.id == max_id).scalar_subquery()
         query = query.where(Notification.created_at < sub)
