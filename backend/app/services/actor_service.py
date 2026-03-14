@@ -332,14 +332,28 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
         logger.debug("Blocked WebFinger to private host: %s", domain)
         return None
 
-    webfinger_url = f"https://{domain}/.well-known/webfinger?resource=acct:{username}@{domain}"
+    resource = f"acct:{username}@{domain}"
     try:
         from app.utils.http_client import make_async_client
 
+        resp = None
         async with make_async_client(
             timeout=10.0, verify=not settings.skip_ssl_verify
         ) as client:
-            resp = await client.get(webfinger_url, follow_redirects=True)
+            # HTTPS → HTTPフォールバック (RFC 7033ではHTTPSが必須だが、
+            # テスト環境やHTTPS未対応のサーバーのためHTTPにフォールバック)
+            try:
+                resp = await client.get(
+                    f"https://{domain}/.well-known/webfinger?resource={resource}",
+                    follow_redirects=True,
+                )
+            except Exception:
+                pass
+            if resp is None or resp.status_code != 200:
+                resp = await client.get(
+                    f"http://{domain}/.well-known/webfinger?resource={resource}",
+                    follow_redirects=True,
+                )
         if resp.status_code != 200:
             logger.warning(
                 "WebFinger failed for %s@%s: HTTP %s",
