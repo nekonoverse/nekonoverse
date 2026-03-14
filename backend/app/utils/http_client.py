@@ -15,12 +15,17 @@ def make_face_detect_client(**kwargs) -> httpx.AsyncClient:
 
     When ``settings.face_detect_uds`` is set, uses a Unix domain socket
     transport instead of TCP.
+
+    Proxy is explicitly disabled by default to prevent httpx from using
+    the ``HTTP_PROXY`` environment variable, since face-detect is typically
+    an internal service.
     """
     if settings.face_detect_uds:
         kwargs.setdefault(
             "transport", httpx.AsyncHTTPTransport(uds=settings.face_detect_uds)
         )
     kwargs.setdefault("timeout", 30.0)
+    kwargs.setdefault("proxy", None)
     return httpx.AsyncClient(**kwargs)
 
 
@@ -36,4 +41,8 @@ def make_async_client(*, use_proxy: bool = True, **kwargs) -> httpx.AsyncClient:
         proxy_url = get_proxy_url()
         if proxy_url:
             kwargs["proxy"] = proxy_url
+    # When proxy is not wanted, explicitly set None to prevent httpx
+    # from auto-detecting HTTP_PROXY environment variable.
+    if not use_proxy:
+        kwargs.setdefault("proxy", None)
     return httpx.AsyncClient(**kwargs)

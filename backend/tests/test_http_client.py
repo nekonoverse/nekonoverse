@@ -2,7 +2,7 @@
 
 from unittest.mock import patch
 
-from app.utils.http_client import get_proxy_url, make_async_client
+from app.utils.http_client import get_proxy_url, make_async_client, make_face_detect_client
 
 
 class TestGetProxyUrl:
@@ -70,4 +70,36 @@ class TestMakeAsyncClient:
             client = make_async_client(
                 timeout=5.0, follow_redirects=True, max_redirects=3,
             )
+            assert client is not None
+
+    def test_use_proxy_false_disables_env_proxy(self):
+        """use_proxy=False explicitly sets proxy=None to block env var detection."""
+        with patch("app.utils.http_client.settings") as mock:
+            mock.https_proxy = None
+            mock.http_proxy = None
+            client = make_async_client(use_proxy=False, timeout=10.0)
+            # proxy=None is passed, so _mounts should be empty
+            assert len(client._mounts) == 0
+
+
+class TestMakeFaceDetectClient:
+    def test_proxy_disabled_by_default(self):
+        """face-detect client should not use proxy by default."""
+        with patch("app.utils.http_client.settings") as mock:
+            mock.face_detect_uds = None
+            client = make_face_detect_client()
+            assert len(client._mounts) == 0
+
+    def test_explicit_proxy_override(self):
+        """Explicit proxy kwarg should be respected."""
+        with patch("app.utils.http_client.settings") as mock:
+            mock.face_detect_uds = None
+            client = make_face_detect_client(proxy="http://proxy:8080")
+            assert len(client._mounts) == 1
+
+    def test_uds_transport(self):
+        """UDS transport should be set when face_detect_uds is configured."""
+        with patch("app.utils.http_client.settings") as mock:
+            mock.face_detect_uds = "/var/run/face-detect.sock"
+            client = make_face_detect_client()
             assert client is not None
