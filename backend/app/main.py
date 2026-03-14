@@ -270,6 +270,20 @@ async def manifest(db: AsyncSession = Depends(get_db)):
     )
 
 
+@app.get("/favicon.ico")
+async def favicon_ico(db: AsyncSession = Depends(get_db)):
+    from fastapi.responses import RedirectResponse
+
+    from app.services.server_settings_service import get_setting
+
+    url = await get_setting(db, "favicon_ico_url")
+    if not url:
+        from fastapi import HTTPException
+
+        raise HTTPException(status_code=404, detail="No favicon configured")
+    return RedirectResponse(url=url, status_code=302)
+
+
 @app.get("/api/v1/custom_emojis")
 async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
     import json
