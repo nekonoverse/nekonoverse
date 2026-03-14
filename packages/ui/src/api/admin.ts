@@ -487,3 +487,17 @@ export async function generateVapidKey(): Promise<{ vapid_public_key: string }> 
     method: "POST",
   });
 }
+
+// Moderator Permissions
+export async function getModeratorPermissions(): Promise<Record<string, boolean>> {
+  return apiRequest<Record<string, boolean>>("/api/v1/admin/permissions");
+}
+
+export async function updateModeratorPermissions(
+  permissions: Record<string, boolean>,
+): Promise<Record<string, boolean>> {
+  return apiRequest<Record<string, boolean>>("/api/v1/admin/permissions", {
+    method: "PATCH",
+    body: permissions,
+  });
+}

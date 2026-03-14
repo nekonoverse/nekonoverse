@@ -7,7 +7,7 @@ from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_admin_user, get_db, get_staff_user
+from app.dependencies import get_admin_user, get_db, get_permitted_staff, get_staff_user
 from app.models.actor import Actor
 from app.models.delivery import DeliveryJob
 from app.models.follow import Follow
@@ -226,7 +226,7 @@ async def generate_vapid_key(
 
 @router.get("/stats", response_model=AdminStatsResponse)
 async def get_admin_stats(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     user_count = (await db.execute(select(func.count(User.id)))).scalar() or 0
@@ -274,7 +274,7 @@ async def get_admin_stats(
 
 @router.get("/users", response_model=list[AdminUserResponse])
 async def list_users(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
@@ -329,7 +329,7 @@ async def change_user_role(
 async def suspend_user(
     user_id: uuid.UUID,
     body: ModerationActionRequest = ModerationActionRequest(),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import suspend_actor
@@ -349,7 +349,7 @@ async def suspend_user(
 @router.post("/users/{user_id}/unsuspend")
 async def unsuspend_user(
     user_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import unsuspend_actor
@@ -368,7 +368,7 @@ async def unsuspend_user(
 async def silence_user(
     user_id: uuid.UUID,
     body: ModerationActionRequest = ModerationActionRequest(),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import silence_actor
@@ -388,7 +388,7 @@ async def silence_user(
 @router.post("/users/{user_id}/unsilence")
 async def unsilence_user(
     user_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import unsilence_actor
@@ -408,7 +408,7 @@ async def unsilence_user(
 
 @router.get("/federation", response_model=FederatedServerListResponse)
 async def list_federated_servers(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("federation")),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=40, le=200, ge=1),
     offset: int = Query(default=0, ge=0),
@@ -441,7 +441,7 @@ async def list_federated_servers(
 @router.get("/federation/{domain:path}", response_model=FederatedServerDetailResponse)
 async def get_federated_server_detail_endpoint(
     domain: str,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("federation")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.federation_service import get_federated_server_detail
@@ -457,7 +457,7 @@ async def get_federated_server_detail_endpoint(
 
 @router.get("/domain_blocks", response_model=list[DomainBlockResponse])
 async def list_domain_blocks(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("domains")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.domain_block_service import list_domain_blocks as _list
@@ -469,7 +469,7 @@ async def list_domain_blocks(
 @router.post("/domain_blocks", response_model=DomainBlockResponse, status_code=201)
 async def create_domain_block(
     body: DomainBlockRequest,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("domains")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.domain_block_service import create_domain_block as _create
@@ -488,7 +488,7 @@ async def create_domain_block(
 @router.delete("/domain_blocks/{domain}")
 async def remove_domain_block(
     domain: str,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("domains")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.domain_block_service import remove_domain_block as _remove
@@ -508,7 +508,7 @@ async def remove_domain_block(
 
 @router.get("/reports", response_model=list[ReportResponse])
 async def get_reports(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("reports")),
     db: AsyncSession = Depends(get_db),
     status: str | None = Query(default=None),
 ):
@@ -535,7 +535,7 @@ async def get_reports(
 @router.post("/reports/{report_id}/resolve")
 async def resolve_report(
     report_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("reports")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
@@ -557,7 +557,7 @@ async def resolve_report(
 @router.post("/reports/{report_id}/reject")
 async def reject_report(
     report_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("reports")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
@@ -583,7 +583,7 @@ async def reject_report(
 async def admin_delete_note(
     note_id: uuid.UUID,
     body: ModerationActionRequest = ModerationActionRequest(),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("content")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import admin_delete_note as _delete
@@ -603,7 +603,7 @@ async def admin_delete_note(
 @router.post("/notes/{note_id}/sensitive")
 async def force_note_sensitive(
     note_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("content")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import force_sensitive
@@ -657,7 +657,7 @@ async def get_moderation_log(
 
 @router.get("/emoji/list", response_model=list[AdminEmojiResponse])
 async def list_emojis(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_all_local_emojis
@@ -672,7 +672,7 @@ async def list_remote_emojis_endpoint(
     search: str | None = Query(None),
     limit: int = Query(100, le=200),
     offset: int = Query(0, ge=0),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_remote_emojis
@@ -683,7 +683,7 @@ async def list_remote_emojis_endpoint(
 
 @router.get("/emoji/remote/domains")
 async def list_remote_emoji_domains_endpoint(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_remote_emoji_domains
@@ -694,7 +694,7 @@ async def list_remote_emoji_domains_endpoint(
 @router.post("/emoji/import-remote/{emoji_id}", response_model=AdminEmojiResponse)
 async def import_remote_emoji(
     emoji_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import import_remote_emoji_to_local
@@ -710,7 +710,7 @@ async def import_remote_emoji(
 @router.post("/emoji/import-by-shortcode", response_model=AdminEmojiResponse)
 async def import_remote_emoji_by_shortcode(
     body: ImportByShortcodeRequest,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local
@@ -740,7 +740,7 @@ async def add_emoji(
     copy_permission: str | None = Form(None),
     usage_info: str | None = Form(None),
     is_based_on: str | None = Form(None),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     import json as json_mod
@@ -792,7 +792,7 @@ async def add_emoji(
 async def update_emoji_endpoint(
     emoji_id: uuid.UUID,
     body: AdminEmojiUpdate,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import update_emoji
@@ -808,7 +808,7 @@ async def update_emoji_endpoint(
 @router.delete("/emoji/{emoji_id}")
 async def delete_emoji_endpoint(
     emoji_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import delete_emoji, get_emoji_by_id
@@ -831,7 +831,7 @@ async def delete_emoji_endpoint(
 
 @router.get("/emoji/export")
 async def export_emojis(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     import io
@@ -914,7 +914,7 @@ async def export_emojis(
 @router.post("/emoji/import")
 async def import_emojis(
     file: UploadFile = File(...),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     import io
@@ -1245,7 +1245,7 @@ async def get_system_stats(
 
 @router.get("/registrations", response_model=list[PendingRegistrationResponse])
 async def list_pending_registrations(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
     """List users awaiting approval."""
@@ -1271,7 +1271,7 @@ async def list_pending_registrations(
 @router.post("/registrations/{user_id}/approve")
 async def approve_registration(
     user_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
     """Approve a pending registration."""
@@ -1290,7 +1290,7 @@ async def approve_registration(
 @router.post("/registrations/{user_id}/reject")
 async def reject_registration(
     user_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
     """Reject a pending registration and delete the user."""
@@ -1306,6 +1306,37 @@ async def reject_registration(
     await db.delete(actor)
     await db.commit()
     return {"ok": True}
+
+
+# --- Moderator Permissions ---
+
+
+@router.get("/permissions")
+async def get_permissions(
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return current moderator permission settings (visible to all staff)."""
+    from app.services.permission_service import get_moderator_permissions
+
+    return await get_moderator_permissions(db)
+
+
+@router.patch("/permissions")
+async def update_permissions(
+    body: dict,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update moderator permission settings (admin only)."""
+    from app.services.permission_service import (
+        get_moderator_permissions,
+        set_moderator_permissions,
+    )
+
+    await set_moderator_permissions(db, body)
+    await db.commit()
+    return await get_moderator_permissions(db)
 
 
 # --- Helpers ---

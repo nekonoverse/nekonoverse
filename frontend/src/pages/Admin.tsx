@@ -58,6 +58,8 @@ import {
   approveRegistration,
   rejectRegistration,
   generateVapidKey,
+  getModeratorPermissions,
+  updateModeratorPermissions,
   type AdminStats,
   type ServerSettings,
   type AdminUser,
@@ -82,6 +84,8 @@ interface AdminSection {
   key: string;
   labelKey: string;
   descKey: string;
+  /** If set, moderators need this permission key to see the section. */
+  permission?: string;
 }
 
 interface AdminCategory {
@@ -95,21 +99,24 @@ const categories: AdminCategory[] = [
     labelKey: "admin.categoryModeration",
     adminOnly: false,
     sections: [
-      { key: "users", labelKey: "admin.tabUsers", descKey: "admin.descUsers" },
+      { key: "users", labelKey: "admin.tabUsers", descKey: "admin.descUsers", permission: "users" },
       {
         key: "registrations",
         labelKey: "admin.tabRegistrations",
         descKey: "admin.descRegistrations",
+        permission: "registrations",
       },
       {
         key: "domains",
         labelKey: "admin.tabDomains",
         descKey: "admin.descDomains",
+        permission: "domains",
       },
       {
         key: "reports",
         labelKey: "admin.tabReports",
         descKey: "admin.descReports",
+        permission: "reports",
       },
       { key: "log", labelKey: "admin.tabLog", descKey: "admin.descLog" },
     ],
@@ -122,8 +129,9 @@ const categories: AdminCategory[] = [
         key: "federation",
         labelKey: "admin.tabFederation",
         descKey: "admin.descFederation",
+        permission: "federation",
       },
-      { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji" },
+      { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji", permission: "emoji" },
     ],
   },
   {
@@ -140,6 +148,11 @@ const categories: AdminCategory[] = [
         key: "invites",
         labelKey: "admin.tabInvites",
         descKey: "admin.descInvites",
+      },
+      {
+        key: "permissions",
+        labelKey: "admin.tabPermissions",
+        descKey: "admin.descPermissions",
       },
       {
         key: "queue",
@@ -177,6 +190,38 @@ export default function Admin() {
 
   const isAdmin = () => currentUser()?.role === "admin";
 
+  // Fetch moderator permissions for non-admin staff to filter visible sections
+  const [modPerms, setModPerms] = createSignal<Record<string, boolean> | null>(null);
+
+  let permsInit = false;
+  createEffect(() => {
+    if (isStaff() && !isAdmin() && !permsInit) {
+      permsInit = true;
+      (async () => {
+        try {
+          setModPerms(await getModeratorPermissions());
+        } catch {
+          // If fetch fails (e.g. admin-only endpoint), show all sections
+          setModPerms(null);
+        }
+      })();
+    }
+  });
+
+  /** Check whether a section should be visible to the current user. */
+  const isSectionVisible = (s: AdminSection): boolean => {
+    // Registration section: only show when approval mode is active
+    if (s.key === "registrations" && registrationMode() !== "approval") return false;
+    // Admins can always see everything
+    if (isAdmin()) return true;
+    // No permission requirement means always visible to staff
+    if (!s.permission) return true;
+    // Moderator: check permission map
+    const perms = modPerms();
+    if (!perms) return true;  // Not loaded yet, show all
+    return perms[s.permission] !== false;
+  };
+
   return (
     <div class="page-container admin-page">
       <Show
@@ -198,9 +243,7 @@ export default function Admin() {
                           {t(cat.labelKey as any)}
                         </h3>
                         <div class="settings-menu-grid">
-                          <For each={cat.sections.filter(
-                            (s) => s.key !== "registrations" || registrationMode() === "approval"
-                          )}>
+                          <For each={cat.sections.filter(isSectionVisible)}>
                             {(s) => (
                               <A
                                 href={`/admin/${s.key}`}
@@ -260,6 +303,9 @@ export default function Admin() {
             </Match>
             <Match when={section() === "invites"}>
               <InvitesTab />
+            </Match>
+            <Match when={section() === "permissions"}>
+              <PermissionsTab />
             </Match>
             <Match when={section() === "queue"}>
               <QueueTab />
@@ -2825,6 +2871,132 @@ function SystemTab() {
               </div>
             </div>
           </div>
+        )}
+      </Show>
+    </div>
+  );
+}
+
+const PERMISSION_KEYS = [
+  "users",
+  "reports",
+  "content",
+  "domains",
+  "federation",
+  "emoji",
+  "registrations",
+] as const;
+
+const PERM_LABEL_KEYS: Record<string, string> = {
+  users: "admin.permUsers",
+  reports: "admin.permReports",
+  content: "admin.permContent",
+  domains: "admin.permDomains",
+  federation: "admin.permFederation",
+  emoji: "admin.permEmoji",
+  registrations: "admin.permRegistrations",
+};
+
+const PERM_DESC_KEYS: Record<string, string> = {
+  users: "admin.permUsersDesc",
+  reports: "admin.permReportsDesc",
+  content: "admin.permContentDesc",
+  domains: "admin.permDomainsDesc",
+  federation: "admin.permFederationDesc",
+  emoji: "admin.permEmojiDesc",
+  registrations: "admin.permRegistrationsDesc",
+};
+
+function PermissionsTab() {
+  const { t } = useI18n();
+  const [permissions, setPermissions] = createSignal<Record<string, boolean> | null>(null);
+  const [saving, setSaving] = createSignal(false);
+  const [saved, setSaved] = createSignal(false);
+  const [error, setError] = createSignal("");
+
+  let permInit = false;
+  createEffect(() => {
+    if (!permInit) {
+      permInit = true;
+      (async () => {
+        try {
+          setPermissions(await getModeratorPermissions());
+        } catch (e) {
+          setError(e instanceof Error ? e.message : "Failed to load permissions");
+        }
+      })();
+    }
+  });
+
+  const togglePermission = (key: string) => {
+    const current = permissions();
+    if (!current) return;
+    setPermissions({ ...current, [key]: !current[key] });
+    setSaved(false);
+  };
+
+  const handleSave = async () => {
+    const perms = permissions();
+    if (!perms) return;
+    setSaving(true);
+    setSaved(false);
+    setError("");
+    try {
+      const updated = await updateModeratorPermissions(perms);
+      setPermissions(updated);
+      setSaved(true);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    }
+    setSaving(false);
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.permissionsTitle" as any)}</h3>
+      <p style={{ color: "var(--text-muted)", "margin-bottom": "16px" }}>
+        {t("admin.permissionsDesc" as any)}
+      </p>
+      <Show when={error()}>
+        <p class="error">{error()}</p>
+      </Show>
+      <Show when={saved()}>
+        <p class="settings-success">{t("settings.saved")}</p>
+      </Show>
+      <Show when={permissions()} fallback={<p>{t("common.loading")}</p>}>
+        {(perms) => (
+          <>
+            <div class="admin-permissions-list">
+              <For each={[...PERMISSION_KEYS]}>
+                {(key) => (
+                  <div class="admin-permissions-item">
+                    <div class="admin-permissions-info">
+                      <strong>{t(PERM_LABEL_KEYS[key] as any)}</strong>
+                      <span style={{ color: "var(--text-muted)", "font-size": "0.9em" }}>
+                        {t(PERM_DESC_KEYS[key] as any)}
+                      </span>
+                    </div>
+                    <label class="admin-permissions-toggle">
+                      <input
+                        type="checkbox"
+                        checked={perms()[key] !== false}
+                        onChange={() => togglePermission(key)}
+                      />
+                      <span class="admin-permissions-slider" />
+                    </label>
+                  </div>
+                )}
+              </For>
+            </div>
+            <button
+              class="btn btn-small"
+              onClick={handleSave}
+              disabled={saving()}
+              style={{ "margin-top": "16px" }}
+            >
+              {saving() ? t("profile.saving") : t("settings.save")}
+            </button>
+          </>
         )}
       </Show>
     </div>

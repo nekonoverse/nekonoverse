@@ -61,6 +61,28 @@ async def get_staff_user(
     return user
 
 
+def get_permitted_staff(permission: str):
+    """Return a dependency that checks the user is admin, or moderator with
+    the specified permission enabled."""
+
+    async def dependency(
+        request: Request,
+        db: AsyncSession = Depends(get_db),
+    ) -> User:
+        user = await get_current_user(request, db)
+        if user.is_admin:
+            return user
+        if not user.is_staff:
+            raise HTTPException(status_code=403, detail="Staff access required")
+        from app.services.permission_service import has_moderator_permission
+
+        if not await has_moderator_permission(db, user, permission):
+            raise HTTPException(status_code=403, detail="Permission denied")
+        return user
+
+    return dependency
+
+
 async def get_admin_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
