@@ -71,6 +71,7 @@ async def create_note(
             try:
                 mentioned_actor = await resolve_webfinger(db, username, domain)
             except Exception:
+                await db.rollback()
                 mentioned_actor = None  # WebFinger解決失敗はスキップ
         if mentioned_actor:
             mentioned_uri = actor_uri(mentioned_actor)
