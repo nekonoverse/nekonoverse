@@ -70,7 +70,10 @@ async def upload_server_icon(
 
     from app.services.icon_service import generate_all_icons
 
-    await generate_all_icons(db, data, set_server_icon=False)
+    try:
+        await generate_all_icons(db, data, set_server_icon=False)
+    except Exception:
+        pass  # Icon derivative generation is best-effort
 
     from app.services.server_settings_service import set_setting
 
