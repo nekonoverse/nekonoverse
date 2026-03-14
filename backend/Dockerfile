@@ -17,7 +17,10 @@ CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload
 
 # --- Production stage ---
 FROM base AS production
+ARG GIT_HASH=""
+ARG GIT_BRANCH=""
 RUN uv pip install --system -e "." 2>/dev/null || true
 COPY . .
+RUN if [ -n "$GIT_HASH" ]; then echo "${GIT_BRANCH}:${GIT_HASH}" > /app/GIT_VERSION; fi
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
