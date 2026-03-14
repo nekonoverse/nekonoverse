@@ -39,4 +39,41 @@ test.describe("Authentication", () => {
     const response = await page.request.get("/api/v1/accounts/verify_credentials");
     expect(response.status()).toBe(401);
   });
+
+  test("logout clears auth cache and shows logged-out state", async ({ page }) => {
+    await loginAsAdmin(page);
+    await expect(page.locator(".navbar-avatar")).toBeVisible({ timeout: 10_000 });
+
+    // ログイン後、authキャッシュがlocalStorageに保存されていることを確認
+    const cached = await page.evaluate(() => localStorage.getItem("nekonoverse_cached_user"));
+    expect(cached).toBeTruthy();
+
+    // ナビバーのユーザーメニューからログアウト
+    await page.locator(".navbar-avatar").click();
+    await page.locator(".navbar-dropdown-logout").click();
+    await page.waitForURL("/", { timeout: 10_000 });
+
+    // localStorageからキャッシュがクリアされていることを確認
+    const clearedCache = await page.evaluate(() => localStorage.getItem("nekonoverse_cached_user"));
+    expect(clearedCache).toBeNull();
+
+    // ログアウト状態であることをAPIで確認
+    const response = await page.request.get("/api/v1/accounts/verify_credentials");
+    expect(response.status()).toBe(401);
+  });
+
+  test("cached auth restores user on reload without waiting", async ({ page }) => {
+    await loginAsAdmin(page);
+    await expect(page.locator(".navbar-avatar")).toBeVisible({ timeout: 10_000 });
+
+    // リロード前にキャッシュが存在することを確認
+    const cached = await page.evaluate(() => localStorage.getItem("nekonoverse_cached_user"));
+    expect(cached).toBeTruthy();
+    const user = JSON.parse(cached!);
+    expect(user.username).toBe("admin");
+
+    // ページリロード後もNavbarにユーザーアバターが即座に表示される
+    await page.reload();
+    await expect(page.locator(".navbar-avatar")).toBeVisible({ timeout: 5_000 });
+  });
 });

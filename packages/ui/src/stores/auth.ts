@@ -6,21 +6,50 @@ import type { CurrentUser, LoginResponse } from "../api/types/auth";
 
 export type { CurrentUser, ProfileField, FocalPoint, LoginResponse } from "../api/types/auth";
 
-const [currentUser, setCurrentUser] = createSignal<CurrentUser | null>(null);
-const [authLoading, setAuthLoading] = createSignal(true);
+const CACHED_USER_KEY = "nekonoverse_cached_user";
+
+// localStorageから同期的にキャッシュを復元
+function restoreCachedUser(): CurrentUser | null {
+  try {
+    const raw = localStorage.getItem(CACHED_USER_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheUser(user: CurrentUser | null) {
+  try {
+    if (user) {
+      localStorage.setItem(CACHED_USER_KEY, JSON.stringify(user));
+    } else {
+      localStorage.removeItem(CACHED_USER_KEY);
+    }
+  } catch {
+    // localStorage使用不可時は無視
+  }
+}
+
+// キャッシュがあれば即座にauthLoading=falseで開始
+const cachedUser = restoreCachedUser();
+const [currentUser, setCurrentUser] = createSignal<CurrentUser | null>(cachedUser);
+const [authLoading, setAuthLoading] = createSignal(!cachedUser);
 
 export { currentUser, authLoading };
 
 export async function fetchCurrentUser() {
-  setAuthLoading(true);
+  // キャッシュ済みならloadingフラグを立てない(UIをブロックしない)
+  if (!currentUser()) setAuthLoading(true);
   try {
     const user = await apiRequest<CurrentUser>(
       "/api/v1/accounts/verify_credentials",
     );
     setCurrentUser(user);
+    cacheUser(user);
     fetchFollowedIds();
   } catch {
     setCurrentUser(null);
+    cacheUser(null);
   } finally {
     setAuthLoading(false);
   }
@@ -55,6 +84,7 @@ export async function completeTotpLogin(
 export async function logout() {
   await apiRequest("/api/v1/auth/logout", { method: "POST" });
   setCurrentUser(null);
+  cacheUser(null);
 }
 
 export async function loginWithPasskey() {
