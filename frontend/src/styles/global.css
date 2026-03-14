@@ -3376,6 +3376,35 @@ a:hover {
   margin: 0;
 }
 
+.notif-tabs {
+  display: flex;
+  gap: 0;
+  margin-bottom: 16px;
+  border-bottom: 2px solid var(--border);
+}
+
+.notif-tab {
+  padding: 8px 20px;
+  background: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -2px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.95rem;
+  font-weight: 500;
+  transition: color 0.15s, border-color 0.15s;
+}
+
+.notif-tab:hover {
+  color: var(--text);
+}
+
+.notif-tab.active {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+
 .notifications-list {
   display: flex;
   flex-direction: column;

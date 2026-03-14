@@ -29,7 +29,6 @@ const FollowList = lazy(() => import("./pages/FollowList"));
 const FollowRequests = lazy(() => import("./pages/FollowRequests"));
 const TagTimeline = lazy(() => import("./pages/TagTimeline"));
 const NoteThread = lazy(() => import("./pages/NoteThread"));
-const Mentions = lazy(() => import("./pages/Mentions"));
 
 function Layout(props: ParentProps) {
   onMount(() => {
@@ -59,7 +58,7 @@ export default function App() {
         <Route path="/register" component={Register} />
         <Route path="/settings/*section" component={Settings} />
         <Route path="/notifications" component={Notifications} />
-        <Route path="/mentions" component={Mentions} />
+        <Route path="/mentions" component={Notifications} />
         <Route path="/admin/*section" component={Admin} />
         <Route path="/drive" component={Drive} />
         <Route path="/bookmarks" component={Bookmarks} />

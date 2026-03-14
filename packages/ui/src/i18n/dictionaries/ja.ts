@@ -216,6 +216,8 @@ export const ja = {
   "notifications.type.reblog": "にブーストされました",
   "notifications.type.favourite": "にお気に入りされました",
   "notifications.type.reaction": "がリアクションしました",
+  "notifications.tabMentions": "メンション",
+  "notifications.tabOther": "その他",
   "mentions.title": "メンション",
   "mentions.empty": "メンションはありません",
   "boost.boost": "ブースト",

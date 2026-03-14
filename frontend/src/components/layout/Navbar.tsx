@@ -125,16 +125,69 @@ export default function Navbar() {
                 <polyline points="9 22 9 12 15 12 15 22" />
               </svg>
             </a>
-            <a
-              href="/mentions"
-              class={`navbar-icon${isActive("/mentions") ? " active" : ""}`}
-              title={t("mentions.title")}
+            <div
+              class="navbar-notif-wrap"
+              onMouseEnter={handleNotifEnter}
+              onMouseLeave={handleNotifLeave}
             >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="4" />
-                <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
-              </svg>
-            </a>
+              <a
+                href="/notifications"
+                class={`navbar-icon${isActive("/notifications") ? " active" : ""}`}
+                title={t("notifications.title")}
+                onClick={() => resetUnread()}
+              >
+                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <circle cx="12" cy="12" r="4" />
+                  <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+                </svg>
+                <Show when={unreadCount() > 0}>
+                  <span class="navbar-notif-badge">
+                    {unreadCount() > 99 ? "99+" : unreadCount()}
+                  </span>
+                </Show>
+              </a>
+              <Show when={notifOpen()}>
+                <div
+                  class="navbar-notif-dropdown"
+                  onMouseEnter={handleNotifEnter}
+                  onMouseLeave={handleNotifLeave}
+                >
+                  <Show
+                    when={notifItems().length > 0}
+                    fallback={
+                      <div class="navbar-notif-empty">
+                        {t("notifications.empty")}
+                      </div>
+                    }
+                  >
+                    <For each={notifItems()}>
+                      {(notif) => (
+                        <a
+                          href="/notifications"
+                          class={`navbar-notif-item${notif.read ? "" : " unread"}`}
+                        >
+                          <span class="navbar-notif-icon">{notifIcon(notif.type)}</span>
+                          <span class="navbar-notif-text">
+                            <strong>
+                              {notif.account?.display_name || notif.account?.username || "?"}
+                            </strong>{" "}
+                            {t(`notifications.type.${notif.type}` as keyof Dictionary)}
+                            <Show when={notif.type === "reaction" && notif.emoji}>
+                              {" "}<Emoji emoji={notif.emoji!} />
+                            </Show>
+                          </span>
+                        </a>
+                      )}
+                    </For>
+                  </Show>
+                  <Show when={notifHasMore() || notifItems().length > 0}>
+                    <a href="/notifications" class="navbar-notif-more">
+                      {t("notifications.loadMore")}
+                    </a>
+                  </Show>
+                </div>
+              </Show>
+            </div>
           </Show>
           <a
             href="/"
@@ -207,14 +260,6 @@ export default function Navbar() {
                         {t("drive.title")}
                       </a>
                       <a
-                        href="/mentions"
-                        class="navbar-dropdown-item"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" /></svg>
-                        {t("mentions.title")}
-                      </a>
-                      <a
                         href="/bookmarks"
                         class="navbar-dropdown-item"
                         onClick={() => setMenuOpen(false)}
@@ -245,69 +290,6 @@ export default function Navbar() {
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" /><polyline points="16 17 21 12 16 7" /><line x1="21" y1="12" x2="9" y2="12" /></svg>
                         {t("settings.logout")}
                       </button>
-                    </div>
-                  </Show>
-                </div>
-                <div
-                  class="navbar-notif-wrap"
-                  onMouseEnter={handleNotifEnter}
-                  onMouseLeave={handleNotifLeave}
-                >
-                  <a
-                    href="/notifications"
-                    class={`navbar-icon${isActive("/notifications") ? " active" : ""}`}
-                    title={t("notifications.title")}
-                    onClick={() => resetUnread()}
-                  >
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                    </svg>
-                    <Show when={unreadCount() > 0}>
-                      <span class="navbar-notif-badge">
-                        {unreadCount() > 99 ? "99+" : unreadCount()}
-                      </span>
-                    </Show>
-                  </a>
-                  <Show when={notifOpen()}>
-                    <div
-                      class="navbar-notif-dropdown"
-                      onMouseEnter={handleNotifEnter}
-                      onMouseLeave={handleNotifLeave}
-                    >
-                      <Show
-                        when={notifItems().length > 0}
-                        fallback={
-                          <div class="navbar-notif-empty">
-                            {t("notifications.empty")}
-                          </div>
-                        }
-                      >
-                        <For each={notifItems()}>
-                          {(notif) => (
-                            <a
-                              href="/notifications"
-                              class={`navbar-notif-item${notif.read ? "" : " unread"}`}
-                            >
-                              <span class="navbar-notif-icon">{notifIcon(notif.type)}</span>
-                              <span class="navbar-notif-text">
-                                <strong>
-                                  {notif.account?.display_name || notif.account?.username || "?"}
-                                </strong>{" "}
-                                {t(`notifications.type.${notif.type}` as keyof Dictionary)}
-                                <Show when={notif.type === "reaction" && notif.emoji}>
-                                  {" "}<Emoji emoji={notif.emoji!} />
-                                </Show>
-                              </span>
-                            </a>
-                          )}
-                        </For>
-                      </Show>
-                      <Show when={notifHasMore() || notifItems().length > 0}>
-                        <a href="/notifications" class="navbar-notif-more">
-                          {t("notifications.loadMore")}
-                        </a>
-                      </Show>
                     </div>
                   </Show>
                 </div>
