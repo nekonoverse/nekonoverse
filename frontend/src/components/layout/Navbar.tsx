@@ -1,7 +1,7 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation, useNavigate } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
-import { connect, disconnect, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
+import { connect, disconnect, unreadCount } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
@@ -135,7 +135,6 @@ export default function Navbar() {
               href="/notifications"
               class={`navbar-icon navbar-notif-link${isActive("/notifications") ? " active" : ""}`}
               title={t("notifications.title")}
-              onClick={() => resetUnread()}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />

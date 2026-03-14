@@ -69,6 +69,16 @@ export default function Notifications() {
       const data = await getNotifications({ limit: 40 });
       setAllNotifs(data);
       setHasMore(data.length >= 40);
+
+      // 現在のタブが空で他方にデータがあれば自動切替
+      const currentTab = tab();
+      const hasMentions = data.some((n) => n.type === "mention" || n.type === "reply");
+      const hasOther = data.some((n) => n.type !== "mention" && n.type !== "reply");
+      if (currentTab === "mentions" && !hasMentions && hasOther) {
+        setTab("other");
+      } else if (currentTab === "other" && !hasOther && hasMentions) {
+        setTab("mentions");
+      }
     } catch {
     } finally {
       setLoading(false);
