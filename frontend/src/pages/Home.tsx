@@ -8,7 +8,7 @@ import {
   For,
   untrack,
 } from "solid-js";
-import { useSearchParams } from "@solidjs/router";
+import { useSearchParams, useNavigate } from "@solidjs/router";
 import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import EntrancePage from "../components/entrance/EntrancePage";
 import {
@@ -24,6 +24,7 @@ import NoteCard from "../components/notes/NoteCard";
 
 export default function Home() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [initialLoading, setInitialLoading] = createSignal(true);
@@ -271,8 +272,11 @@ export default function Home() {
   );
 
   const handleNewNote = (note: Note) => {
-    // パブリックTL表示中はpublicノートのみ追加（unlistedはホームTLのみ）
-    if (!isHomeTL() && note.visibility !== "public") return;
+    if (!isHomeTL() && note.visibility !== "public") {
+      // 公開TL表示中にunlisted等を投稿した場合はホームTLに遷移
+      navigate("/?tl=home");
+      return;
+    }
     setNotes((prev) => [note, ...prev]);
   };
 

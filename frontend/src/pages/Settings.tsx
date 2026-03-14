@@ -249,6 +249,7 @@ function PostingTab() {
       <VisibilitySelector
         value={defaultVisibility()}
         onChange={(v) => setDefaultVisibility(v)}
+        exclude={["direct"]}
       />
       <label class="toggle-label">
         <input
