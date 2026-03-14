@@ -41,12 +41,20 @@ interface Props {
   onClearQuote?: () => void;
   replyTo?: Note | null;
   onClearReply?: () => void;
+  /** Increment to reset the form */
+  key?: number;
+  /** Called when content or visibility changes */
+  onContentChange?: (content: string, visibility: Visibility) => void;
+  /** Initial content for draft restore */
+  initialContent?: string;
+  /** Initial visibility for draft restore */
+  initialVisibility?: Visibility;
 }
 
 export default function NoteComposer(props: Props) {
   const { t } = useI18n();
-  const [content, setContent] = createSignal("");
-  const [visibility, setVisibility] = createSignal<Visibility>(getInitialVisibility());
+  const [content, setContent] = createSignal(props.initialContent || "");
+  const [visibility, setVisibility] = createSignal<Visibility>(props.initialVisibility || getInitialVisibility());
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal("");
   const [attachments, setAttachments] = createSignal<MediaAttachment[]>([]);
@@ -72,6 +80,26 @@ export default function NoteComposer(props: Props) {
         setVisibility(parentVis);
       }
     }
+  });
+
+  // Reset form when key changes (modal re-opened)
+  createEffect(() => {
+    const _key = props.key;
+    if (_key !== undefined && _key > 0) {
+      setContent(props.initialContent || "");
+      setVisibility(props.initialVisibility || getInitialVisibility());
+      setAttachments([]);
+      setError("");
+      setPollOpen(false);
+      setPollOptions(["", ""]);
+      setPollMultiple(false);
+      setPollExpiresIn(86400);
+    }
+  });
+
+  // Report content changes to parent
+  createEffect(() => {
+    props.onContentChange?.(content(), visibility());
   });
 
   const visEmoji = () => VISIBILITY_OPTIONS.find((o) => o.key === visibility())?.emoji || "\u{1F310}";

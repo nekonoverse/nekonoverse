@@ -11,11 +11,9 @@ import { useI18n } from "@nekonoverse/ui/i18n";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 import { isPushSupported, getPermissionState, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "@nekonoverse/ui/utils/pushNotification";
+import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
 
-function actorHandle(account: Notification["account"]): string {
-  if (!account) return "";
-  return account.domain ? `@${account.username}@${account.domain}` : `@${account.username}`;
-}
+type Tab = "mentions" | "other";
 
 function profileUrl(account: Notification["account"]): string {
   if (!account) return "#";
@@ -26,14 +24,14 @@ function profileUrl(account: Notification["account"]): string {
 
 export default function Notifications() {
   const { t } = useI18n();
-  const [notifications, setNotifications] = createSignal<Notification[]>([]);
+  const [tab, setTab] = createSignal<Tab>("mentions");
+  const [allNotifs, setAllNotifs] = createSignal<Notification[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
   const [pushSubscribed, setPushSubscribed] = createSignal(false);
   const [pushToggling, setPushToggling] = createSignal(false);
 
-  // プッシュ通知の状態を確認
   createEffect(async () => {
     if (currentUser() && isPushSupported()) {
       const subscribed = await isSubscribedToPush();
@@ -55,11 +53,18 @@ export default function Notifications() {
     setPushToggling(false);
   };
 
+  const filtered = () => {
+    const t = tab();
+    return allNotifs().filter((n) =>
+      t === "mentions" ? n.type === "mention" : n.type !== "mention"
+    );
+  };
+
   const load = async () => {
     try {
-      const data = await getNotifications({ limit: 20 });
-      setNotifications(data);
-      setHasMore(data.length >= 20);
+      const data = await getNotifications({ limit: 40 });
+      setAllNotifs(data);
+      setHasMore(data.length >= 40);
     } catch {
     } finally {
       setLoading(false);
@@ -69,19 +74,17 @@ export default function Notifications() {
   onMount(async () => {
     await load();
     resetUnread();
-    // Mark all notifications as read on the server
     try {
       await markAllNotificationsAsRead();
-      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+      setAllNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
     } catch { /* ignore */ }
   });
 
-  // Subscribe to real-time notifications from global stream
   const unsub = onNotification(async () => {
     try {
       const fresh = await getNotifications({ limit: 1 });
       if (fresh.length > 0) {
-        setNotifications((prev) => {
+        setAllNotifs((prev) => {
           if (prev.some((n) => n.id === fresh[0].id)) return prev;
           return [fresh[0], ...prev];
         });
@@ -93,7 +96,7 @@ export default function Notifications() {
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
-    if (notifications().some((n) => n.status?.id === id)) {
+    if (allNotifs().some((n) => n.status?.id === id)) {
       await refreshNote(id);
     }
   });
@@ -101,16 +104,16 @@ export default function Notifications() {
   onCleanup(() => { unsub(); unsubReaction(); });
 
   const loadMore = async () => {
-    const current = notifications();
+    const current = allNotifs();
     if (current.length === 0 || loadingMore()) return;
     setLoadingMore(true);
     try {
       const older = await getNotifications({
         max_id: current[current.length - 1].id,
-        limit: 20,
+        limit: 40,
       });
-      setNotifications([...current, ...older]);
-      setHasMore(older.length >= 20);
+      setAllNotifs([...current, ...older]);
+      setHasMore(older.length >= 40);
     } catch {
     } finally {
       setLoadingMore(false);
@@ -120,21 +123,21 @@ export default function Notifications() {
   const handleClearAll = async () => {
     try {
       await clearNotifications();
-      setNotifications([]);
+      setAllNotifs([]);
     } catch {}
   };
 
   const handleDismiss = async (id: string) => {
     try {
       await dismissNotification(id);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      setAllNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     } catch {}
   };
 
   const refreshNote = async (noteId: string) => {
     try {
       const updated = await getNote(noteId);
-      setNotifications((prev) =>
+      setAllNotifs((prev) =>
         prev.map((n) => {
           if (n.status?.id === noteId) return { ...n, status: updated };
           if (n.status?.reblog?.id === noteId) {
@@ -148,12 +151,12 @@ export default function Notifications() {
 
   const notifIcon = (type: string) => {
     switch (type) {
-      case "follow": return "👤";
-      case "mention": return "💬";
-      case "reblog": return "🔁";
-      case "favourite": return "⭐";
-      case "reaction": return "✨";
-      default: return "🔔";
+      case "follow": return "\u{1F464}";
+      case "mention": return "\u{1F4AC}";
+      case "reblog": return "\u{1F501}";
+      case "favourite": return "\u2B50";
+      case "reaction": return "\u2728";
+      default: return "\u{1F514}";
     }
   };
 
@@ -182,7 +185,7 @@ export default function Notifications() {
                   : t("push.disabled")}
             </button>
           </Show>
-          <Show when={notifications().length > 0}>
+          <Show when={allNotifs().length > 0}>
             <button class="btn btn-small" onClick={handleClearAll}>
               {t("notifications.clearAll")}
             </button>
@@ -190,14 +193,29 @@ export default function Notifications() {
         </div>
       </div>
 
+      <div class="notif-tabs">
+        <button
+          class={`notif-tab${tab() === "mentions" ? " active" : ""}`}
+          onClick={() => setTab("mentions")}
+        >
+          {t("notifications.tabMentions" as keyof Dictionary)}
+        </button>
+        <button
+          class={`notif-tab${tab() === "other" ? " active" : ""}`}
+          onClick={() => setTab("other")}
+        >
+          {t("notifications.tabOther" as keyof Dictionary)}
+        </button>
+      </div>
+
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<p>{t("notifications.loginRequired")}</p>}>
           <Show
-            when={notifications().length > 0}
+            when={filtered().length > 0}
             fallback={<p class="empty">{t("notifications.empty")}</p>}
           >
             <div class="notifications-list">
-              <For each={notifications()}>
+              <For each={filtered()}>
                 {(notif) => (
                   <div class={`notification-item${notif.read ? "" : " unread"}`}>
                     <div class="notification-icon">{notifIcon(notif.type)}</div>
@@ -218,7 +236,7 @@ export default function Notifications() {
                           </a>
                         </Show>
                         <span class="notification-type-text">
-                          {t(`notifications.type.${notif.type}` as keyof import("@nekonoverse/ui/i18n/dictionaries/ja").Dictionary)}
+                          {t(`notifications.type.${notif.type}` as keyof Dictionary)}
                         </span>
                         <Show when={notif.type === "reaction" && notif.emoji}>
                           <span class="notification-emoji">

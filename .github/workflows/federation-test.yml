@@ -25,14 +25,17 @@ jobs:
       - name: Collect logs
         if: always()
         run: |
-          docker compose -f docker-compose.federation.yml logs app-a app-b worker-a worker-b > federation-logs.txt 2>&1
+          docker compose -f docker-compose.federation.yml logs app-a app-b worker-a worker-b squid > federation-logs.txt 2>&1
+          docker compose -f docker-compose.federation.yml exec -T squid cat /var/log/squid/access.log > squid-access.log 2>/dev/null || true
 
       - name: Upload logs
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: federation-logs
-          path: federation-logs.txt
+          path: |
+            federation-logs.txt
+            squid-access.log
 
       - name: Cleanup
         if: always()

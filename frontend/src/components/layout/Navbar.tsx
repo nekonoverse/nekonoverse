@@ -1,28 +1,13 @@
-import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
+import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation, useNavigate } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
-import { connect, disconnect, onNotification, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
+import { connect, disconnect, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
-import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
-import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
-import { getNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
-import Emoji from "../Emoji";
+import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
+import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import SearchModal from "../SearchModal";
 import ComposeModal from "../notes/ComposeModal";
 import KeyboardShortcuts from "../KeyboardShortcuts";
-
-const PREVIEW_COUNT = 5;
-
-function notifIcon(type: string) {
-  switch (type) {
-    case "follow": return "\u{1F464}";
-    case "mention": return "\u{1F4AC}";
-    case "reblog": return "\u{1F501}";
-    case "favourite": return "\u2B50";
-    case "reaction": return "\u2728";
-    default: return "\u{1F514}";
-  }
-}
 
 export default function Navbar() {
   const { t } = useI18n();
@@ -31,13 +16,10 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [composeOpen, setComposeOpen] = createSignal(false);
+  const [composeQuote, setComposeQuote] = createSignal<Note | null>(null);
+  const [composeReply, setComposeReply] = createSignal<Note | null>(null);
+  const [tlDropdownOpen, setTlDropdownOpen] = createSignal(false);
 
-  // Notification preview state
-  const [notifOpen, setNotifOpen] = createSignal(false);
-  const [notifItems, setNotifItems] = createSignal<Notification[]>([]);
-  const [notifLoaded, setNotifLoaded] = createSignal(false);
-  const [notifHasMore, setNotifHasMore] = createSignal(false);
-  let notifTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Manage global SSE connection based on auth state
   createEffect(() => {
@@ -51,17 +33,11 @@ export default function Navbar() {
   // Close dropdowns on route change
   createEffect(() => {
     location.pathname; // track
-    setNotifOpen(false);
     setMenuOpen(false);
-  });
-
-  // Invalidate notification preview cache when new notifications arrive
-  const unsub = onNotification(() => {
-    setNotifLoaded(false);
+    setTlDropdownOpen(false);
   });
 
   onCleanup(() => {
-    unsub();
     disconnect();
   });
 
@@ -72,6 +48,9 @@ export default function Navbar() {
     const target = e.target as HTMLElement;
     if (!target.closest(".navbar-user-menu")) {
       setMenuOpen(false);
+    }
+    if (!target.closest(".navbar-tl-wrap")) {
+      setTlDropdownOpen(false);
     }
   };
 
@@ -86,64 +65,91 @@ export default function Navbar() {
     window.location.href = "/";
   };
 
-  const loadNotifPreview = async () => {
-    if (notifLoaded()) return;
-    try {
-      const data = await getNotifications({ limit: PREVIEW_COUNT + 1 });
-      setNotifHasMore(data.length > PREVIEW_COUNT);
-      setNotifItems(data.slice(0, PREVIEW_COUNT));
-      setNotifLoaded(true);
-    } catch {}
-  };
-
-  const handleNotifEnter = () => {
-    clearTimeout(notifTimer);
-    loadNotifPreview();
-    setNotifOpen(true);
-  };
-
-  const handleNotifLeave = () => {
-    notifTimer = setTimeout(() => setNotifOpen(false), 200);
-  };
 
   return (
     <nav class="navbar">
       <div class="navbar-inner">
         <div class="navbar-left">
-          <a href="/" class="navbar-brand">{t("app.title")}</a>
+          <a href="/" class="navbar-brand">
+            <Show when={instance()?.thumbnail?.url} fallback={<span class="navbar-brand-text">{instance()?.title || t("app.title")}</span>}>
+              {(iconUrl) => (
+                <>
+                  <img src={iconUrl()} alt={instance()?.title || ""} class="navbar-brand-icon" />
+                  <span class="navbar-brand-text">{instance()?.title || t("app.title")}</span>
+                </>
+              )}
+            </Show>
+          </a>
           <Show when={currentUser()}>
+            <div class="navbar-tl-wrap">
+              <button
+                class={`navbar-icon${location.search.includes("tl=home") || (isActive("/") && !location.search.includes("tl=home")) ? " active" : ""}`}
+                onClick={() => setTlDropdownOpen(!tlDropdownOpen())}
+                title={location.search.includes("tl=home") ? t("timeline.home") : t("timeline.local")}
+              >
+                <Show when={location.search.includes("tl=home")} fallback={
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                  </svg>
+                }>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                </Show>
+                <svg class="navbar-tl-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              <Show when={tlDropdownOpen()}>
+                <div class="navbar-tl-dropdown">
+                  <a
+                    href="/?tl=home"
+                    class={`navbar-tl-item${location.search.includes("tl=home") ? " active" : ""}`}
+                    onClick={() => setTlDropdownOpen(false)}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    {t("timeline.home")}
+                  </a>
+                  <a
+                    href="/"
+                    class={`navbar-tl-item${isActive("/") && !location.search.includes("tl=home") ? " active" : ""}`}
+                    onClick={() => setTlDropdownOpen(false)}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="7" height="7" />
+                      <rect x="14" y="3" width="7" height="7" />
+                      <rect x="3" y="14" width="7" height="7" />
+                      <rect x="14" y="14" width="7" height="7" />
+                    </svg>
+                    {t("timeline.local")}
+                  </a>
+                </div>
+              </Show>
+            </div>
             <a
-              href="/?tl=home"
-              class={`navbar-icon${location.search.includes("tl=home") ? " active" : ""}`}
-              title={t("timeline.home")}
-            >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                <polyline points="9 22 9 12 15 12 15 22" />
-              </svg>
-            </a>
-            <a
-              href="/mentions"
-              class={`navbar-icon${isActive("/mentions") ? " active" : ""}`}
-              title={t("mentions.title")}
+              href="/notifications"
+              class={`navbar-icon navbar-notif-link${isActive("/notifications") ? " active" : ""}`}
+              title={t("notifications.title")}
+              onClick={() => resetUnread()}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <circle cx="12" cy="12" r="4" />
                 <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
               </svg>
+              <Show when={unreadCount() > 0}>
+                <span class="navbar-notif-badge">
+                  {unreadCount() > 99 ? "99+" : unreadCount()}
+                </span>
+              </Show>
             </a>
           </Show>
-          <a
-            href="/"
-            class={`navbar-icon${isActive("/") && !location.search.includes("tl=home") ? " active" : ""}`}
-            title={t("timeline.public")}
-          >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M2 12h20" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
-          </a>
           <button
             class="navbar-icon"
             title={t("search.title")}
@@ -171,11 +177,10 @@ export default function Navbar() {
                 <button
                   class="navbar-compose-btn"
                   title={t("composer.post")}
-                  onClick={() => setComposeOpen(true)}
+                  onClick={() => { setComposeQuote(null); setComposeReply(null); setComposeOpen(true); }}
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
                   </svg>
                 </button>
                 <div class="navbar-user-menu">
@@ -202,14 +207,6 @@ export default function Navbar() {
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" /></svg>
                         {t("drive.title")}
-                      </a>
-                      <a
-                        href="/mentions"
-                        class="navbar-dropdown-item"
-                        onClick={() => setMenuOpen(false)}
-                      >
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="4" /><path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" /></svg>
-                        {t("mentions.title")}
                       </a>
                       <a
                         href="/bookmarks"
@@ -245,69 +242,6 @@ export default function Navbar() {
                     </div>
                   </Show>
                 </div>
-                <div
-                  class="navbar-notif-wrap"
-                  onMouseEnter={handleNotifEnter}
-                  onMouseLeave={handleNotifLeave}
-                >
-                  <a
-                    href="/notifications"
-                    class={`navbar-icon${isActive("/notifications") ? " active" : ""}`}
-                    title={t("notifications.title")}
-                    onClick={() => resetUnread()}
-                  >
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                      <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
-                      <path d="M13.73 21a2 2 0 0 1-3.46 0" />
-                    </svg>
-                    <Show when={unreadCount() > 0}>
-                      <span class="navbar-notif-badge">
-                        {unreadCount() > 99 ? "99+" : unreadCount()}
-                      </span>
-                    </Show>
-                  </a>
-                  <Show when={notifOpen()}>
-                    <div
-                      class="navbar-notif-dropdown"
-                      onMouseEnter={handleNotifEnter}
-                      onMouseLeave={handleNotifLeave}
-                    >
-                      <Show
-                        when={notifItems().length > 0}
-                        fallback={
-                          <div class="navbar-notif-empty">
-                            {t("notifications.empty")}
-                          </div>
-                        }
-                      >
-                        <For each={notifItems()}>
-                          {(notif) => (
-                            <a
-                              href="/notifications"
-                              class={`navbar-notif-item${notif.read ? "" : " unread"}`}
-                            >
-                              <span class="navbar-notif-icon">{notifIcon(notif.type)}</span>
-                              <span class="navbar-notif-text">
-                                <strong>
-                                  {notif.account?.display_name || notif.account?.username || "?"}
-                                </strong>{" "}
-                                {t(`notifications.type.${notif.type}` as keyof Dictionary)}
-                                <Show when={notif.type === "reaction" && notif.emoji}>
-                                  {" "}<Emoji emoji={notif.emoji!} />
-                                </Show>
-                              </span>
-                            </a>
-                          )}
-                        </For>
-                      </Show>
-                      <Show when={notifHasMore() || notifItems().length > 0}>
-                        <a href="/notifications" class="navbar-notif-more">
-                          {t("notifications.loadMore")}
-                        </a>
-                      </Show>
-                    </div>
-                  </Show>
-                </div>
                 <Show when={user().role === "admin" || user().role === "moderator"}>
                   <a
                     href="/admin"
@@ -329,16 +263,37 @@ export default function Navbar() {
       </Show>
       <ComposeModal
         open={composeOpen()}
-        onClose={() => setComposeOpen(false)}
+        onClose={() => { setComposeOpen(false); setComposeQuote(null); setComposeReply(null); }}
         onPost={(note) => {
-          // Navigate to home TL when posting non-public notes from public TL
           if (note.visibility !== "public" && location.pathname === "/" && !location.search.includes("tl=home")) {
             navigate("/?tl=home");
           }
         }}
+        quoteNote={composeQuote()}
+        replyTo={composeReply()}
       />
       <Show when={currentUser()}>
-        <KeyboardShortcuts onCompose={() => setComposeOpen(true)} />
+        <KeyboardShortcuts
+          onCompose={() => { setComposeQuote(null); setComposeReply(null); setComposeOpen(true); }}
+          onQuote={async (noteId) => {
+            try {
+              const note = await getNote(noteId);
+              setComposeReply(null);
+              setComposeQuote(note);
+              setComposeOpen(true);
+            } catch {}
+          }}
+          onReply={async (noteId) => {
+            try {
+              const note = await getNote(noteId);
+              setComposeQuote(null);
+              setComposeReply(note);
+              setComposeOpen(true);
+            } catch {}
+          }}
+          onSearch={() => setSearchOpen(true)}
+          onNavigate={(path) => navigate(path)}
+        />
       </Show>
     </nav>
   );
