@@ -319,10 +319,40 @@ class TestFederation:
         followers = instance_a.get_followers("alice")
         assert followers["type"] == "OrderedCollection"
         assert followers["totalItems"] == 0
+        # first must point to a page URL, not the collection itself
+        assert "?page=true" in followers["first"]
+        assert followers["first"] != followers["id"]
 
         following = instance_a.get_following("alice")
         assert following["type"] == "OrderedCollection"
         assert following["totalItems"] == 0
+        assert "?page=true" in following["first"]
+        assert following["first"] != following["id"]
+
+    def test_06b_followers_following_page(self, instance_a: InstanceClient, alice):
+        """Followers/following page endpoint returns OrderedCollectionPage."""
+        resp = instance_a.http.get(
+            "/users/alice/followers",
+            params={"page": "true"},
+            headers={"Accept": "application/activity+json"},
+        )
+        assert resp.status_code == 200
+        page = resp.json()
+        assert page["type"] == "OrderedCollectionPage"
+        assert "partOf" in page
+        assert "orderedItems" in page
+        assert isinstance(page["orderedItems"], list)
+
+        resp = instance_a.http.get(
+            "/users/alice/following",
+            params={"page": "true"},
+            headers={"Accept": "application/activity+json"},
+        )
+        assert resp.status_code == 200
+        page = resp.json()
+        assert page["type"] == "OrderedCollectionPage"
+        assert "partOf" in page
+        assert "orderedItems" in page
 
     def test_07_nodeinfo(self, instance_a: InstanceClient):
         """NodeInfo endpoint works."""
