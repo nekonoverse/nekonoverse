@@ -39,12 +39,19 @@ class ChangePasswordRequest(BaseModel):
     new_password: str = Field(min_length=8, max_length=128)
 
 
+class FocalPoint(BaseModel):
+    x: float
+    y: float
+
+
 class UserResponse(BaseModel):
     id: uuid.UUID
     username: str
     display_name: str | None
     avatar_url: str | None
     header_url: str | None
+    avatar_focal: FocalPoint | None = None
+    header_focal: FocalPoint | None = None
     summary: str | None
     fields: list[dict] = []
     birthday: dt.date | None = None

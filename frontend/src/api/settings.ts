@@ -54,6 +54,42 @@ export async function updateProfile(params: UpdateProfileParams): Promise<Curren
   });
 }
 
+export async function deleteAvatar(): Promise<CurrentUser> {
+  const formData = new FormData();
+  formData.append("avatar_delete", "1");
+  return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
+    method: "PATCH",
+    formData,
+  });
+}
+
+export async function deleteHeader(): Promise<CurrentUser> {
+  const formData = new FormData();
+  formData.append("header_delete", "1");
+  return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
+    method: "PATCH",
+    formData,
+  });
+}
+
+export async function updateAvatarFocus(x: number, y: number): Promise<CurrentUser> {
+  const formData = new FormData();
+  formData.append("avatar_focus", `${x},${y}`);
+  return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
+    method: "PATCH",
+    formData,
+  });
+}
+
+export async function updateHeaderFocus(x: number, y: number): Promise<CurrentUser> {
+  const formData = new FormData();
+  formData.append("header_focus", `${x},${y}`);
+  return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
+    method: "PATCH",
+    formData,
+  });
+}
+
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await apiRequest("/api/v1/auth/change_password", {
     method: "POST",

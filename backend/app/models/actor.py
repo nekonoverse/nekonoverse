@@ -82,6 +82,12 @@ class Actor(Base):
     moved_to_ap_id: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     also_known_as: Mapped[list | None] = mapped_column(JSONB, nullable=True)
 
+    avatar_file = relationship(
+        "DriveFile", foreign_keys=[avatar_file_id], lazy="selectin",
+    )
+    header_file = relationship(
+        "DriveFile", foreign_keys=[header_file_id], lazy="selectin",
+    )
     local_user = relationship("User", back_populates="actor", uselist=False, lazy="selectin")
     notes = relationship("Note", back_populates="actor")
     reactions = relationship("Reaction", back_populates="actor")
