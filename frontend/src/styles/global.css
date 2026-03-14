@@ -4120,6 +4120,87 @@ a:hover {
   max-height: 90vh;
 }
 
+.compose-drafts {
+  border-bottom: 1px solid var(--border-color);
+  padding: 8px 16px;
+}
+
+.compose-drafts-header {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+}
+
+.compose-drafts-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.compose-draft-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+  background: var(--bg-secondary);
+  gap: 8px;
+}
+
+.compose-draft-item:hover {
+  background: var(--bg-hover);
+}
+
+.compose-draft-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+}
+
+.compose-draft-vis {
+  flex-shrink: 0;
+  font-size: 0.9em;
+}
+
+.compose-draft-text {
+  font-size: 0.85em;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.compose-draft-meta {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.compose-draft-time {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+}
+
+.compose-draft-delete {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.1em;
+  padding: 0 4px;
+  line-height: 1;
+}
+
+.compose-draft-delete:hover {
+  color: var(--danger);
+}
+
 .compose-modal-body {
   padding: 12px 16px;
   overflow-y: auto;

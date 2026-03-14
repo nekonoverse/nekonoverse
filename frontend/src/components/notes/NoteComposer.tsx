@@ -72,12 +72,20 @@ export default function NoteComposer(props: Props) {
   let fileInput!: HTMLInputElement;
   let textareaRef!: HTMLTextAreaElement;
 
-  // Auto-set visibility to match parent note when replying
+  // Auto-set visibility and prepend @mention when replying
   createEffect(() => {
     if (props.replyTo) {
       const parentVis = props.replyTo.visibility as Visibility;
       if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
         setVisibility(parentVis);
+      }
+      // Auto-prepend @mention for the replied-to user
+      const actor = props.replyTo.actor;
+      if (actor && !content()) {
+        const mention = actor.domain
+          ? `@${actor.username}@${actor.domain} `
+          : `@${actor.username} `;
+        setContent(mention);
       }
     }
   });

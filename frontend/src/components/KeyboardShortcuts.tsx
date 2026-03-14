@@ -6,6 +6,8 @@ interface Props {
   onReply?: (noteId: string) => void;
   onSearch?: () => void;
   onNavigate?: (path: string) => void;
+  /** Disable all shortcuts (e.g. when a modal is open) */
+  disabled?: boolean;
 }
 
 /**
@@ -68,6 +70,7 @@ export default function KeyboardShortcuts(props: Props) {
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
+    if (props.disabled) return;
     if (isInputFocused()) return;
     if (e.ctrlKey || e.altKey || e.metaKey) return;
 
