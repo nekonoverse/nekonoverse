@@ -3382,6 +3382,22 @@ a:hover {
   border-bottom-color: var(--accent);
 }
 
+.notif-tab-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 5px;
+  margin-left: 6px;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 9px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
 .notifications-list {
   display: flex;
   flex-direction: column;
