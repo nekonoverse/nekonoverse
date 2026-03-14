@@ -272,6 +272,7 @@ export default function Navbar() {
       />
       <Show when={currentUser()}>
         <KeyboardShortcuts
+          disabled={composeOpen() || searchOpen()}
           onCompose={() => { setComposeQuote(null); setComposeReply(null); setComposeOpen(true); }}
           onQuote={async (noteId) => {
             try {

@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
@@ -6,6 +7,8 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
 
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.note import Note
@@ -475,6 +478,12 @@ async def create_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate in_reply_to_id exists
+    if body.in_reply_to_id:
+        parent = await get_note_by_id(db, body.in_reply_to_id)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Reply target not found")
+
     poll_options = None
     poll_expires_in = None
     poll_multiple = False
@@ -483,20 +492,24 @@ async def create_status(
         poll_expires_in = body.poll.expires_in
         poll_multiple = body.poll.multiple
 
-    note = await create_note(
-        db=db,
-        user=user,
-        content=body.content,
-        visibility=body.visibility,
-        sensitive=body.sensitive,
-        spoiler_text=body.spoiler_text,
-        in_reply_to_id=body.in_reply_to_id,
-        media_ids=body.media_ids or None,
-        quote_id=body.quote_id,
-        poll_options=poll_options,
-        poll_expires_in=poll_expires_in,
-        poll_multiple=poll_multiple,
-    )
+    try:
+        note = await create_note(
+            db=db,
+            user=user,
+            content=body.content,
+            visibility=body.visibility,
+            sensitive=body.sensitive,
+            spoiler_text=body.spoiler_text,
+            in_reply_to_id=body.in_reply_to_id,
+            media_ids=body.media_ids or None,
+            quote_id=body.quote_id,
+            poll_options=poll_options,
+            poll_expires_in=poll_expires_in,
+            poll_multiple=poll_multiple,
+        )
+    except Exception as e:
+        logger.exception("Failed to create note")
+        raise HTTPException(status_code=422, detail=str(e))
     return await note_to_response(note, db=db)
 
 

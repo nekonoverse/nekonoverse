@@ -68,7 +68,10 @@ async def create_note(
         if not mentioned_actor and domain:
             from app.services.actor_service import resolve_webfinger
 
-            mentioned_actor = await resolve_webfinger(db, username, domain)
+            try:
+                mentioned_actor = await resolve_webfinger(db, username, domain)
+            except Exception:
+                mentioned_actor = None  # WebFinger解決失敗はスキップ
         if mentioned_actor:
             mentioned_uri = actor_uri(mentioned_actor)
             mention_data.append(

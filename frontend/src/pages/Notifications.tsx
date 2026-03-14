@@ -56,7 +56,9 @@ export default function Notifications() {
   const filtered = () => {
     const t = tab();
     return allNotifs().filter((n) =>
-      t === "mentions" ? n.type === "mention" : n.type !== "mention"
+      t === "mentions"
+        ? n.type === "mention" || n.type === "reply"
+        : n.type !== "mention" && n.type !== "reply"
     );
   };
 
