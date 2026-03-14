@@ -46,6 +46,7 @@ services:
       DEBUG: "true"
       REGISTRATION_OPEN: "true"
       SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
     depends_on:
       postgres-neko:
         condition: service_healthy
@@ -71,6 +72,7 @@ services:
       DEBUG: "true"
       REGISTRATION_OPEN: "true"
       SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
     depends_on:
       app-neko:
         condition: service_healthy

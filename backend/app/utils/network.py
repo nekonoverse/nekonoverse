@@ -7,6 +7,10 @@ from urllib.parse import urlparse
 
 def is_private_host(hostname: str) -> bool:
     """Block requests to private/loopback IP ranges (SSRF protection)."""
+    from app.config import settings
+
+    if settings.allow_private_networks:
+        return False
     try:
         for info in socket.getaddrinfo(hostname, None):
             addr = ipaddress.ip_address(info[4][0])
