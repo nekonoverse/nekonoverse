@@ -75,9 +75,9 @@ services:
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
       # Forward proxy for outbound federation requests (origin IP concealment)
-      # HTTP_PROXY: http://squid:3128
-      # HTTPS_PROXY: http://squid:3128
-      # NO_PROXY: nekono3s,valkey,postgresql,face-detect,localhost
+      # HTTP_PROXY: ${HTTP_PROXY}
+      # HTTPS_PROXY: ${HTTPS_PROXY}
+      # NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
     expose:
       - "8000"
     depends_on:
@@ -104,9 +104,9 @@ services:
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
       # Forward proxy for outbound federation requests (origin IP concealment)
-      # HTTP_PROXY: http://squid:3128
-      # HTTPS_PROXY: http://squid:3128
-      # NO_PROXY: nekono3s,valkey,postgresql,face-detect,localhost
+      # HTTP_PROXY: ${HTTP_PROXY}
+      # HTTPS_PROXY: ${HTTPS_PROXY}
+      # NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
     depends_on:
       postgresql:
         condition: service_healthy
