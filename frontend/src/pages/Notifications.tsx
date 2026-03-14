@@ -1,11 +1,11 @@
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
-import { getNotifications, dismissNotification, clearNotifications, type Notification } from "../api/notifications";
+import { getNotifications, dismissNotification, clearNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { formatTimestamp, useTimeTick } from "../utils/formatTime";
-import { getNote } from "../api/statuses";
+import { getNote } from "@nekonoverse/ui/api/statuses";
 import { onNotification, onReaction, resetUnread } from "../stores/streaming";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";

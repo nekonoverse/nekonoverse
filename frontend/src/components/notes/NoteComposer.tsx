@@ -1,12 +1,12 @@
 import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
-import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment, type PollCreate } from "../../api/statuses";
+import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment, type PollCreate } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "../../i18n";
 import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
 import EmojiPicker from "../reactions/EmojiPicker";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { stripExifFromFile } from "@nekonoverse/ui/utils/stripExif";
-import type { DriveFile } from "../../api/drive";
+import type { DriveFile } from "@nekonoverse/ui/api/drive";
 import {
   getInitialVisibility,
   rememberVisibility,

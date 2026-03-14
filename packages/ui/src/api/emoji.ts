@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { CustomEmoji as BaseCustomEmoji } from "@nekonoverse/ui/types/emoji";
+import type { CustomEmoji as BaseCustomEmoji } from "../types/emoji";
 
 export interface CustomEmoji extends BaseCustomEmoji {
   visible_in_picker: boolean;

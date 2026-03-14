@@ -1,5 +1,5 @@
 import { apiRequest } from "./client";
-import type { CurrentUser } from "../stores/auth";
+import type { CurrentUser } from "./types/auth";
 
 export async function updateDisplayName(displayName: string | null): Promise<CurrentUser> {
   const formData = new FormData();

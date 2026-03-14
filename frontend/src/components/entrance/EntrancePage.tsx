@@ -1,6 +1,6 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
 import { instance, registrationMode } from "../../stores/instance";
-import { getPublicTimeline, type Note } from "../../api/statuses";
+import { getPublicTimeline, type Note } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "../../i18n";
 import NoteCard from "../notes/NoteCard";
 

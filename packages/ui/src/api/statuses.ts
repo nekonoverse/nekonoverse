@@ -1,4 +1,7 @@
 import { apiRequest } from "./client";
+import type { CustomEmoji } from "../types/emoji";
+
+export type { CustomEmoji } from "../types/emoji";
 
 export interface NoteActor {
   id: string;
@@ -46,8 +49,6 @@ export interface Poll {
   voted: boolean;
   own_votes: number[];
 }
-
-export type { CustomEmoji } from "@nekonoverse/ui/types/emoji";
 
 export interface TagInfo {
   name: string;

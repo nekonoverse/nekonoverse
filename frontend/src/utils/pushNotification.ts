@@ -2,7 +2,7 @@ import {
   createPushSubscription,
   deletePushSubscription,
   type PushSubscriptionResponse,
-} from "../api/push";
+} from "@nekonoverse/ui/api/push";
 import { instance } from "../stores/instance";
 
 /**

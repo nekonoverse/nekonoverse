@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show, For } from "solid-js";
-import { apiRequest } from "../api/client";
-import type { Account } from "../api/accounts";
+import { apiRequest } from "@nekonoverse/ui/api/client";
+import type { Account } from "@nekonoverse/ui/api/accounts";
 import { currentUser, authLoading } from "../stores/auth";
 import { useI18n } from "../i18n";
 import { defaultAvatar } from "../stores/instance";

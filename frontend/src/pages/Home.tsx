@@ -16,7 +16,7 @@ import {
   getHomeTimeline,
   getNote,
   type Note,
-} from "../api/statuses";
+} from "@nekonoverse/ui/api/statuses";
 import { onUpdate, onReaction } from "../stores/streaming";
 import { useI18n } from "../i18n";
 import NoteComposer from "../components/notes/NoteComposer";

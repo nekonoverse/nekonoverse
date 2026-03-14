@@ -5,7 +5,7 @@ import { connect, disconnect, onNotification, unreadCount, resetUnread } from ".
 import { useI18n } from "../../i18n";
 import { defaultAvatar } from "../../stores/instance";
 import type { Dictionary } from "../../i18n/dictionaries/ja";
-import { getNotifications, type Notification } from "../../api/notifications";
+import { getNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
 import Emoji from "../Emoji";
 import SearchModal from "../SearchModal";
 
