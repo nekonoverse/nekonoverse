@@ -155,6 +155,12 @@ services:
         condition: service_healthy
       certs:
         condition: service_completed_successfully
+    healthcheck:
+      test: curl -sf http://localhost:3000/api/v1/instance || exit 1
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
     networks:
       - mastodon-fed
 
@@ -189,7 +195,8 @@ services:
       - certs:/certs:ro
       - mastodon_system:/opt/mastodon/public/system
     depends_on:
-      - mastodon-web
+      mastodon-web:
+        condition: service_healthy
     networks:
       - mastodon-fed
 
