@@ -20,7 +20,7 @@ import {
   type RecentEmoji,
 } from "@nekonoverse/ui/utils/recentEmojis";
 import Emoji from "../Emoji";
-import { useI18n } from "../../i18n";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 // スクロールで近づいた時だけ中身をレンダリングするコンポーネント
 function LazyCategory(props: {

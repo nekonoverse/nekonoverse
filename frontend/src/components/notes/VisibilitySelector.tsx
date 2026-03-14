@@ -1,5 +1,5 @@
-import type { Visibility } from "../../stores/composer";
-import { useI18n } from "../../i18n";
+import type { Visibility } from "@nekonoverse/ui/stores/composer";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 const OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] = [
   { key: "public", emoji: "\u{1F310}", i18nKey: "visibility.public" },

@@ -1,8 +1,8 @@
 import { createSignal, onMount, Show, For } from "solid-js";
 import { getDriveFiles, deleteDriveFile, type DriveFile } from "@nekonoverse/ui/api/drive";
 import { uploadMedia } from "@nekonoverse/ui/api/statuses";
-import { useI18n } from "../i18n";
-import { currentUser } from "../stores/auth";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;

@@ -5,7 +5,7 @@ import {
   registerPasskey,
   type PasskeyCredentialInfo,
 } from "@nekonoverse/ui/api/passkey";
-import { useI18n } from "../i18n";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 export default function PasskeyManager() {
   const { t } = useI18n();

@@ -19,8 +19,10 @@ export default defineConfig({
     alias: {
       "@nekonoverse/ui": packagesUi,
       // Ensure packages/ui can resolve external deps via frontend's node_modules
+      "solid-js": path.resolve(__dirname, "node_modules/solid-js"),
       "mfm-js": path.resolve(__dirname, "node_modules/mfm-js"),
       "dompurify": path.resolve(__dirname, "node_modules/dompurify"),
+      "@solid-primitives/i18n": path.resolve(__dirname, "node_modules/@solid-primitives/i18n"),
     },
     conditions: ["development", "browser"],
   },

@@ -8,13 +8,13 @@ import {
   unfollowAccount,
   type Account,
 } from "@nekonoverse/ui/api/accounts";
-import { useI18n } from "../i18n";
-import { currentUser } from "../stores/auth";
-import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "../stores/followedUsers";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "@nekonoverse/ui/stores/followedUsers";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
-import { defaultAvatar } from "../stores/instance";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 export default function FollowList() {
   const { t } = useI18n();

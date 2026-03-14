@@ -1,7 +1,7 @@
 import { Show, onMount, onCleanup } from "solid-js";
 import type { Note } from "@nekonoverse/ui/api/statuses";
 import NoteComposer from "./NoteComposer";
-import { useI18n } from "../../i18n";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 interface Props {
   open: boolean;

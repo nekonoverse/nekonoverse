@@ -1,8 +1,8 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { getNote, getContext, type Note, type NoteContext } from "@nekonoverse/ui/api/statuses";
-import { currentUser, authLoading } from "../stores/auth";
-import { useI18n } from "../i18n";
+import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteCard from "../components/notes/NoteCard";
 import NoteComposer from "../components/notes/NoteComposer";
 

@@ -4,13 +4,13 @@ import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
-import { formatTimestamp, useTimeTick } from "../utils/formatTime";
+import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 import { getNote } from "@nekonoverse/ui/api/statuses";
-import { onNotification, onReaction, resetUnread } from "../stores/streaming";
-import { useI18n } from "../i18n";
-import { currentUser } from "../stores/auth";
-import { defaultAvatar } from "../stores/instance";
-import { isPushSupported, getPermissionState, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "../utils/pushNotification";
+import { onNotification, onReaction, resetUnread } from "@nekonoverse/ui/stores/streaming";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { isPushSupported, getPermissionState, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "@nekonoverse/ui/utils/pushNotification";
 
 function actorHandle(account: Notification["account"]): string {
   if (!account) return "";
@@ -213,7 +213,7 @@ export default function Notifications() {
                           </a>
                         </Show>
                         <span class="notification-type-text">
-                          {t(`notifications.type.${notif.type}` as keyof import("../i18n/dictionaries/ja").Dictionary)}
+                          {t(`notifications.type.${notif.type}` as keyof import("@nekonoverse/ui/i18n/dictionaries/ja").Dictionary)}
                         </span>
                         <Show when={notif.type === "reaction" && notif.emoji}>
                           <span class="notification-emoji">

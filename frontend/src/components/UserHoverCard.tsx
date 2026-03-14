@@ -1,13 +1,13 @@
 import { createSignal, onCleanup, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { getAccount, followAccount, unfollowAccount, type Account } from "@nekonoverse/ui/api/accounts";
-import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followedUsers";
-import { currentUser } from "../stores/auth";
-import { useI18n } from "../i18n";
+import { isFollowing, addFollowedId, removeFollowedId } from "@nekonoverse/ui/stores/followedUsers";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
-import { defaultAvatar } from "../stores/instance";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 interface Props {
   actorId: string;

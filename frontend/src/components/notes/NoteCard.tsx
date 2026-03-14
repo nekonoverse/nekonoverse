@@ -15,19 +15,19 @@ import { blockAccount, muteAccount } from "@nekonoverse/ui/api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
 import ImageLightbox from "../ImageLightbox";
-import { currentUser } from "../../stores/auth";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
 import UserHoverCard from "../UserHoverCard";
-import { useI18n } from "../../i18n";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import { focalPointToObjectPosition } from "@nekonoverse/ui/utils/focalPoint";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "@nekonoverse/ui/utils/mentionify";
-import { formatTimestamp, useTimeTick } from "../../utils/formatTime";
-import { timeFormat } from "../../stores/theme";
+import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
+import { timeFormat } from "@nekonoverse/ui/stores/theme";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { renderMfm } from "@nekonoverse/ui/utils/mfm";
-import { defaultAvatar } from "../../stores/instance";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 interface Props {
   note: Note;

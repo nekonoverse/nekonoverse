@@ -9,9 +9,9 @@ import {
   Match,
 } from "solid-js";
 import { useParams, A } from "@solidjs/router";
-import { useI18n } from "../i18n";
-import { currentUser } from "../stores/auth";
-import { registrationMode } from "../stores/instance";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { registrationMode } from "@nekonoverse/ui/stores/instance";
 import Breadcrumb from "../components/Breadcrumb";
 import {
   getAdminStats,

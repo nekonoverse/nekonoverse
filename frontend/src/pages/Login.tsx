@@ -1,6 +1,6 @@
 import { onMount } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { currentUser } from "../stores/auth";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
 import LoginForm from "../components/auth/LoginForm";
 
 export default function Login() {

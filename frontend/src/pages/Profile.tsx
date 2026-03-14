@@ -8,15 +8,15 @@ import type { Note } from "@nekonoverse/ui/api/statuses";
 import { getNote } from "@nekonoverse/ui/api/statuses";
 import NoteCard from "../components/notes/NoteCard";
 import ComposeModal from "../components/notes/ComposeModal";
-import { useI18n } from "../i18n";
-import { currentUser, fetchCurrentUser } from "../stores/auth";
-import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
-import { onReaction } from "../stores/streaming";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser, fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
+import { addFollowedId, removeFollowedId } from "@nekonoverse/ui/stores/followedUsers";
+import { onReaction } from "@nekonoverse/ui/stores/streaming";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
-import { defaultAvatar } from "../stores/instance";
-import { formatTimestamp, useTimeTick } from "../utils/formatTime";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 
 export default function Profile() {
   const { t } = useI18n();

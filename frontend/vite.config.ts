@@ -78,8 +78,10 @@ export default defineConfig({
   resolve: {
     alias: {
       "@nekonoverse/ui": path.resolve(__dirname, "../packages/ui/src"),
+      "solid-js": path.resolve(__dirname, "node_modules/solid-js"),
       "mfm-js": path.resolve(__dirname, "node_modules/mfm-js"),
       "dompurify": path.resolve(__dirname, "node_modules/dompurify"),
+      "@solid-primitives/i18n": path.resolve(__dirname, "node_modules/@solid-primitives/i18n"),
     },
   },
   build: {

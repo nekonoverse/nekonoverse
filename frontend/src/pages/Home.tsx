@@ -9,7 +9,7 @@ import {
   untrack,
 } from "solid-js";
 import { useSearchParams } from "@solidjs/router";
-import { currentUser, authLoading } from "../stores/auth";
+import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import EntrancePage from "../components/entrance/EntrancePage";
 import {
   getPublicTimeline,
@@ -17,8 +17,8 @@ import {
   getNote,
   type Note,
 } from "@nekonoverse/ui/api/statuses";
-import { onUpdate, onReaction } from "../stores/streaming";
-import { useI18n } from "../i18n";
+import { onUpdate, onReaction } from "@nekonoverse/ui/stores/streaming";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteComposer from "../components/notes/NoteComposer";
 import NoteCard from "../components/notes/NoteCard";
 

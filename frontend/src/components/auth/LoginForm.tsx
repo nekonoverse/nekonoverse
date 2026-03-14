@@ -1,8 +1,8 @@
 import { createSignal, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { login, loginWithPasskey, completeTotpLogin } from "../../stores/auth";
-import { registrationMode } from "../../stores/instance";
-import { useI18n } from "../../i18n";
+import { login, loginWithPasskey, completeTotpLogin } from "@nekonoverse/ui/stores/auth";
+import { registrationMode } from "@nekonoverse/ui/stores/instance";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 export default function LoginForm() {
   const { t } = useI18n();

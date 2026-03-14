@@ -1,6 +1,6 @@
 import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
 import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment, type PollCreate } from "@nekonoverse/ui/api/statuses";
-import { useI18n } from "../../i18n";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
 import EmojiPicker from "../reactions/EmojiPicker";
@@ -13,7 +13,7 @@ import {
   defaultVisibility,
   setLastVisibility,
   type Visibility,
-} from "../../stores/composer";
+} from "@nekonoverse/ui/stores/composer";
 
 const VISIBILITY_OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] = [
   { key: "public", emoji: "\u{1F310}", i18nKey: "visibility.public" },

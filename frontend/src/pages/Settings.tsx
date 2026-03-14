@@ -1,21 +1,21 @@
 import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "solid-js";
 import QRCode from "qrcode";
 import { useNavigate, useParams, A } from "@solidjs/router";
-import { currentUser, authLoading, logout } from "../stores/auth";
+import { currentUser, authLoading, logout } from "@nekonoverse/ui/stores/auth";
 import {
   theme, setTheme, fontSize, setFontSize,
   fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
   timeFormat, setTimeFormat,
   FONT_FAMILY_MAP,
   type Theme, type FontSize, type FontFamily, type TimeFormat,
-} from "../stores/theme";
+} from "@nekonoverse/ui/stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
   rememberVisibility, setRememberVisibility,
-} from "../stores/composer";
-import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "../stores/instance";
+} from "@nekonoverse/ui/stores/composer";
+import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "@nekonoverse/ui/stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
-import { useI18n, locales, type Locale } from "../i18n";
+import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
 import { changePassword } from "@nekonoverse/ui/api/settings";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
