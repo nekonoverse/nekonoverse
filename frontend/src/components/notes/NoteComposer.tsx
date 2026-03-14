@@ -49,6 +49,10 @@ interface Props {
   initialContent?: string;
   /** Initial visibility for draft restore */
   initialVisibility?: Visibility;
+  /** Called when upload state changes */
+  onUploadingChange?: (uploading: boolean) => void;
+  /** External files dropped on parent (e.g. modal) */
+  externalFiles?: FileList | null;
 }
 
 export default function NoteComposer(props: Props) {
@@ -108,6 +112,19 @@ export default function NoteComposer(props: Props) {
   // Report content changes to parent
   createEffect(() => {
     props.onContentChange?.(content(), visibility());
+  });
+
+  // Report upload state to parent
+  createEffect(() => {
+    props.onUploadingChange?.(uploading());
+  });
+
+  // Handle files dropped on parent (e.g. modal wrapper)
+  createEffect(() => {
+    const files = props.externalFiles;
+    if (files && files.length > 0) {
+      handleFiles(files);
+    }
   });
 
   const visEmoji = () => VISIBILITY_OPTIONS.find((o) => o.key === visibility())?.emoji || "\u{1F310}";
