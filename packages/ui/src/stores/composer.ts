@@ -17,8 +17,10 @@ function loadBool(key: string, fallback: boolean): boolean {
   return fallback;
 }
 
+// "direct" is not a valid default visibility — migrate to "public" if set
+const loadedDefault = loadVisibility("defaultVisibility", "public");
 const [defaultVisibility, setDefaultVisibilitySignal] = createSignal<Visibility>(
-  loadVisibility("defaultVisibility", "public"),
+  loadedDefault === "direct" ? "public" : loadedDefault,
 );
 const [rememberVisibility, setRememberVisibilitySignal] = createSignal<boolean>(
   loadBool("rememberVisibility", false),
