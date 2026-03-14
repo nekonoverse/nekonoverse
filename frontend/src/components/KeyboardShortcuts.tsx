@@ -118,7 +118,7 @@ export default function KeyboardShortcuts(props: Props) {
       }
       case "g": {
         e.preventDefault();
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        window.scrollTo({ top: 0 });
         // Clear focus when going to top
         document.querySelectorAll(".note-card.keyboard-focused").forEach((el) => {
           el.classList.remove("keyboard-focused");
