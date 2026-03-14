@@ -59,26 +59,7 @@ async def create_notification(
     db.add(notification)
     await db.flush()
 
-    # Publish real-time notification event
-    try:
-        import json
-
-        from app.valkey_client import valkey
-
-        event = json.dumps(
-            {
-                "event": "notification",
-                "payload": {
-                    "id": str(notification.id),
-                    "type": notification.type,
-                },
-            }
-        )
-        await valkey.publish(f"notifications:{recipient_id}", event)
-    except Exception:
-        pass  # Don't fail notification creation if pub/sub fails
-
-    # Web Push通知を送信
+    # Web Push通知を送信 (flush後で問題ない — push通知はDBクエリしない)
     try:
         from app.services.push_service import send_web_push
 
@@ -105,6 +86,27 @@ async def create_notification(
         pass  # Don't fail notification creation if push fails
 
     return notification
+
+
+async def publish_notification(notification: Notification) -> None:
+    """Publish notification event to Valkey. Call AFTER db.commit()."""
+    try:
+        import json
+
+        from app.valkey_client import valkey
+
+        event = json.dumps(
+            {
+                "event": "notification",
+                "payload": {
+                    "id": str(notification.id),
+                    "type": notification.type,
+                },
+            }
+        )
+        await valkey.publish(f"notifications:{notification.recipient_id}", event)
+    except Exception:
+        pass
 
 
 async def get_notifications(

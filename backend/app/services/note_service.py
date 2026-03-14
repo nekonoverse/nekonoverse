@@ -215,7 +215,9 @@ async def create_note(
             await enqueue_delivery(db, actor.id, inbox_url, activity)
 
     # Send notifications
-    from app.services.notification_service import create_notification
+    from app.services.notification_service import create_notification, publish_notification
+
+    pending_notifs = []
 
     # Mention notifications (local actors only)
     for m in mention_data:
@@ -224,27 +226,35 @@ async def create_note(
 
             mentioned = await get_actor_by_username(db, m["username"], None)
             if mentioned:
-                await create_notification(
+                notif = await create_notification(
                     db,
                     "mention",
                     mentioned.id,
                     actor.id,
                     note_id,
                 )
+                if notif:
+                    pending_notifs.append(notif)
 
     # Reply notification
     if in_reply_to_id:
         parent = await get_note_by_id(db, in_reply_to_id)
         if parent and parent.actor.is_local:
-            await create_notification(
+            notif = await create_notification(
                 db,
                 "reply",
                 parent.actor_id,
                 actor.id,
                 note_id,
             )
+            if notif:
+                pending_notifs.append(notif)
 
     await db.commit()
+
+    # Publish notification events after commit
+    for notif in pending_notifs:
+        await publish_notification(notif)
 
     # Publish real-time events via Valkey pub/sub
     try:
