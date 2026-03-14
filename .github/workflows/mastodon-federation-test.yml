@@ -1,0 +1,50 @@
+name: Mastodon Federation Test
+
+on:
+  push:
+    branches: [develop, main]
+  pull_request:
+    branches: [develop, main]
+  workflow_dispatch:
+
+jobs:
+  mastodon-federation-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start services
+        run: docker compose -f docker-compose.mastodon-federation.yml up -d --build --wait
+        timeout-minutes: 15
+
+      - name: Wait for Mastodon to be ready
+        run: |
+          for i in $(seq 1 90); do
+            if docker compose -f docker-compose.mastodon-federation.yml exec -T mastodon-web curl -sf http://localhost:3000/api/v1/instance 2>/dev/null | grep -q "uri"; then
+              echo "Mastodon is ready"
+              break
+            fi
+            echo "Waiting for Mastodon... ($i/90)"
+            sleep 3
+          done
+
+      - name: Run federation tests
+        run: docker compose -f docker-compose.mastodon-federation.yml run --rm --no-deps test-runner
+
+      - name: Collect logs
+        if: always()
+        run: |
+          docker compose -f docker-compose.mastodon-federation.yml logs app-neko worker-neko mastodon-web mastodon-sidekiq nginx-neko nginx-mdn > mastodon-federation-logs.txt 2>&1
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mastodon-federation-logs
+          path: mastodon-federation-logs.txt
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.mastodon-federation.yml down -v

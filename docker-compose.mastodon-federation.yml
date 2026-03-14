@@ -1,0 +1,228 @@
+services:
+  # ── Certificate Generator ──────────────────────────────────
+  certs:
+    image: alpine:3.21
+    command: >
+      sh -c "apk add --no-cache openssl >/dev/null 2>&1 && /gen-certs.sh"
+    volumes:
+      - certs:/certs
+      - ./tests/mastodon-federation/gen-certs.sh:/gen-certs.sh:ro
+
+  # ── Nekonoverse Instance ───────────────────────────────────
+  postgres-neko:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mastodon-fed
+
+  valkey-neko:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mastodon-fed
+
+  app-neko:
+    build: ./backend
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
+    depends_on:
+      postgres-neko:
+        condition: service_healthy
+      valkey-neko:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - mastodon-fed
+
+  worker-neko:
+    build: ./backend
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
+    depends_on:
+      app-neko:
+        condition: service_healthy
+    networks:
+      - mastodon-fed
+
+  nginx-neko:
+    image: nginx:alpine
+    volumes:
+      - ./tests/mastodon-federation/nginx-neko-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      app-neko:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+    networks:
+      mastodon-fed:
+        aliases:
+          - nekonoverse
+
+  # ── Mastodon Instance ──────────────────────────────────────
+  postgres-mdn:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: mastodon
+      POSTGRES_USER: mastodon
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U mastodon
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mastodon-fed
+
+  redis-mdn:
+    image: redis:7-alpine
+    healthcheck:
+      test: redis-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mastodon-fed
+
+  mastodon-web:
+    image: ghcr.io/mastodon/mastodon:v4.3
+    entrypoint: ["/custom-entrypoint.sh"]
+    environment:
+      LOCAL_DOMAIN: mastodon
+      RAILS_ENV: production
+      SECRET_KEY_BASE: test-secret-key-base-not-for-production-use-only-for-federation-testing-1234567890
+      OTP_SECRET: test-otp-secret-not-for-production-use-only-for-federation-testing-1234567890abcdef
+      DB_HOST: postgres-mdn
+      DB_PORT: "5432"
+      DB_NAME: mastodon
+      DB_USER: mastodon
+      DB_PASS: testpass
+      REDIS_HOST: redis-mdn
+      REDIS_PORT: "6379"
+      SINGLE_USER_MODE: "false"
+      ALLOWED_PRIVATE_ADDRESSES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      # Disable email requirements for testing
+      SMTP_SERVER: localhost
+      SMTP_PORT: "25"
+      SMTP_FROM_ADDRESS: "mastodon@mastodon"
+    volumes:
+      - ./tests/mastodon-federation/mastodon-entrypoint.sh:/custom-entrypoint.sh:ro
+      - certs:/certs:ro
+      - mastodon_system:/opt/mastodon/public/system
+    depends_on:
+      postgres-mdn:
+        condition: service_healthy
+      redis-mdn:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+    networks:
+      - mastodon-fed
+
+  mastodon-sidekiq:
+    image: ghcr.io/mastodon/mastodon:v4.3
+    command: >
+      bash -c "
+        if [ -f /certs/ca.crt ]; then
+          cp /certs/ca.crt /usr/local/share/ca-certificates/test-ca.crt;
+          update-ca-certificates 2>/dev/null || true;
+        fi;
+        exec bundle exec sidekiq
+      "
+    environment:
+      LOCAL_DOMAIN: mastodon
+      RAILS_ENV: production
+      SECRET_KEY_BASE: test-secret-key-base-not-for-production-use-only-for-federation-testing-1234567890
+      OTP_SECRET: test-otp-secret-not-for-production-use-only-for-federation-testing-1234567890abcdef
+      DB_HOST: postgres-mdn
+      DB_PORT: "5432"
+      DB_NAME: mastodon
+      DB_USER: mastodon
+      DB_PASS: testpass
+      REDIS_HOST: redis-mdn
+      REDIS_PORT: "6379"
+      ALLOWED_PRIVATE_ADDRESSES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    volumes:
+      - certs:/certs:ro
+      - mastodon_system:/opt/mastodon/public/system
+    depends_on:
+      - mastodon-web
+    networks:
+      - mastodon-fed
+
+  nginx-mdn:
+    image: nginx:alpine
+    volumes:
+      - ./tests/mastodon-federation/nginx-mastodon-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      - mastodon-web
+      - certs
+    networks:
+      mastodon-fed:
+        aliases:
+          - mastodon
+
+  # ── Test Runner ────────────────────────────────────────────
+  test-runner:
+    profiles: ["test"]
+    build: ./tests/mastodon-federation
+    environment:
+      NEKO_URL: https://nekonoverse
+      MASTODON_URL: https://mastodon
+      NEKO_DOMAIN: nekonoverse
+      MASTODON_DOMAIN: mastodon
+    depends_on:
+      nginx-neko:
+        condition: service_started
+      nginx-mdn:
+        condition: service_started
+      worker-neko:
+        condition: service_started
+      mastodon-sidekiq:
+        condition: service_started
+    networks:
+      - mastodon-fed
+
+volumes:
+  certs:
+  mastodon_system:
+
+networks:
+  mastodon-fed:
+    driver: bridge
