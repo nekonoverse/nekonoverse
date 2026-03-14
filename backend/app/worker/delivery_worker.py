@@ -77,6 +77,15 @@ async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Act
 async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:
     """Deliver an activity to a remote inbox."""
     from app.config import settings as app_settings
+    from app.utils.network import is_private_host
+
+    # SSRF防止: 内部ネットワークへの配送をブロック
+    from urllib.parse import urlparse
+
+    parsed = urlparse(job.target_inbox_url)
+    if not app_settings.allow_private_networks and is_private_host(parsed.hostname or ""):
+        logger.warning("Blocked delivery to private host: %s", job.target_inbox_url)
+        return False
 
     body = json.dumps(job.payload).encode("utf-8")
     # Use dynamic URL for local actor to ensure correct scheme

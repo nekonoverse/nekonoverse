@@ -104,14 +104,23 @@ async def get_oauth_user(
 
     token_str = auth_header[7:]
 
+    import hashlib
+
     from sqlalchemy import select
 
     from app.models.oauth import OAuthToken
 
+    # ハッシュ化トークンで検索(新方式)、見つからなければプレーンテキストで検索(互換)
+    token_hash = hashlib.sha256(token_str.encode()).hexdigest()
     result = await db.execute(
-        select(OAuthToken).where(OAuthToken.access_token == token_str)
+        select(OAuthToken).where(OAuthToken.access_token == token_hash)
     )
     token_obj = result.scalar_one_or_none()
+    if not token_obj:
+        result = await db.execute(
+            select(OAuthToken).where(OAuthToken.access_token == token_str)
+        )
+        token_obj = result.scalar_one_or_none()
     if not token_obj:
         raise HTTPException(status_code=401, detail="Invalid token")
 
