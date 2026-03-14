@@ -77,14 +77,26 @@ class NekoClient:
         resp.raise_for_status()
         return resp.json()
 
-    def create_note(self, content: str, visibility: str = "public", **kwargs):
+    def create_note(self, content: str, visibility: str = "public",
+                    spoiler_text: str | None = None, **kwargs):
         body = {"content": content, "visibility": visibility, **kwargs}
+        if spoiler_text:
+            body["spoiler_text"] = spoiler_text
         resp = self.http.post("/api/v1/statuses", json=body)
         resp.raise_for_status()
         return resp.json()
 
+    def delete_note(self, note_id: str):
+        resp = self.http.delete(f"/api/v1/statuses/{note_id}")
+        resp.raise_for_status()
+
     def get_note(self, note_id: str):
         resp = self.http.get(f"/api/v1/statuses/{note_id}")
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_context(self, note_id: str):
+        resp = self.http.get(f"/api/v1/statuses/{note_id}/context")
         resp.raise_for_status()
         return resp.json()
 
@@ -189,6 +201,12 @@ class MisskeyClient:
 
     def get_note(self, note_id: str):
         return self._api("notes/show", {"noteId": note_id})
+
+    def delete_note(self, note_id: str):
+        self._api("notes/delete", {"noteId": note_id})
+
+    def get_notifications(self, limit: int = 20):
+        return self._api("i/notifications", {"limit": limit})
 
     def timeline_local(self, limit: int = 20):
         return self._api("notes/local-timeline", {"limit": limit})
