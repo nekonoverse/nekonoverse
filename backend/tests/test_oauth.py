@@ -22,6 +22,9 @@ async def test_create_app(app_client, db, mock_valkey):
     assert data["client_id"]
     assert data["client_secret"]
     assert data["redirect_uri"] == "http://localhost:3000/callback"
+    assert data["redirect_uris"] == ["http://localhost:3000/callback"]
+    assert data["scopes"] == ["read", "write"]
+    assert data["client_secret_expires_at"] == 0
     assert data["website"] == "https://example.com"
     return data
 
@@ -119,7 +122,7 @@ async def test_authorize_logged_in_redirects(app_client, db, mock_valkey, test_u
 
 
 async def test_authorize_expired_session(app_client, db, mock_valkey):
-    """Expired session returns 401."""
+    """Expired session shows login form."""
     app_data = await _create_test_app(app_client, mock_valkey)
     mock_valkey.get = AsyncMock(return_value=None)
     app_client.cookies.set("nekonoverse_session", "expired-session")
@@ -132,7 +135,8 @@ async def test_authorize_expired_session(app_client, db, mock_valkey):
             "response_type": "code",
         },
     )
-    assert resp.status_code == 401
+    assert resp.status_code == 200
+    assert "log in" in resp.text.lower()
 
 
 # ── POST /oauth/token ───────────────────────────────────────────────────
