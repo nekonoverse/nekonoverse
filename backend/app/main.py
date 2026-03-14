@@ -1,6 +1,28 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException
+
+_DEFAULT_FAVICON_SVG = b"""\
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none">
+  <rect width="180" height="180" rx="36" fill="#f5e6f0"/>
+  <path d="M45 73 L62 28 L79 67Z" fill="#f9a8d4"/>
+  <path d="M135 73 L118 28 L101 67Z" fill="#f9a8d4"/>
+  <path d="M50 70 L62 37 L73 67Z" fill="#fce4ec"/>
+  <path d="M130 70 L118 37 L107 67Z" fill="#fce4ec"/>
+  <circle cx="90" cy="101" r="42" fill="#fff5f5"/>
+  <circle cx="62" cy="112" r="8" fill="#fbb4c8" opacity="0.5"/>
+  <circle cx="118" cy="112" r="8" fill="#fbb4c8" opacity="0.5"/>
+  <ellipse cx="73" cy="95" rx="6" ry="7" fill="#5b4a6a"/>
+  <ellipse cx="107" cy="95" rx="6" ry="7" fill="#5b4a6a"/>
+  <circle cx="75" cy="93" r="2" fill="#fff"/>
+  <circle cx="109" cy="93" r="2" fill="#fff"/>
+  <path d="M87 107 L90 111 L93 107Z" fill="#f9a8d4"/>
+  <path d="M82 114 Q90 121 98 114" stroke="#c48b9f" stroke-width="2" fill="none" stroke-linecap="round"/>
+  <line x1="42" y1="104" x2="65" y2="107" stroke="#d4a0b9" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="42" y1="112" x2="65" y2="112" stroke="#d4a0b9" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="115" y1="107" x2="138" y2="104" stroke="#d4a0b9" stroke-width="1.5" stroke-linecap="round"/>
+  <line x1="115" y1="112" x2="138" y2="112" stroke="#d4a0b9" stroke-width="1.5" stroke-linecap="round"/>
+</svg>"""
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -272,16 +294,16 @@ async def manifest(db: AsyncSession = Depends(get_db)):
 
 @app.get("/favicon.ico")
 async def favicon_ico(db: AsyncSession = Depends(get_db)):
-    from fastapi.responses import RedirectResponse
+    from fastapi.responses import RedirectResponse, Response
 
     from app.services.server_settings_service import get_setting
 
     url = await get_setting(db, "favicon_ico_url")
-    if not url:
-        from fastapi import HTTPException
+    if url:
+        return RedirectResponse(url=url, status_code=302)
 
-        raise HTTPException(status_code=404, detail="No favicon configured")
-    return RedirectResponse(url=url, status_code=302)
+    # Default: serve the built-in SVG cat icon
+    return Response(content=_DEFAULT_FAVICON_SVG, media_type="image/svg+xml")
 
 
 @app.get("/api/v1/custom_emojis")
