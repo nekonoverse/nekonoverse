@@ -199,6 +199,18 @@ async def dismiss_notification(
     return {"ok": True}
 
 
+@router.post("/mark_all_as_read")
+async def mark_all_notifications_as_read(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.notification_service import mark_all_as_read
+
+    await mark_all_as_read(db, user.actor_id)
+    await db.commit()
+    return {"ok": True}
+
+
 @router.post("/clear")
 async def clear_all_notifications(
     user: User = Depends(get_current_user),

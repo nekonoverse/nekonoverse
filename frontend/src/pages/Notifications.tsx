@@ -1,5 +1,5 @@
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
-import { getNotifications, dismissNotification, clearNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
+import { getNotifications, dismissNotification, clearNotifications, markAllNotificationsAsRead, type Notification } from "@nekonoverse/ui/api/notifications";
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
@@ -66,9 +66,14 @@ export default function Notifications() {
     }
   };
 
-  onMount(() => {
-    load();
+  onMount(async () => {
+    await load();
     resetUnread();
+    // Mark all notifications as read on the server
+    try {
+      await markAllNotificationsAsRead();
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch { /* ignore */ }
   });
 
   // Subscribe to real-time notifications from global stream
