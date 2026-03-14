@@ -728,9 +728,9 @@ async def react_to_note(
 
     # Notify note author
     if note.actor.is_local:
-        from app.services.notification_service import create_notification
+        from app.services.notification_service import create_notification, publish_notification
 
-        await create_notification(
+        notif = await create_notification(
             db,
             "reaction",
             note.actor_id,
@@ -739,6 +739,8 @@ async def react_to_note(
             reaction_emoji=emoji,
         )
         await db.commit()
+        if notif:
+            await publish_notification(notif)
 
     return {"ok": True}
 
@@ -787,12 +789,14 @@ async def favourite_status(
 
     # 通知作成 (ローカルユーザーの場合)
     if note.actor.is_local and note.actor_id != user.actor_id:
-        from app.services.notification_service import create_notification
+        from app.services.notification_service import create_notification, publish_notification
 
-        await create_notification(
+        notif = await create_notification(
             db, "reaction", note.actor_id, user.actor_id, note.id, reaction_emoji="\u2b50"
         )
         await db.commit()
+        if notif:
+            await publish_notification(notif)
 
     note = await get_note_by_id(db, note_id)
     reactions = await get_reaction_summary(db, note.id, user.actor_id)
@@ -990,9 +994,9 @@ async def reblog_status(
 
     # Notify original note author
     if original.actor.is_local:
-        from app.services.notification_service import create_notification
+        from app.services.notification_service import create_notification, publish_notification
 
-        await create_notification(
+        notif = await create_notification(
             db,
             "renote",
             original.actor_id,
@@ -1000,6 +1004,8 @@ async def reblog_status(
             original.id,
         )
         await db.commit()
+        if notif:
+            await publish_notification(notif)
 
     await db.refresh(reblog_note, ["actor", "attachments"])
 

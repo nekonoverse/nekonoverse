@@ -125,6 +125,25 @@ a:hover {
   color: var(--accent);
 }
 
+.navbar-compose-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s;
+  flex-shrink: 0;
+}
+
+.navbar-compose-btn:hover {
+  background: var(--accent-hover);
+}
+
 .navbar-avatar {
   width: 36px;
   height: 36px;
@@ -1136,6 +1155,7 @@ a:hover {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   margin-bottom: 8px;
+  scroll-margin-top: 3.6em;
 }
 
 .note-card.keyboard-focused {

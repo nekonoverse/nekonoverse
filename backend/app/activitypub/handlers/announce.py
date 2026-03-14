@@ -103,7 +103,9 @@ async def handle_announce(db: AsyncSession, activity: dict):
             ).scalar_one_or_none()
 
             if original_actor and original_actor.is_local:
-                await create_notification(
+                from app.services.notification_service import publish_notification
+
+                notif = await create_notification(
                     db,
                     "renote",
                     original.actor_id,
@@ -111,6 +113,8 @@ async def handle_announce(db: AsyncSession, activity: dict):
                     original.id,
                 )
                 await db.commit()
+                if notif:
+                    await publish_notification(notif)
         except Exception:
             logger.debug("Failed to create renote notification", exc_info=True)
 

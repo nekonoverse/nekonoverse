@@ -1,5 +1,5 @@
 import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
-import { useLocation } from "@solidjs/router";
+import { useLocation, useNavigate } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
 import { connect, disconnect, onNotification, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -27,6 +27,7 @@ function notifIcon(type: string) {
 export default function Navbar() {
   const { t } = useI18n();
   const location = useLocation();
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [composeOpen, setComposeOpen] = createSignal(false);
@@ -110,17 +111,6 @@ export default function Navbar() {
       <div class="navbar-inner">
         <div class="navbar-left">
           <a href="/" class="navbar-brand">{t("app.title")}</a>
-          <a
-            href="/"
-            class={`navbar-icon${isActive("/") && !location.search.includes("tl=home") ? " active" : ""}`}
-            title={t("timeline.public")}
-          >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M2 12h20" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
-          </a>
           <Show when={currentUser()}>
             <a
               href="/?tl=home"
@@ -132,17 +122,28 @@ export default function Navbar() {
                 <polyline points="9 22 9 12 15 12 15 22" />
               </svg>
             </a>
-            <button
-              class="navbar-icon"
-              title={t("composer.new")}
-              onClick={() => setComposeOpen(true)}
+            <a
+              href="/mentions"
+              class={`navbar-icon${isActive("/mentions") ? " active" : ""}`}
+              title={t("mentions.title")}
             >
               <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 20h9" />
-                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+                <circle cx="12" cy="12" r="4" />
+                <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
               </svg>
-            </button>
+            </a>
           </Show>
+          <a
+            href="/"
+            class={`navbar-icon${isActive("/") && !location.search.includes("tl=home") ? " active" : ""}`}
+            title={t("timeline.public")}
+          >
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M2 12h20" />
+              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+            </svg>
+          </a>
           <button
             class="navbar-icon"
             title={t("search.title")}
@@ -167,6 +168,16 @@ export default function Navbar() {
           >
             {(user) => (
               <>
+                <button
+                  class="navbar-compose-btn"
+                  title={t("composer.post")}
+                  onClick={() => setComposeOpen(true)}
+                >
+                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19" />
+                    <line x1="5" y1="12" x2="19" y2="12" />
+                  </svg>
+                </button>
                 <div class="navbar-user-menu">
                   <img
                     src={user().avatar_url || defaultAvatar()}
@@ -316,7 +327,16 @@ export default function Navbar() {
       <Show when={searchOpen()}>
         <SearchModal onClose={() => setSearchOpen(false)} />
       </Show>
-      <ComposeModal open={composeOpen()} onClose={() => setComposeOpen(false)} />
+      <ComposeModal
+        open={composeOpen()}
+        onClose={() => setComposeOpen(false)}
+        onPost={(note) => {
+          // Navigate to home TL when posting non-public notes from public TL
+          if (note.visibility !== "public" && location.pathname === "/" && !location.search.includes("tl=home")) {
+            navigate("/?tl=home");
+          }
+        }}
+      />
       <Show when={currentUser()}>
         <KeyboardShortcuts onCompose={() => setComposeOpen(true)} />
       </Show>

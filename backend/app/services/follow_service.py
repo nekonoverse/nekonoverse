@@ -56,10 +56,12 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
 
     # Send follow notification to local target
     if target_actor.is_local:
-        from app.services.notification_service import create_notification
+        from app.services.notification_service import create_notification, publish_notification
 
-        await create_notification(db, "follow", target_actor.id, actor.id)
+        notif = await create_notification(db, "follow", target_actor.id, actor.id)
         await db.commit()
+        if notif:
+            await publish_notification(notif)
 
     # Send Follow activity to remote server
     if not target_actor.is_local:

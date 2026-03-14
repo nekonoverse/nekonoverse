@@ -120,10 +120,11 @@ async def _save_reaction(
     await db.flush()
 
     # Notify local note author
+    notif = None
     if note.actor and note.actor.is_local:
         from app.services.notification_service import create_notification
 
-        await create_notification(
+        notif = await create_notification(
             db,
             "reaction",
             note.actor_id,
@@ -133,6 +134,11 @@ async def _save_reaction(
         )
 
     await db.commit()
+
+    if notif:
+        from app.services.notification_service import publish_notification
+
+        await publish_notification(notif)
 
     from app.services.reaction_service import _publish_reaction_event
 
