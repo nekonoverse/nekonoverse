@@ -1020,6 +1020,22 @@ async def reblog_status(
     for inbox_url in inboxes:
         await enqueue_delivery(db, actor.id, inbox_url, activity)
 
+    # Publish streaming events so followers see the reblog in real-time
+    try:
+        import json as _json
+
+        from app.services.follow_service import get_follower_ids
+        from app.valkey_client import valkey as valkey_client
+
+        event = _json.dumps({"event": "update", "payload": {"id": str(reblog_note.id)}})
+        await valkey_client.publish("timeline:public", event)
+        follower_ids = await get_follower_ids(db, actor.id)
+        for fid in follower_ids:
+            await valkey_client.publish(f"timeline:home:{fid}", event)
+        await valkey_client.publish(f"timeline:home:{actor.id}", event)
+    except Exception:
+        pass  # Don't fail reblog if pub/sub fails
+
     # Re-refresh after delivery commits expired the session
     await db.refresh(reblog_note, ["actor", "attachments"])
     await db.refresh(original, ["actor", "attachments"])

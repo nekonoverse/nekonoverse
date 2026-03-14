@@ -129,6 +129,11 @@ class NekoClient:
         resp.raise_for_status()
         return resp.json()
 
+    def notifications(self, limit: int = 20):
+        resp = self.http.get("/api/v1/notifications", params={"limit": str(limit)})
+        resp.raise_for_status()
+        return resp.json()
+
     def webfinger(self, acct: str):
         resp = self.http.get("/.well-known/webfinger", params={"resource": f"acct:{acct}"})
         resp.raise_for_status()
