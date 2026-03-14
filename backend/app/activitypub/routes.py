@@ -112,45 +112,95 @@ async def get_outbox(
 
 
 @router.get("/users/{username}/followers")
-async def get_followers_collection(username: str, db: AsyncSession = Depends(get_db)):
+async def get_followers_collection(
+    username: str,
+    page: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
     actor = await get_actor_by_username(db, username, domain=None)
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
     from app.models.follow import Follow
 
-    count_result = await db.execute(
-        select(func.count())
-        .select_from(Follow)
-        .where(Follow.following_id == actor.id, Follow.accepted.is_(True))
-    )
-    total = count_result.scalar() or 0
     followers_url = f"{settings.server_url}/users/{username}/followers"
 
+    if not page:
+        count_result = await db.execute(
+            select(func.count())
+            .select_from(Follow)
+            .where(Follow.following_id == actor.id, Follow.accepted.is_(True))
+        )
+        total = count_result.scalar() or 0
+        return Response(
+            content=json.dumps(
+                render_ordered_collection(followers_url, total, f"{followers_url}?page=true")
+            ),
+            media_type=AP_CONTENT_TYPE,
+        )
+
+    from app.models.actor import Actor
+
+    result = await db.execute(
+        select(Actor.ap_id)
+        .join(Follow, Follow.follower_id == Actor.id)
+        .where(Follow.following_id == actor.id, Follow.accepted.is_(True))
+        .order_by(Follow.created_at.desc())
+    )
+    items = [ap_id for (ap_id,) in result.all()]
     return Response(
-        content=json.dumps(render_ordered_collection(followers_url, total, followers_url)),
+        content=json.dumps(
+            render_ordered_collection_page(
+                f"{followers_url}?page=true", followers_url, items
+            )
+        ),
         media_type=AP_CONTENT_TYPE,
     )
 
 
 @router.get("/users/{username}/following")
-async def get_following_collection(username: str, db: AsyncSession = Depends(get_db)):
+async def get_following_collection(
+    username: str,
+    page: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
     actor = await get_actor_by_username(db, username, domain=None)
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
     from app.models.follow import Follow
 
-    count_result = await db.execute(
-        select(func.count())
-        .select_from(Follow)
-        .where(Follow.follower_id == actor.id, Follow.accepted.is_(True))
-    )
-    total = count_result.scalar() or 0
     following_url = f"{settings.server_url}/users/{username}/following"
 
+    if not page:
+        count_result = await db.execute(
+            select(func.count())
+            .select_from(Follow)
+            .where(Follow.follower_id == actor.id, Follow.accepted.is_(True))
+        )
+        total = count_result.scalar() or 0
+        return Response(
+            content=json.dumps(
+                render_ordered_collection(following_url, total, f"{following_url}?page=true")
+            ),
+            media_type=AP_CONTENT_TYPE,
+        )
+
+    from app.models.actor import Actor
+
+    result = await db.execute(
+        select(Actor.ap_id)
+        .join(Follow, Follow.following_id == Actor.id)
+        .where(Follow.follower_id == actor.id, Follow.accepted.is_(True))
+        .order_by(Follow.created_at.desc())
+    )
+    items = [ap_id for (ap_id,) in result.all()]
     return Response(
-        content=json.dumps(render_ordered_collection(following_url, total, following_url)),
+        content=json.dumps(
+            render_ordered_collection_page(
+                f"{following_url}?page=true", following_url, items
+            )
+        ),
         media_type=AP_CONTENT_TYPE,
     )
 

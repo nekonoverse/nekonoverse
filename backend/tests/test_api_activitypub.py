@@ -43,7 +43,11 @@ async def test_followers_collection(app_client, test_user, mock_valkey):
         "/users/testuser/followers", headers={"Accept": "application/activity+json"},
     )
     assert resp.status_code == 200
-    assert resp.json()["type"] == "OrderedCollection"
+    data = resp.json()
+    assert data["type"] == "OrderedCollection"
+    # first must be a page URL, not the collection itself (Pleroma compat)
+    assert data["first"] != data["id"]
+    assert "?page=true" in data["first"]
 
 
 async def test_following_collection(app_client, test_user, mock_valkey):
@@ -51,7 +55,34 @@ async def test_following_collection(app_client, test_user, mock_valkey):
         "/users/testuser/following", headers={"Accept": "application/activity+json"},
     )
     assert resp.status_code == 200
-    assert resp.json()["type"] == "OrderedCollection"
+    data = resp.json()
+    assert data["type"] == "OrderedCollection"
+    assert data["first"] != data["id"]
+    assert "?page=true" in data["first"]
+
+
+async def test_followers_collection_page(app_client, test_user, mock_valkey):
+    resp = await app_client.get(
+        "/users/testuser/followers?page=true",
+        headers={"Accept": "application/activity+json"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "OrderedCollectionPage"
+    assert "partOf" in data
+    assert isinstance(data["orderedItems"], list)
+
+
+async def test_following_collection_page(app_client, test_user, mock_valkey):
+    resp = await app_client.get(
+        "/users/testuser/following?page=true",
+        headers={"Accept": "application/activity+json"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "OrderedCollectionPage"
+    assert "partOf" in data
+    assert isinstance(data["orderedItems"], list)
 
 
 async def test_webfinger(app_client, test_user, mock_valkey):
