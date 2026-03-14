@@ -13,6 +13,12 @@ test.describe("Notifications", { tag: "@serial" }, () => {
   const userB = `notif_user_${uid}`;
   const password = "testpassword123";
 
+  /** Switch to the "Other" notifications tab (non-mention notifications). */
+  async function switchToOtherTab(page: import("@playwright/test").Page) {
+    const otherTab = page.locator(".notif-tab").nth(1);
+    await otherTab.click();
+  }
+
   test("follow notification appears after being followed", async ({
     browser,
     page,
@@ -37,8 +43,10 @@ test.describe("Notifications", { tag: "@serial" }, () => {
     );
     expect(followResp.ok()).toBeTruthy();
 
-    // Admin checks notifications
+    // Admin checks notifications — follow is in "Other" tab
     await page.goto("/notifications");
+    await page.waitForSelector(".notif-tab", { timeout: 10_000 });
+    await switchToOtherTab(page);
     await page.waitForSelector(".notification-item", { timeout: 15_000 });
 
     const typeTexts = await page
@@ -69,8 +77,10 @@ test.describe("Notifications", { tag: "@serial" }, () => {
     );
     expect(reactResp.ok()).toBeTruthy();
 
-    // Admin checks notifications
+    // Admin checks notifications — reaction is in "Other" tab
     await page.goto("/notifications");
+    await page.waitForSelector(".notif-tab", { timeout: 10_000 });
+    await switchToOtherTab(page);
     await page.waitForSelector(".notification-item", { timeout: 15_000 });
 
     const items = await page.locator(".notification-item").count();
@@ -82,10 +92,11 @@ test.describe("Notifications", { tag: "@serial" }, () => {
   test("dismiss notification removes it", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/notifications");
+    await page.waitForSelector(".notif-tab", { timeout: 10_000 });
+    await switchToOtherTab(page);
     await page.waitForSelector(".notification-item", { timeout: 15_000 });
 
     const countBefore = await page.locator(".notification-item").count();
-    // 最初の未読通知のdismissボタンをクリック
     const dismissBtn = page.locator(".notification-dismiss").first();
     if (await dismissBtn.isVisible()) {
       await dismissBtn.click();
@@ -109,6 +120,7 @@ test.describe("Notifications", { tag: "@serial" }, () => {
     if (await clearBtn.isVisible()) {
       await clearBtn.click();
       await page.waitForTimeout(1000);
+      await switchToOtherTab(page);
       const items = await page.locator(".notification-item").count();
       expect(items).toBe(0);
     }
