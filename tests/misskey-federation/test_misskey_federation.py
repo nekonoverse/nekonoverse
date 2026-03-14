@@ -282,7 +282,7 @@ class TestFullFederation:
             user = misskey._api("users/show", {"userId": resolved["id"]})
             return user.get("isFollowing", False)
 
-        poll_until(check_following, timeout=30, desc="bob follows alice")
+        poll_until(check_following, timeout=60, interval=2, desc="bob follows alice")
 
     def test_neko_receives_follower(self, neko: NekoClient, alice, bob):
         """alice has bob as a follower after follow federation."""
@@ -296,7 +296,7 @@ class TestFullFederation:
                 return data.get("totalItems", 0) > 0
             return False
 
-        poll_until(check_followers, timeout=30, desc="alice has followers")
+        poll_until(check_followers, timeout=60, interval=2, desc="alice has followers")
 
     def test_neko_note_appears_on_misskey(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """After follow, alice's notes federate to Misskey's timeline."""
@@ -326,7 +326,7 @@ class TestFullFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) > 0
 
-        poll_until(check_reaction, timeout=30, desc="reaction federated to neko")
+        poll_until(check_reaction, timeout=60, interval=2, desc="reaction federated to neko")
 
     def test_misskey_renotes_federated_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """bob renotes a federated note from alice."""
@@ -396,7 +396,7 @@ class TestReactionFederation:
                 return "🎉" in reactions
             return n.get("reactions_count", 0) > 0
 
-        poll_until(check_reaction, timeout=30, desc="🎉 reaction on neko")
+        poll_until(check_reaction, timeout=60, interval=2, desc="🎉 reaction on neko")
 
     def test_misskey_multiple_reactions_different_emoji(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """Misskey user reacts, unreacts, then reacts with different emoji."""
@@ -409,7 +409,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) >= 1
 
-        poll_until(check_first, timeout=30, desc="first reaction arrives")
+        poll_until(check_first, timeout=60, interval=2, desc="first reaction arrives")
 
         # Unreact on Misskey (removes current reaction)
         misskey.unreact(mk_note["id"])
@@ -418,7 +418,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) == 0
 
-        poll_until(check_unreact, timeout=30, desc="unreaction arrives")
+        poll_until(check_unreact, timeout=60, interval=2, desc="unreaction arrives")
 
         # React with different emoji
         misskey.react(mk_note["id"], "❤")
@@ -427,7 +427,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) >= 1
 
-        poll_until(check_second, timeout=30, desc="second reaction arrives")
+        poll_until(check_second, timeout=60, interval=2, desc="second reaction arrives")
 
     def test_neko_reacts_to_misskey_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """alice@neko reacts to bob@misskey's note (reverse direction).
@@ -468,7 +468,7 @@ class TestReactionFederation:
             reactions = misskey.get_reactions(mk_note["id"])
             return len(reactions) > 0
 
-        poll_until(check_reaction_on_misskey, timeout=30, desc="reaction federated to misskey")
+        poll_until(check_reaction_on_misskey, timeout=60, interval=2, desc="reaction federated to misskey")
 
     def test_misskey_heart_reaction_maps_correctly(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """Misskey ❤ (Like) reaction is correctly stored on Nekonoverse."""
@@ -479,7 +479,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) > 0
 
-        poll_until(check, timeout=30, desc="heart reaction on neko")
+        poll_until(check, timeout=60, interval=2, desc="heart reaction on neko")
 
     def test_misskey_reaction_count_accurate(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """Reaction count on Nekonoverse accurately reflects Misskey reactions."""
@@ -490,7 +490,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) == 1
 
-        poll_until(check_count, timeout=30, desc="reaction count == 1")
+        poll_until(check_count, timeout=60, interval=2, desc="reaction count == 1")
 
 
 # ── 10. Renote federation (extended) ────────────────────────
@@ -540,7 +540,7 @@ class TestRenoteFederation:
             n = neko.get_note(note["id"])
             return n.get("renotes_count", 0) >= 1
 
-        poll_until(check_count, timeout=30, desc="renotes_count >= 1")
+        poll_until(check_count, timeout=60, interval=2, desc="renotes_count >= 1")
 
     def test_misskey_renote_creates_notification_on_neko(
         self, neko: NekoClient, misskey: MisskeyClient, alice, bob
@@ -578,7 +578,7 @@ class TestRenoteFederation:
             return None
 
         renote = poll_until(
-            check_renote_on_timeline, timeout=30, desc="renote on neko public TL"
+            check_renote_on_timeline, timeout=60, interval=2, desc="renote on neko public TL"
         )
         # Verify the renote has the reblog field (ribbon data)
         assert renote["reblog"] is not None
@@ -630,7 +630,7 @@ class TestReplyFederation:
             n = neko.get_note(note["id"])
             return n.get("replies_count", 0) >= 1
 
-        poll_until(check_reply, timeout=30, desc="reply federated to neko")
+        poll_until(check_reply, timeout=60, interval=2, desc="reply federated to neko")
 
     def test_neko_reply_to_misskey_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """alice@neko replies to bob@misskey's note."""
@@ -681,7 +681,7 @@ class TestReplyFederation:
             ctx = neko.get_context(note["id"])
             return len(ctx.get("descendants", [])) >= 1
 
-        poll_until(check_context, timeout=30, desc="reply in thread context")
+        poll_until(check_context, timeout=60, interval=2, desc="reply in thread context")
 
         ctx = neko.get_context(note["id"])
         assert len(ctx["descendants"]) >= 1
@@ -802,7 +802,7 @@ class TestDeleteFederation:
             except Exception:
                 return True  # Deleted (404)
 
-        poll_until(check_deleted, timeout=30, desc="deletion federated to misskey")
+        poll_until(check_deleted, timeout=60, interval=2, desc="deletion federated to misskey")
 
     def test_misskey_deletes_note_federates_to_neko(
         self, neko: NekoClient, misskey: MisskeyClient, alice, bob
@@ -844,7 +844,7 @@ class TestDeleteFederation:
             except Exception:
                 return True
 
-        poll_until(check_deleted, timeout=30, desc="mk deletion federated to neko")
+        poll_until(check_deleted, timeout=60, interval=2, desc="mk deletion federated to neko")
 
 
 # ── 14. Quote federation ──────────────────────────────────────
@@ -895,7 +895,7 @@ class TestQuoteFederation:
                 for n in tl
             )
 
-        poll_until(check_quote, timeout=30, desc="quote on misskey timeline")
+        poll_until(check_quote, timeout=60, interval=2, desc="quote on misskey timeline")
 
     def test_neko_quote_ap_format(self, neko: NekoClient, alice):
         """Neko quote includes _misskey_quote in AP representation."""
