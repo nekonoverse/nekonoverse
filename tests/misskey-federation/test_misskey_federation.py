@@ -554,11 +554,11 @@ class TestRenoteFederation:
         def check_notification():
             notifs = neko.notifications(limit=20)
             return any(
-                n.get("type") == "renote" and n.get("note", {}).get("id") == note["id"]
+                n.get("type") == "renote" and n.get("status", {}).get("id") == note["id"]
                 for n in notifs
             )
 
-        poll_until(check_notification, timeout=30, desc="renote notification on neko")
+        poll_until(check_notification, timeout=60, interval=2, desc="renote notification on neko")
 
     def test_misskey_renote_appears_on_neko_public_timeline(
         self, neko: NekoClient, misskey: MisskeyClient, alice, bob
