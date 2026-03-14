@@ -9,6 +9,7 @@ import { getNotifications, type Notification } from "@nekonoverse/ui/api/notific
 import Emoji from "../Emoji";
 import SearchModal from "../SearchModal";
 import ComposeModal from "../notes/ComposeModal";
+import KeyboardShortcuts from "../KeyboardShortcuts";
 
 const PREVIEW_COUNT = 5;
 
@@ -316,6 +317,9 @@ export default function Navbar() {
         <SearchModal onClose={() => setSearchOpen(false)} />
       </Show>
       <ComposeModal open={composeOpen()} onClose={() => setComposeOpen(false)} />
+      <Show when={currentUser()}>
+        <KeyboardShortcuts onCompose={() => setComposeOpen(true)} />
+      </Show>
     </nav>
   );
 }
