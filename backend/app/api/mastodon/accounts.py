@@ -326,12 +326,30 @@ async def get_account_statuses(
         get_reaction_summaries,
     )
 
+    # Determine which visibility levels to show based on relationship
+    visible = ["public", "unlisted"]
+    if user:
+        if user.actor_id == actor_id:
+            # Own profile: show everything
+            visible = ["public", "unlisted", "followers", "direct"]
+        else:
+            # Check if current user follows this actor
+            follow_check = await db.execute(
+                select(Follow.id).where(
+                    Follow.follower_id == user.actor_id,
+                    Follow.following_id == actor_id,
+                    Follow.accepted.is_(True),
+                ).limit(1)
+            )
+            if follow_check.scalar_one_or_none() is not None:
+                visible = ["public", "unlisted", "followers"]
+
     query = (
         select(Note)
         .options(*_note_load_options())
         .where(
             Note.actor_id == actor_id,
-            Note.visibility.in_(["public", "unlisted"]),
+            Note.visibility.in_(visible),
             Note.deleted_at.is_(None),
         )
     )
