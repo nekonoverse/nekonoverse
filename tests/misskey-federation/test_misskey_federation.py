@@ -491,3 +491,95 @@ class TestReactionFederation:
             return n.get("reactions_count", 0) == 1
 
         poll_until(check_count, timeout=30, desc="reaction count == 1")
+
+
+# ── 10. Renote federation (extended) ────────────────────────
+
+
+class TestRenoteFederation:
+    """Test that remote renotes create notifications and update counts."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, misskey: MisskeyClient):
+        if cls._follow_established:
+            return
+        resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
+        try:
+            misskey.follow(resolved["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+        cls._follow_established = True
+
+    def _wait_for_note_on_misskey(self, neko, misskey, text):
+        self._ensure_follow(neko, misskey)
+        note = neko.create_note(text)
+
+        def find_note():
+            tl = misskey._api("notes/global-timeline", {"limit": 20})
+            for n in tl:
+                if text in (n.get("text") or ""):
+                    return n
+            return None
+
+        mk_note = poll_until(find_note, timeout=60, interval=2, desc=f"'{text}' on misskey")
+        return note, mk_note
+
+    def test_misskey_renote_updates_count_on_neko(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Renote from Misskey increments renotes_count on Nekonoverse."""
+        note, mk_note = self._wait_for_note_on_misskey(
+            neko, misskey, f"Renote count test {time.time()}"
+        )
+        misskey.renote(mk_note["id"])
+
+        def check_count():
+            n = neko.get_note(note["id"])
+            return n.get("renotes_count", 0) >= 1
+
+        poll_until(check_count, timeout=30, desc="renotes_count >= 1")
+
+    def test_misskey_renote_creates_notification_on_neko(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Renote from Misskey creates a notification for the original author."""
+        note, mk_note = self._wait_for_note_on_misskey(
+            neko, misskey, f"Renote notif test {time.time()}"
+        )
+        misskey.renote(mk_note["id"])
+
+        def check_notification():
+            notifs = neko.notifications(limit=20)
+            return any(
+                n.get("type") == "renote" and n.get("note", {}).get("id") == note["id"]
+                for n in notifs
+            )
+
+        poll_until(check_notification, timeout=30, desc="renote notification on neko")
+
+    def test_misskey_renote_appears_on_neko_public_timeline(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Renote from Misskey appears on Nekonoverse public timeline with reblog field."""
+        note, mk_note = self._wait_for_note_on_misskey(
+            neko, misskey, f"Renote TL test {time.time()}"
+        )
+        misskey.renote(mk_note["id"])
+
+        def check_renote_on_timeline():
+            tl = neko.public_timeline()
+            for n in tl:
+                reblog = n.get("reblog")
+                if reblog and reblog.get("id") == note["id"]:
+                    return n
+            return None
+
+        renote = poll_until(
+            check_renote_on_timeline, timeout=30, desc="renote on neko public TL"
+        )
+        # Verify the renote has the reblog field (ribbon data)
+        assert renote["reblog"] is not None
+        assert renote["reblog"]["id"] == note["id"]
