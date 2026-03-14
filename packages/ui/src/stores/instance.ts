@@ -16,8 +16,34 @@ interface InstanceInfo {
   };
 }
 
-const [instance, setInstance] = createSignal<InstanceInfo | null>(null);
-const [instanceLoading, setInstanceLoading] = createSignal(true);
+const CACHED_INSTANCE_KEY = "nekonoverse_cached_instance";
+
+// localStorageから同期的にキャッシュを復元
+function restoreCachedInstance(): InstanceInfo | null {
+  try {
+    const raw = localStorage.getItem(CACHED_INSTANCE_KEY);
+    return raw ? JSON.parse(raw) : null;
+  } catch {
+    return null;
+  }
+}
+
+function cacheInstance(info: InstanceInfo | null) {
+  try {
+    if (info) {
+      localStorage.setItem(CACHED_INSTANCE_KEY, JSON.stringify(info));
+    } else {
+      localStorage.removeItem(CACHED_INSTANCE_KEY);
+    }
+  } catch {
+    // localStorage使用不可時は無視
+  }
+}
+
+// キャッシュがあれば即座にinstanceLoading=falseで開始
+const cachedInstance = restoreCachedInstance();
+const [instance, setInstance] = createSignal<InstanceInfo | null>(cachedInstance);
+const [instanceLoading, setInstanceLoading] = createSignal(!cachedInstance);
 const [versionUpdateReady, setVersionUpdateReady] = createSignal(false);
 
 export { instance, instanceLoading, versionUpdateReady };
@@ -108,7 +134,7 @@ export function checkClientVersion() {
   localStorage.setItem(CLIENT_VERSION_KEY, __APP_VERSION__);
 }
 
-// --- Fetch instance with cache bypass ---
+// --- Fetch instance (バックグラウンドrevalidation) ---
 async function fetchInstanceRaw(): Promise<InstanceInfo> {
   const resp = await fetch("/api/v1/instance", { cache: "no-store" });
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
@@ -116,10 +142,12 @@ async function fetchInstanceRaw(): Promise<InstanceInfo> {
 }
 
 export async function fetchInstance() {
-  setInstanceLoading(true);
+  // キャッシュ済みならloadingフラグを立てない(UIをブロックしない)
+  if (!instance()) setInstanceLoading(true);
   try {
     const info = await fetchInstanceRaw();
     setInstance(info);
+    cacheInstance(info);
 
     // Notify when server version changes (deploy)
     const stored = localStorage.getItem(SERVER_VERSION_KEY);
@@ -135,7 +163,8 @@ export async function fetchInstance() {
       updateDynamicIcons(info.thumbnail.url);
     }
   } catch {
-    setInstance(null);
+    // キャッシュがなければnullに設定
+    if (!instance()) setInstance(null);
   } finally {
     setInstanceLoading(false);
   }

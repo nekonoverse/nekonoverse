@@ -68,22 +68,26 @@ export default function Profile() {
       const acct = params.acct.replace(/^@/, "");
       const acc = await lookupAccount(acct);
       setAccount(acc);
-      const statuses = await getAccountStatuses(acc.id);
-      setNotes(statuses);
-      // Load relationship if logged in and not own profile
+
+      // statuses取得とrelationship取得を並列実行
       const own = currentUser()?.username === acc.username && !acc.acct.includes("@");
+      const promises: Promise<void>[] = [
+        getAccountStatuses(acc.id).then((statuses) => setNotes(statuses)),
+      ];
       if (currentUser() && !own) {
-        try {
-          const rel = await getRelationship(acc.id);
-          setIsFollowing(rel.following);
-          setIsRequested(rel.requested);
-          setIsBlocking(rel.blocking);
-          setIsMuting(rel.muting);
-          setIsFollowedBy(rel.followed_by);
-          if (rel.following) addFollowedId(acc.id);
-          else removeFollowedId(acc.id);
-        } catch {}
+        promises.push(
+          getRelationship(acc.id).then((rel) => {
+            setIsFollowing(rel.following);
+            setIsRequested(rel.requested);
+            setIsBlocking(rel.blocking);
+            setIsMuting(rel.muting);
+            setIsFollowedBy(rel.followed_by);
+            if (rel.following) addFollowedId(acc.id);
+            else removeFollowedId(acc.id);
+          }).catch(() => {}),
+        );
       }
+      await Promise.all(promises);
     } catch (e: any) {
       setError(e.message || "Not found");
     } finally {
