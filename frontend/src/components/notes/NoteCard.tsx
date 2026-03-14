@@ -1,5 +1,5 @@
 import { Show, For, createSignal, onCleanup, batch } from "solid-js";
-import type { Note, Poll, MediaAttachment } from "../../api/statuses";
+import type { Note, Poll, MediaAttachment } from "@nekonoverse/ui/api/statuses";
 import {
   reblogNote,
   unreblogNote,
@@ -10,8 +10,8 @@ import {
   unpinNote,
   votePoll,
   editNote,
-} from "../../api/statuses";
-import { blockAccount, muteAccount } from "../../api/accounts";
+} from "@nekonoverse/ui/api/statuses";
+import { blockAccount, muteAccount } from "@nekonoverse/ui/api/accounts";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
 import ImageLightbox from "../ImageLightbox";

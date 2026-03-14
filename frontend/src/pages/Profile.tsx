@@ -1,11 +1,11 @@
 import { createSignal, createEffect, on, onCleanup, Show, For, Index, batch } from "solid-js";
 import { A, useParams } from "@solidjs/router";
-import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
-import { updateAvatar, updateHeader, updateProfile, deleteAvatar, deleteHeader, updateHeaderFocus } from "../api/settings";
+import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { updateAvatar, updateHeader, updateProfile, deleteAvatar, deleteHeader, updateHeaderFocus } from "@nekonoverse/ui/api/settings";
 import FocalPointPicker from "../components/FocalPointPicker";
 import { focalPointToObjectPosition } from "@nekonoverse/ui/utils/focalPoint";
-import type { Note } from "../api/statuses";
-import { getNote } from "../api/statuses";
+import type { Note } from "@nekonoverse/ui/api/statuses";
+import { getNote } from "@nekonoverse/ui/api/statuses";
 import NoteCard from "../components/notes/NoteCard";
 import ComposeModal from "../components/notes/ComposeModal";
 import { useI18n } from "../i18n";

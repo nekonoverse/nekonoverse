@@ -1,5 +1,5 @@
 import { createSignal, onMount, onCleanup, Show } from "solid-js";
-import type { MediaAttachment } from "../api/statuses";
+import type { MediaAttachment } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "../i18n";
 
 interface Props {

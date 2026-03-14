@@ -16,9 +16,9 @@ import {
 import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "../stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "../i18n";
-import { changePassword } from "../api/settings";
-import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "../api/accounts";
-import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "../api/totp";
+import { changePassword } from "@nekonoverse/ui/api/settings";
+import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
 import PasskeyManager from "../components/PasskeyManager";
 import Breadcrumb from "../components/Breadcrumb";
 

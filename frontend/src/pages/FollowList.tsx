@@ -7,7 +7,7 @@ import {
   followAccount,
   unfollowAccount,
   type Account,
-} from "../api/accounts";
+} from "@nekonoverse/ui/api/accounts";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "../stores/followedUsers";

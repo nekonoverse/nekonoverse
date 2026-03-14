@@ -76,7 +76,7 @@ import {
   type QueueJobList,
   type SystemStats,
   type PendingRegistration,
-} from "../api/admin";
+} from "@nekonoverse/ui/api/admin";
 
 interface AdminSection {
   key: string;

@@ -7,7 +7,7 @@ import {
   For,
   type JSX,
 } from "solid-js";
-import { getCustomEmojis, type CustomEmoji } from "../../api/emoji";
+import { getCustomEmojis, type CustomEmoji } from "@nekonoverse/ui/api/emoji";
 import {
   UNICODE_EMOJIS,
   EMOJI_CATEGORIES,

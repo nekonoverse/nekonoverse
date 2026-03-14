@@ -1,6 +1,6 @@
 import { createSignal, onCleanup, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { getAccount, followAccount, unfollowAccount, type Account } from "../api/accounts";
+import { getAccount, followAccount, unfollowAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { isFollowing, addFollowedId, removeFollowedId } from "../stores/followedUsers";
 import { currentUser } from "../stores/auth";
 import { useI18n } from "../i18n";

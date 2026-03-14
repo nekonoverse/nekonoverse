@@ -1,5 +1,5 @@
 import { createSignal, onMount, For, Show } from "solid-js";
-import { getPublicTimeline, type Note } from "../../api/statuses";
+import { getPublicTimeline, type Note } from "@nekonoverse/ui/api/statuses";
 import NoteCard from "../notes/NoteCard";
 
 export default function Timeline() {

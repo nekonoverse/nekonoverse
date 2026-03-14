@@ -4,7 +4,7 @@ import {
   listPasskeys,
   registerPasskey,
   type PasskeyCredentialInfo,
-} from "../api/passkey";
+} from "@nekonoverse/ui/api/passkey";
 import { useI18n } from "../i18n";
 
 export default function PasskeyManager() {

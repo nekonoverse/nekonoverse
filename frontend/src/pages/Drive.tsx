@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show, For } from "solid-js";
-import { getDriveFiles, deleteDriveFile, type DriveFile } from "../api/drive";
-import { uploadMedia } from "../api/statuses";
+import { getDriveFiles, deleteDriveFile, type DriveFile } from "@nekonoverse/ui/api/drive";
+import { uploadMedia } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 

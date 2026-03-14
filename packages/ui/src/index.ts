@@ -1,4 +1,6 @@
 export type { CustomEmoji, RecentEmoji } from "./types/emoji";
+export type { CurrentUser, ProfileField, FocalPoint, LoginResponse } from "./api/types/auth";
+export { apiRequest } from "./api/client";
 export { sanitizeHtml } from "./utils/sanitize";
 export { emojiToUrl } from "./utils/twemoji";
 export { twemojify } from "./utils/twemojify";

@@ -1,41 +1,10 @@
 import { createSignal } from "solid-js";
-import { apiRequest } from "../api/client";
-import { authenticateWithPasskey as _authenticateWithPasskey } from "../api/passkey";
+import { apiRequest } from "@nekonoverse/ui/api/client";
+import { authenticateWithPasskey as _authenticateWithPasskey } from "@nekonoverse/ui/api/passkey";
 import { fetchFollowedIds } from "./followedUsers";
+import type { CurrentUser, LoginResponse } from "@nekonoverse/ui/api/types/auth";
 
-export interface ProfileField {
-  name: string;
-  value: string;
-}
-
-export interface FocalPoint {
-  x: number;
-  y: number;
-}
-
-export interface CurrentUser {
-  id: string;
-  username: string;
-  display_name: string | null;
-  avatar_url: string | null;
-  header_url: string | null;
-  avatar_focal: FocalPoint | null;
-  header_focal: FocalPoint | null;
-  summary: string | null;
-  fields: ProfileField[];
-  birthday: string | null;
-  is_cat: boolean;
-  is_bot: boolean;
-  locked: boolean;
-  discoverable: boolean;
-  role: string;
-}
-
-export interface LoginResponse {
-  ok?: boolean;
-  requires_totp?: boolean;
-  totp_token?: string;
-}
+export type { CurrentUser, ProfileField, FocalPoint, LoginResponse } from "@nekonoverse/ui/api/types/auth";
 
 const [currentUser, setCurrentUser] = createSignal<CurrentUser | null>(null);
 const [authLoading, setAuthLoading] = createSignal(true);

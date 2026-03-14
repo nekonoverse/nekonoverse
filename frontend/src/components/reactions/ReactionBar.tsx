@@ -1,8 +1,8 @@
 import { createSignal, Show, For, onCleanup } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import type { ReactionSummary, ReactionUser } from "../../api/statuses";
-import { reactToNote, unreactToNote, getReactedBy } from "../../api/statuses";
-import { importRemoteEmojiByShortcode } from "../../api/admin";
+import type { ReactionSummary, ReactionUser } from "@nekonoverse/ui/api/statuses";
+import { reactToNote, unreactToNote, getReactedBy } from "@nekonoverse/ui/api/statuses";
+import { importRemoteEmojiByShortcode } from "@nekonoverse/ui/api/admin";
 import EmojiPicker from "./EmojiPicker";
 import Emoji from "../Emoji";
 import { currentUser } from "../../stores/auth";
