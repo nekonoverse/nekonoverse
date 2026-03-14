@@ -67,7 +67,14 @@ export default function UserHoverCard(props: Props) {
     e.preventDefault();
     e.stopPropagation();
     if (visible()) {
-      setVisible(false);
+      // カードが表示中ならプロフィールページに遷移
+      const acc = account();
+      if (acc) {
+        setVisible(false);
+        navigate(`/@${acc.acct}`);
+      } else {
+        setVisible(false);
+      }
     } else {
       setVisible(true);
       if (!account()) fetchAccount();

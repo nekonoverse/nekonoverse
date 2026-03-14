@@ -271,6 +271,8 @@ export default function Home() {
   );
 
   const handleNewNote = (note: Note) => {
+    // パブリックTL表示中はpublicノートのみ追加（unlistedはホームTLのみ）
+    if (!isHomeTL() && note.visibility !== "public") return;
     setNotes((prev) => [note, ...prev]);
   };
 

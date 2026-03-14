@@ -8,6 +8,7 @@ import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
 import { getNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
 import Emoji from "../Emoji";
 import SearchModal from "../SearchModal";
+import ComposeModal from "../notes/ComposeModal";
 
 const PREVIEW_COUNT = 5;
 
@@ -27,6 +28,7 @@ export default function Navbar() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
+  const [composeOpen, setComposeOpen] = createSignal(false);
 
   // Notification preview state
   const [notifOpen, setNotifOpen] = createSignal(false);
@@ -129,6 +131,16 @@ export default function Navbar() {
                 <polyline points="9 22 9 12 15 12 15 22" />
               </svg>
             </a>
+            <button
+              class="navbar-icon"
+              title={t("composer.new")}
+              onClick={() => setComposeOpen(true)}
+            >
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 20h9" />
+                <path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z" />
+              </svg>
+            </button>
           </Show>
           <button
             class="navbar-icon"
@@ -136,8 +148,10 @@ export default function Navbar() {
             onClick={() => setSearchOpen(true)}
           >
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="11" cy="11" r="8" />
-              <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              <circle cx="10" cy="8" r="5" />
+              <path d="M2 21v-2a5 5 0 0 1 5-5" />
+              <circle cx="19" cy="19" r="3" />
+              <line x1="22" y1="22" x2="21.1" y2="21.1" />
             </svg>
           </button>
         </div>
@@ -293,6 +307,7 @@ export default function Navbar() {
       <Show when={searchOpen()}>
         <SearchModal onClose={() => setSearchOpen(false)} />
       </Show>
+      <ComposeModal open={composeOpen()} onClose={() => setComposeOpen(false)} />
     </nav>
   );
 }
