@@ -191,8 +191,10 @@ services:
       - ./tests/mastodon-federation/nginx-mastodon-ssl.conf:/etc/nginx/nginx.conf:ro
       - certs:/certs:ro
     depends_on:
-      - mastodon-web
-      - certs
+      mastodon-web:
+        condition: service_started
+      certs:
+        condition: service_completed_successfully
     networks:
       mastodon-fed:
         aliases:
