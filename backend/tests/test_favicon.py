@@ -29,7 +29,7 @@ def test_generate_ico_bytes_from_png():
     img.save(buf, format="PNG")
     png_data = buf.getvalue()
 
-    from app.services.favicon_service import generate_ico_bytes
+    from app.services.icon_service import generate_ico_bytes
 
     ico_data = generate_ico_bytes(png_data)
     assert ico_data is not None
@@ -39,7 +39,7 @@ def test_generate_ico_bytes_from_png():
 
 def test_generate_ico_bytes_invalid_data():
     """Return None for invalid image data."""
-    from app.services.favicon_service import generate_ico_bytes
+    from app.services.icon_service import generate_ico_bytes
 
     result = generate_ico_bytes(b"not an image")
     assert result is None
@@ -60,14 +60,14 @@ async def make_admin(db, mock_valkey, app_client, *, username="adminuser"):
 
 
 @patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
-@patch("app.services.favicon_service.upload_file", new_callable=AsyncMock)
+@patch("app.services.icon_service.upload_file", new_callable=AsyncMock)
 async def test_server_icon_upload_generates_favicon(
-    mock_favicon_s3, mock_drive_s3, app_client, db, mock_valkey
+    mock_icon_s3, mock_drive_s3, app_client, db, mock_valkey
 ):
     """Uploading a server icon should also generate and store a favicon.ico."""
     await make_admin(db, mock_valkey, app_client)
     mock_drive_s3.return_value = "etag"
-    mock_favicon_s3.return_value = "etag"
+    mock_icon_s3.return_value = "etag"
 
     from PIL import Image
 
@@ -83,16 +83,10 @@ async def test_server_icon_upload_generates_favicon(
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
-    # favicon upload should have been called with ICO data
-    assert mock_favicon_s3.called
-    call_args = mock_favicon_s3.call_args
-    s3_key = call_args[0][0]
-    assert s3_key.startswith("server/favicon-")
-    assert s3_key.endswith(".ico")
-    assert call_args[0][2] == "image/x-icon"
+    # icon_service uploads 3 files: 512 PNG, 192 PNG, ICO
+    assert mock_icon_s3.call_count >= 3
 
-    # Check that favicon_ico_url was saved in server_settings (query DB directly
-    # because mock_valkey interferes with get_setting cache)
+    # Check that favicon_ico_url was saved in server_settings
     from sqlalchemy import select
 
     from app.models.server_setting import ServerSetting
@@ -104,14 +98,26 @@ async def test_server_icon_upload_generates_favicon(
     assert setting is not None
     assert "favicon-" in setting.value
 
+    # Check PWA icon URLs were saved
+    result = await db.execute(
+        select(ServerSetting).where(ServerSetting.key == "pwa_icon_192_url")
+    )
+    assert result.scalar_one_or_none() is not None
+
+    result = await db.execute(
+        select(ServerSetting).where(ServerSetting.key == "pwa_icon_512_url")
+    )
+    assert result.scalar_one_or_none() is not None
+
 
 # ── GET /favicon.ico endpoint ────────────────────────────────────────
 
 
 async def test_favicon_ico_endpoint_not_configured(app_client, db, mock_valkey):
-    """Return 404 when no favicon is configured."""
+    """Return default SVG when no favicon is configured."""
     resp = await app_client.get("/favicon.ico")
-    assert resp.status_code == 404
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("image/svg+xml")
 
 
 async def test_favicon_ico_endpoint_redirect(app_client, db, mock_valkey):
