@@ -1,9 +1,10 @@
 FROM node:22-alpine AS base
 
 WORKDIR /app
-COPY package.json package-lock.json* ./
+COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm install
-COPY . .
+COPY packages/ui /packages/ui
+COPY frontend/ .
 
 # --- Development stage ---
 FROM base AS dev

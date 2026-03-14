@@ -11,9 +11,9 @@ import {
 import { useI18n } from "../i18n";
 import { currentUser } from "../stores/auth";
 import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "../stores/followedUsers";
-import { sanitizeHtml } from "../utils/sanitize";
-import { emojify } from "../utils/emojify";
-import { twemojify } from "../utils/twemojify";
+import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { emojify } from "@nekonoverse/ui/utils/emojify";
+import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { defaultAvatar } from "../stores/instance";
 
 export default function FollowList() {

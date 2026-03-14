@@ -47,11 +47,7 @@ export interface Poll {
   own_votes: number[];
 }
 
-export interface CustomEmoji {
-  shortcode: string;
-  url: string;
-  static_url: string;
-}
+export type { CustomEmoji } from "@nekonoverse/ui/types/emoji";
 
 export interface TagInfo {
   name: string;

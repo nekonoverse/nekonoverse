@@ -1,4 +1,4 @@
-import type { CustomEmoji } from "../api/statuses";
+import type { CustomEmoji } from "../types/emoji";
 
 const SHORTCODE_RE = /:([a-zA-Z0-9_]+):/g;
 

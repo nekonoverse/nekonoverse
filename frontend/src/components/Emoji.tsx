@@ -1,4 +1,4 @@
-import { emojiToUrl } from "../utils/twemoji";
+import { emojiToUrl } from "@nekonoverse/ui/utils/twemoji";
 
 interface Props {
   emoji: string;

@@ -1,12 +1,9 @@
+import type { RecentEmoji } from "../types/emoji";
+
+export type { RecentEmoji };
+
 const STORAGE_KEY = "nekonoverse:recent-emojis";
 const MAX_RECENT = 20;
-
-export interface RecentEmoji {
-  emoji: string;       // Unicode char or ":shortcode:"
-  isCustom: boolean;
-  url?: string;
-  shortcode?: string;  // For display/search without colons
-}
 
 export function getRecentEmojis(): RecentEmoji[] {
   try {
