@@ -134,6 +134,71 @@ async def test_clear_notifications(db, mock_valkey, test_user, test_user_b):
     assert len(notifs) == 0
 
 
+@pytest.mark.anyio
+async def test_mark_all_as_read(db, mock_valkey, test_user, test_user_b):
+    from app.services.notification_service import (
+        create_notification,
+        get_notifications,
+        mark_all_as_read,
+    )
+
+    await create_notification(db, "follow", test_user.actor_id, test_user_b.actor_id)
+    await create_notification(db, "mention", test_user.actor_id, test_user_b.actor_id)
+    await db.commit()
+
+    await mark_all_as_read(db, test_user.actor_id)
+    await db.commit()
+
+    notifs = await get_notifications(db, test_user.actor_id)
+    assert all(n.read for n in notifs)
+
+
+@pytest.mark.anyio
+async def test_duplicate_notification_skipped(db, mock_valkey, test_user, test_user_b):
+    """Duplicate unread notification with same type/sender/note should be skipped."""
+    from app.services.notification_service import create_notification, get_notifications
+
+    note = await make_note(db, test_user_b.actor, content="test")
+    n1 = await create_notification(
+        db, "mention", test_user.actor_id, test_user_b.actor_id, note_id=note.id,
+    )
+    n2 = await create_notification(
+        db, "mention", test_user.actor_id, test_user_b.actor_id, note_id=note.id,
+    )
+    await db.commit()
+
+    assert n1 is not None
+    assert n2 is None  # duplicate skipped
+
+    notifs = await get_notifications(db, test_user.actor_id)
+    mention_notifs = [n for n in notifs if n.type == "mention" and n.note_id == note.id]
+    assert len(mention_notifs) == 1
+
+
+@pytest.mark.anyio
+async def test_duplicate_allowed_after_read(db, mock_valkey, test_user, test_user_b):
+    """After marking as read, a new notification of the same type is allowed."""
+    from app.services.notification_service import (
+        create_notification,
+        mark_as_read,
+    )
+
+    n1 = await create_notification(
+        db, "follow", test_user.actor_id, test_user_b.actor_id,
+    )
+    await db.commit()
+    assert n1 is not None
+
+    await mark_as_read(db, n1.id, test_user.actor_id)
+    await db.commit()
+
+    n2 = await create_notification(
+        db, "follow", test_user.actor_id, test_user_b.actor_id,
+    )
+    await db.commit()
+    assert n2 is not None  # allowed because first was read
+
+
 # ── Notification API ─────────────────────────────────────────────────────────
 
 
@@ -175,6 +240,25 @@ async def test_clear_notifications_api(db, app_client, mock_valkey, test_user, t
 
     resp = await client.post("/api/v1/notifications/clear")
     assert resp.status_code == 200
+
+
+@pytest.mark.anyio
+async def test_mark_all_as_read_api(db, app_client, mock_valkey, test_user, test_user_b):
+    client = authed_client_for(app_client, mock_valkey, test_user)
+
+    from app.services.notification_service import create_notification
+    await create_notification(db, "follow", test_user.actor_id, test_user_b.actor_id)
+    await create_notification(db, "mention", test_user.actor_id, test_user_b.actor_id)
+    await db.commit()
+
+    resp = await client.post("/api/v1/notifications/mark_all_as_read")
+    assert resp.status_code == 200
+
+    # Verify all are now read
+    resp2 = await client.get("/api/v1/notifications")
+    assert resp2.status_code == 200
+    for n in resp2.json():
+        assert n["read"] is True
 
 
 @pytest.mark.anyio

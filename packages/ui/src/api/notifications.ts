@@ -28,6 +28,10 @@ export async function dismissNotification(id: string): Promise<void> {
   await apiRequest(`/api/v1/notifications/${id}/dismiss`, { method: "POST" });
 }
 
+export async function markAllNotificationsAsRead(): Promise<void> {
+  await apiRequest("/api/v1/notifications/mark_all_as_read", { method: "POST" });
+}
+
 export async function clearNotifications(): Promise<void> {
   await apiRequest("/api/v1/notifications/clear", { method: "POST" });
 }

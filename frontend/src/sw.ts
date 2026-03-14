@@ -59,7 +59,18 @@ self.addEventListener("push", (event) => {
     },
   };
 
-  event.waitUntil(self.registration.showNotification(title, options));
+  // Suppress OS notification when the app is focused (SSE handles in-app display)
+  event.waitUntil(
+    self.clients
+      .matchAll({ type: "window", includeUncontrolled: true })
+      .then((clientList) => {
+        const hasFocused = clientList.some(
+          (c) => c.visibilityState === "visible" && c.url.includes(self.location.origin),
+        );
+        if (hasFocused) return;
+        return self.registration.showNotification(title, options);
+      }),
+  );
 });
 
 // --- Notification click handler ---

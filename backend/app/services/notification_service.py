@@ -33,6 +33,22 @@ async def create_notification(
         if await is_muting(db, recipient_id, sender_id):
             return None
 
+    # Deduplicate: skip if identical unread notification already exists
+    dedup_filters = [
+        Notification.type == type,
+        Notification.recipient_id == recipient_id,
+        Notification.read.is_(False),
+    ]
+    if sender_id:
+        dedup_filters.append(Notification.sender_id == sender_id)
+    if note_id:
+        dedup_filters.append(Notification.note_id == note_id)
+    if reaction_emoji:
+        dedup_filters.append(Notification.reaction_emoji == reaction_emoji)
+    existing = await db.execute(select(Notification).where(*dedup_filters).limit(1))
+    if existing.scalar_one_or_none():
+        return None
+
     notification = Notification(
         type=type,
         recipient_id=recipient_id,
