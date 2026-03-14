@@ -152,6 +152,67 @@ describe("mentionify", () => {
     expect(domains[0].textContent).toBe("@already.set");
   });
 
+  it("skips Mastodon hashtag links (class='mention hashtag')", () => {
+    // Mastodon format: <a class="mention hashtag" href="https://remote.example.com/tags/test">#<span>test</span></a>
+    const el = document.createElement("div");
+    const a = document.createElement("a");
+    a.className = "mention hashtag";
+    a.href = "https://remote.example.com/tags/test";
+    a.textContent = "#";
+    const span = document.createElement("span");
+    span.textContent = "test";
+    a.appendChild(span);
+    el.appendChild(a);
+
+    mentionify(el);
+
+    const link = el.querySelector("a")!;
+    // href should NOT be rewritten to /@tags/test@remote.example.com
+    expect(link.getAttribute("href")).toBe("https://remote.example.com/tags/test");
+    // No mention-domain should be added
+    expect(el.querySelector(".mention-domain")).toBeNull();
+    // Text should remain unchanged
+    expect(span.textContent).toBe("test");
+  });
+
+  it("processes real mentions but skips hashtags in mixed content", () => {
+    const el = document.createElement("div");
+
+    // Real mention
+    const mentionA = document.createElement("a");
+    mentionA.className = "u-url mention";
+    mentionA.href = "https://remote.example.com/@alice";
+    mentionA.textContent = "@";
+    const mentionSpan = document.createElement("span");
+    mentionSpan.textContent = "alice";
+    mentionA.appendChild(mentionSpan);
+    el.appendChild(mentionA);
+
+    // Hashtag with class="mention hashtag"
+    const hashA = document.createElement("a");
+    hashA.className = "mention hashtag";
+    hashA.href = "https://remote.example.com/tags/nekonoverse";
+    hashA.textContent = "#";
+    const hashSpan = document.createElement("span");
+    hashSpan.textContent = "nekonoverse";
+    hashA.appendChild(hashSpan);
+    el.appendChild(hashA);
+
+    mentionify(el);
+
+    // Mention should be processed
+    expect(mentionA.getAttribute("href")).toBe("/@alice@remote.example.com");
+    expect(mentionA.querySelector(".mention-domain")!.textContent).toBe(
+      "@remote.example.com",
+    );
+
+    // Hashtag should NOT be processed
+    expect(hashA.getAttribute("href")).toBe(
+      "https://remote.example.com/tags/nekonoverse",
+    );
+    expect(hashA.querySelector(".mention-domain")).toBeNull();
+  });
+
   it("handles invalid URLs gracefully", () => {
     const el = document.createElement("div");
     const a = document.createElement("a");
