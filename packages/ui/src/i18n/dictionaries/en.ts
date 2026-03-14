@@ -533,6 +533,8 @@ export const en: Dictionary = {
   "profile.deleteAvatar": "Remove avatar",
   "profile.deleteHeader": "Remove header",
   "profile.setFocalPoint": "Set focal point",
+  "profile.cropHeader": "Crop header",
+  "profile.cropPreview": "Preview",
   "settings.timeFormat": "Time Display",
   "settings.timeAbsolute": "Absolute",
   "settings.timeRelative": "Relative",

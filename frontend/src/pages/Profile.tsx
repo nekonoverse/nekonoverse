@@ -2,7 +2,7 @@ import { createSignal, createEffect, on, onCleanup, Show, For, Index, batch } fr
 import { A, useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { updateAvatar, updateHeader, updateProfile, deleteAvatar, deleteHeader, updateHeaderFocus } from "@nekonoverse/ui/api/settings";
-import FocalPointPicker from "../components/FocalPointPicker";
+import HeaderCropPicker from "../components/HeaderCropPicker";
 import { focalPointToObjectPosition } from "@nekonoverse/ui/utils/focalPoint";
 import type { Note } from "@nekonoverse/ui/api/statuses";
 import { getNote } from "@nekonoverse/ui/api/statuses";
@@ -355,7 +355,7 @@ export default function Profile() {
                         <Show when={acc.header}>
                           <button
                             class="profile-image-action-btn"
-                            title={t("profile.setFocalPoint")}
+                            title={t("profile.cropHeader")}
                             onClick={(e) => { e.stopPropagation(); setShowHeaderFocal(true); }}
                           >
                             +
@@ -799,9 +799,9 @@ export default function Profile() {
         </div>
       </Show>
 
-      {/* Header focal point picker */}
+      {/* Header crop picker */}
       <Show when={showHeaderFocal() && account()?.header}>
-        <FocalPointPicker
+        <HeaderCropPicker
           imageUrl={account()!.header!}
           initialX={currentUser()?.header_focal?.x}
           initialY={currentUser()?.header_focal?.y}
