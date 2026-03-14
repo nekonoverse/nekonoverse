@@ -202,6 +202,10 @@ export default function Notifications() {
           class={`notif-tab${tab() === "mentions" ? " active" : ""}`}
           onClick={() => { setTab("mentions"); resetUnreadMentions(); }}
         >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+          </svg>
           {t("notifications.tabMentions" as keyof Dictionary)}
           <Show when={unreadMentions() > 0}>
             <span class="notif-tab-badge">{unreadMentions() > 99 ? "99+" : unreadMentions()}</span>
