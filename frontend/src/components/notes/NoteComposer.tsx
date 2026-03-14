@@ -5,6 +5,7 @@ import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
 import EmojiPicker from "../reactions/EmojiPicker";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { stripExifFromFile } from "@nekonoverse/ui/utils/stripExif";
 import type { DriveFile } from "@nekonoverse/ui/api/drive";
 import {
@@ -321,7 +322,10 @@ export default function NoteComposer(props: Props) {
             </div>
             <div class="composer-quote-body">
               <strong>{qn().actor.display_name || qn().actor.username}</strong>
-              <div class="composer-quote-text" innerHTML={sanitizeHtml(qn().content)} />
+              <div class="composer-quote-text" ref={(el) => {
+                el.innerHTML = sanitizeHtml(qn().content);
+                externalLinksNewTab(el);
+              }} />
             </div>
           </div>
         )}

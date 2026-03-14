@@ -15,6 +15,7 @@ import { onReaction } from "@nekonoverse/ui/stores/streaming";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
+import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 
@@ -660,6 +661,7 @@ export default function Profile() {
                         el.innerHTML = sanitizeHtml(acc.note);
                         if (acc.emojis) emojify(el, acc.emojis);
                         twemojify(el);
+                        externalLinksNewTab(el);
                       }} />
                     </Show>
                     <Show when={acc.fields && acc.fields.length > 0}>
@@ -672,6 +674,7 @@ export default function Profile() {
                                 el.innerHTML = sanitizeHtml(field.value);
                                 if (acc.emojis) emojify(el, acc.emojis);
                                 twemojify(el);
+                                externalLinksNewTab(el);
                               }} />
                             </>
                           )}

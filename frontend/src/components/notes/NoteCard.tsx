@@ -26,6 +26,7 @@ import { mentionify } from "@nekonoverse/ui/utils/mentionify";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 import { timeFormat } from "@nekonoverse/ui/stores/theme";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { renderMfm } from "@nekonoverse/ui/utils/mfm";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
@@ -98,6 +99,7 @@ function QuoteEmbed(props: { note: Note }) {
             mentionify(el, navigate);
             emojify(el, props.note.emojis);
             twemojify(el);
+            externalLinksNewTab(el);
           }
         }}
       />
@@ -619,6 +621,7 @@ export default function NoteCard(props: Props) {
                     mentionify(el, navigate);
                     emojify(el, note().emojis);
                     twemojify(el);
+                    externalLinksNewTab(el);
                   }
                 }}
               />

@@ -14,6 +14,7 @@ import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from 
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
+import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 export default function FollowList() {
@@ -135,6 +136,7 @@ export default function FollowList() {
                               el.innerHTML = sanitizeHtml(acc.note);
                               if (acc.emojis) emojify(el, acc.emojis);
                               twemojify(el);
+                              externalLinksNewTab(el);
                             }} />
                           </Show>
                         </div>
