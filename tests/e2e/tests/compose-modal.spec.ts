@@ -67,14 +67,8 @@ test.describe("Compose Modal", () => {
   test("direct visibility is not available in default visibility settings", async ({
     page,
   }) => {
-    await page.goto("/settings");
+    await page.goto("/settings/posting");
     await page.waitForSelector(".settings-section", { timeout: 10_000 });
-
-    // Navigate to Posting tab
-    const postingTab = page.locator(".settings-tab").filter({ hasText: /Posting|投稿/ });
-    if (await postingTab.isVisible()) {
-      await postingTab.click();
-    }
 
     // Check visibility selector options
     const options = await page.locator(".visibility-select option").allTextContents();
