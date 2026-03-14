@@ -10,6 +10,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.user import (
     ChangePasswordRequest,
+    FocalPoint,
     UserLoginRequest,
     UserRegisterRequest,
     UserResponse,
@@ -121,7 +122,7 @@ async def register(
     await valkey.incr(reg_key)
     await valkey.expire(reg_key, REGISTER_LOCKOUT_TTL)
 
-    return _user_response(user)
+    return await _user_response(user, db)
 
 
 @router.post("/auth/login")
@@ -212,21 +213,33 @@ async def logout(request: Request, response: Response):
 @router.get("/accounts/verify_credentials", response_model=UserResponse)
 async def verify_credentials(
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    return _user_response(user)
+    return await _user_response(user, db)
 
 
 DEFAULT_AVATAR_PATH = "/default-avatar.svg"
 
 
-def _user_response(user: User) -> UserResponse:
+def _focal_from_drive_file(drive_file) -> FocalPoint | None:
+    """Extract focal point from a DriveFile."""
+    if drive_file and drive_file.focal_x is not None and drive_file.focal_y is not None:
+        return FocalPoint(x=drive_file.focal_x, y=drive_file.focal_y)
+    return None
+
+
+async def _user_response(user: User, db: AsyncSession) -> UserResponse:
     actor = user.actor
+    # Ensure drive file relationships are loaded for focal point data
+    await db.refresh(actor, ["avatar_file", "header_file"])
     return UserResponse(
         id=user.id,
         username=actor.username,
         display_name=actor.display_name,
         avatar_url=actor.avatar_url or DEFAULT_AVATAR_PATH,
         header_url=actor.header_url,
+        avatar_focal=_focal_from_drive_file(actor.avatar_file),
+        header_focal=_focal_from_drive_file(actor.header_file),
         summary=actor.summary,
         fields=actor.fields or [],
         birthday=actor.birthday,
@@ -251,6 +264,10 @@ async def update_credentials(
     discoverable: bool | None = Form(None),
     avatar: UploadFile | None = File(None),
     header: UploadFile | None = File(None),
+    avatar_delete: str | None = Form(None),
+    header_delete: str | None = Form(None),
+    avatar_focus: str | None = Form(None),
+    header_focus: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -381,6 +398,10 @@ async def update_credentials(
         user.actor.avatar_url = file_to_url(drive_file)
         user.actor.avatar_file_id = drive_file.id
         changed = True
+    elif avatar_delete is not None:
+        user.actor.avatar_url = None
+        user.actor.avatar_file_id = None
+        changed = True
 
     if header:
         from app.services.drive_service import file_to_url, upload_drive_file
@@ -400,6 +421,32 @@ async def update_credentials(
         user.actor.header_url = file_to_url(drive_file)
         user.actor.header_file_id = drive_file.id
         changed = True
+    elif header_delete is not None:
+        user.actor.header_url = None
+        user.actor.header_file_id = None
+        changed = True
+
+    if avatar_focus and user.actor.avatar_file_id:
+        from app.api.media import _parse_focus
+        from app.services.drive_service import get_drive_file, update_drive_file_meta
+
+        fx, fy = _parse_focus(avatar_focus)
+        if fx is not None and fy is not None:
+            df = await get_drive_file(db, user.actor.avatar_file_id)
+            if df:
+                await update_drive_file_meta(db, df, focal_x=fx, focal_y=fy)
+                changed = True
+
+    if header_focus and user.actor.header_file_id:
+        from app.api.media import _parse_focus
+        from app.services.drive_service import get_drive_file, update_drive_file_meta
+
+        fx, fy = _parse_focus(header_focus)
+        if fx is not None and fy is not None:
+            df = await get_drive_file(db, user.actor.header_file_id)
+            if df:
+                await update_drive_file_meta(db, df, focal_x=fx, focal_y=fy)
+                changed = True
 
     if changed:
         await db.commit()
@@ -426,7 +473,7 @@ async def update_credentials(
         for inbox_url in inboxes:
             await enqueue_delivery(db, actor.id, inbox_url, update_activity)
 
-    return _user_response(user)
+    return await _user_response(user, db)
 
 
 @router.post("/auth/change_password")

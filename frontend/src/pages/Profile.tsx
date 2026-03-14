@@ -1,7 +1,9 @@
 import { createSignal, createEffect, on, onCleanup, Show, For, Index, batch } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
-import { updateAvatar, updateHeader, updateProfile } from "../api/settings";
+import { updateAvatar, updateHeader, updateProfile, deleteAvatar, deleteHeader, updateHeaderFocus } from "../api/settings";
+import FocalPointPicker from "../components/FocalPointPicker";
+import { focalPointToObjectPosition } from "../utils/focalPoint";
 import type { Note } from "../api/statuses";
 import { getNote } from "../api/statuses";
 import NoteCard from "../components/notes/NoteCard";
@@ -50,6 +52,7 @@ export default function Profile() {
   const [saving, setSaving] = createSignal(false);
   const [uploadingAvatar, setUploadingAvatar] = createSignal(false);
   const [uploadingHeader, setUploadingHeader] = createSignal(false);
+  const [showHeaderFocal, setShowHeaderFocal] = createSignal(false);
 
   let avatarInput!: HTMLInputElement;
   let headerInput!: HTMLInputElement;
@@ -224,6 +227,38 @@ export default function Profile() {
     }
   };
 
+  const handleDeleteAvatar = async (e: MouseEvent) => {
+    e.stopPropagation();
+    setUploadingAvatar(true);
+    try {
+      await deleteAvatar();
+      await refreshAccount();
+    } catch {
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleDeleteHeader = async (e: MouseEvent) => {
+    e.stopPropagation();
+    setUploadingHeader(true);
+    try {
+      await deleteHeader();
+      await refreshAccount();
+    } catch {
+    } finally {
+      setUploadingHeader(false);
+    }
+  };
+
+  const handleHeaderFocalSave = async (x: number, y: number) => {
+    try {
+      await updateHeaderFocus(x, y);
+      await refreshAccount();
+    } catch {}
+    setShowHeaderFocal(false);
+  };
+
   const handleBlock = async () => {
     const acc = account()!;
     if (isBlocking()) {
@@ -294,18 +329,40 @@ export default function Profile() {
               <>
                 <div class="profile-header">
                   <Show when={editing()}>
-                    <div
-                      class="profile-header-editable"
-                      onClick={() => headerInput.click()}
-                    >
-                      <Show when={acc.header}>
-                        <img class="profile-header-img" src={acc.header} alt="" />
-                      </Show>
-                      <Show when={!acc.header}>
-                        <div class="profile-header-placeholder" />
-                      </Show>
-                      <div class="profile-overlay">
-                        {uploadingHeader() ? "..." : "\u{1F4F7}"}
+                    <div class="profile-header-editable">
+                      <div onClick={() => headerInput.click()}>
+                        <Show when={acc.header}>
+                          <img
+                            class="profile-header-img"
+                            src={acc.header}
+                            alt=""
+                            style={{ "object-position": focalPointToObjectPosition(currentUser()?.header_focal) }}
+                          />
+                        </Show>
+                        <Show when={!acc.header}>
+                          <div class="profile-header-placeholder" />
+                        </Show>
+                        <div class="profile-overlay">
+                          {uploadingHeader() ? "..." : "\u{1F4F7}"}
+                        </div>
+                      </div>
+                      <div class="profile-image-actions">
+                        <Show when={acc.header}>
+                          <button
+                            class="profile-image-action-btn"
+                            title={t("profile.setFocalPoint")}
+                            onClick={(e) => { e.stopPropagation(); setShowHeaderFocal(true); }}
+                          >
+                            +
+                          </button>
+                          <button
+                            class="profile-image-action-btn profile-image-delete-btn"
+                            title={t("profile.deleteHeader")}
+                            onClick={handleDeleteHeader}
+                          >
+                            ✕
+                          </button>
+                        </Show>
                       </div>
                     </div>
                     <input
@@ -318,7 +375,12 @@ export default function Profile() {
                   </Show>
                   <Show when={!editing()}>
                     <Show when={acc.header}>
-                      <img class="profile-header-img" src={acc.header} alt="" />
+                      <img
+                        class="profile-header-img"
+                        src={acc.header}
+                        alt=""
+                        style={{ "object-position": focalPointToObjectPosition(currentUser()?.header_focal) }}
+                      />
                     </Show>
                     <Show when={!acc.header}>
                       <div class="profile-header-placeholder" />
@@ -326,18 +388,29 @@ export default function Profile() {
                   </Show>
 
                   <Show when={editing()}>
-                    <div
-                      class="profile-avatar-editable"
-                      onClick={() => avatarInput.click()}
-                    >
-                      <img
-                        class="profile-avatar"
-                        src={acc.avatar || defaultAvatar()}
-                        alt=""
-                      />
-                      <div class="profile-avatar-overlay">
-                        {uploadingAvatar() ? "..." : "\u{1F4F7}"}
+                    <div class="profile-avatar-edit-wrapper">
+                      <div
+                        class="profile-avatar-editable"
+                        onClick={() => avatarInput.click()}
+                      >
+                        <img
+                          class="profile-avatar"
+                          src={acc.avatar || defaultAvatar()}
+                          alt=""
+                        />
+                        <div class="profile-avatar-overlay">
+                          {uploadingAvatar() ? "..." : "\u{1F4F7}"}
+                        </div>
                       </div>
+                      <Show when={acc.avatar}>
+                        <button
+                          class="profile-avatar-delete-btn"
+                          title={t("profile.deleteAvatar")}
+                          onClick={handleDeleteAvatar}
+                        >
+                          ✕
+                        </button>
+                      </Show>
                     </div>
                     <input
                       ref={avatarInput}
@@ -707,6 +780,17 @@ export default function Profile() {
             </div>
           </div>
         </div>
+      </Show>
+
+      {/* Header focal point picker */}
+      <Show when={showHeaderFocal() && account()?.header}>
+        <FocalPointPicker
+          imageUrl={account()!.header!}
+          initialX={currentUser()?.header_focal?.x}
+          initialY={currentUser()?.header_focal?.y}
+          onSave={handleHeaderFocalSave}
+          onClose={() => setShowHeaderFocal(false)}
+        />
       </Show>
     </div>
   );

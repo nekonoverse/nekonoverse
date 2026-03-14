@@ -3033,9 +3033,7 @@ a:hover {
 }
 
 .profile-avatar-editable {
-  position: absolute;
-  bottom: -48px;
-  left: 20px;
+  position: relative;
   cursor: pointer;
 }
 
@@ -3059,6 +3057,67 @@ a:hover {
   opacity: 0;
   transition: opacity 0.15s;
   border-radius: 50%;
+}
+
+.profile-image-actions {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: flex;
+  gap: 4px;
+  z-index: 2;
+}
+
+.profile-image-action-btn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 14px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.profile-image-action-btn:hover {
+  background: rgba(0, 0, 0, 0.8);
+}
+
+.profile-image-delete-btn:hover {
+  background: var(--danger);
+}
+
+.profile-avatar-edit-wrapper {
+  position: absolute;
+  bottom: -48px;
+  left: 20px;
+}
+
+.profile-avatar-delete-btn {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: none;
+  background: rgba(0, 0, 0, 0.6);
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  transition: background 0.15s;
+}
+
+.profile-avatar-delete-btn:hover {
+  background: var(--danger);
 }
 
 .profile-edit-input {
