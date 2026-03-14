@@ -62,7 +62,7 @@ export default function Navbar() {
   const handleLogout = async () => {
     setMenuOpen(false);
     await logout();
-    window.location.href = "/";
+    navigate("/");
   };
 
 
