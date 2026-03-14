@@ -18,6 +18,9 @@ export function mentionify(
   const mentions = el.querySelectorAll<HTMLAnchorElement>("a.mention");
 
   for (const link of mentions) {
+    // Mastodon hashtag links have class="mention hashtag" — skip them
+    if (link.classList.contains("hashtag")) continue;
+
     try {
       const url = new URL(link.href);
       if (url.hostname === currentHost) continue;
