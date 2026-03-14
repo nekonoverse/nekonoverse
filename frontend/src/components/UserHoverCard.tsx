@@ -7,6 +7,7 @@ import { useI18n } from "@nekonoverse/ui/i18n";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
+import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 interface Props {
@@ -265,6 +266,7 @@ export default function UserHoverCard(props: Props) {
                       el.innerHTML = sanitizeHtml(acc.note);
                       if (acc.emojis) emojify(el, acc.emojis);
                       twemojify(el);
+                      externalLinksNewTab(el);
                     }} />
                   </Show>
                   <Show when={currentUser() && !isOwnAccount()}>

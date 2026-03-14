@@ -7,6 +7,7 @@ export { twemojify } from "./utils/twemojify";
 export { emojify } from "./utils/emojify";
 export { renderMfm, renderMfmPlain } from "./utils/mfm";
 export { mentionify } from "./utils/mentionify";
+export { externalLinksNewTab } from "./utils/linkify";
 export { focalPointToObjectPosition } from "./utils/focalPoint";
 export { getRecentEmojis, addRecentEmoji, clearRecentEmojis } from "./utils/recentEmojis";
 export { stripExif } from "./utils/stripExif";

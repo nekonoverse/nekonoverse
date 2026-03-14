@@ -3,7 +3,7 @@ import re
 import bleach
 
 ALLOWED_TAGS = ["a", "br", "p", "span", "em", "strong", "code", "pre", "blockquote"]
-ALLOWED_ATTRIBUTES = {"a": ["href", "rel", "class"], "span": ["class"]}
+ALLOWED_ATTRIBUTES = {"a": ["href", "rel", "class", "target"], "span": ["class"]}
 
 URL_PATTERN = re.compile(r"(https?://[^\s<]+)")
 MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?")
