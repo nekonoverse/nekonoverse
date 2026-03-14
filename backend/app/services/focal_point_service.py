@@ -53,15 +53,18 @@ async def detect_remote_focal_points(
             updated = False
             for att, res in zip(attachments, results):
                 if isinstance(res, Exception):
-                    logger.debug("Focal detection failed for %s: %s", att.id, res)
+                    logger.warning("Focal detection failed for %s: %s", att.id, res)
                 elif res is True:
                     updated = True
 
             if updated:
                 await db.commit()
+                logger.info("Focal points updated for note %s, publishing update", note_id)
                 await _publish_update(note_id)
     except Exception:
-        logger.debug("Background focal detection failed for note %s", note_id, exc_info=True)
+        logger.warning(
+            "Background focal detection failed for note %s", note_id, exc_info=True
+        )
 
 
 async def _detect_single(att) -> bool:

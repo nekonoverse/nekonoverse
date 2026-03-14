@@ -164,8 +164,18 @@ async def update_drive_file_meta(
     return drive_file
 
 
-async def auto_detect_focal_point(db: AsyncSession, drive_file: DriveFile) -> None:
-    """Call face detection service to auto-set focal point. Fails silently."""
+async def auto_detect_focal_point(
+    db: AsyncSession,
+    drive_file: DriveFile,
+    image_data: bytes | None = None,
+) -> None:
+    """Call face detection service to auto-set focal point. Fails silently.
+
+    Args:
+        db: Database session.
+        drive_file: The drive file to detect focal point for.
+        image_data: Raw image bytes. If not provided, downloads from S3.
+    """
     if not settings.face_detect_url:
         return
     parsed = urlparse(settings.face_detect_url)
@@ -178,9 +188,16 @@ async def auto_detect_focal_point(db: AsyncSession, drive_file: DriveFile) -> No
         return
 
     try:
-        image_data = await _read_file_data(drive_file)
         if not image_data:
-            return
+            image_data = await _read_file_data(drive_file)
+            if not image_data:
+                logger.warning(
+                    "Could not read file %s from S3 for face detection",
+                    drive_file.s3_key,
+                )
+                return
+
+        logger.info("Running face detection for %s", drive_file.id)
 
         b64 = base64.b64encode(image_data).decode("ascii")
         from app.utils.http_client import make_face_detect_client
@@ -199,12 +216,18 @@ async def auto_detect_focal_point(db: AsyncSession, drive_file: DriveFile) -> No
             results, drive_file.width or 1, drive_file.height or 1
         )
         if not focal:
+            logger.info("No face detected for %s", drive_file.id)
             return
 
         drive_file.focal_x, drive_file.focal_y = focal
         await db.commit()
+        logger.info(
+            "Focal point set for %s: (%.2f, %.2f)", drive_file.id, focal[0], focal[1]
+        )
     except Exception:
-        logger.debug("Face detection failed for %s, skipping", drive_file.id, exc_info=True)
+        logger.warning(
+            "Face detection failed for %s", drive_file.id, exc_info=True
+        )
 
 
 async def _read_file_data(drive_file: DriveFile) -> bytes | None:
