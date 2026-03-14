@@ -1,10 +1,6 @@
 name: Misskey Federation Test
 
 on:
-  push:
-    branches: [develop, main]
-  pull_request:
-    branches: [develop, main]
   workflow_dispatch:
 
 jobs:
