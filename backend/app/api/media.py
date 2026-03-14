@@ -103,7 +103,7 @@ async def upload_media_v1(
     if focal_x is not None and focal_y is not None:
         await update_drive_file_meta(db, drive_file, focal_x=focal_x, focal_y=focal_y)
     else:
-        await auto_detect_focal_point(db, drive_file)
+        await auto_detect_focal_point(db, drive_file, image_data=data)
 
     return _to_media_attachment(drive_file)
 
