@@ -1,5 +1,5 @@
 import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
-import { useLocation } from "@solidjs/router";
+import { useLocation, useNavigate } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
 import { connect, disconnect, onNotification, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -27,6 +27,7 @@ function notifIcon(type: string) {
 export default function Navbar() {
   const { t } = useI18n();
   const location = useLocation();
+  const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [composeOpen, setComposeOpen] = createSignal(false);
@@ -326,7 +327,16 @@ export default function Navbar() {
       <Show when={searchOpen()}>
         <SearchModal onClose={() => setSearchOpen(false)} />
       </Show>
-      <ComposeModal open={composeOpen()} onClose={() => setComposeOpen(false)} />
+      <ComposeModal
+        open={composeOpen()}
+        onClose={() => setComposeOpen(false)}
+        onPost={(note) => {
+          // Navigate to home TL when posting non-public notes from public TL
+          if (note.visibility !== "public" && location.pathname === "/" && !location.search.includes("tl=home")) {
+            navigate("/?tl=home");
+          }
+        }}
+      />
       <Show when={currentUser()}>
         <KeyboardShortcuts onCompose={() => setComposeOpen(true)} />
       </Show>
