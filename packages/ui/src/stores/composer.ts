@@ -48,3 +48,51 @@ export function setLastVisibility(v: Visibility) {
 export function getInitialVisibility(): Visibility {
   return rememberVisibility() ? lastVisibility() : defaultVisibility();
 }
+
+// --- Draft storage ---
+
+export interface Draft {
+  id: string;
+  content: string;
+  visibility: Visibility;
+  createdAt: number;
+}
+
+const DRAFTS_KEY = "composerDrafts";
+
+function loadDrafts(): Draft[] {
+  try {
+    const raw = localStorage.getItem(DRAFTS_KEY);
+    return raw ? JSON.parse(raw) : [];
+  } catch {
+    return [];
+  }
+}
+
+const [drafts, setDraftsSignal] = createSignal<Draft[]>(loadDrafts());
+
+export { drafts };
+
+function persistDrafts(list: Draft[]) {
+  setDraftsSignal(list);
+  localStorage.setItem(DRAFTS_KEY, JSON.stringify(list));
+}
+
+export function saveDraft(content: string, visibility: Visibility): Draft {
+  const draft: Draft = {
+    id: crypto.randomUUID(),
+    content,
+    visibility,
+    createdAt: Date.now(),
+  };
+  persistDrafts([draft, ...loadDrafts()]);
+  return draft;
+}
+
+export function deleteDraft(id: string) {
+  persistDrafts(loadDrafts().filter((d) => d.id !== id));
+}
+
+export function clearDrafts() {
+  persistDrafts([]);
+}

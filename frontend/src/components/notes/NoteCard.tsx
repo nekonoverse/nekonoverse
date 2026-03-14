@@ -372,7 +372,7 @@ export default function NoteCard(props: Props) {
   };
 
   return (
-    <div class={`note-card${pinned() ? " note-pinned" : ""}`}>
+    <div class={`note-card${pinned() ? " note-pinned" : ""}`} data-note-id={note().id}>
       <Show when={pinned() && !isReblog()}>
         <div class="note-pin-indicator">
           <svg

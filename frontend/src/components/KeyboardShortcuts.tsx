@@ -2,16 +2,24 @@ import { onMount, onCleanup } from "solid-js";
 
 interface Props {
   onCompose?: () => void;
+  onQuote?: (noteId: string) => void;
+  onReply?: (noteId: string) => void;
+  onSearch?: () => void;
+  onNavigate?: (path: string) => void;
 }
 
 /**
  * Global keyboard shortcuts handler.
  * - j/k: Focus next/previous note in timeline
- * - n: Open compose modal
- * - Esc: Close modal (handled by ComposeModal itself)
+ * - g: Scroll to top
+ * - n: Open compose modal (new)
+ * - q: Open compose modal with quote (focused note)
+ * - t: Open compose modal with reply (focused note)
  * - f: Bookmark focused note
  * - r: Open reaction picker on focused note
- * - q: Quote focused note
+ * - h: Navigate to home timeline
+ * - p: Navigate to public timeline
+ * - u: Open user search
  */
 export default function KeyboardShortcuts(props: Props) {
   const isInputFocused = () => {
@@ -34,7 +42,6 @@ export default function KeyboardShortcuts(props: Props) {
   };
 
   const setFocus = (cards: HTMLElement[], index: number) => {
-    // Remove previous focus
     document.querySelectorAll(".note-card.keyboard-focused").forEach((el) => {
       el.classList.remove("keyboard-focused");
     });
@@ -42,8 +49,6 @@ export default function KeyboardShortcuts(props: Props) {
     if (index >= 0 && index < cards.length) {
       const card = cards[index];
       card.classList.add("keyboard-focused");
-      // Use instant scroll so rapid j/k presses don't queue up smooth scrolls.
-      // CSS scroll-margin-top on .note-card handles sticky navbar offset.
       card.scrollIntoView({ block: "nearest" });
     }
   };
@@ -57,10 +62,13 @@ export default function KeyboardShortcuts(props: Props) {
     return false;
   };
 
+  const getFocusedNoteId = (cards: HTMLElement[], index: number): string | null => {
+    if (index < 0 || index >= cards.length) return null;
+    return cards[index].getAttribute("data-note-id");
+  };
+
   const handleKeyDown = (e: KeyboardEvent) => {
     if (isInputFocused()) return;
-
-    // Don't intercept when modifier keys are held (except Shift for some)
     if (e.ctrlKey || e.altKey || e.metaKey) return;
 
     const cards = getNoteCards();
@@ -84,9 +92,33 @@ export default function KeyboardShortcuts(props: Props) {
         }
         break;
       }
+      case "g": {
+        e.preventDefault();
+        window.scrollTo({ top: 0 });
+        document.querySelectorAll(".note-card.keyboard-focused").forEach((el) => {
+          el.classList.remove("keyboard-focused");
+        });
+        break;
+      }
       case "n": {
         e.preventDefault();
         props.onCompose?.();
+        break;
+      }
+      case "q": {
+        if (currentIndex >= 0) {
+          e.preventDefault();
+          const noteId = getFocusedNoteId(cards, currentIndex);
+          if (noteId) props.onQuote?.(noteId);
+        }
+        break;
+      }
+      case "t": {
+        if (currentIndex >= 0) {
+          e.preventDefault();
+          const noteId = getFocusedNoteId(cards, currentIndex);
+          if (noteId) props.onReply?.(noteId);
+        }
         break;
       }
       case "f": {
@@ -103,20 +135,19 @@ export default function KeyboardShortcuts(props: Props) {
         }
         break;
       }
-      case "q": {
-        if (currentIndex >= 0) {
-          e.preventDefault();
-          clickButton(cards[currentIndex], ".note-quote-btn");
-        }
+      case "h": {
+        e.preventDefault();
+        props.onNavigate?.("/?tl=home");
         break;
       }
-      case "g": {
+      case "p": {
         e.preventDefault();
-        window.scrollTo({ top: 0 });
-        // Clear focus when going to top
-        document.querySelectorAll(".note-card.keyboard-focused").forEach((el) => {
-          el.classList.remove("keyboard-focused");
-        });
+        props.onNavigate?.("/");
+        break;
+      }
+      case "u": {
+        e.preventDefault();
+        props.onSearch?.();
         break;
       }
     }
@@ -128,7 +159,6 @@ export default function KeyboardShortcuts(props: Props) {
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown);
-    // Clean up focus markers
     document.querySelectorAll(".note-card.keyboard-focused").forEach((el) => {
       el.classList.remove("keyboard-focused");
     });

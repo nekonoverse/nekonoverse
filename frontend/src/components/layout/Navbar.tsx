@@ -6,6 +6,7 @@ import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
 import { getNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
+import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import Emoji from "../Emoji";
 import SearchModal from "../SearchModal";
 import ComposeModal from "../notes/ComposeModal";
@@ -31,6 +32,8 @@ export default function Navbar() {
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [composeOpen, setComposeOpen] = createSignal(false);
+  const [composeQuote, setComposeQuote] = createSignal<Note | null>(null);
+  const [composeReply, setComposeReply] = createSignal<Note | null>(null);
 
   // Notification preview state
   const [notifOpen, setNotifOpen] = createSignal(false);
@@ -171,7 +174,7 @@ export default function Navbar() {
                 <button
                   class="navbar-compose-btn"
                   title={t("composer.post")}
-                  onClick={() => setComposeOpen(true)}
+                  onClick={() => { setComposeQuote(null); setComposeReply(null); setComposeOpen(true); }}
                 >
                   <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19" />
@@ -329,16 +332,37 @@ export default function Navbar() {
       </Show>
       <ComposeModal
         open={composeOpen()}
-        onClose={() => setComposeOpen(false)}
+        onClose={() => { setComposeOpen(false); setComposeQuote(null); setComposeReply(null); }}
         onPost={(note) => {
-          // Navigate to home TL when posting non-public notes from public TL
           if (note.visibility !== "public" && location.pathname === "/" && !location.search.includes("tl=home")) {
             navigate("/?tl=home");
           }
         }}
+        quoteNote={composeQuote()}
+        replyTo={composeReply()}
       />
       <Show when={currentUser()}>
-        <KeyboardShortcuts onCompose={() => setComposeOpen(true)} />
+        <KeyboardShortcuts
+          onCompose={() => { setComposeQuote(null); setComposeReply(null); setComposeOpen(true); }}
+          onQuote={async (noteId) => {
+            try {
+              const note = await getNote(noteId);
+              setComposeReply(null);
+              setComposeQuote(note);
+              setComposeOpen(true);
+            } catch {}
+          }}
+          onReply={async (noteId) => {
+            try {
+              const note = await getNote(noteId);
+              setComposeQuote(null);
+              setComposeReply(note);
+              setComposeOpen(true);
+            } catch {}
+          }}
+          onSearch={() => setSearchOpen(true)}
+          onNavigate={(path) => navigate(path)}
+        />
       </Show>
     </nav>
   );

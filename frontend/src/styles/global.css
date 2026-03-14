@@ -4039,6 +4039,58 @@ a:hover {
   border-bottom: 1px solid var(--border);
 }
 
+.confirm-overlay {
+  z-index: 600;
+}
+
+.confirm-dialog {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 24px;
+  max-width: 400px;
+  width: 90vw;
+}
+
+.confirm-dialog p {
+  margin: 0 0 16px;
+  color: var(--text-primary);
+}
+
+.confirm-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+
+.confirm-btn {
+  padding: 8px 16px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-size: 0.9em;
+  font-weight: 500;
+}
+
+.confirm-discard {
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+}
+
+.confirm-discard:hover {
+  background: var(--bg-secondary);
+}
+
+.confirm-save {
+  background: var(--accent);
+  color: #fff;
+  border-color: var(--accent);
+}
+
+.confirm-save:hover {
+  background: var(--accent-hover);
+}
+
 .modal-header h3 {
   margin: 0;
 }
@@ -4675,6 +4727,79 @@ a:hover {
   .admin-system-grid {
     grid-template-columns: 1fr;
   }
+}
+
+/* --- Admin Permissions --- */
+
+.admin-permissions-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.admin-permissions-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.admin-permissions-item:last-child {
+  border-bottom: none;
+}
+
+.admin-permissions-info {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.admin-permissions-toggle {
+  position: relative;
+  display: inline-block;
+  width: 44px;
+  height: 24px;
+  flex-shrink: 0;
+  margin-left: 16px;
+  cursor: pointer;
+}
+
+.admin-permissions-toggle input {
+  opacity: 0;
+  width: 0;
+  height: 0;
+}
+
+.admin-permissions-slider {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: var(--text-muted);
+  border-radius: 24px;
+  transition: background-color 0.2s;
+}
+
+.admin-permissions-slider::before {
+  content: "";
+  position: absolute;
+  height: 18px;
+  width: 18px;
+  left: 3px;
+  bottom: 3px;
+  background-color: #fff;
+  border-radius: 50%;
+  transition: transform 0.2s;
+}
+
+.admin-permissions-toggle input:checked + .admin-permissions-slider {
+  background-color: var(--accent-color, #f5a);
+}
+
+.admin-permissions-toggle input:checked + .admin-permissions-slider::before {
+  transform: translateX(20px);
 }
 
 .modal-loading {
