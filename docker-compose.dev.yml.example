@@ -78,9 +78,9 @@ services:
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
       # Forward proxy for outbound federation requests (origin IP concealment)
-      # HTTP_PROXY: ${HTTP_PROXY}
-      # HTTPS_PROXY: ${HTTPS_PROXY}
-      # NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
       # Face detection (optional)
       # FACE_DETECT_URL: http://face-detect:8001/object-detection
     volumes:
@@ -113,9 +113,9 @@ services:
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
       # Forward proxy for outbound federation requests (origin IP concealment)
-      # HTTP_PROXY: ${HTTP_PROXY}
-      # HTTPS_PROXY: ${HTTPS_PROXY}
-      # NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
     volumes:
       - ./backend:/app
     depends_on:

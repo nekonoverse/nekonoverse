@@ -110,9 +110,9 @@ services:
       # FACE_DETECT_URL: ${FACE_DETECT_URL}
       # FACE_DETECT_UDS: ${FACE_DETECT_UDS}
       # Forward proxy for outbound federation requests (origin IP concealment)
-      # HTTP_PROXY: ${HTTP_PROXY}
-      # HTTPS_PROXY: ${HTTPS_PROXY}
-      # NO_PROXY: ${NO_PROXY}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
     volumes:
       - app_sock:/var/run/nekonoverse-app
       - pg_sock:/var/run/postgresql
@@ -143,9 +143,9 @@ services:
       S3_REGION: us-east-1
       # VALKEY_MAX_CONNECTIONS: ${VALKEY_MAX_CONNECTIONS:-1000}
       # Forward proxy for outbound federation requests (origin IP concealment)
-      # HTTP_PROXY: ${HTTP_PROXY}
-      # HTTPS_PROXY: ${HTTPS_PROXY}
-      # NO_PROXY: ${NO_PROXY}
+      HTTP_PROXY: ${HTTP_PROXY:-}
+      HTTPS_PROXY: ${HTTPS_PROXY:-}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
     volumes:
       - pg_sock:/var/run/postgresql
       - valkey_sock:/var/run/valkey
