@@ -42,15 +42,9 @@ export default function KeyboardShortcuts(props: Props) {
     if (index >= 0 && index < cards.length) {
       const card = cards[index];
       card.classList.add("keyboard-focused");
-      // Account for sticky navbar height when scrolling
-      const navbar = document.querySelector(".navbar");
-      const navbarHeight = navbar ? navbar.getBoundingClientRect().height : 0;
-      const cardRect = card.getBoundingClientRect();
-      if (cardRect.top < navbarHeight) {
-        window.scrollBy({ top: cardRect.top - navbarHeight - 8, behavior: "smooth" });
-      } else if (cardRect.bottom > window.innerHeight) {
-        card.scrollIntoView({ block: "end", behavior: "smooth" });
-      }
+      // Use instant scroll so rapid j/k presses don't queue up smooth scrolls.
+      // CSS scroll-margin-top on .note-card handles sticky navbar offset.
+      card.scrollIntoView({ block: "nearest" });
     }
   };
 

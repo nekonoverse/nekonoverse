@@ -1155,6 +1155,7 @@ a:hover {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   margin-bottom: 8px;
+  scroll-margin-top: 3.6em;
 }
 
 .note-card.keyboard-focused {
