@@ -657,7 +657,7 @@ async def get_moderation_log(
 
 @router.get("/emoji/list", response_model=list[AdminEmojiResponse])
 async def list_emojis(
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_all_local_emojis
@@ -672,7 +672,7 @@ async def list_remote_emojis_endpoint(
     search: str | None = Query(None),
     limit: int = Query(100, le=200),
     offset: int = Query(0, ge=0),
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_remote_emojis
@@ -683,7 +683,7 @@ async def list_remote_emojis_endpoint(
 
 @router.get("/emoji/remote/domains")
 async def list_remote_emoji_domains_endpoint(
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_remote_emoji_domains
@@ -694,7 +694,7 @@ async def list_remote_emoji_domains_endpoint(
 @router.post("/emoji/import-remote/{emoji_id}", response_model=AdminEmojiResponse)
 async def import_remote_emoji(
     emoji_id: uuid.UUID,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import import_remote_emoji_to_local
@@ -710,7 +710,7 @@ async def import_remote_emoji(
 @router.post("/emoji/import-by-shortcode", response_model=AdminEmojiResponse)
 async def import_remote_emoji_by_shortcode(
     body: ImportByShortcodeRequest,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local
@@ -740,7 +740,7 @@ async def add_emoji(
     copy_permission: str | None = Form(None),
     usage_info: str | None = Form(None),
     is_based_on: str | None = Form(None),
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     import json as json_mod
@@ -792,7 +792,7 @@ async def add_emoji(
 async def update_emoji_endpoint(
     emoji_id: uuid.UUID,
     body: AdminEmojiUpdate,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import update_emoji
@@ -808,7 +808,7 @@ async def update_emoji_endpoint(
 @router.delete("/emoji/{emoji_id}")
 async def delete_emoji_endpoint(
     emoji_id: uuid.UUID,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import delete_emoji, get_emoji_by_id
@@ -831,7 +831,7 @@ async def delete_emoji_endpoint(
 
 @router.get("/emoji/export")
 async def export_emojis(
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     import io
@@ -914,7 +914,7 @@ async def export_emojis(
 @router.post("/emoji/import")
 async def import_emojis(
     file: UploadFile = File(...),
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
     import io

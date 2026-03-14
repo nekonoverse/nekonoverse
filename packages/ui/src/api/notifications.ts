@@ -16,10 +16,14 @@ export interface Notification {
 export async function getNotifications(params?: {
   max_id?: string;
   limit?: number;
+  types?: string[];
 }): Promise<Notification[]> {
   const query = new URLSearchParams();
   if (params?.max_id) query.set("max_id", params.max_id);
   if (params?.limit) query.set("limit", String(params.limit));
+  if (params?.types) {
+    for (const t of params.types) query.append("types[]", t);
+  }
   const qs = query.toString();
   return apiRequest<Notification[]>(`/api/v1/notifications${qs ? `?${qs}` : ""}`);
 }

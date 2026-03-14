@@ -123,6 +123,7 @@ const categories: AdminCategory[] = [
         labelKey: "admin.tabFederation",
         descKey: "admin.descFederation",
       },
+      { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji" },
     ],
   },
   {
@@ -134,7 +135,6 @@ const categories: AdminCategory[] = [
         labelKey: "admin.tabSettings",
         descKey: "admin.descSettings",
       },
-      { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji" },
       { key: "files", labelKey: "admin.tabFiles", descKey: "admin.descFiles" },
       {
         key: "invites",

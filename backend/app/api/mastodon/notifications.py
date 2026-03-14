@@ -151,12 +151,15 @@ async def _notification_to_response(
 async def get_notifications(
     max_id: uuid.UUID | None = Query(None),
     limit: int = Query(20, ge=1, le=40),
+    types: list[str] | None = Query(None, alias="types[]"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.notification_service import get_notifications as _get
 
-    notifications = await _get(db, user.actor_id, limit=limit, max_id=max_id)
+    notifications = await _get(
+        db, user.actor_id, limit=limit, max_id=max_id, types=types,
+    )
 
     # 絵文字URLをバッチ解決
     emoji_strings = [n.reaction_emoji for n in notifications]
