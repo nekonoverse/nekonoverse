@@ -1,5 +1,5 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
-import { useParams } from "@solidjs/router";
+import { useParams, useNavigate } from "@solidjs/router";
 import { getNote, getContext, type Note, type NoteContext } from "@nekonoverse/ui/api/statuses";
 import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -36,6 +36,7 @@ function buildActorMap(
 
 export default function NoteThread() {
   const params = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { t } = useI18n();
   const [targetNote, setTargetNote] = createSignal<Note | null>(null);
   const [context, setContext] = createSignal<NoteContext | null>(null);
@@ -75,6 +76,18 @@ export default function NoteThread() {
   };
 
   const handleDelete = (noteId: string) => {
+    // 表示中のノートを削除した場合は前のページに戻る
+    if (noteId === params.id) {
+      const ctx = context();
+      const ancestors = ctx?.ancestors;
+      if (ancestors && ancestors.length > 0) {
+        // 親ノートのスレッドに遷移
+        navigate(`/notes/${ancestors[ancestors.length - 1].id}`, { replace: true });
+      } else {
+        history.length > 1 ? history.back() : navigate("/", { replace: true });
+      }
+      return;
+    }
     const ctx = context();
     if (!ctx) return;
     setContext({
