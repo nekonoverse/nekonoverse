@@ -1,29 +1,13 @@
-import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
+import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation, useNavigate } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
-import { connect, disconnect, onNotification, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
+import { connect, disconnect, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
-import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
-import { getNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
-import Emoji from "../Emoji";
 import SearchModal from "../SearchModal";
 import ComposeModal from "../notes/ComposeModal";
 import KeyboardShortcuts from "../KeyboardShortcuts";
-
-const PREVIEW_COUNT = 5;
-
-function notifIcon(type: string) {
-  switch (type) {
-    case "follow": return "\u{1F464}";
-    case "mention": return "\u{1F4AC}";
-    case "reblog": return "\u{1F501}";
-    case "favourite": return "\u2B50";
-    case "reaction": return "\u2728";
-    default: return "\u{1F514}";
-  }
-}
 
 export default function Navbar() {
   const { t } = useI18n();
@@ -36,12 +20,6 @@ export default function Navbar() {
   const [composeReply, setComposeReply] = createSignal<Note | null>(null);
   const [tlDropdownOpen, setTlDropdownOpen] = createSignal(false);
 
-  // Notification preview state
-  const [notifOpen, setNotifOpen] = createSignal(false);
-  const [notifItems, setNotifItems] = createSignal<Notification[]>([]);
-  const [notifLoaded, setNotifLoaded] = createSignal(false);
-  const [notifHasMore, setNotifHasMore] = createSignal(false);
-  let notifTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Manage global SSE connection based on auth state
   createEffect(() => {
@@ -55,18 +33,11 @@ export default function Navbar() {
   // Close dropdowns on route change
   createEffect(() => {
     location.pathname; // track
-    setNotifOpen(false);
     setMenuOpen(false);
     setTlDropdownOpen(false);
   });
 
-  // Invalidate notification preview cache when new notifications arrive
-  const unsub = onNotification(() => {
-    setNotifLoaded(false);
-  });
-
   onCleanup(() => {
-    unsub();
     disconnect();
   });
 
@@ -94,25 +65,6 @@ export default function Navbar() {
     window.location.href = "/";
   };
 
-  const loadNotifPreview = async () => {
-    if (notifLoaded()) return;
-    try {
-      const data = await getNotifications({ limit: PREVIEW_COUNT + 1 });
-      setNotifHasMore(data.length > PREVIEW_COUNT);
-      setNotifItems(data.slice(0, PREVIEW_COUNT));
-      setNotifLoaded(true);
-    } catch {}
-  };
-
-  const handleNotifEnter = () => {
-    clearTimeout(notifTimer);
-    loadNotifPreview();
-    setNotifOpen(true);
-  };
-
-  const handleNotifLeave = () => {
-    notifTimer = setTimeout(() => setNotifOpen(false), 200);
-  };
 
   return (
     <nav class="navbar">
@@ -181,69 +133,22 @@ export default function Navbar() {
                 </div>
               </Show>
             </div>
-            <div
-              class="navbar-notif-wrap"
-              onMouseEnter={handleNotifEnter}
-              onMouseLeave={handleNotifLeave}
+            <a
+              href="/notifications"
+              class={`navbar-icon navbar-notif-link${isActive("/notifications") ? " active" : ""}`}
+              title={t("notifications.title")}
+              onClick={() => resetUnread()}
             >
-              <a
-                href="/notifications"
-                class={`navbar-icon${isActive("/notifications") ? " active" : ""}`}
-                title={t("notifications.title")}
-                onClick={() => resetUnread()}
-              >
-                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <circle cx="12" cy="12" r="4" />
-                  <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
-                </svg>
-                <Show when={unreadCount() > 0}>
-                  <span class="navbar-notif-badge">
-                    {unreadCount() > 99 ? "99+" : unreadCount()}
-                  </span>
-                </Show>
-              </a>
-              <Show when={notifOpen()}>
-                <div
-                  class="navbar-notif-dropdown"
-                  onMouseEnter={handleNotifEnter}
-                  onMouseLeave={handleNotifLeave}
-                >
-                  <Show
-                    when={notifItems().length > 0}
-                    fallback={
-                      <div class="navbar-notif-empty">
-                        {t("notifications.empty")}
-                      </div>
-                    }
-                  >
-                    <For each={notifItems()}>
-                      {(notif) => (
-                        <a
-                          href="/notifications"
-                          class={`navbar-notif-item${notif.read ? "" : " unread"}`}
-                        >
-                          <span class="navbar-notif-icon">{notifIcon(notif.type)}</span>
-                          <span class="navbar-notif-text">
-                            <strong>
-                              {notif.account?.display_name || notif.account?.username || "?"}
-                            </strong>{" "}
-                            {t(`notifications.type.${notif.type}` as keyof Dictionary)}
-                            <Show when={notif.type === "reaction" && notif.emoji}>
-                              {" "}<Emoji emoji={notif.emoji!} />
-                            </Show>
-                          </span>
-                        </a>
-                      )}
-                    </For>
-                  </Show>
-                  <Show when={notifHasMore() || notifItems().length > 0}>
-                    <a href="/notifications" class="navbar-notif-more">
-                      {t("notifications.loadMore")}
-                    </a>
-                  </Show>
-                </div>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="12" cy="12" r="4" />
+                <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+              </svg>
+              <Show when={unreadCount() > 0}>
+                <span class="navbar-notif-badge">
+                  {unreadCount() > 99 ? "99+" : unreadCount()}
+                </span>
               </Show>
-            </div>
+            </a>
           </Show>
           <button
             class="navbar-icon"
