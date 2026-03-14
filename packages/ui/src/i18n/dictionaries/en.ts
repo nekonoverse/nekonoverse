@@ -25,6 +25,7 @@ export const en: Dictionary = {
   "auth.backToLogin": "Back to Login",
   "timeline.public": "Public Timeline",
   "timeline.home": "Home",
+  "timeline.local": "Local",
   "timeline.loading": "Loading timeline...",
   "timeline.empty": "No posts yet.",
   "timeline.newPosts": "{count} new posts",

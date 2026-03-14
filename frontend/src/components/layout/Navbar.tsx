@@ -3,7 +3,7 @@ import { useLocation, useNavigate } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
 import { connect, disconnect, onNotification, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
-import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
 import { getNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
@@ -34,6 +34,7 @@ export default function Navbar() {
   const [composeOpen, setComposeOpen] = createSignal(false);
   const [composeQuote, setComposeQuote] = createSignal<Note | null>(null);
   const [composeReply, setComposeReply] = createSignal<Note | null>(null);
+  const [tlDropdownOpen, setTlDropdownOpen] = createSignal(false);
 
   // Notification preview state
   const [notifOpen, setNotifOpen] = createSignal(false);
@@ -56,6 +57,7 @@ export default function Navbar() {
     location.pathname; // track
     setNotifOpen(false);
     setMenuOpen(false);
+    setTlDropdownOpen(false);
   });
 
   // Invalidate notification preview cache when new notifications arrive
@@ -75,6 +77,9 @@ export default function Navbar() {
     const target = e.target as HTMLElement;
     if (!target.closest(".navbar-user-menu")) {
       setMenuOpen(false);
+    }
+    if (!target.closest(".navbar-tl-wrap")) {
+      setTlDropdownOpen(false);
     }
   };
 
@@ -113,18 +118,69 @@ export default function Navbar() {
     <nav class="navbar">
       <div class="navbar-inner">
         <div class="navbar-left">
-          <a href="/" class="navbar-brand">{t("app.title")}</a>
+          <a href="/" class="navbar-brand">
+            <Show when={instance()?.thumbnail?.url} fallback={<span class="navbar-brand-text">{instance()?.title || t("app.title")}</span>}>
+              {(iconUrl) => (
+                <>
+                  <img src={iconUrl()} alt={instance()?.title || ""} class="navbar-brand-icon" />
+                  <span class="navbar-brand-text">{instance()?.title || t("app.title")}</span>
+                </>
+              )}
+            </Show>
+          </a>
           <Show when={currentUser()}>
-            <a
-              href="/?tl=home"
-              class={`navbar-icon${location.search.includes("tl=home") ? " active" : ""}`}
-              title={t("timeline.home")}
-            >
-              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
-                <polyline points="9 22 9 12 15 12 15 22" />
-              </svg>
-            </a>
+            <div class="navbar-tl-wrap">
+              <button
+                class={`navbar-icon${location.search.includes("tl=home") || (isActive("/") && !location.search.includes("tl=home")) ? " active" : ""}`}
+                onClick={() => setTlDropdownOpen(!tlDropdownOpen())}
+                title={location.search.includes("tl=home") ? t("timeline.home") : t("timeline.local")}
+              >
+                <Show when={location.search.includes("tl=home")} fallback={
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="3" y="3" width="7" height="7" />
+                    <rect x="14" y="3" width="7" height="7" />
+                    <rect x="3" y="14" width="7" height="7" />
+                    <rect x="14" y="14" width="7" height="7" />
+                  </svg>
+                }>
+                  <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                    <polyline points="9 22 9 12 15 12 15 22" />
+                  </svg>
+                </Show>
+                <svg class="navbar-tl-chevron" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </button>
+              <Show when={tlDropdownOpen()}>
+                <div class="navbar-tl-dropdown">
+                  <a
+                    href="/?tl=home"
+                    class={`navbar-tl-item${location.search.includes("tl=home") ? " active" : ""}`}
+                    onClick={() => setTlDropdownOpen(false)}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z" />
+                      <polyline points="9 22 9 12 15 12 15 22" />
+                    </svg>
+                    {t("timeline.home")}
+                  </a>
+                  <a
+                    href="/"
+                    class={`navbar-tl-item${isActive("/") && !location.search.includes("tl=home") ? " active" : ""}`}
+                    onClick={() => setTlDropdownOpen(false)}
+                  >
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                      <rect x="3" y="3" width="7" height="7" />
+                      <rect x="14" y="3" width="7" height="7" />
+                      <rect x="3" y="14" width="7" height="7" />
+                      <rect x="14" y="14" width="7" height="7" />
+                    </svg>
+                    {t("timeline.local")}
+                  </a>
+                </div>
+              </Show>
+            </div>
             <div
               class="navbar-notif-wrap"
               onMouseEnter={handleNotifEnter}
@@ -189,17 +245,6 @@ export default function Navbar() {
               </Show>
             </div>
           </Show>
-          <a
-            href="/"
-            class={`navbar-icon${isActive("/") && !location.search.includes("tl=home") ? " active" : ""}`}
-            title={t("timeline.public")}
-          >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10" />
-              <path d="M2 12h20" />
-              <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
-            </svg>
-          </a>
           <button
             class="navbar-icon"
             title={t("search.title")}
@@ -229,9 +274,8 @@ export default function Navbar() {
                   title={t("composer.post")}
                   onClick={() => { setComposeQuote(null); setComposeReply(null); setComposeOpen(true); }}
                 >
-                  <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="12" y1="5" x2="12" y2="19" />
-                    <line x1="5" y1="12" x2="19" y2="12" />
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17 3a2.83 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5L17 3z" />
                   </svg>
                 </button>
                 <div class="navbar-user-menu">

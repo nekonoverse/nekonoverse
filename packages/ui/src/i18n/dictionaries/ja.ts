@@ -23,6 +23,7 @@ export const ja = {
   "auth.backToLogin": "ログインに戻る",
   "timeline.public": "公開タイムライン",
   "timeline.home": "ホーム",
+  "timeline.local": "ローカル",
   "timeline.loading": "タイムラインを読み込み中...",
   "timeline.empty": "まだ投稿がありません。",
   "timeline.newPosts": "{count}件の新しい投稿",

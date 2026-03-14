@@ -98,10 +98,73 @@ a:hover {
   font-weight: 700;
   font-size: 1.1em;
   color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
 }
 
 .navbar-brand:hover {
   color: var(--accent);
+}
+
+.navbar-brand-icon {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  object-fit: cover;
+}
+
+.navbar-brand-text {
+  display: none;
+}
+
+@media (min-width: 768px) {
+  .navbar-brand-text {
+    display: inline;
+  }
+}
+
+.navbar-tl-wrap {
+  position: relative;
+}
+
+.navbar-tl-chevron {
+  margin-left: -2px;
+  opacity: 0.5;
+}
+
+.navbar-tl-dropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+  min-width: 160px;
+  z-index: 200;
+  overflow: hidden;
+}
+
+.navbar-tl-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 14px;
+  color: var(--text);
+  text-decoration: none;
+  font-size: 0.9rem;
+  transition: background 0.1s;
+}
+
+.navbar-tl-item:hover {
+  background: var(--bg-hover);
+}
+
+.navbar-tl-item.active {
+  color: var(--accent);
+  font-weight: 600;
 }
 
 .navbar-icon {

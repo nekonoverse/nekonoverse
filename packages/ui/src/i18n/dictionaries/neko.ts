@@ -25,6 +25,7 @@ export const neko: Dictionary = {
   "auth.backToLogin": "にゃグインに戻るにゃ",
   "timeline.public": "みんにゃのタイムライン",
   "timeline.home": "おうちにゃ",
+  "timeline.local": "ちかくにゃ",
   "timeline.loading": "タイムラインもぐもぐ中にゃ...",
   "timeline.empty": "まだにゃんにも投稿にゃいにゃ。",
   "timeline.newPosts": "{count}けんのあたらしいとうこうにゃ",
