@@ -86,6 +86,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).warning("Could not load VAPID key: %s", e)
 
+    # デフォルトサーバーアイコンの自動生成（初回起動時）
+    try:
+        from app.database import async_session as _as
+        from app.services.icon_service import ensure_default_icons
+
+        async with _as() as icon_db:
+            await ensure_default_icons(icon_db)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not ensure default icons: %s", e)
+
     from app.pubsub_hub import pubsub_hub
 
     await pubsub_hub.start()
@@ -250,15 +260,17 @@ async def manifest(db: AsyncSession = Depends(get_db)):
     from app.services.server_settings_service import get_setting
 
     name = await get_setting(db, "server_name") or "Nekonoverse"
-    icon_url = await get_setting(db, "server_icon_url")
+    icon_192 = await get_setting(db, "pwa_icon_192_url")
+    icon_512 = await get_setting(db, "pwa_icon_512_url")
     theme_color = await get_setting(db, "server_theme_color") or "#f5e6f0"
 
-    if icon_url:
+    if icon_512:
+        src_192 = icon_192 or icon_512
         icons = [
-            {"src": icon_url, "sizes": "192x192", "type": "image/png"},
-            {"src": icon_url, "sizes": "512x512", "type": "image/png"},
+            {"src": src_192, "sizes": "192x192", "type": "image/png"},
+            {"src": icon_512, "sizes": "512x512", "type": "image/png"},
             {
-                "src": icon_url,
+                "src": icon_512,
                 "sizes": "512x512",
                 "type": "image/png",
                 "purpose": "maskable",

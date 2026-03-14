@@ -30,6 +30,9 @@ export default function ComposeModal(props: Props) {
   // Track current content for draft save on close
   let currentContent = "";
   let currentVisibility = getInitialVisibility();
+  const [isUploading, setIsUploading] = createSignal(false);
+  const [modalDragging, setModalDragging] = createSignal(false);
+  const [droppedFiles, setDroppedFiles] = createSignal<FileList | null>(null);
 
   // Whether to show draft picker (new compose with no reply/quote context)
   const showDrafts = () =>
@@ -43,6 +46,7 @@ export default function ComposeModal(props: Props) {
       currentVisibility = getInitialVisibility();
       setDraftContent(undefined);
       setDraftVisibility(undefined);
+      setDroppedFiles(null);
       // Auto-focus textarea after render
       requestAnimationFrame(() => {
         const textarea = document.querySelector<HTMLTextAreaElement>(
@@ -67,6 +71,7 @@ export default function ComposeModal(props: Props) {
   }
 
   const tryClose = () => {
+    if (isUploading()) return;
     if (currentContent.trim()) {
       setConfirmOpen(true);
     } else {
@@ -121,7 +126,18 @@ export default function ComposeModal(props: Props) {
   return (
     <Show when={props.open}>
       <div class="modal-overlay" ref={overlayRef} onClick={handleOverlayClick}>
-        <div class="modal-content compose-modal-content">
+        <div
+          class={`modal-content compose-modal-content${modalDragging() ? " drag-over" : ""}`}
+          onDragOver={(e) => { e.preventDefault(); setModalDragging(true); }}
+          onDragLeave={(e) => {
+            if (!e.currentTarget.contains(e.relatedTarget as Node)) setModalDragging(false);
+          }}
+          onDrop={(e) => {
+            e.preventDefault();
+            setModalDragging(false);
+            if (e.dataTransfer?.files?.length) setDroppedFiles(e.dataTransfer.files);
+          }}
+        >
           <div class="modal-header">
             <h3>
               {props.replyTo
@@ -177,6 +193,8 @@ export default function ComposeModal(props: Props) {
                 currentContent = content;
                 currentVisibility = visibility;
               }}
+              onUploadingChange={setIsUploading}
+              externalFiles={droppedFiles()}
             />
           </div>
         </div>
