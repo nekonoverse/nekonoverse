@@ -1,4 +1,18 @@
 services:
+  # ── Forward Proxy (Squid) ──────────────────────────────────
+  squid:
+    image: ubuntu/squid:latest
+    volumes:
+      - ./tests/federation/squid.conf:/etc/squid/squid.conf:ro
+      - squid-logs:/var/log/squid
+    healthcheck:
+      test: squidclient -h 127.0.0.1 -p 3128 mgr:info 2>/dev/null | grep -q "Squid Object Cache"
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - federation
+
   # ── Instance A ──────────────────────────────────────────────
   postgres-a:
     image: postgres:18-alpine
@@ -36,10 +50,15 @@ services:
       DEBUG: "true"
       REGISTRATION_OPEN: "true"
       USE_HTTPS: "false"
+      HTTP_PROXY: http://squid:3128
+      HTTPS_PROXY: http://squid:3128
+      NO_PROXY: localhost,postgres-a,valkey-a,nekono3s,face-detect
     depends_on:
       postgres-a:
         condition: service_healthy
       valkey-a:
+        condition: service_healthy
+      squid:
         condition: service_healthy
     healthcheck:
       test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
@@ -60,6 +79,9 @@ services:
       DEBUG: "true"
       REGISTRATION_OPEN: "true"
       USE_HTTPS: "false"
+      HTTP_PROXY: http://squid:3128
+      HTTPS_PROXY: http://squid:3128
+      NO_PROXY: localhost,postgres-a,valkey-a,nekono3s,face-detect
     depends_on:
       app-a:
         condition: service_healthy
@@ -120,10 +142,15 @@ services:
       DEBUG: "true"
       REGISTRATION_OPEN: "true"
       USE_HTTPS: "false"
+      HTTP_PROXY: http://squid:3128
+      HTTPS_PROXY: http://squid:3128
+      NO_PROXY: localhost,postgres-b,valkey-b,nekono3s,face-detect
     depends_on:
       postgres-b:
         condition: service_healthy
       valkey-b:
+        condition: service_healthy
+      squid:
         condition: service_healthy
     healthcheck:
       test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
@@ -144,6 +171,9 @@ services:
       DEBUG: "true"
       REGISTRATION_OPEN: "true"
       USE_HTTPS: "false"
+      HTTP_PROXY: http://squid:3128
+      HTTPS_PROXY: http://squid:3128
+      NO_PROXY: localhost,postgres-b,valkey-b,nekono3s,face-detect
     depends_on:
       app-b:
         condition: service_healthy
@@ -176,6 +206,8 @@ services:
       INSTANCE_B_URL: http://instance-b
       INSTANCE_A_DOMAIN: instance-a
       INSTANCE_B_DOMAIN: instance-b
+    volumes:
+      - squid-logs:/squid-logs:ro
     depends_on:
       nginx-a:
         condition: service_started
@@ -187,6 +219,9 @@ services:
         condition: service_started
     networks:
       - federation
+
+volumes:
+  squid-logs:
 
 networks:
   federation:

@@ -334,7 +334,11 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
 
     webfinger_url = f"https://{domain}/.well-known/webfinger?resource=acct:{username}@{domain}"
     try:
-        async with httpx.AsyncClient(timeout=10.0, verify=not settings.skip_ssl_verify) as client:
+        from app.utils.http_client import make_async_client
+
+        async with make_async_client(
+            timeout=10.0, verify=not settings.skip_ssl_verify
+        ) as client:
             resp = await client.get(webfinger_url, follow_redirects=True)
         if resp.status_code != 200:
             logger.warning(
