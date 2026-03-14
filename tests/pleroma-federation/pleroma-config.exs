@@ -20,23 +20,35 @@ config :pleroma, :instance,
   federation_incoming_replies_max_depth: 100,
   allow_relay: true
 
+config :pleroma, Pleroma.Captcha,
+  enabled: false
+
 config :pleroma, :media_proxy,
   enabled: false
 
 config :pleroma, Pleroma.Upload,
   uploader: Pleroma.Uploaders.Local
 
-# Allow private/Docker networks for federation
+# Disable TLS verification for self-signed certs in test
 config :pleroma, :http,
   adapter: [
+    ssl_options: [verify: :verify_none],
+    tls_opts: [verify: :verify_none],
     pools: %{
-      default: [conn_opts: [transport_opts: [verify: :verify_none]]]
+      default: [
+        conn_opts: [
+          tls_opts: [verify: :verify_none],
+          transport_opts: [verify: :verify_none]
+        ]
+      ]
     }
   ]
 
 config :pleroma, :connections_pool,
   receive_connection_timeout: 15_000
 
-# Disable certificate verification for self-signed certs in test
 config :pleroma, :hackney_opts,
   insecure: true
+
+config :pleroma, :http_security,
+  enabled: false
