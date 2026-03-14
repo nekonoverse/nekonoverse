@@ -4,7 +4,10 @@ from unittest.mock import AsyncMock, patch
 
 
 async def test_run_worker_calls_delivery_loop():
-    with patch("app.worker.main.run_delivery_loop", new_callable=AsyncMock) as mock_loop:
+    with (
+        patch("app.worker.main.run_delivery_loop", new_callable=AsyncMock) as mock_loop,
+        patch("app.services.face_detect_queue.run_face_detect_loop", new_callable=AsyncMock),
+    ):
         from app.worker.main import run_worker
 
         await run_worker()
