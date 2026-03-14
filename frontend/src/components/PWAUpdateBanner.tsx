@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show, createMemo } from "solid-js";
-import { useI18n } from "../i18n";
-import { versionUpdateReady, applyUpdate } from "../stores/instance";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { versionUpdateReady, applyUpdate } from "@nekonoverse/ui/stores/instance";
 
 export default function PWAUpdateBanner() {
   const { t } = useI18n();

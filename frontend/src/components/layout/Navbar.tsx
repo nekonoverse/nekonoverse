@@ -1,10 +1,10 @@
 import { Show, For, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation } from "@solidjs/router";
-import { currentUser, logout } from "../../stores/auth";
-import { connect, disconnect, onNotification, unreadCount, resetUnread } from "../../stores/streaming";
-import { useI18n } from "../../i18n";
-import { defaultAvatar } from "../../stores/instance";
-import type { Dictionary } from "../../i18n/dictionaries/ja";
+import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
+import { connect, disconnect, onNotification, unreadCount, resetUnread } from "@nekonoverse/ui/stores/streaming";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
 import { getNotifications, type Notification } from "@nekonoverse/ui/api/notifications";
 import Emoji from "../Emoji";
 import SearchModal from "../SearchModal";

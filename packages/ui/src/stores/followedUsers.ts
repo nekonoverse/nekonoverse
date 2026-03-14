@@ -1,5 +1,5 @@
 import { createSignal } from "solid-js";
-import { apiRequest } from "@nekonoverse/ui/api/client";
+import { apiRequest } from "../api/client";
 
 const [followedIds, setFollowedIds] = createSignal<Set<string>>(new Set());
 

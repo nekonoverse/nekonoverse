@@ -1,7 +1,7 @@
 import { createSignal, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { register } from "../../stores/auth";
-import { useI18n } from "../../i18n";
+import { register } from "@nekonoverse/ui/stores/auth";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 interface RegisterFormProps {
   inviteRequired?: boolean;

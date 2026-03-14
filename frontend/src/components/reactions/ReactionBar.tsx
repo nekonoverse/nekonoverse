@@ -5,9 +5,9 @@ import { reactToNote, unreactToNote, getReactedBy } from "@nekonoverse/ui/api/st
 import { importRemoteEmojiByShortcode } from "@nekonoverse/ui/api/admin";
 import EmojiPicker from "./EmojiPicker";
 import Emoji from "../Emoji";
-import { currentUser } from "../../stores/auth";
-import { useI18n } from "../../i18n";
-import { defaultAvatar } from "../../stores/instance";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 const REMOTE_EMOJI_RE = /^:([a-zA-Z0-9_]+)@([a-zA-Z0-9.-]+):$/;
 

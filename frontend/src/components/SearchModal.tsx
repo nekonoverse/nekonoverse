@@ -1,8 +1,8 @@
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { searchAccounts, type Account } from "@nekonoverse/ui/api/accounts";
-import { useI18n } from "../i18n";
-import { defaultAvatar } from "../stores/instance";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 interface Props {
   onClose: () => void;

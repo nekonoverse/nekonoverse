@@ -1,13 +1,13 @@
 import { Router, Route } from "@solidjs/router";
 import { lazy, onMount, onCleanup, type ParentProps } from "solid-js";
-import { I18nProvider } from "./i18n";
-import { initTheme } from "./stores/theme";
-import { fetchCurrentUser } from "./stores/auth";
+import { I18nProvider } from "@nekonoverse/ui/i18n";
+import { initTheme } from "@nekonoverse/ui/stores/theme";
+import { fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
 import {
   fetchInstance,
   checkClientVersion,
   startVersionPolling,
-} from "./stores/instance";
+} from "@nekonoverse/ui/stores/instance";
 import Navbar from "./components/layout/Navbar";
 import SwipeBack from "./components/SwipeBack";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";

@@ -1,7 +1,7 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { getTagTimeline, getNote, type Note } from "@nekonoverse/ui/api/statuses";
-import { useI18n } from "../i18n";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteCard from "../components/notes/NoteCard";
 
 export default function TagTimeline() {

@@ -1,9 +1,9 @@
 import { createSignal, onMount, Show, For } from "solid-js";
 import { apiRequest } from "@nekonoverse/ui/api/client";
 import type { Account } from "@nekonoverse/ui/api/accounts";
-import { currentUser, authLoading } from "../stores/auth";
-import { useI18n } from "../i18n";
-import { defaultAvatar } from "../stores/instance";
+import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 export default function FollowRequests() {
   const { t } = useI18n();
