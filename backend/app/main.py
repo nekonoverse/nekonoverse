@@ -144,6 +144,7 @@ async def _build_contact(db) -> dict:
     """Build Mastodon-compatible contact object with admin account."""
     from sqlalchemy import select
 
+    from app.api.mastodon.statuses import _to_mastodon_datetime
     from app.models.actor import Actor
     from app.models.user import User
     from app.utils.media_proxy import media_proxy_url
@@ -181,10 +182,7 @@ async def _build_contact(db) -> dict:
                 "header": header,
                 "header_static": header,
                 "url": f"{settings.server_url}/@{actor.username}",
-                "created_at": (
-                    admin_user.created_at.isoformat()
-                    if admin_user.created_at else ""
-                ),
+                "created_at": _to_mastodon_datetime(admin_user.created_at),
                 "bot": actor.is_bot,
                 "group": actor.type == "Group",
                 "locked": actor.manually_approves_followers,

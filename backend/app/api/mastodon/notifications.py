@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db
 from app.models.custom_emoji import CustomEmoji
 from app.models.user import User
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.schemas.note import CustomEmojiInfo, NoteActorResponse
 from app.schemas.notification import NotificationResponse
 from app.utils.media_proxy import media_proxy_url
@@ -144,7 +145,7 @@ async def _notification_to_response(
             note=sender.summary or "",
             bot=sender.is_bot,
             group=sender.type == "Group",
-            created_at=sender.created_at.isoformat() if sender.created_at else "",
+            created_at=_to_mastodon_datetime(sender.created_at),
             locked=sender.manually_approves_followers,
             discoverable=sender.discoverable,
         )
@@ -164,7 +165,7 @@ async def _notification_to_response(
     return NotificationResponse(
         id=notif.id,
         type=notif.type,
-        created_at=notif.created_at,
+        created_at=_to_mastodon_datetime(notif.created_at),
         read=notif.read,
         group_key=f"ungrouped-{notif.id}",
         account=account,

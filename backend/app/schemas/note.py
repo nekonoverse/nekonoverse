@@ -132,7 +132,7 @@ class NoteResponse(BaseModel):
     visibility: str
     sensitive: bool
     spoiler_text: str = ""
-    published: datetime
+    published: str
     edited_at: str | None = None
     replies_count: int
     reactions_count: int

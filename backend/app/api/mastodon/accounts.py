@@ -12,6 +12,7 @@ from app.models.note import Note
 from app.models.user import User
 from app.services.follow_service import follow_actor, get_follow_counts, unfollow_actor
 from app.services.note_service import get_statuses_count
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
@@ -144,7 +145,7 @@ async def _actor_to_account(
         "header": header,
         "header_static": header,
         "url": actor.ap_id,
-        "created_at": actor.created_at.isoformat() if actor.created_at else "",
+        "created_at": _to_mastodon_datetime(actor.created_at),
         "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
         "group": actor.type == "Group",
         "locked": actor.manually_approves_followers,
@@ -208,7 +209,7 @@ def _actor_to_limited_account(actor: Actor) -> dict:
         "header": "",
         "header_static": "",
         "url": actor.ap_id,
-        "created_at": actor.created_at.isoformat() if actor.created_at else "",
+        "created_at": _to_mastodon_datetime(actor.created_at),
         "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
         "group": actor.type == "Group",
         "locked": actor.manually_approves_followers,
