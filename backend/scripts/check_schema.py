@@ -19,32 +19,9 @@ from sqlalchemy import create_engine, inspect
 from app.config import settings
 from app.models.base import Base
 
-# Import all models so Base.metadata is populated
-import app.models.actor  # noqa: F401
-import app.models.bookmark  # noqa: F401
-import app.models.custom_emoji  # noqa: F401
-import app.models.delivery  # noqa: F401
-import app.models.domain_block  # noqa: F401
-import app.models.drive_file  # noqa: F401
-import app.models.follow  # noqa: F401
-import app.models.hashtag  # noqa: F401
-import app.models.invitation_code  # noqa: F401
-import app.models.moderation_log  # noqa: F401
-import app.models.note  # noqa: F401
-import app.models.note_attachment  # noqa: F401
-import app.models.note_edit  # noqa: F401
-import app.models.notification  # noqa: F401
-import app.models.oauth  # noqa: F401
-import app.models.passkey  # noqa: F401
-import app.models.pinned_note  # noqa: F401
-import app.models.poll_vote  # noqa: F401
-import app.models.push_subscription  # noqa: F401
-import app.models.reaction  # noqa: F401
-import app.models.report  # noqa: F401
-import app.models.server_setting  # noqa: F401
-import app.models.user  # noqa: F401
-import app.models.user_block  # noqa: F401
-import app.models.user_mute  # noqa: F401
+# Import all models via __init__ so Base.metadata is fully populated.
+# New models added to app/models/__init__.py are automatically included.
+import app.models  # noqa: F401
 
 
 def main() -> int:
