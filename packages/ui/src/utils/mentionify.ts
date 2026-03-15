@@ -79,6 +79,19 @@ export function mentionify(
           domainSpan.textContent = `@${url.hostname}`;
           inner.appendChild(domainSpan);
           link.appendChild(inner);
+        } else if (username && username.includes("@")) {
+          // ドメインが既にテキストに含まれている場合、分割してスタイル適用
+          const atIdx = username.indexOf("@");
+          const user = username.slice(0, atIdx);
+          const domain = username.slice(atIdx);
+          link.textContent = "";
+          const inner = document.createElement("span");
+          inner.textContent = `@${user}`;
+          const domainSpan = document.createElement("span");
+          domainSpan.className = "mention-domain";
+          domainSpan.textContent = domain;
+          inner.appendChild(domainSpan);
+          link.appendChild(inner);
         }
       }
     } catch {
