@@ -170,6 +170,7 @@ async def _build_contact(db) -> dict:
                 "id": str(admin_user.id),
                 "username": actor.username,
                 "acct": actor.username,
+                "email": "",
                 "display_name": actor.display_name or "",
                 "note": actor.summary or "",
                 "avatar": media_proxy_url(actor.avatar_url) or "/default-avatar.svg",

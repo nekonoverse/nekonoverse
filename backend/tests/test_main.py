@@ -45,4 +45,7 @@ async def test_instance_contact_account(app_client, db, mock_valkey):
     assert "created_at" in account
     assert "followers_count" in account
     assert "emojis" in account
+    # CredentialAccount compat: account.email must exist (empty for public API)
+    assert "email" in account
+    assert account["email"] == ""
     assert contact["email"] == "admin@example.com"
