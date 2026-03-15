@@ -963,6 +963,29 @@ async def fetch_remote_note(
         )
         db.add(attachment)
 
+    # Background focal point detection for remote image attachments
+    if settings.face_detect_url:
+        await db.flush()
+        from sqlalchemy import select as sel
+
+        from app.models.note_attachment import NoteAttachment as NA
+
+        att_rows = await db.execute(
+            sel(NA.id).where(
+                NA.note_id == note.id,
+                NA.remote_url.isnot(None),
+                NA.remote_focal_x.is_(None),
+                NA.remote_mime_type.in_(
+                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
+                ),
+            )
+        )
+        att_ids = [row[0] for row in att_rows.all()]
+        if att_ids:
+            from app.services.face_detect_queue import enqueue_remote
+
+            await enqueue_remote(note.id, att_ids)
+
     # Extract and upsert hashtags from AP tags
     from app.services.hashtag_service import (
         extract_hashtags_from_ap_tags,
