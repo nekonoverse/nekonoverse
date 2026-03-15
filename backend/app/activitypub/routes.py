@@ -311,6 +311,12 @@ async def user_inbox(username: str, request: Request, db: AsyncSession = Depends
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
+    # JSON-LD expanded form (Pleroma/Akkoma): トップレベルが配列の場合は先頭要素を取り出す
+    if isinstance(activity, list):
+        if not activity:
+            raise HTTPException(status_code=400, detail="Empty activity array")
+        activity = activity[0]
+
     # 署名鍵のアクターとactivityのactorが一致するか検証
     _verify_key_actor_match(key_id, activity)
 
@@ -337,6 +343,12 @@ async def shared_inbox(request: Request, db: AsyncSession = Depends(get_db)):
         activity = json.loads(body)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    # JSON-LD expanded form (Pleroma/Akkoma): トップレベルが配列の場合は先頭要素を取り出す
+    if isinstance(activity, list):
+        if not activity:
+            raise HTTPException(status_code=400, detail="Empty activity array")
+        activity = activity[0]
 
     # 署名鍵のアクターとactivityのactorが一致するか検証
     _verify_key_actor_match(key_id, activity)
