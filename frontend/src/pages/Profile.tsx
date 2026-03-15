@@ -1,4 +1,4 @@
-import { createSignal, createEffect, on, onCleanup, Show, For, Index, batch } from "solid-js";
+import { createSignal, createEffect, on, onMount, onCleanup, Show, For, Index, batch } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { updateAvatar, updateHeader, updateProfile, deleteAvatar, deleteHeader, updateHeaderFocus } from "@nekonoverse/ui/api/settings";
@@ -26,6 +26,19 @@ export default function Profile() {
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
+
+  // Infinite scroll state
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  const [hasMore, setHasMore] = createSignal(true);
+  let sentinelRef: HTMLDivElement | undefined;
+  let observer: IntersectionObserver | undefined;
+
+  const setSentinelRef = (el: HTMLDivElement) => {
+    sentinelRef = el;
+    if (observer && el) {
+      observer.observe(el);
+    }
+  };
 
   // Follow state
   const [isFollowing, setIsFollowing] = createSignal(false);
@@ -95,12 +108,55 @@ export default function Profile() {
     }
   };
 
+  const loadMoreNotes = async () => {
+    if (loadingMore() || !hasMore()) return;
+    const current = notes();
+    const acc = account();
+    if (current.length === 0 || !acc) return;
+    const lastId = current[current.length - 1].id;
+    setLoadingMore(true);
+    try {
+      const data = await getAccountStatuses(acc.id, { max_id: lastId });
+      if (data.length === 0) {
+        setHasMore(false);
+      } else {
+        setNotes((prev) => [...prev, ...data]);
+      }
+    } catch {
+    } finally {
+      setLoadingMore(false);
+      if (observer && sentinelRef && hasMore()) {
+        observer.unobserve(sentinelRef);
+        observer.observe(sentinelRef);
+      }
+    }
+  };
+
+  onMount(() => {
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMoreNotes();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    if (sentinelRef) {
+      observer.observe(sentinelRef);
+    }
+  });
+
+  onCleanup(() => {
+    observer?.disconnect();
+  });
+
   createEffect(on(() => params.acct, () => {
     batch(() => {
       setAccount(null);
       setNotes([]);
       setLoading(true);
       setError("");
+      setHasMore(true);
       setIsFollowing(false);
       setIsRequested(false);
       setIsBlocking(false);
@@ -726,6 +782,13 @@ export default function Profile() {
                         />
                       )}
                     </For>
+                    <div ref={setSentinelRef} class="timeline-sentinel" />
+                    <Show when={loadingMore()}>
+                      <p class="timeline-loading">{t("timeline.loadingMore")}</p>
+                    </Show>
+                    <Show when={!hasMore() && notes().length > 0}>
+                      <p class="timeline-end">{t("timeline.noMore")}</p>
+                    </Show>
                   </Show>
                 </div>
               </>

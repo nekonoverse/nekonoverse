@@ -35,8 +35,14 @@ export async function lookupAccount(acct: string): Promise<Account> {
   return apiRequest<Account>(`/api/v1/accounts/lookup?acct=${encodeURIComponent(acct)}`);
 }
 
-export async function getAccountStatuses(id: string, limit = 20): Promise<Note[]> {
-  return apiRequest<Note[]>(`/api/v1/accounts/${id}/statuses?limit=${limit}`);
+export async function getAccountStatuses(
+  id: string,
+  opts: { limit?: number; max_id?: string } = {},
+): Promise<Note[]> {
+  const params = new URLSearchParams();
+  params.set("limit", String(opts.limit ?? 20));
+  if (opts.max_id) params.set("max_id", opts.max_id);
+  return apiRequest<Note[]>(`/api/v1/accounts/${id}/statuses?${params}`);
 }
 
 export interface Relationship {
