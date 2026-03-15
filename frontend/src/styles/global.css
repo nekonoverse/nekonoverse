@@ -925,6 +925,23 @@ a:hover {
   font-weight: 600;
 }
 
+/* CW input */
+.composer-cw-input {
+  width: 100%;
+  padding: 8px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.9em;
+  margin-bottom: 4px;
+  box-sizing: border-box;
+}
+
+.composer-cw-input::placeholder {
+  color: var(--text-secondary);
+}
+
 /* Poll editor */
 .composer-poll-editor {
   margin-top: 8px;

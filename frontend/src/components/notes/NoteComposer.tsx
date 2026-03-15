@@ -73,6 +73,9 @@ export default function NoteComposer(props: Props) {
   const [pollOptions, setPollOptions] = createSignal<string[]>(["", ""]);
   const [pollMultiple, setPollMultiple] = createSignal(false);
   const [pollExpiresIn, setPollExpiresIn] = createSignal(86400);
+  const [sensitive, setSensitive] = createSignal(false);
+  const [cwOpen, setCwOpen] = createSignal(false);
+  const [spoilerText, setSpoilerText] = createSignal("");
 
   let fileInput!: HTMLInputElement;
   let textareaRef!: HTMLTextAreaElement;
@@ -107,6 +110,9 @@ export default function NoteComposer(props: Props) {
       setPollOptions(["", ""]);
       setPollMultiple(false);
       setPollExpiresIn(86400);
+      setSensitive(false);
+      setCwOpen(false);
+      setSpoilerText("");
     }
   });
 
@@ -227,6 +233,9 @@ export default function NoteComposer(props: Props) {
           };
         }
       }
+      // CWテキストがある場合はsensitiveを自動的にtrueにする
+      const isSensitive = sensitive() || !!spoilerText().trim();
+      const cwText = cwOpen() && spoilerText().trim() ? spoilerText().trim() : undefined;
       const note = await createNote(
         content(),
         visibility(),
@@ -234,6 +243,8 @@ export default function NoteComposer(props: Props) {
         quoteId,
         replyToId,
         pollData,
+        isSensitive || undefined,
+        cwText,
       );
       setContent("");
       setAttachments([]);
@@ -241,6 +252,9 @@ export default function NoteComposer(props: Props) {
       setPollOptions(["", ""]);
       setPollMultiple(false);
       setPollExpiresIn(86400);
+      setSensitive(false);
+      setCwOpen(false);
+      setSpoilerText("");
       props.onClearQuote?.();
       props.onClearReply?.();
 
@@ -346,6 +360,16 @@ export default function NoteComposer(props: Props) {
             </div>
           </div>
         )}
+      </Show>
+      <Show when={cwOpen()}>
+        <input
+          type="text"
+          class="composer-cw-input"
+          value={spoilerText()}
+          onInput={(e) => setSpoilerText(e.currentTarget.value)}
+          placeholder={t("composer.cwPlaceholder" as any)}
+          maxLength={500}
+        />
       </Show>
       <textarea
         ref={textareaRef}
@@ -524,6 +548,28 @@ export default function NoteComposer(props: Props) {
               <rect x="3" y="17" width="15" height="4" rx="1" />
             </svg>
           </button>
+          <button
+            type="button"
+            class={`composer-attach-btn${cwOpen() ? " active" : ""}`}
+            onClick={() => setCwOpen(!cwOpen())}
+            title={t("composer.cw" as any)}
+          >
+            <span style="font-size: 13px; font-weight: 700">CW</span>
+          </button>
+          <Show when={attachments().length > 0}>
+            <button
+              type="button"
+              class={`composer-attach-btn${sensitive() ? " active" : ""}`}
+              onClick={() => setSensitive(!sensitive())}
+              title={t("composer.sensitive" as any)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </button>
+          </Show>
           <input
             ref={fileInput}
             type="file"

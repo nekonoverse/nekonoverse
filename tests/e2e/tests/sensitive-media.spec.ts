@@ -119,6 +119,40 @@ test.describe("Sensitive Media Overlay", () => {
     await expect(media_img).toBeVisible();
   });
 
+  test("clicking hide button re-hides the image", async ({ page }) => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/58BAwAI/AL+hc2rNAAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const uploadResp = await page.request.post("/api/v1/media", {
+      multipart: {
+        file: { name: "test.png", mimeType: "image/png", buffer: png },
+      },
+    });
+    const media = await uploadResp.json();
+    const noteResp = await page.request.post("/api/v1/statuses", {
+      data: {
+        content: `sensitive rehide test ${Date.now()}`,
+        visibility: "public",
+        sensitive: true,
+        media_ids: [media.id],
+      },
+    });
+    const note = await noteResp.json();
+
+    await page.goto(`/notes/${note.id}`);
+    await page.waitForSelector(".note-card", { timeout: 10_000 });
+
+    // Reveal
+    await page.click(".sensitive-overlay");
+    await expect(page.locator(".note-media-item img")).toBeVisible();
+
+    // Re-hide
+    await page.click(".sensitive-hide-btn");
+    await expect(page.locator(".sensitive-overlay")).toBeVisible();
+    await expect(page.locator(".note-media-item img")).toHaveCount(0);
+  });
+
   test("sensitive note with spoiler_text uses CW toggle instead of overlay", async ({
     page,
   }) => {

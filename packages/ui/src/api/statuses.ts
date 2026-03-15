@@ -132,11 +132,15 @@ export async function createNote(
   quoteId?: string,
   inReplyToId?: string,
   poll?: PollCreate,
+  sensitive?: boolean,
+  spoilerText?: string,
 ): Promise<Note> {
   const body: Record<string, unknown> = { content, visibility, media_ids: mediaIds || [] };
   if (quoteId) body.quote_id = quoteId;
   if (inReplyToId) body.in_reply_to_id = inReplyToId;
   if (poll) body.poll = poll;
+  if (sensitive) body.sensitive = true;
+  if (spoilerText) body.spoiler_text = spoilerText;
   return apiRequest<Note>("/api/v1/statuses", {
     method: "POST",
     body,
