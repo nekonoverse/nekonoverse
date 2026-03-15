@@ -17,6 +17,7 @@ import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "@nekonover
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
 import { changePassword } from "@nekonoverse/ui/api/settings";
+import { getAuthorizedApps, revokeAuthorizedApp, type AuthorizedApp } from "@nekonoverse/ui/api/authorizedApps";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
 import PasskeyManager from "../components/PasskeyManager";
@@ -47,6 +48,7 @@ const categories: SettingsCategory[] = [
     labelKey: "settings.categoryAccount",
     sections: [
       { key: "security", labelKey: "settings.tabSecurity", descKey: "settings.descSecurity" },
+      { key: "apps", labelKey: "settings.tabApps", descKey: "settings.descApps" },
       { key: "blocks", labelKey: "settings.tabBlocks", descKey: "settings.descBlocks" },
       { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
       { key: "migration", labelKey: "settings.tabMigration", descKey: "settings.descMigration" },
@@ -115,6 +117,7 @@ export default function Settings() {
           <Match when={section() === "posting"}><PostingTab /></Match>
           <Match when={section() === "appearance"}><AppearanceTab /></Match>
           <Match when={section() === "security"}><SecurityTab onLogout={handleLogout} /></Match>
+          <Match when={section() === "apps"}><AppsTab /></Match>
           <Match when={section() === "blocks"}><BlocksTab /></Match>
           <Match when={section() === "mutes"}><MutesTab /></Match>
           <Match when={section() === "migration"}><MigrationTab /></Match>
@@ -603,6 +606,71 @@ function SecurityTab(props: { onLogout: () => void }) {
         <button class="btn-danger-full" onClick={props.onLogout}>
           {t("settings.logout")}
         </button>
+      </div>
+    </AuthGuard>
+  );
+}
+
+function AppsTab() {
+  const { t } = useI18n();
+  const [apps, setApps] = createSignal<AuthorizedApp[]>([]);
+  const [loading, setLoading] = createSignal(true);
+
+  onMount(async () => {
+    try {
+      setApps(await getAuthorizedApps());
+    } catch {}
+    setLoading(false);
+  });
+
+  const handleRevoke = async (appId: string) => {
+    if (!confirm(t("apps.confirmRevoke" as any))) return;
+    try {
+      await revokeAuthorizedApp(appId);
+      setApps((prev) => prev.filter((a) => a.id !== appId));
+    } catch {}
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("apps.authorizedApps" as any)}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={apps().length > 0} fallback={<p class="empty">{t("apps.noApps" as any)}</p>}>
+            <div class="blockmute-list">
+              <For each={apps()}>
+                {(app) => (
+                  <div class="blockmute-item">
+                    <div class="blockmute-user" style={{ cursor: "default" }}>
+                      <div>
+                        <strong>{app.name}</strong>
+                        <Show when={app.website}>
+                          <a
+                            href={app.website!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="blockmute-handle"
+                          >
+                            {app.website}
+                          </a>
+                        </Show>
+                        <span class="blockmute-handle">
+                          {app.scopes.join(", ")}
+                        </span>
+                        <span class="blockmute-handle">
+                          {t("apps.authorizedAt" as any)}: {new Date(app.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <button class="btn btn-small btn-danger" onClick={() => handleRevoke(app.id)}>
+                      {t("apps.revoke" as any)}
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
       </div>
     </AuthGuard>
   );
