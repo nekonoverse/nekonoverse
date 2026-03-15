@@ -65,7 +65,7 @@ services:
       target: dev
     restart: unless-stopped
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
+      sh -c "alembic upgrade head && python -m scripts.check_schema && uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
       VALKEY_URL: valkey://valkey:6379/0

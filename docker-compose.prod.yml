@@ -90,6 +90,7 @@ services:
               echo "alembic failed (attempt $$i), retrying in 3s..."
               sleep 3
             done &&
+            python -m scripts.check_schema &&
             uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4
           '
     environment:
