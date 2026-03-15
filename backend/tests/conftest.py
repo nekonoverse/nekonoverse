@@ -117,16 +117,6 @@ async def db_engine(worker_id):
         await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
         await conn.execute(sa.text("CREATE SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
-        # Seed built-in roles
-        # Escape colons in JSON values so SQLAlchemy text() doesn't treat them as bind params
-        await conn.execute(sa.text(r"""
-            INSERT INTO roles (name, display_name, permissions, is_admin, quota_bytes, priority, is_system, created_at)
-            VALUES
-                ('user', 'User', '{}', false, 1073741824, 0, true, NOW()),
-                ('moderator', 'Moderator', '{"users"\:true,"reports"\:true,"content"\:true,"domains"\:true,"federation"\:true,"emoji"\:true,"registrations"\:true}', false, 5368709120, 50, true, NOW()),
-                ('admin', 'Admin', '{}', true, 0, 100, true, NOW())
-            ON CONFLICT (name) DO NOTHING
-        """))
     yield engine
     async with engine.begin() as conn:
         await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
@@ -204,6 +194,31 @@ async def authed_client(app_client, test_user, mock_valkey):
     mock_valkey.get = AsyncMock(return_value=str(test_user.id))
     app_client.cookies.set("nekonoverse_session", session_id)
     return app_client
+
+
+@pytest.fixture
+async def seed_roles(db):
+    """Seed the three built-in roles for tests that need them."""
+    from app.models.role import Role
+
+    for name, display_name, is_admin, quota, priority, perms in [
+        ("user", "User", False, 1073741824, 0, {}),
+        ("moderator", "Moderator", False, 5368709120, 50,
+         {"users": True, "reports": True, "content": True, "domains": True,
+          "federation": True, "emoji": True, "registrations": True}),
+        ("admin", "Admin", True, 0, 100, {}),
+    ]:
+        role = Role(
+            name=name,
+            display_name=display_name,
+            permissions=perms,
+            is_admin=is_admin,
+            quota_bytes=quota,
+            priority=priority,
+            is_system=True,
+        )
+        db.add(role)
+    await db.flush()
 
 
 async def make_remote_actor(db, *, username="remote", domain="remote.example"):

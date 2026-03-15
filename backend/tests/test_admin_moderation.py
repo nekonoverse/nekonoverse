@@ -8,6 +8,8 @@ import pytest
 
 from tests.conftest import make_note, make_remote_actor
 
+pytestmark = pytest.mark.usefixtures("seed_roles")
+
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

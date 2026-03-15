@@ -9,26 +9,6 @@ from app.models.role import Role
 from app.services.quota_service import check_quota, get_storage_usage
 
 
-@pytest.fixture
-async def seed_roles(db):
-    """Seed the three built-in roles."""
-    for name, display_name, is_admin, quota, priority in [
-        ("user", "User", False, 1073741824, 0),
-        ("moderator", "Moderator", False, 5368709120, 50),
-        ("admin", "Admin", True, 0, 100),
-    ]:
-        role = Role(
-            name=name,
-            display_name=display_name,
-            permissions={},
-            is_admin=is_admin,
-            quota_bytes=quota,
-            priority=priority,
-            is_system=True,
-        )
-        db.add(role)
-    await db.flush()
-
 
 async def test_storage_usage_empty(db, test_user):
     usage = await get_storage_usage(db, test_user.id)

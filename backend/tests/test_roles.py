@@ -13,26 +13,6 @@ from app.services.role_service import (
 )
 
 
-@pytest.fixture
-async def seed_roles(db):
-    """Seed the three built-in roles."""
-    for name, display_name, is_admin, quota, priority in [
-        ("user", "User", False, 1073741824, 0),
-        ("moderator", "Moderator", False, 5368709120, 50),
-        ("admin", "Admin", True, 0, 100),
-    ]:
-        role = Role(
-            name=name,
-            display_name=display_name,
-            permissions={"users": True, "reports": True} if name == "moderator" else {},
-            is_admin=is_admin,
-            quota_bytes=quota,
-            priority=priority,
-            is_system=True,
-        )
-        db.add(role)
-    await db.flush()
-
 
 async def test_get_all_roles(db, seed_roles):
     roles = await get_all_roles(db)
@@ -110,7 +90,7 @@ async def test_has_permission_moderator(db, seed_roles, test_user):
     test_user.role = "moderator"
     assert await has_permission(db, test_user, "users") is True
     # Permission not in moderator's permission map
-    assert await has_permission(db, test_user, "content") is False
+    assert await has_permission(db, test_user, "nonexistent_perm") is False
 
 
 async def test_has_permission_user(db, seed_roles, test_user):
