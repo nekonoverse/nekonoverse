@@ -52,7 +52,9 @@ function profileUrl(actor: Note["actor"]): string {
 }
 
 function QuoteEmbed(props: { note: Note }) {
+  const { t } = useI18n();
   const navigate = useNavigate();
+  const [quoteRevealed, setQuoteRevealed] = createSignal(false);
   const handleClick = (e: MouseEvent) => {
     // Don't navigate if clicking a link inside the quote
     if ((e.target as HTMLElement).closest("a")) return;
@@ -104,16 +106,25 @@ function QuoteEmbed(props: { note: Note }) {
         }}
       />
       <Show when={props.note.media_attachments?.length > 0}>
-        <div class="note-quote-media">
-          <For each={props.note.media_attachments.slice(0, 2)}>
-            {(media) => (
-              <img
-                src={media.preview_url || media.url}
-                alt={media.description || ""}
-              />
-            )}
-          </For>
-        </div>
+        <Show when={props.note.sensitive && !quoteRevealed()}>
+          <div class="sensitive-overlay sensitive-overlay-small" onClick={(e) => { e.stopPropagation(); setQuoteRevealed(true); }}>
+            <div class="sensitive-overlay-content">
+              <span>{t("sensitive.label")}</span>
+            </div>
+          </div>
+        </Show>
+        <Show when={!props.note.sensitive || quoteRevealed()}>
+          <div class="note-quote-media">
+            <For each={props.note.media_attachments.slice(0, 2)}>
+              {(media) => (
+                <img
+                  src={media.preview_url || media.url}
+                  alt={media.description || ""}
+                />
+              )}
+            </For>
+          </div>
+        </Show>
       </Show>
     </div>
   );
@@ -220,6 +231,7 @@ export default function NoteCard(props: Props) {
   const [pinned, setPinned] = createSignal(false);
   const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
   const [cwExpanded, setCwExpanded] = createSignal(false);
+  const [sensitiveRevealed, setSensitiveRevealed] = createSignal(false);
   const [editing, setEditing] = createSignal(false);
   const [editContent, setEditContent] = createSignal("");
   const [editSaving, setEditSaving] = createSignal(false);
@@ -658,38 +670,58 @@ export default function NoteCard(props: Props) {
             <QuoteEmbed note={note().quote!} />
           </Show>
           <Show when={note().media_attachments?.length > 0}>
-            <div
-              class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}
-            >
-              <For each={note().media_attachments}>
-                {(media, i) => (
-                  <button
-                    class="note-media-item"
-                    onClick={() => setLightboxIndex(i())}
-                    type="button"
-                  >
-                    <img
-                      src={media.preview_url || media.url}
-                      alt={media.description || ""}
-                      loading="lazy"
-                      width={media.meta?.original?.width}
-                      height={media.meta?.original?.height}
-                      style={{
-                        "object-position": focalPointToObjectPosition(
-                          media.meta?.focus,
-                        ),
-                      }}
-                    />
-                  </button>
-                )}
-              </For>
-            </div>
-            <Show when={lightboxIndex() !== null}>
-              <ImageLightbox
-                media={note().media_attachments}
-                initialIndex={lightboxIndex()!}
-                onClose={() => setLightboxIndex(null)}
-              />
+            <Show when={note().sensitive && !note().spoiler_text && !sensitiveRevealed()}>
+              <div class="sensitive-overlay" onClick={() => setSensitiveRevealed(true)}>
+                <div class="sensitive-overlay-content">
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                    <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                    <line x1="1" y1="1" x2="23" y2="23" />
+                  </svg>
+                  <span>{t("sensitive.label")}</span>
+                  <span class="sensitive-overlay-action">{t("sensitive.show")}</span>
+                </div>
+              </div>
+            </Show>
+            <Show when={!note().sensitive || note().spoiler_text || sensitiveRevealed()}>
+              <Show when={note().sensitive && !note().spoiler_text && sensitiveRevealed()}>
+                <button class="sensitive-hide-btn" onClick={() => setSensitiveRevealed(false)}>
+                  {t("sensitive.hide")}
+                </button>
+              </Show>
+              <div
+                class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}
+              >
+                <For each={note().media_attachments}>
+                  {(media, i) => (
+                    <button
+                      class="note-media-item"
+                      onClick={() => setLightboxIndex(i())}
+                      type="button"
+                    >
+                      <img
+                        src={media.preview_url || media.url}
+                        alt={media.description || ""}
+                        loading="lazy"
+                        width={media.meta?.original?.width}
+                        height={media.meta?.original?.height}
+                        style={{
+                          "object-position": focalPointToObjectPosition(
+                            media.meta?.focus,
+                          ),
+                        }}
+                      />
+                    </button>
+                  )}
+                </For>
+              </div>
+              <Show when={lightboxIndex() !== null}>
+                <ImageLightbox
+                  media={note().media_attachments}
+                  initialIndex={lightboxIndex()!}
+                  onClose={() => setLightboxIndex(null)}
+                />
+              </Show>
             </Show>
           </Show>
         </Show>

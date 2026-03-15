@@ -494,6 +494,9 @@ export const en: Dictionary = {
   "reply.repliesCount": "replies",
   "cw.show": "Show more",
   "cw.hide": "Hide",
+  "sensitive.label": "Sensitive content",
+  "sensitive.show": "Show",
+  "sensitive.hide": "Hide",
   "remote.viewOnRemote": "View on remote server",
   "totp.title": "Two-Factor Authentication",
   "totp.description":
