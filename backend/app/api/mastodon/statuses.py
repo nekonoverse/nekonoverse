@@ -292,14 +292,32 @@ async def note_to_response(
 
     from app.config import settings as app_settings
 
+    avatar = media_proxy_url(actor.avatar_url) or "/default-avatar.svg"
+    header = media_proxy_url(actor.header_url) or ""
+    acct = actor.username if not actor.domain else f"{actor.username}@{actor.domain}"
+    actor_url = (
+        f"{app_settings.server_url}/@{actor.username}"
+        if not actor.domain
+        else f"{app_settings.server_url}/@{acct}"
+    )
     actor_resp = NoteActorResponse(
         id=actor.id,
         username=actor.username,
         display_name=actor.display_name,
-        avatar_url=media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
+        avatar_url=avatar,
         ap_id=actor.ap_id,
         domain=actor.domain,
         emojis=actor_emojis,
+        acct=acct,
+        url=actor_url,
+        avatar=avatar,
+        avatar_static=avatar,
+        header=header,
+        header_static=header,
+        note=actor.summary or "",
+        bot=actor.is_bot,
+        created_at=actor.created_at.isoformat() if actor.created_at else "",
+        locked=actor.manually_approves_followers,
     )
 
     return NoteResponse(
