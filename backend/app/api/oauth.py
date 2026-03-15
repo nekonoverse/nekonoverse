@@ -62,14 +62,17 @@ class AppCreateRequest(BaseModel):
 
 async def _parse_app_create(request: Request) -> AppCreateRequest:
     """Parse POST /api/v1/apps from JSON or form-urlencoded."""
+    data = await _parse_form_or_json(request)
+    return AppCreateRequest(**data)
+
+
+async def _parse_form_or_json(request: Request) -> dict:
+    """Parse request body from JSON or form-urlencoded."""
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
-        data = await request.json()
-    else:
-        # form-urlencoded (Mastodon client default) or other
-        form = await request.form()
-        data = dict(form)
-    return AppCreateRequest(**data)
+        return await request.json()
+    form = await request.form()
+    return dict(form)
 
 
 @router.post("/api/v1/apps")
@@ -385,17 +388,22 @@ button:hover {{ background: #4f50e6; }}
 @router.post("/oauth/token")
 async def token(
     request: Request,
-    grant_type: str = Form(...),
-    code: str | None = Form(None),
-    client_id: str = Form(...),
-    client_secret: str = Form(...),
-    redirect_uri: str | None = Form(None),
-    code_verifier: str | None = Form(None),
-    scope: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange authorization code for access token."""
     await _check_oauth_rate_limit(request, "token")
+    body = await _parse_form_or_json(request)
+    grant_type = body.get("grant_type")
+    code = body.get("code")
+    client_id = body.get("client_id")
+    client_secret = body.get("client_secret")
+    redirect_uri = body.get("redirect_uri")
+    code_verifier = body.get("code_verifier")
+    scope = body.get("scope")
+
+    if not grant_type or not client_id or not client_secret:
+        raise HTTPException(status_code=400, detail="Missing required parameters")
+
     # Validate application
     result = await db.execute(
         select(OAuthApplication).where(OAuthApplication.client_id == client_id)
@@ -487,13 +495,18 @@ async def token(
 @router.post("/oauth/revoke")
 async def revoke_token(
     request: Request,
-    token: str = Form(...),
-    client_id: str = Form(...),
-    client_secret: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
     """Revoke an access token."""
     await _check_oauth_rate_limit(request, "revoke")
+    body = await _parse_form_or_json(request)
+    token = body.get("token")
+    client_id = body.get("client_id")
+    client_secret = body.get("client_secret")
+
+    if not token or not client_id or not client_secret:
+        raise HTTPException(status_code=400, detail="Missing required parameters")
+
     # クライアント認証
     result = await db.execute(
         select(OAuthApplication).where(OAuthApplication.client_id == client_id)
