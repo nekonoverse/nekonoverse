@@ -128,6 +128,13 @@ class NoteResponse(BaseModel):
     pinned: bool = False
     emojis: list[CustomEmojiInfo] = []
     tags: list[TagInfo] = []
+    # Mastodon Status compat aliases
+    uri: str = ""
+    url: str | None = None
+    account: NoteActorResponse | None = None
+    created_at: str = ""
+    reblogs_count: int = 0
+    favourites_count: int = 0
 
     model_config = {"from_attributes": True}
 
