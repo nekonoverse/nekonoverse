@@ -730,6 +730,27 @@ async def fetch_remote_note(
     # DBに既にあればそれを返す
     existing = await get_note_by_ap_id(db, ap_id)
     if existing:
+        # 既存ノートでもfocal未検出の画像があればエンキュー
+        if settings.face_detect_url:
+            from sqlalchemy import select as sel
+
+            from app.models.note_attachment import NoteAttachment as NA
+
+            att_rows = await db.execute(
+                sel(NA.id).where(
+                    NA.note_id == existing.id,
+                    NA.remote_url.isnot(None),
+                    NA.remote_focal_x.is_(None),
+                    NA.remote_mime_type.in_(
+                        ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
+                    ),
+                )
+            )
+            att_ids = [row[0] for row in att_rows.all()]
+            if att_ids:
+                from app.services.face_detect_queue import enqueue_remote
+
+                await enqueue_remote(existing.id, att_ids)
         return existing
 
     try:

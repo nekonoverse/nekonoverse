@@ -610,6 +610,56 @@ async def test_fetch_remote_note_skips_face_detect_with_focal(db, mock_valkey):
     mock_enqueue.assert_not_called()
 
 
+async def test_fetch_remote_note_existing_enqueues_focal(db, mock_valkey):
+    """Existing note with focal-less images triggers enqueue on early return."""
+    actor = await make_remote_actor(db, username="fde_author", domain="fde.example")
+    ap_id = "https://fde.example/notes/fde"
+    data = _ap_note_data(
+        ap_id,
+        actor.ap_id,
+        attachments=[
+            {
+                "type": "Image",
+                "url": "https://fde.example/media/portrait.jpg",
+                "mediaType": "image/jpeg",
+                "width": 800,
+                "height": 1200,
+            },
+        ],
+    )
+    from app.config import settings
+
+    # First fetch — creates the note (enqueue also fires, but we focus on second call)
+    with (
+        patch(_SIGNED_GET_PATCH, new_callable=AsyncMock, return_value=_mock_response(data)),
+        patch.object(settings, "face_detect_url", "http://face-detect:8000/detect"),
+        patch(
+            "app.services.face_detect_queue.enqueue_remote",
+            new_callable=AsyncMock,
+        ),
+    ):
+        note = await fetch_remote_note(db, ap_id)
+    assert note is not None
+    await db.flush()
+
+    # Second fetch — existing note early return should still enqueue
+    with (
+        patch.object(settings, "face_detect_url", "http://face-detect:8000/detect"),
+        patch(
+            "app.services.face_detect_queue.enqueue_remote",
+            new_callable=AsyncMock,
+        ) as mock_enqueue,
+    ):
+        note2 = await fetch_remote_note(db, ap_id)
+
+    assert note2 is not None
+    assert note2.id == note.id
+    mock_enqueue.assert_called_once()
+    call_args = mock_enqueue.call_args
+    assert call_args[0][0] == note.id
+    assert len(call_args[0][1]) == 1
+
+
 # ── Hashtags from AP tags ────────────────────────────────────────────────
 
 
