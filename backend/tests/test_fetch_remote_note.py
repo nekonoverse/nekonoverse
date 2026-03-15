@@ -540,6 +540,79 @@ async def test_fetch_remote_note_invalid_published(db, mock_valkey):
 # ── Hashtags from AP tags ────────────────────────────────────────────────
 
 
+async def test_fetch_remote_note_enqueues_face_detect(db, mock_valkey):
+    """Enqueue face detection for image attachments without focal point."""
+    actor = await make_remote_actor(db, username="fd_author", domain="fd1.example")
+    ap_id = "https://fd1.example/notes/fd"
+    data = _ap_note_data(
+        ap_id,
+        actor.ap_id,
+        attachments=[
+            {
+                "type": "Image",
+                "url": "https://fd1.example/media/portrait.jpg",
+                "mediaType": "image/jpeg",
+                "width": 800,
+                "height": 1200,
+            },
+        ],
+    )
+    from app.config import settings
+
+    with (
+        patch(_SIGNED_GET_PATCH, new_callable=AsyncMock, return_value=_mock_response(data)),
+        patch.object(settings, "face_detect_url", "http://face-detect:8000/detect"),
+        patch(
+            "app.services.face_detect_queue.enqueue_remote",
+            new_callable=AsyncMock,
+        ) as mock_enqueue,
+    ):
+        note = await fetch_remote_note(db, ap_id)
+
+    assert note is not None
+    mock_enqueue.assert_called_once()
+    call_args = mock_enqueue.call_args
+    assert call_args[0][0] == note.id
+    assert len(call_args[0][1]) == 1  # one attachment ID
+
+
+async def test_fetch_remote_note_skips_face_detect_with_focal(db, mock_valkey):
+    """Don't enqueue face detection when focalPoint is already provided."""
+    actor = await make_remote_actor(db, username="fds_author", domain="fds1.example")
+    ap_id = "https://fds1.example/notes/fds"
+    data = _ap_note_data(
+        ap_id,
+        actor.ap_id,
+        attachments=[
+            {
+                "type": "Image",
+                "url": "https://fds1.example/media/portrait.jpg",
+                "mediaType": "image/jpeg",
+                "focalPoint": [0.0, 0.5],
+                "width": 800,
+                "height": 1200,
+            },
+        ],
+    )
+    from app.config import settings
+
+    with (
+        patch(_SIGNED_GET_PATCH, new_callable=AsyncMock, return_value=_mock_response(data)),
+        patch.object(settings, "face_detect_url", "http://face-detect:8000/detect"),
+        patch(
+            "app.services.face_detect_queue.enqueue_remote",
+            new_callable=AsyncMock,
+        ) as mock_enqueue,
+    ):
+        note = await fetch_remote_note(db, ap_id)
+
+    assert note is not None
+    mock_enqueue.assert_not_called()
+
+
+# ── Hashtags from AP tags ────────────────────────────────────────────────
+
+
 async def test_fetch_remote_note_with_hashtags(db, mock_valkey):
     """Extract hashtags from AP Hashtag tags."""
     actor = await make_remote_actor(db, username="ht_author", domain="ht1.example")
