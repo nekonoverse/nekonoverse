@@ -140,6 +140,59 @@ app.add_middleware(
 )
 
 
+async def _build_contact(db) -> dict:
+    """Build Mastodon-compatible contact object with admin account."""
+    from sqlalchemy import select
+
+    from app.models.actor import Actor
+    from app.models.user import User
+    from app.utils.media_proxy import media_proxy_url
+
+    fallback = {"email": "", "account": None}
+    try:
+        result = await db.execute(
+            select(User)
+            .where(User.role == "admin", User.is_active.is_(True), User.is_system.is_(False))
+            .limit(1)
+        )
+        admin_user = result.scalar_one_or_none()
+        if not admin_user:
+            return fallback
+        result2 = await db.execute(
+            select(Actor).where(Actor.id == admin_user.actor_id)
+        )
+        actor = result2.scalar_one_or_none()
+        if not actor:
+            return fallback
+        return {
+            "email": admin_user.email or "",
+            "account": {
+                "id": str(admin_user.id),
+                "username": actor.username,
+                "acct": actor.username,
+                "display_name": actor.display_name or "",
+                "note": actor.summary or "",
+                "avatar": media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
+                "avatar_static": media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
+                "header": media_proxy_url(actor.header_url) or "",
+                "header_static": media_proxy_url(actor.header_url) or "",
+                "url": f"{settings.server_url}/@{actor.username}",
+                "created_at": admin_user.created_at.isoformat() if admin_user.created_at else "",
+                "bot": actor.is_bot,
+                "locked": actor.manually_approves_followers,
+                "discoverable": actor.discoverable,
+                "followers_count": 0,
+                "following_count": 0,
+                "statuses_count": 0,
+                "last_status_at": None,
+                "fields": [],
+                "emojis": [],
+            },
+        }
+    except Exception:
+        return fallback
+
+
 @app.get("/api/v1/instance")
 async def instance_info(db: AsyncSession = Depends(get_db)):
     from sqlalchemy import func, select
@@ -234,10 +287,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "registration_mode": registration_mode,
         "languages": ["ja", "en"],
         "rules": [],
-        "contact": {
-            "email": "",
-            "account": None,
-        },
+        "contact": await _build_contact(db),
         "configuration": {
             "statuses": {
                 "max_characters": 5000,

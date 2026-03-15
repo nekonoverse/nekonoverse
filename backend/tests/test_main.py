@@ -22,3 +22,27 @@ async def test_instance_info_registrations(app_client):
     resp = await app_client.get("/api/v1/instance")
     data = resp.json()
     assert isinstance(data["registrations"], bool)
+
+
+async def test_instance_contact_account(app_client, db, mock_valkey):
+    """contact.account returns admin Account object for Mastodon client compat."""
+    from app.services.user_service import create_user
+
+    await create_user(db, "adminuser", "admin@example.com", "password1234", role="admin")
+    await db.commit()
+
+    resp = await app_client.get("/api/v1/instance")
+    data = resp.json()
+    contact = data["contact"]
+    assert contact["account"] is not None
+    account = contact["account"]
+    assert account["username"] == "adminuser"
+    assert "id" in account
+    assert "acct" in account
+    assert "display_name" in account
+    assert "avatar" in account
+    assert "url" in account
+    assert "created_at" in account
+    assert "followers_count" in account
+    assert "emojis" in account
+    assert contact["email"] == "admin@example.com"
