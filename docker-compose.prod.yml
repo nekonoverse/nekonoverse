@@ -106,9 +106,8 @@ services:
       S3_REGION: us-east-1
       # VALKEY_MAX_CONNECTIONS: ${VALKEY_MAX_CONNECTIONS:-1000}
       # SKIP_SSL_VERIFY: ${SKIP_SSL_VERIFY:-false}
-      # face-detect (FACE_DETECT_URL + UDS or TCP)
-      # FACE_DETECT_URL: ${FACE_DETECT_URL}
-      # FACE_DETECT_UDS: ${FACE_DETECT_UDS}
+      # face-detect (optional — set in .env)
+      FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
@@ -142,6 +141,8 @@ services:
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
       # VALKEY_MAX_CONNECTIONS: ${VALKEY_MAX_CONNECTIONS:-1000}
+      # face-detect (optional — set in .env)
+      FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
