@@ -382,6 +382,8 @@ function ServerSettingsTab() {
   const [themeColor, setThemeColor] = createSignal("");
   const [iconUrl, setIconUrl] = createSignal("");
   const [uploadingIcon, setUploadingIcon] = createSignal(false);
+  const [termsContent, setTermsContent] = createSignal("");
+  const [privacyContent, setPrivacyContent] = createSignal("");
   const [pushEnabled, setPushEnabled] = createSignal(true);
   const [vapidKey, setVapidKey] = createSignal<string | null>(null);
   const [generatingKey, setGeneratingKey] = createSignal(false);
@@ -403,6 +405,8 @@ function ServerSettingsTab() {
           setInviteRole(s.invite_create_role || "admin");
           setThemeColor(s.server_theme_color || "");
           if (s.server_icon_url) setIconUrl(s.server_icon_url);
+          setTermsContent(s.terms_of_service || "");
+          setPrivacyContent(s.privacy_policy || "");
           setPushEnabled(s.push_enabled ?? true);
           setVapidKey(s.vapid_public_key ?? null);
         } catch (e) {
@@ -423,6 +427,8 @@ function ServerSettingsTab() {
         registration_mode: regMode(),
         invite_create_role: inviteRole(),
         server_theme_color: themeColor() || null,
+        terms_of_service: termsContent() || null,
+        privacy_policy: privacyContent() || null,
         push_enabled: pushEnabled(),
       } as Partial<ServerSettings>);
       setSettings(updated);
@@ -460,6 +466,24 @@ function ServerSettingsTab() {
             type="text"
             value={tos()}
             onInput={(e) => setTos(e.currentTarget.value)}
+          />
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.termsOfService")}</label>
+          <textarea
+            rows={12}
+            value={termsContent()}
+            onInput={(e) => setTermsContent(e.currentTarget.value)}
+            style={{ "font-family": "monospace", "font-size": "0.9em" }}
+          />
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.privacyPolicy")}</label>
+          <textarea
+            rows={12}
+            value={privacyContent()}
+            onInput={(e) => setPrivacyContent(e.currentTarget.value)}
+            style={{ "font-family": "monospace", "font-size": "0.9em" }}
           />
         </div>
         <div class="settings-form-group">

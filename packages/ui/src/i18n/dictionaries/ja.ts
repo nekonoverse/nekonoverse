@@ -611,6 +611,11 @@ export const ja = {
   "admin.roleInUseCannotDelete": "使用中のロールは削除できません",
   "admin.roleConfirmDelete": "このロールを削除しますか？",
   "admin.roleUsers": "ユーザー数",
+  "admin.termsOfService": "利用規約 (Markdown)",
+  "admin.privacyPolicy": "プライバシーポリシー (Markdown)",
+  "legal.terms": "利用規約",
+  "legal.privacy": "プライバシーポリシー",
+  "legal.notSet": "このサーバーではまだ設定されていません。",
 } as const;
 
 export type Dictionary = Record<keyof typeof ja, string>;

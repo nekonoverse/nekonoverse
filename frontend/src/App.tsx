@@ -29,6 +29,8 @@ const FollowList = lazy(() => import("./pages/FollowList"));
 const FollowRequests = lazy(() => import("./pages/FollowRequests"));
 const TagTimeline = lazy(() => import("./pages/TagTimeline"));
 const NoteThread = lazy(() => import("./pages/NoteThread"));
+const Terms = lazy(() => import("./pages/Terms"));
+const Privacy = lazy(() => import("./pages/Privacy"));
 
 function Layout(props: ParentProps) {
   onMount(() => {
@@ -64,6 +66,8 @@ export default function App() {
         <Route path="/bookmarks" component={Bookmarks} />
         <Route path="/follow-requests" component={FollowRequests} />
         <Route path="/search" component={Search} />
+        <Route path="/terms" component={Terms} />
+        <Route path="/privacy" component={Privacy} />
         <Route path="/tags/:tag" component={TagTimeline} />
         <Route path="/notes/:id" component={NoteThread} />
         <Route path="/:acct/followers" component={FollowList} />

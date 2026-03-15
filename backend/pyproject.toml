@@ -22,6 +22,7 @@ dependencies = [
     "webauthn>=2.0.0",
     "pyotp>=2.9.0",
     "pywebpush>=2.0.0",
+    "markdown>=3.7",
 ]
 
 [project.optional-dependencies]

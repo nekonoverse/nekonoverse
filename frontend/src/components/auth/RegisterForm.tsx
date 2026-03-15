@@ -123,6 +123,11 @@ export default function RegisterForm(props: RegisterFormProps) {
             />
           </div>
         </Show>
+        <p class="legal-links">
+          <a href="/terms" target="_blank">{t("legal.terms")}</a>
+          {" ・ "}
+          <a href="/privacy" target="_blank">{t("legal.privacy")}</a>
+        </p>
         <button type="submit" disabled={loading()}>
           {loading() ? t("auth.registering") : t("common.register")}
         </button>

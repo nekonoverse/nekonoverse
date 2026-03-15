@@ -8,6 +8,8 @@ class ServerSettingsResponse(BaseModel):
     server_name: str | None = None
     server_description: str | None = None
     tos_url: str | None = None
+    terms_of_service: str | None = None
+    privacy_policy: str | None = None
     registration_open: bool = True
     registration_mode: str = "open"
     invite_create_role: str = "admin"
@@ -21,6 +23,8 @@ class ServerSettingsUpdate(BaseModel):
     server_name: str | None = Field(None, max_length=255)
     server_description: str | None = Field(None, max_length=2000)
     tos_url: str | None = Field(None, max_length=2048)
+    terms_of_service: str | None = Field(None, max_length=50000)
+    privacy_policy: str | None = Field(None, max_length=50000)
     registration_open: bool | None = None
     registration_mode: str | None = Field(None, pattern=r"^(open|invite|closed|approval)$")
     invite_create_role: str | None = Field(None, pattern=r"^(admin|moderator|user)$")

@@ -613,4 +613,9 @@ export const neko: Dictionary = {
   "admin.roleInUseCannotDelete": "つかわれてるロールはさくじょできにゃい",
   "admin.roleConfirmDelete": "このロールをさくじょするにゃ？",
   "admin.roleUsers": "ユーザーすうにゃ",
+  "admin.termsOfService": "りようきやく (Markdown)にゃ",
+  "admin.privacyPolicy": "プライバシーポリシー (Markdown)にゃ",
+  "legal.terms": "りようきやくにゃ",
+  "legal.privacy": "プライバシーポリシーにゃ",
+  "legal.notSet": "まだせっていされてにゃいにゃ。",
 };

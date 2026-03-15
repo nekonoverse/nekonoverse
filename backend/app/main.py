@@ -265,7 +265,63 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         resp["thumbnail"] = {"url": thumbnail_url}
     if theme_color:
         resp["theme_color"] = theme_color
+
+    # Legal page URLs
+    try:
+        tos_content = await get_setting(db, "terms_of_service")
+        if tos_content:
+            resp["tos_url"] = f"https://{settings.domain}/terms"
+        else:
+            tos_url = await get_setting(db, "tos_url")
+            if tos_url:
+                resp["tos_url"] = tos_url
+        pp_content = await get_setting(db, "privacy_policy")
+        if pp_content:
+            resp["privacy_policy_url"] = f"https://{settings.domain}/privacy"
+    except Exception:
+        pass
+
     return resp
+
+
+_LEGAL_ALLOWED_TAGS = [
+    "h1", "h2", "h3", "h4", "h5", "h6",
+    "p", "br", "hr",
+    "strong", "em", "code", "pre", "blockquote",
+    "ul", "ol", "li",
+    "a",
+    "table", "thead", "tbody", "tr", "th", "td",
+]
+
+
+def _render_legal_markdown(raw: str) -> str:
+    import bleach
+    import markdown
+
+    html = markdown.markdown(raw, extensions=["tables", "fenced_code"])
+    return bleach.clean(html, tags=_LEGAL_ALLOWED_TAGS, attributes={"a": ["href"]}, strip=True)
+
+
+@app.get("/api/v1/instance/terms")
+async def get_instance_terms(db: AsyncSession = Depends(get_db)):
+    """Return terms of service content (public, no auth required)."""
+    from app.services.server_settings_service import get_setting
+
+    raw = await get_setting(db, "terms_of_service")
+    if not raw:
+        return {"content_html": None, "content_raw": None}
+    return {"content_html": _render_legal_markdown(raw), "content_raw": raw}
+
+
+@app.get("/api/v1/instance/privacy")
+async def get_instance_privacy(db: AsyncSession = Depends(get_db)):
+    """Return privacy policy content (public, no auth required)."""
+    from app.services.server_settings_service import get_setting
+
+    raw = await get_setting(db, "privacy_policy")
+    if not raw:
+        return {"content_html": None, "content_raw": None}
+    return {"content_html": _render_legal_markdown(raw), "content_raw": raw}
 
 
 @app.get("/manifest.webmanifest")

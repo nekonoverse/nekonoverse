@@ -8,6 +8,8 @@ interface InstanceInfo {
   registrations: boolean;
   registration_mode?: string;
   vapid_key?: string;
+  tos_url?: string;
+  privacy_policy_url?: string;
   thumbnail?: { url: string };
   stats?: {
     user_count: number;

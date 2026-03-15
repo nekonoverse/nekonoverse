@@ -10,6 +10,8 @@ export interface ServerSettings {
   server_name: string | null;
   server_description: string | null;
   tos_url: string | null;
+  terms_of_service: string | null;
+  privacy_policy: string | null;
   registration_open: boolean;
   registration_mode: string;
   invite_create_role: string;
