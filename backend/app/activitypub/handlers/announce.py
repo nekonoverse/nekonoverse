@@ -88,6 +88,34 @@ async def handle_announce(db: AsyncSession, activity: dict):
     await db.commit()
     logger.info("Saved remote Announce %s from %s", activity_id, actor_ap_id)
 
+    # Enqueue focal detection for original note if needed
+    if original:
+        try:
+            from app.config import settings
+
+            if settings.face_detect_url:
+                from sqlalchemy import select as sel
+
+                from app.models.note_attachment import NoteAttachment as NA
+
+                att_rows = await db.execute(
+                    sel(NA.id).where(
+                        NA.note_id == original.id,
+                        NA.remote_url.isnot(None),
+                        NA.remote_focal_x.is_(None),
+                        NA.remote_mime_type.in_(
+                            ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
+                        ),
+                    )
+                )
+                att_ids = [row[0] for row in att_rows.all()]
+                if att_ids:
+                    from app.services.face_detect_queue import enqueue_remote
+
+                    await enqueue_remote(original.id, att_ids)
+        except Exception:
+            logger.debug("Failed to enqueue focal detection for Announce", exc_info=True)
+
     # Notify the original note's author (if local)
     if original:
         try:
