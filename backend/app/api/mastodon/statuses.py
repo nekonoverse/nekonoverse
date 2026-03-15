@@ -327,7 +327,7 @@ async def note_to_response(
         source=note.source,
         visibility=note.visibility,
         sensitive=note.sensitive,
-        spoiler_text=note.spoiler_text,
+        spoiler_text=note.spoiler_text or "",
         published=note.published,
         edited_at=edited_at,
         replies_count=note.replies_count,
@@ -581,7 +581,7 @@ async def edit_status(
         note_id=note.id,
         content=note.content,
         source=note.source,
-        spoiler_text=note.spoiler_text,
+        spoiler_text=note.spoiler_text or "",
     )
     db.add(edit_record)
 
@@ -651,7 +651,7 @@ async def get_status_history(
         NoteEditHistoryEntry(
             content=note.content,
             source=note.source,
-            spoiler_text=note.spoiler_text,
+            spoiler_text=note.spoiler_text or "",
             created_at=note.updated_at or note.published,
         )
     )
