@@ -3617,6 +3617,11 @@ a:hover {
   font-weight: 600;
 }
 
+.admin-status-badge.system {
+  background: #6c5ce7;
+  color: #fff;
+}
+
 .admin-status-badge.suspended {
   background: #e74c3c;
   color: #fff;

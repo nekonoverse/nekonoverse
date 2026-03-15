@@ -173,6 +173,7 @@ export const neko: Dictionary = {
   "admin.tosUrl": "りようきやくURL",
   "admin.themeColor": "テーマカラーにゃ",
   "admin.registrationOpen": "しんきとうろくうけつけるにゃ",
+  "admin.systemAccount": "システムにゃ",
   "admin.suspended": "とうけつちゅうにゃ",
   "admin.silenced": "サイレンスちゅうにゃ",
   "admin.suspend": "とうけつにゃ",

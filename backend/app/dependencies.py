@@ -37,6 +37,11 @@ async def get_current_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    # システムアカウントはセッション認証不可
+    if user.is_system:
+        await valkey.delete(f"session:{session_id}")
+        raise HTTPException(status_code=403, detail="System accounts cannot authenticate")
+
     # Deny access if the user's actor has been suspended
     if user.actor and user.actor.is_suspended:
         # Invalidate this session so the client does not retry
@@ -137,6 +142,9 @@ async def get_oauth_user(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
+    if user.is_system:
+        raise HTTPException(status_code=403, detail="System accounts cannot authenticate")
+
     if user.actor and user.actor.is_suspended:
         raise HTTPException(status_code=403, detail="Account is suspended")
 
@@ -169,6 +177,9 @@ async def get_optional_user(
         return None
 
     user = await get_user_by_id(db, uuid.UUID(user_id_str))
+    if user and user.is_system:
+        await valkey.delete(f"session:{session_id}")
+        return None
     if user and user.actor and user.actor.is_suspended:
         await valkey.delete(f"session:{session_id}")
         return None
