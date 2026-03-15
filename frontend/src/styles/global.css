@@ -4303,13 +4303,19 @@ a:hover {
 
 .compose-modal-body {
   padding: 12px 16px;
-  overflow-y: auto;
+  position: relative;
+  z-index: 1;
 }
 
 .compose-modal-body .note-composer {
   border: none;
   padding: 0;
   background: none;
+}
+
+.compose-modal-body .note-composer textarea {
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 .confirm-input-hint {
