@@ -225,6 +225,7 @@ async def authorize_submit(
                 error="Invalid username or password",
             )
 
+        await db.refresh(user, ["actor"])
         if user.actor and user.actor.is_suspended:
             raise HTTPException(status_code=403, detail="Account is suspended")
         if user.approval_status == "pending":
