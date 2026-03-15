@@ -60,12 +60,25 @@ class AppCreateRequest(BaseModel):
     website: str | None = None
 
 
+async def _parse_app_create(request: Request) -> AppCreateRequest:
+    """Parse POST /api/v1/apps from JSON or form-urlencoded."""
+    content_type = request.headers.get("content-type", "")
+    if "application/json" in content_type:
+        data = await request.json()
+    else:
+        # form-urlencoded (Mastodon client default) or other
+        form = await request.form()
+        data = dict(form)
+    return AppCreateRequest(**data)
+
+
 @router.post("/api/v1/apps")
 async def create_app(
-    body: AppCreateRequest, request: Request, db: AsyncSession = Depends(get_db),
+    request: Request, db: AsyncSession = Depends(get_db),
 ):
     """Register an OAuth application."""
     await _check_oauth_rate_limit(request, "apps")
+    body = await _parse_app_create(request)
     app = OAuthApplication(
         name=body.client_name,
         client_id=secrets.token_urlsafe(32),
