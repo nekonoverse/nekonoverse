@@ -290,6 +290,18 @@ async def note_to_response(
                 favourited = True
                 break
 
+    from app.config import settings as app_settings
+
+    actor_resp = NoteActorResponse(
+        id=actor.id,
+        username=actor.username,
+        display_name=actor.display_name,
+        avatar_url=media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
+        ap_id=actor.ap_id,
+        domain=actor.domain,
+        emojis=actor_emojis,
+    )
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -305,15 +317,7 @@ async def note_to_response(
         renotes_count=note.renotes_count,
         in_reply_to_id=note.in_reply_to_id,
         in_reply_to_account_id=in_reply_to_account_id,
-        actor=NoteActorResponse(
-            id=actor.id,
-            username=actor.username,
-            display_name=actor.display_name,
-            avatar_url=media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
-            ap_id=actor.ap_id,
-            domain=actor.domain,
-            emojis=actor_emojis,
-        ),
+        actor=actor_resp,
         reactions=[ReactionSummary(**r) for r in (reactions or [])],
         favourited=favourited,
         reblogged=bool(reblogged_set and note.id in reblogged_set),
@@ -323,6 +327,13 @@ async def note_to_response(
         poll=poll_response,
         emojis=emojis,
         tags=tags,
+        # Mastodon Status compat
+        uri=note.ap_id,
+        url=f"{app_settings.server_url}/notes/{note.id}",
+        account=actor_resp,
+        created_at=note.published.isoformat() if note.published else "",
+        reblogs_count=note.renotes_count,
+        favourites_count=note.reactions_count,
     )
 
 
