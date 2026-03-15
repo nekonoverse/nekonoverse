@@ -22,7 +22,7 @@ class PollCreateRequest(BaseModel):
 
 class NoteCreateRequest(BaseModel):
     content: str = Field(min_length=1, max_length=5000)
-    visibility: str = Field(default="public", pattern=r"^(public|unlisted|followers|direct)$")
+    visibility: str = Field(default="public", pattern=r"^(public|unlisted|followers|private|direct)$")
     sensitive: bool = False
     spoiler_text: str | None = Field(default=None, max_length=500)
     in_reply_to_id: uuid.UUID | None = None
