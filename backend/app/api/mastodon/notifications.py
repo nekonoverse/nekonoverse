@@ -113,14 +113,40 @@ async def _notification_to_response(
         actor_emojis = await _resolve_actor_emojis(
             db, notif.sender.display_name, notif.sender.domain
         )
+        sender = notif.sender
+        avatar = media_proxy_url(sender.avatar_url) or "/default-avatar.svg"
+        header = media_proxy_url(sender.header_url) or ""
+        acct = (
+            f"{sender.username}@{sender.domain}" if sender.domain else sender.username
+        )
+        from app.config import settings as app_settings
+
+        actor_url = (
+            f"{app_settings.server_url}/@{sender.username}"
+            if not sender.domain
+            else f"{app_settings.server_url}/@{acct}"
+        )
         account = NoteActorResponse(
-            id=notif.sender.id,
-            username=notif.sender.username,
-            display_name=notif.sender.display_name,
-            avatar_url=(media_proxy_url(notif.sender.avatar_url) or "/default-avatar.svg"),
-            ap_id=notif.sender.ap_id,
-            domain=notif.sender.domain,
+            id=sender.id,
+            username=sender.username,
+            display_name=sender.display_name or "",
+            avatar_url=avatar,
+            ap_id=sender.ap_id,
+            domain=sender.domain,
             emojis=actor_emojis,
+            acct=acct,
+            uri=sender.ap_id,
+            url=actor_url,
+            avatar=avatar,
+            avatar_static=avatar,
+            header=header,
+            header_static=header,
+            note=sender.summary or "",
+            bot=sender.is_bot,
+            group=sender.type == "Group",
+            created_at=sender.created_at.isoformat() if sender.created_at else "",
+            locked=sender.manually_approves_followers,
+            discoverable=sender.discoverable,
         )
 
     status = None
@@ -140,6 +166,7 @@ async def _notification_to_response(
         type=notif.type,
         created_at=notif.created_at,
         read=notif.read,
+        group_key=f"ungrouped-{notif.id}",
         account=account,
         status=status,
         emoji=notif.reaction_emoji,

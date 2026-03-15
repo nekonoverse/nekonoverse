@@ -130,17 +130,23 @@ async def _actor_to_account(
 ) -> dict:
     import re
 
+    avatar = media_proxy_url(actor.avatar_url) or "/default-avatar.svg"
+    header = media_proxy_url(actor.header_url) or ""
     data = {
         "id": str(actor.id),
         "username": actor.username,
         "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
-        "display_name": actor.display_name,
+        "display_name": actor.display_name or "",
         "note": actor.summary or "",
-        "avatar": media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
-        "header": media_proxy_url(actor.header_url),
+        "uri": actor.ap_id,
+        "avatar": avatar,
+        "avatar_static": avatar,
+        "header": header,
+        "header_static": header,
         "url": actor.ap_id,
-        "created_at": actor.created_at.isoformat() if actor.created_at else None,
+        "created_at": actor.created_at.isoformat() if actor.created_at else "",
         "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
+        "group": actor.type == "Group",
         "locked": actor.manually_approves_followers,
         "discoverable": actor.discoverable,
         "fields": [
@@ -148,13 +154,11 @@ async def _actor_to_account(
             for f in (actor.fields or [])
         ],
         "emojis": [],
+        "followers_count": followers_count or 0,
+        "following_count": following_count or 0,
+        "statuses_count": statuses_count or 0,
+        "last_status_at": None,
     }
-    if followers_count is not None:
-        data["followers_count"] = followers_count
-    if following_count is not None:
-        data["following_count"] = following_count
-    if statuses_count is not None:
-        data["statuses_count"] = statuses_count
 
     # Resolve custom emoji from display_name, summary, and fields
     if db:
@@ -196,16 +200,24 @@ def _actor_to_limited_account(actor: Actor) -> dict:
         "id": str(actor.id),
         "username": actor.username,
         "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
-        "display_name": actor.display_name,
+        "display_name": actor.display_name or "",
         "note": "",
+        "uri": actor.ap_id,
         "avatar": "/default-avatar.svg",
+        "avatar_static": "/default-avatar.svg",
         "header": "",
+        "header_static": "",
         "url": actor.ap_id,
-        "created_at": actor.created_at.isoformat() if actor.created_at else None,
+        "created_at": actor.created_at.isoformat() if actor.created_at else "",
         "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
+        "group": actor.type == "Group",
         "locked": actor.manually_approves_followers,
         "discoverable": actor.discoverable,
         "fields": [],
+        "emojis": [],
+        "followers_count": 0,
+        "following_count": 0,
+        "statuses_count": 0,
         "limited": True,
     }
 

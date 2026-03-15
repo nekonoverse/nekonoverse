@@ -164,22 +164,29 @@ async def _build_contact(db) -> dict:
         actor = result2.scalar_one_or_none()
         if not actor:
             return fallback
+        avatar = media_proxy_url(actor.avatar_url) or "/default-avatar.svg"
+        header = media_proxy_url(actor.header_url) or ""
         return {
             "email": admin_user.email or "",
             "account": {
-                "id": str(admin_user.id),
+                "id": str(actor.id),
                 "username": actor.username,
                 "acct": actor.username,
                 "email": "",
                 "display_name": actor.display_name or "",
                 "note": actor.summary or "",
-                "avatar": media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
-                "avatar_static": media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
-                "header": media_proxy_url(actor.header_url) or "",
-                "header_static": media_proxy_url(actor.header_url) or "",
+                "uri": actor.ap_id,
+                "avatar": avatar,
+                "avatar_static": avatar,
+                "header": header,
+                "header_static": header,
                 "url": f"{settings.server_url}/@{actor.username}",
-                "created_at": admin_user.created_at.isoformat() if admin_user.created_at else "",
+                "created_at": (
+                    admin_user.created_at.isoformat()
+                    if admin_user.created_at else ""
+                ),
                 "bot": actor.is_bot,
+                "group": actor.type == "Group",
                 "locked": actor.manually_approves_followers,
                 "discoverable": actor.discoverable,
                 "followers_count": 0,
@@ -317,10 +324,12 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
             },
         },
     }
+    resp["approval_required"] = registration_mode == "approval"
+    resp["invites_enabled"] = False
     if vapid_key:
         resp["vapid_key"] = vapid_key
     if thumbnail_url:
-        resp["thumbnail"] = {"url": thumbnail_url}
+        resp["thumbnail"] = thumbnail_url
     if theme_color:
         resp["theme_color"] = theme_color
 

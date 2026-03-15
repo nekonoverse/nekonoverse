@@ -34,13 +34,14 @@ class NoteCreateRequest(BaseModel):
 class NoteActorResponse(BaseModel):
     id: uuid.UUID
     username: str
-    display_name: str | None
-    avatar_url: str | None
+    display_name: str = ""
+    avatar_url: str | None = None
     ap_id: str
     domain: str | None
     emojis: list["CustomEmojiInfo"] = []
     # Mastodon Account compat
     acct: str = ""
+    uri: str = ""
     url: str = ""
     avatar: str = ""
     avatar_static: str = ""
@@ -48,11 +49,13 @@ class NoteActorResponse(BaseModel):
     header_static: str = ""
     note: str = ""
     bot: bool = False
+    group: bool = False
     created_at: str = ""
     followers_count: int = 0
     following_count: int = 0
     statuses_count: int = 0
     locked: bool = False
+    discoverable: bool | None = None
     fields: list = []
     last_status_at: str | None = None
 
@@ -70,6 +73,7 @@ class CustomEmojiInfo(BaseModel):
     shortcode: str
     url: str
     static_url: str
+    visible_in_picker: bool = True
 
 
 class NoteMediaAttachment(BaseModel):
@@ -77,6 +81,7 @@ class NoteMediaAttachment(BaseModel):
     type: str
     url: str
     preview_url: str
+    remote_url: str | None = None
     description: str | None = None
     blurhash: str | None = None
     meta: dict | None = None
@@ -97,6 +102,7 @@ class PollResponse(BaseModel):
     options: list[PollOptionResponse] = []
     voted: bool = False
     own_votes: list[int] = []
+    emojis: list["CustomEmojiInfo"] = []
 
 
 class TagInfo(BaseModel):
@@ -151,6 +157,13 @@ class NoteResponse(BaseModel):
     created_at: str = ""
     reblogs_count: int = 0
     favourites_count: int = 0
+    muted: bool = False
+    bookmarked: bool = False
+    mentions: list = []
+    filtered: list = []
+    card: dict | None = None
+    application: dict | None = None
+    language: str | None = None
 
     model_config = {"from_attributes": True}
 
