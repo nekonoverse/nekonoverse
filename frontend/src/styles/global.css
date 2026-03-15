@@ -4218,6 +4218,7 @@ a:hover {
   max-width: 620px;
   width: 95vw;
   max-height: 90vh;
+  overflow: visible;
 }
 
 .compose-drafts {
@@ -4303,7 +4304,7 @@ a:hover {
 
 .compose-modal-body {
   padding: 12px 16px;
-  overflow-y: auto;
+  overflow: visible;
 }
 
 .compose-modal-body .note-composer {
