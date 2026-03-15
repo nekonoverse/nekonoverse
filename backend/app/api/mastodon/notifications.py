@@ -162,12 +162,9 @@ async def _notification_to_response(
     if emoji_url_map and notif.reaction_emoji:
         emoji_url = emoji_url_map.get(notif.reaction_emoji)
 
-    # Map internal types to Mastodon types
-    notif_type = "favourite" if notif.type == "reaction" else notif.type
-
     return NotificationResponse(
         id=notif.id,
-        type=notif_type,
+        type=notif.type,
         created_at=_to_mastodon_datetime(notif.created_at),
         read=notif.read,
         group_key=f"ungrouped-{notif.id}",
