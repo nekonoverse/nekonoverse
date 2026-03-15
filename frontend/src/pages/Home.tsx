@@ -173,13 +173,28 @@ export default function Home() {
       if (!isHomeTL() && note.visibility !== "public") {
         return;
       }
-      // If this note already exists, update it in-place
-      // (handles focal point updates, edits, reaction changes, etc.)
-      if (notes().some((n) => n.id === id)) {
-        setNotes((prev) => prev.map((n) => (n.id === id ? note : n)));
+      // If this note already exists (directly, as reblog, or as quote),
+      // update it in-place (handles focal point updates, edits, etc.)
+      const inTimeline = notes().some(
+        (n) => n.id === id || n.reblog?.id === id || n.quote?.id === id,
+      );
+      if (inTimeline) {
+        setNotes((prev) =>
+          prev.map((n) => {
+            if (n.id === id) return note;
+            if (n.reblog?.id === id) return { ...n, reblog: note };
+            if (n.quote?.id === id) return { ...n, quote: note };
+            return n;
+          }),
+        );
         return;
       }
-      if (bufferedNotes().some((n) => n.id === id)) return;
+      if (
+        bufferedNotes().some(
+          (n) => n.id === id || n.reblog?.id === id || n.quote?.id === id,
+        )
+      )
+        return;
 
       if (isAtTop()) {
         // User is at top: insert directly with animation
