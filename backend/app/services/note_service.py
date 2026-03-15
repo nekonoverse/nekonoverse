@@ -560,6 +560,7 @@ async def get_reaction_summaries(
     db: AsyncSession,
     note_ids: list[uuid.UUID],
     current_actor_id: uuid.UUID | None = None,
+    include_account_ids: bool = False,
 ) -> dict[uuid.UUID, list[dict]]:
     """Get aggregated reactions for multiple notes in batch.
 
@@ -646,19 +647,36 @@ async def get_reaction_summaries(
                 elif shortcode in remote_emojis:
                     emoji_url_map[emoji_str] = remote_emojis[shortcode].url
 
-    # 5) Build the result dict
+    # 5) Optionally fetch account_ids per (note_id, emoji) for Fedibird compat
+    account_ids_map: dict[tuple[uuid.UUID, str], list[str]] = {}
+    if include_account_ids:
+        from app.models.actor import Actor
+
+        aid_result = await db.execute(
+            select(Reaction.note_id, Reaction.emoji, Actor.id)
+            .join(Actor, Reaction.actor_id == Actor.id)
+            .where(Reaction.note_id.in_(note_ids))
+        )
+        for nid, emoji_str, actor_id_val in aid_result.all():
+            key = (nid, emoji_str)
+            account_ids_map.setdefault(key, []).append(str(actor_id_val))
+
+    # 6) Build the result dict
     summaries: dict[uuid.UUID, list[dict]] = {nid: [] for nid in note_ids}
     for note_id_val, emoji_str, count in rows:
         me = (note_id_val, emoji_str) in me_set
         emoji_url = emoji_url_map.get(emoji_str)
-        summaries[note_id_val].append(
-            {
-                "emoji": emoji_str,
-                "count": count,
-                "me": me,
-                "emoji_url": media_proxy_url(emoji_url),
-            }
-        )
+        entry: dict = {
+            "emoji": emoji_str,
+            "count": count,
+            "me": me,
+            "emoji_url": media_proxy_url(emoji_url),
+        }
+        if include_account_ids:
+            entry["account_ids"] = account_ids_map.get(
+                (note_id_val, emoji_str), []
+            )
+        summaries[note_id_val].append(entry)
     return summaries
 
 

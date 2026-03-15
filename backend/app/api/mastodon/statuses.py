@@ -25,6 +25,7 @@ from app.models.user import User
 from app.schemas.note import (
     ContextResponse,
     CustomEmojiInfo,
+    EmojiReaction,
     NoteActorResponse,
     NoteCreateRequest,
     NoteEditHistoryEntry,
@@ -363,6 +364,17 @@ async def note_to_response(
         in_reply_to_account_id=in_reply_to_account_id,
         actor=actor_resp,
         reactions=[ReactionSummary(**r) for r in (reactions or [])],
+        emoji_reactions=[
+            EmojiReaction(
+                name=r["emoji"],
+                count=r["count"],
+                me=r.get("me", False),
+                url=r.get("emoji_url"),
+                static_url=r.get("emoji_url"),
+                account_ids=r.get("account_ids", []),
+            )
+            for r in (reactions or [])
+        ],
         favourited=favourited,
         reblogged=bool(reblogged_set and note.id in reblogged_set),
         reblog=reblog,
@@ -832,6 +844,78 @@ async def unreact_to_note(
         raise HTTPException(status_code=422, detail=str(e))
 
     return {"ok": True}
+
+
+@router.put("/{note_id}/emoji_reactions/{emoji}", response_model=NoteResponse)
+async def fedibird_react(
+    note_id: uuid.UUID,
+    emoji: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fedibird-compatible: add emoji reaction and return updated status."""
+    from app.services.reaction_service import add_reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await add_reaction(db, user, note, emoji)
+    except ValueError:
+        pass  # Already reacted — return current status
+
+    if note.actor.is_local and note.actor_id != user.actor_id:
+        from app.services.notification_service import create_notification, publish_notification
+
+        notif = await create_notification(
+            db, "reaction", note.actor_id, user.actor_id, note.id, reaction_emoji=emoji
+        )
+        await db.commit()
+        if notif:
+            await publish_notification(notif)
+
+    note = await get_note_by_id(db, note_id)
+    reactions_map = await get_reaction_summaries(
+        db, [note.id], user.actor_id, include_account_ids=True
+    )
+    return await note_to_response(
+        note, reactions_map.get(note.id, []), db=db, actor_id=user.actor_id
+    )
+
+
+@router.delete("/{note_id}/emoji_reactions/{emoji}", response_model=NoteResponse)
+async def fedibird_unreact(
+    note_id: uuid.UUID,
+    emoji: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fedibird-compatible: remove emoji reaction and return updated status."""
+    from app.services.reaction_service import remove_reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await remove_reaction(db, user, note, emoji)
+    except ValueError:
+        pass  # Not reacted — return current status
+
+    note = await get_note_by_id(db, note_id)
+    reactions_map = await get_reaction_summaries(
+        db, [note.id], user.actor_id, include_account_ids=True
+    )
+    return await note_to_response(
+        note, reactions_map.get(note.id, []), db=db, actor_id=user.actor_id
+    )
 
 
 @router.post("/{note_id}/favourite", response_model=NoteResponse)
