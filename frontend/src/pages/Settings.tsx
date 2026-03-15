@@ -615,6 +615,8 @@ function AppsTab() {
   const { t } = useI18n();
   const [apps, setApps] = createSignal<AuthorizedApp[]>([]);
   const [loading, setLoading] = createSignal(true);
+  const [revokeTarget, setRevokeTarget] = createSignal<AuthorizedApp | null>(null);
+  const [revoking, setRevoking] = createSignal(false);
 
   onMount(async () => {
     try {
@@ -623,12 +625,16 @@ function AppsTab() {
     setLoading(false);
   });
 
-  const handleRevoke = async (appId: string) => {
-    if (!confirm(t("apps.confirmRevoke" as any))) return;
+  const handleRevoke = async () => {
+    const target = revokeTarget();
+    if (!target) return;
+    setRevoking(true);
     try {
-      await revokeAuthorizedApp(appId);
-      setApps((prev) => prev.filter((a) => a.id !== appId));
+      await revokeAuthorizedApp(target.id);
+      setApps((prev) => prev.filter((a) => a.id !== target.id));
+      setRevokeTarget(null);
     } catch {}
+    setRevoking(false);
   };
 
   return (
@@ -662,7 +668,7 @@ function AppsTab() {
                         </span>
                       </div>
                     </div>
-                    <button class="btn btn-small btn-danger" onClick={() => handleRevoke(app.id)}>
+                    <button class="btn btn-small btn-danger" onClick={() => setRevokeTarget(app)}>
                       {t("apps.revoke" as any)}
                     </button>
                   </div>
@@ -672,6 +678,22 @@ function AppsTab() {
           </Show>
         </Show>
       </div>
+      <Show when={revokeTarget()}>
+        <div class="modal-overlay" onClick={() => setRevokeTarget(null)}>
+          <div class="modal-content" style={{ padding: "24px", "max-width": "400px" }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 8px" }}>{t("apps.confirmRevoke" as any)}</h3>
+            <p style={{ margin: "0 0 20px", color: "var(--text-secondary)" }}>{revokeTarget()!.name}</p>
+            <div style={{ display: "flex", gap: "8px", "justify-content": "flex-end" }}>
+              <button class="btn btn-small" onClick={() => setRevokeTarget(null)}>
+                {t("common.cancel")}
+              </button>
+              <button class="btn btn-small btn-danger" onClick={handleRevoke} disabled={revoking()}>
+                {t("apps.revoke" as any)}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
     </AuthGuard>
   );
 }
