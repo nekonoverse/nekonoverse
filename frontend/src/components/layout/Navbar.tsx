@@ -1,5 +1,5 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
-import { useLocation, useNavigate } from "@solidjs/router";
+import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
 import { connect, disconnect, unreadCount } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -13,6 +13,8 @@ export default function Navbar() {
   const { t } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const isHomeTl = () => searchParams.tl === "home";
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [composeOpen, setComposeOpen] = createSignal(false);
@@ -70,7 +72,7 @@ export default function Navbar() {
     <nav class="navbar">
       <div class="navbar-inner">
         <div class="navbar-left">
-          <a href={location.search.includes("tl=home") ? "/?tl=home" : "/"} class="navbar-brand">
+          <a href={isHomeTl() ? "/?tl=home" : "/"} class="navbar-brand">
             <Show when={instance()?.thumbnail?.url} fallback={<span class="navbar-brand-text">{instance()?.title || t("app.title")}</span>}>
               {(iconUrl) => (
                 <>
@@ -83,7 +85,7 @@ export default function Navbar() {
           <Show when={currentUser()}>
             <div class="navbar-tl-wrap">
               <button
-                class={`navbar-icon${isActive("/") ? " active" : ""}`}
+                class={`navbar-icon${isHomeTl() || (isActive("/") && !isHomeTl()) ? " active" : ""}`}
                 onClick={() => {
                   if (!isActive("/")) {
                     const saved = localStorage.getItem("nekonoverse:tl");
@@ -92,9 +94,9 @@ export default function Navbar() {
                     setTlDropdownOpen(!tlDropdownOpen());
                   }
                 }}
-                title={localStorage.getItem("nekonoverse:tl") === "home" ? t("timeline.home") : t("timeline.public")}
+                title={isHomeTl() ? t("timeline.home") : t("timeline.public")}
               >
-                <Show when={localStorage.getItem("nekonoverse:tl") === "home"} fallback={
+                <Show when={isHomeTl()} fallback={
                   <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <circle cx="12" cy="12" r="10" />
                     <line x1="2" y1="12" x2="22" y2="12" />
@@ -114,7 +116,7 @@ export default function Navbar() {
                 <div class="navbar-tl-dropdown">
                   <a
                     href="/?tl=home"
-                    class={`navbar-tl-item${localStorage.getItem("nekonoverse:tl") === "home" ? " active" : ""}`}
+                    class={`navbar-tl-item${isHomeTl() ? " active" : ""}`}
                     onClick={(e) => {
                       e.preventDefault();
                       localStorage.setItem("nekonoverse:tl", "home");
@@ -130,7 +132,7 @@ export default function Navbar() {
                   </a>
                   <a
                     href="/"
-                    class={`navbar-tl-item${localStorage.getItem("nekonoverse:tl") !== "home" ? " active" : ""}`}
+                    class={`navbar-tl-item${isActive("/") && !isHomeTl() ? " active" : ""}`}
                     onClick={(e) => {
                       e.preventDefault();
                       localStorage.setItem("nekonoverse:tl", "public");
@@ -164,20 +166,20 @@ export default function Navbar() {
               </Show>
             </a>
           </Show>
+        </div>
+        <div class="navbar-right">
           <button
             class="navbar-icon"
             title={t("search.title")}
             onClick={() => setSearchOpen(true)}
           >
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="10" cy="8" r="5" />
-              <path d="M2 21v-2a5 5 0 0 1 5-5" />
-              <circle cx="19" cy="19" r="3" />
-              <line x1="22" y1="22" x2="21.1" y2="21.1" />
+              <circle cx="9" cy="9" r="4" />
+              <path d="M2 21v-2a4 4 0 0 1 4-4" />
+              <circle cx="17.5" cy="14.5" r="4.5" />
+              <line x1="21" y1="18" x2="23" y2="20" />
             </svg>
           </button>
-        </div>
-        <div class="navbar-right">
           <Show
             when={currentUser()}
             fallback={
@@ -279,7 +281,7 @@ export default function Navbar() {
         open={composeOpen()}
         onClose={() => { setComposeOpen(false); setComposeQuote(null); setComposeReply(null); }}
         onPost={(note) => {
-          if (note.visibility !== "public" && location.pathname === "/" && !location.search.includes("tl=home")) {
+          if (note.visibility !== "public" && location.pathname === "/" && !isHomeTl()) {
             navigate("/?tl=home");
           }
         }}

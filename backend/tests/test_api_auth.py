@@ -62,6 +62,39 @@ async def test_verify_credentials_success(authed_client, test_user):
     assert data["role"] == "user"
 
 
+async def test_verify_credentials_mastodon_compat(authed_client, test_user):
+    """verify_credentials returns Mastodon CredentialAccount fields."""
+    resp = await authed_client.get("/api/v1/accounts/verify_credentials")
+    assert resp.status_code == 200
+    data = resp.json()
+    # Mastodon required fields
+    assert "email" in data
+    assert "acct" in data
+    assert data["acct"] == "testuser"
+    assert "url" in data
+    assert "source" in data
+    assert "note" in data
+    assert "emojis" in data
+    assert isinstance(data["emojis"], list)
+    assert "followers_count" in data
+    assert "following_count" in data
+    assert "statuses_count" in data
+    assert isinstance(data["followers_count"], int)
+    assert isinstance(data["source"], dict)
+    assert "privacy" in data["source"]
+    assert "note" in data["source"]
+    assert "fields" in data["source"]
+    # Mastodon avatar/header fields
+    assert "avatar" in data
+    assert "header" in data
+    # Nekonoverse extensions still present
+    assert "avatar_url" in data
+    assert "avatar_focal" in data
+    assert "role" in data
+    assert "is_cat" in data
+    assert "birthday" in data
+
+
 async def test_verify_credentials_no_session(app_client, mock_valkey):
     resp = await app_client.get("/api/v1/accounts/verify_credentials")
     assert resp.status_code == 401
