@@ -67,18 +67,23 @@ test.describe("Navbar timeline icon switching", () => {
     const btn = page.locator(".navbar-tl-wrap > button.navbar-icon");
     await expectGlobeIcon(btn);
 
-    // Navigate to home timeline via dropdown
+    // Navigate to home timeline via dropdown (sets localStorage to "home")
     await btn.click();
     await page.locator('.navbar-tl-dropdown a[href="/?tl=home"]').click();
     await expectHouseIcon(btn);
 
-    // Browser back → public timeline
-    await page.goBack();
+    // Navigate to public timeline via dropdown (sets localStorage to "public")
+    await btn.click();
+    await page.locator('.navbar-tl-dropdown a[href="/"]').click();
     await expectGlobeIcon(btn);
 
-    // Browser forward → home timeline
-    await page.goForward();
+    // Browser back → /?tl=home (URL param takes priority over localStorage)
+    await page.goBack();
     await expectHouseIcon(btn);
+
+    // Browser forward → / (localStorage is "public")
+    await page.goForward();
+    await expectGlobeIcon(btn);
   });
 
   test("icon correct after navigating away and back", async ({ page }) => {
