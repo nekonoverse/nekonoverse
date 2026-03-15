@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PollCreateRequest(BaseModel):
@@ -21,7 +21,9 @@ class PollCreateRequest(BaseModel):
 
 
 class NoteCreateRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=5000)
+    model_config = ConfigDict(populate_by_name=True)
+
+    content: str = Field(min_length=1, max_length=5000, alias="status")
     visibility: str = Field(default="public", pattern=r"^(public|unlisted|followers|private|direct)$")
     sensitive: bool = False
     spoiler_text: str | None = Field(default=None, max_length=500)

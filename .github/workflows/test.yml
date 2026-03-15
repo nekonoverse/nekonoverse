@@ -174,3 +174,35 @@ jobs:
       - name: Cleanup
         if: always()
         run: docker compose -f docker-compose.e2e.yml down -v
+
+  mastodon-client-test:
+    runs-on: ubuntu-latest
+    needs: e2e-build
+    timeout-minutes: 10
+    env:
+      COMPOSE_PROJECT_NAME: neko-e2e
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download images
+        uses: actions/download-artifact@v4
+        with:
+          name: e2e-images
+          path: /tmp
+
+      - name: Load images
+        run: docker load < /tmp/e2e-images.tar.gz
+
+      - name: Build test-runner
+        run: docker compose -f docker-compose.mastodon-client-test.yml build test-runner
+
+      - name: Start services
+        run: docker compose -f docker-compose.mastodon-client-test.yml up -d --wait
+        timeout-minutes: 5
+
+      - name: Run mastodon-client tests
+        run: docker compose -f docker-compose.mastodon-client-test.yml run --rm test-runner
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.mastodon-client-test.yml down -v
