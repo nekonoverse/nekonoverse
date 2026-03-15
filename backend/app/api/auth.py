@@ -11,6 +11,7 @@ from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.services.follow_service import get_follow_counts
 from app.services.note_service import get_statuses_count
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.utils.media_proxy import media_proxy_url
 from app.schemas.user import (
     ChangePasswordRequest,
@@ -287,19 +288,21 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
 
     data = {
         # Mastodon CredentialAccount fields
-        "id": str(user.id),
+        "id": str(actor.id),
         "username": actor.username,
         "acct": actor.username,
-        "display_name": actor.display_name,
+        "display_name": actor.display_name or "",
         "note": actor.summary or "",
+        "uri": actor.ap_id,
         "avatar": media_proxy_url(actor.avatar_url) or DEFAULT_AVATAR_PATH,
         "avatar_static": media_proxy_url(actor.avatar_url) or DEFAULT_AVATAR_PATH,
         "header": media_proxy_url(actor.header_url) or "",
         "header_static": media_proxy_url(actor.header_url) or "",
         "url": f"{settings.server_url}/@{actor.username}",
         "email": user.email,
-        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "created_at": _to_mastodon_datetime(user.created_at),
         "bot": actor.is_bot,
+        "group": actor.type == "Group",
         "locked": actor.manually_approves_followers,
         "discoverable": actor.discoverable,
         "followers_count": fc,
