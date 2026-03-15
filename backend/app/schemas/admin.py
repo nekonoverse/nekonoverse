@@ -30,21 +30,6 @@ class ServerSettingsUpdate(BaseModel):
     push_enabled: bool | None = None
 
 
-class AdminUserResponse(BaseModel):
-    id: uuid.UUID
-    username: str
-    email: str
-    display_name: str | None
-    role: str
-    is_active: bool
-    is_system: bool = False
-    suspended: bool = False
-    silenced: bool = False
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 class PendingRegistrationResponse(BaseModel):
     """Pending registration awaiting admin approval."""
 
@@ -58,7 +43,7 @@ class PendingRegistrationResponse(BaseModel):
 
 
 class RoleChangeRequest(BaseModel):
-    role: str = Field(pattern=r"^(user|moderator|admin)$")
+    role: str = Field(min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
 
 
 class ModerationActionRequest(BaseModel):
@@ -90,6 +75,22 @@ class ReportResponse(BaseModel):
     status: str
     created_at: datetime
     resolved_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class AdminUserResponse(BaseModel):
+    id: uuid.UUID
+    username: str
+    email: str
+    display_name: str | None
+    role: str
+    is_active: bool
+    is_system: bool = False
+    suspended: bool = False
+    silenced: bool = False
+    storage_usage_bytes: int = 0
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -284,3 +285,41 @@ class SystemStatsResponse(BaseModel):
     # Worker
     worker_alive: bool = False
     worker_last_heartbeat: str | None = None
+
+
+# --- Roles ---
+
+
+class RoleResponse(BaseModel):
+    name: str
+    display_name: str
+    permissions: dict = {}
+    is_admin: bool = False
+    quota_bytes: int = 1073741824
+    priority: int = 0
+    is_system: bool = False
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RoleCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
+    display_name: str = Field(min_length=1, max_length=100)
+    copy_from: str | None = None
+
+
+class RoleUpdateRequest(BaseModel):
+    display_name: str | None = Field(None, min_length=1, max_length=100)
+    permissions: dict | None = None
+    quota_bytes: int | None = Field(None, ge=0)
+    priority: int | None = None
+
+
+# --- Storage ---
+
+
+class StorageResponse(BaseModel):
+    usage_bytes: int
+    quota_bytes: int
+    usage_percent: float

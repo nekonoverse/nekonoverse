@@ -502,3 +502,64 @@ export async function updateModeratorPermissions(
     body: permissions,
   });
 }
+
+// Roles
+export interface AdminRole {
+  name: string;
+  display_name: string;
+  permissions: Record<string, boolean>;
+  is_admin: boolean;
+  quota_bytes: number;
+  priority: number;
+  is_system: boolean;
+  created_at: string;
+}
+
+export async function getRoles(): Promise<AdminRole[]> {
+  return apiRequest<AdminRole[]>("/api/v1/admin/roles");
+}
+
+export async function getRole(name: string): Promise<AdminRole> {
+  return apiRequest<AdminRole>(`/api/v1/admin/roles/${name}`);
+}
+
+export async function createRole(params: {
+  name: string;
+  display_name: string;
+  copy_from?: string;
+}): Promise<AdminRole> {
+  return apiRequest<AdminRole>("/api/v1/admin/roles", {
+    method: "POST",
+    body: params,
+  });
+}
+
+export async function updateRole(
+  name: string,
+  params: {
+    display_name?: string;
+    permissions?: Record<string, boolean>;
+    quota_bytes?: number;
+    priority?: number;
+  },
+): Promise<AdminRole> {
+  return apiRequest<AdminRole>(`/api/v1/admin/roles/${name}`, {
+    method: "PATCH",
+    body: params,
+  });
+}
+
+export async function deleteRole(name: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/roles/${name}`, { method: "DELETE" });
+}
+
+// Storage
+export interface StorageInfo {
+  usage_bytes: number;
+  quota_bytes: number;
+  usage_percent: number;
+}
+
+export async function getAccountStorage(): Promise<StorageInfo> {
+  return apiRequest<StorageInfo>("/api/v1/accounts/storage");
+}

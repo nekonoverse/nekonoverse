@@ -34,6 +34,9 @@ from app.schemas.admin import (
     QueueStatsResponse,
     ReportResponse,
     RoleChangeRequest,
+    RoleCreateRequest,
+    RoleResponse,
+    RoleUpdateRequest,
     ServerSettingsResponse,
     ServerSettingsUpdate,
     SystemStatsResponse,
@@ -317,6 +320,11 @@ async def change_user_role(
         raise HTTPException(status_code=422, detail="Cannot modify system account")
     if target.id == user.id:
         raise HTTPException(status_code=422, detail="Cannot change own role")
+
+    from app.services.role_service import role_exists
+
+    if not await role_exists(db, body.role):
+        raise HTTPException(status_code=422, detail=f"Role '{body.role}' does not exist")
 
     old_role = target.role
     target.role = body.role
@@ -1347,6 +1355,87 @@ async def update_permissions(
     await set_moderator_permissions(db, body)
     await db.commit()
     return await get_moderator_permissions(db)
+
+
+# --- Roles ---
+
+
+@router.get("/roles")
+async def list_roles(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all roles ordered by priority (descending)."""
+    from app.services.role_service import get_all_roles
+
+    roles = await get_all_roles(db)
+    return [RoleResponse.model_validate(r) for r in roles]
+
+
+@router.get("/roles/{role_name}")
+async def get_role(
+    role_name: str,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.role_service import get_role as _get_role
+
+    role = await _get_role(db, role_name)
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+    return RoleResponse.model_validate(role)
+
+
+@router.post("/roles", status_code=201)
+async def create_role(
+    body: RoleCreateRequest,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.role_service import create_role as _create_role
+
+    try:
+        role = await _create_role(db, body.name, body.display_name, body.copy_from)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return RoleResponse.model_validate(role)
+
+
+@router.patch("/roles/{role_name}")
+async def update_role(
+    role_name: str,
+    body: RoleUpdateRequest,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.role_service import update_role as _update_role
+
+    try:
+        role = await _update_role(
+            db,
+            role_name,
+            display_name=body.display_name,
+            permissions=body.permissions,
+            quota_bytes=body.quota_bytes,
+            priority=body.priority,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return RoleResponse.model_validate(role)
+
+
+@router.delete("/roles/{role_name}", status_code=204)
+async def delete_role(
+    role_name: str,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.role_service import delete_role as _delete_role
+
+    try:
+        await _delete_role(db, role_name)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 # --- Helpers ---

@@ -60,6 +60,11 @@ import {
   generateVapidKey,
   getModeratorPermissions,
   updateModeratorPermissions,
+  getRoles,
+  createRole,
+  updateRole,
+  deleteRole,
+  type AdminRole,
   type AdminStats,
   type ServerSettings,
   type AdminUser,
@@ -150,9 +155,9 @@ const categories: AdminCategory[] = [
         descKey: "admin.descInvites",
       },
       {
-        key: "permissions",
-        labelKey: "admin.tabPermissions",
-        descKey: "admin.descPermissions",
+        key: "roles",
+        labelKey: "admin.tabRoles",
+        descKey: "admin.descRoles",
       },
       {
         key: "queue",
@@ -304,8 +309,8 @@ export default function Admin() {
             <Match when={section() === "invites"}>
               <InvitesTab />
             </Match>
-            <Match when={section() === "permissions"}>
-              <PermissionsTab />
+            <Match when={section() === "roles"}>
+              <RolesTab />
             </Match>
             <Match when={section() === "queue"}>
               <QueueTab />
@@ -2912,55 +2917,127 @@ const PERM_DESC_KEYS: Record<string, string> = {
   registrations: "admin.permRegistrationsDesc",
 };
 
-function PermissionsTab() {
-  const { t } = useI18n();
-  const [permissions, setPermissions] = createSignal<Record<string, boolean> | null>(null);
-  const [saving, setSaving] = createSignal(false);
-  const [saved, setSaved] = createSignal(false);
-  const [error, setError] = createSignal("");
+function formatQuota(bytes: number): string {
+  if (bytes === 0) return "Unlimited";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
 
-  let permInit = false;
+function RolesTab() {
+  const { t } = useI18n();
+  const [roles, setRoles] = createSignal<AdminRole[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal("");
+  const [saved, setSaved] = createSignal(false);
+  const [editingRole, setEditingRole] = createSignal<string | null>(null);
+  const [editData, setEditData] = createSignal<{
+    display_name: string;
+    permissions: Record<string, boolean>;
+    quota_bytes: number;
+    priority: number;
+  } | null>(null);
+  const [showCreate, setShowCreate] = createSignal(false);
+  const [newName, setNewName] = createSignal("");
+  const [newDisplayName, setNewDisplayName] = createSignal("");
+  const [copyFrom, setCopyFrom] = createSignal("");
+
+  const loadRoles = async () => {
+    try {
+      setRoles(await getRoles());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load roles");
+    }
+    setLoading(false);
+  };
+
+  let init = false;
   createEffect(() => {
-    if (!permInit) {
-      permInit = true;
-      (async () => {
-        try {
-          setPermissions(await getModeratorPermissions());
-        } catch (e) {
-          setError(e instanceof Error ? e.message : "Failed to load permissions");
-        }
-      })();
+    if (!init) {
+      init = true;
+      loadRoles();
     }
   });
 
-  const togglePermission = (key: string) => {
-    const current = permissions();
-    if (!current) return;
-    setPermissions({ ...current, [key]: !current[key] });
+  const startEdit = (role: AdminRole) => {
+    setEditingRole(role.name);
+    setEditData({
+      display_name: role.display_name,
+      permissions: { ...role.permissions },
+      quota_bytes: role.quota_bytes,
+      priority: role.priority,
+    });
     setSaved(false);
   };
 
+  const cancelEdit = () => {
+    setEditingRole(null);
+    setEditData(null);
+  };
+
   const handleSave = async () => {
-    const perms = permissions();
-    if (!perms) return;
-    setSaving(true);
-    setSaved(false);
+    const name = editingRole();
+    const data = editData();
+    if (!name || !data) return;
     setError("");
+    setSaved(false);
     try {
-      const updated = await updateModeratorPermissions(perms);
-      setPermissions(updated);
+      await updateRole(name, data);
+      await loadRoles();
       setSaved(true);
+      setEditingRole(null);
+      setEditData(null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to save");
     }
-    setSaving(false);
+  };
+
+  const handleCreate = async () => {
+    const name = newName().trim();
+    const displayName = newDisplayName().trim();
+    if (!name || !displayName) return;
+    setError("");
+    try {
+      await createRole({
+        name,
+        display_name: displayName,
+        copy_from: copyFrom() || undefined,
+      });
+      await loadRoles();
+      setShowCreate(false);
+      setNewName("");
+      setNewDisplayName("");
+      setCopyFrom("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create role");
+    }
+  };
+
+  const handleDelete = async (name: string) => {
+    if (!confirm(t("admin.roleConfirmDelete" as any))) return;
+    setError("");
+    try {
+      await deleteRole(name);
+      await loadRoles();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete role");
+    }
+  };
+
+  const togglePermission = (key: string) => {
+    const data = editData();
+    if (!data) return;
+    setEditData({
+      ...data,
+      permissions: { ...data.permissions, [key]: !data.permissions[key] },
+    });
   };
 
   return (
     <div class="settings-section">
-      <h3>{t("admin.permissionsTitle" as any)}</h3>
+      <h3>{t("admin.rolesTitle" as any)}</h3>
       <p style={{ color: "var(--text-muted)", "margin-bottom": "16px" }}>
-        {t("admin.permissionsDesc" as any)}
+        {t("admin.rolesDesc" as any)}
       </p>
       <Show when={error()}>
         <p class="error">{error()}</p>
@@ -2968,41 +3045,215 @@ function PermissionsTab() {
       <Show when={saved()}>
         <p class="settings-success">{t("settings.saved")}</p>
       </Show>
-      <Show when={permissions()} fallback={<p>{t("common.loading")}</p>}>
-        {(perms) => (
-          <>
-            <div class="admin-permissions-list">
-              <For each={[...PERMISSION_KEYS]}>
-                {(key) => (
-                  <div class="admin-permissions-item">
-                    <div class="admin-permissions-info">
-                      <strong>{t(PERM_LABEL_KEYS[key] as any)}</strong>
-                      <span style={{ color: "var(--text-muted)", "font-size": "0.9em" }}>
-                        {t(PERM_DESC_KEYS[key] as any)}
-                      </span>
-                    </div>
-                    <label class="admin-permissions-toggle">
-                      <input
-                        type="checkbox"
-                        checked={perms()[key] !== false}
-                        onChange={() => togglePermission(key)}
-                      />
-                      <span class="admin-permissions-slider" />
-                    </label>
+      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+        <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+          <For each={roles()}>
+            {(role) => (
+              <div class="admin-role-card" style={{
+                border: "1px solid var(--border-color)",
+                "border-radius": "8px",
+                padding: "16px",
+              }}>
+                <div style={{
+                  display: "flex",
+                  "justify-content": "space-between",
+                  "align-items": "center",
+                  "margin-bottom": editingRole() === role.name ? "12px" : "0",
+                }}>
+                  <div>
+                    <strong>{role.display_name}</strong>
+                    <span style={{
+                      color: "var(--text-muted)",
+                      "margin-left": "8px",
+                      "font-size": "0.9em",
+                    }}>
+                      ({role.name})
+                    </span>
+                    <Show when={role.is_admin}>
+                      <span style={{
+                        "margin-left": "8px",
+                        color: "var(--accent)",
+                        "font-size": "0.85em",
+                      }}>Admin</span>
+                    </Show>
                   </div>
-                )}
-              </For>
-            </div>
-            <button
-              class="btn btn-small"
-              onClick={handleSave}
-              disabled={saving()}
-              style={{ "margin-top": "16px" }}
-            >
-              {saving() ? t("profile.saving") : t("settings.save")}
+                  <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+                    <span style={{ color: "var(--text-muted)", "font-size": "0.85em" }}>
+                      {t("admin.roleQuota" as any)}: {role.quota_bytes === 0
+                        ? t("admin.roleUnlimited" as any)
+                        : formatQuota(role.quota_bytes)}
+                    </span>
+                    <Show when={editingRole() !== role.name}>
+                      <button class="btn btn-small" onClick={() => startEdit(role)}>
+                        {t("settings.edit" as any)}
+                      </button>
+                    </Show>
+                    <Show when={!role.is_system}>
+                      <button
+                        class="btn btn-small btn-danger"
+                        onClick={() => handleDelete(role.name)}
+                      >
+                        {t("admin.roleDelete" as any)}
+                      </button>
+                    </Show>
+                  </div>
+                </div>
+                <Show when={editingRole() === role.name && editData()}>
+                  {(data) => (
+                    <div style={{ "border-top": "1px solid var(--border-color)", "padding-top": "12px" }}>
+                      <div style={{ "margin-bottom": "12px" }}>
+                        <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                          {t("admin.roleDisplayName" as any)}
+                        </label>
+                        <input
+                          type="text"
+                          class="input"
+                          value={data().display_name}
+                          onInput={(e) => setEditData({ ...data(), display_name: e.currentTarget.value })}
+                          style={{ width: "200px" }}
+                        />
+                      </div>
+                      <div style={{ "margin-bottom": "12px" }}>
+                        <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                          {t("admin.roleQuota" as any)} (MB, 0 = {t("admin.roleUnlimited" as any)})
+                        </label>
+                        <input
+                          type="number"
+                          class="input"
+                          value={data().quota_bytes / (1024 * 1024)}
+                          onInput={(e) => setEditData({
+                            ...data(),
+                            quota_bytes: Math.max(0, parseInt(e.currentTarget.value) || 0) * 1024 * 1024,
+                          })}
+                          style={{ width: "120px" }}
+                          min="0"
+                        />
+                      </div>
+                      <div style={{ "margin-bottom": "12px" }}>
+                        <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                          {t("admin.rolePriority" as any)}
+                        </label>
+                        <input
+                          type="number"
+                          class="input"
+                          value={data().priority}
+                          onInput={(e) => setEditData({
+                            ...data(),
+                            priority: parseInt(e.currentTarget.value) || 0,
+                          })}
+                          style={{ width: "80px" }}
+                        />
+                      </div>
+                      <Show when={!role.is_admin}>
+                        <div style={{ "margin-bottom": "12px" }}>
+                          <label style={{ display: "block", "margin-bottom": "8px", "font-size": "0.9em" }}>
+                            {t("admin.permissionsTitle" as any)}
+                          </label>
+                          <div class="admin-permissions-list">
+                            <For each={[...PERMISSION_KEYS]}>
+                              {(key) => (
+                                <div class="admin-permissions-item">
+                                  <div class="admin-permissions-info">
+                                    <strong>{t(PERM_LABEL_KEYS[key] as any)}</strong>
+                                    <span style={{ color: "var(--text-muted)", "font-size": "0.9em" }}>
+                                      {t(PERM_DESC_KEYS[key] as any)}
+                                    </span>
+                                  </div>
+                                  <label class="admin-permissions-toggle">
+                                    <input
+                                      type="checkbox"
+                                      checked={data().permissions[key] !== false && data().permissions[key] !== undefined
+                                        ? true : !!data().permissions[key]}
+                                      onChange={() => togglePermission(key)}
+                                    />
+                                    <span class="admin-permissions-slider" />
+                                  </label>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                        </div>
+                      </Show>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button class="btn btn-small" onClick={handleSave}>
+                          {t("settings.save")}
+                        </button>
+                        <button class="btn btn-small" onClick={cancelEdit}>
+                          {t("common.cancel" as any)}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </Show>
+              </div>
+            )}
+          </For>
+        </div>
+
+        <div style={{ "margin-top": "16px" }}>
+          <Show when={!showCreate()}>
+            <button class="btn btn-small" onClick={() => setShowCreate(true)}>
+              {t("admin.roleCreate" as any)}
             </button>
-          </>
-        )}
+          </Show>
+          <Show when={showCreate()}>
+            <div style={{
+              border: "1px solid var(--border-color)",
+              "border-radius": "8px",
+              padding: "16px",
+            }}>
+              <div style={{ "margin-bottom": "12px" }}>
+                <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                  {t("admin.roleName" as any)} (a-z, 0-9, _)
+                </label>
+                <input
+                  type="text"
+                  class="input"
+                  value={newName()}
+                  onInput={(e) => setNewName(e.currentTarget.value)}
+                  style={{ width: "200px" }}
+                  placeholder="custom_role"
+                />
+              </div>
+              <div style={{ "margin-bottom": "12px" }}>
+                <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                  {t("admin.roleDisplayName" as any)}
+                </label>
+                <input
+                  type="text"
+                  class="input"
+                  value={newDisplayName()}
+                  onInput={(e) => setNewDisplayName(e.currentTarget.value)}
+                  style={{ width: "200px" }}
+                />
+              </div>
+              <div style={{ "margin-bottom": "12px" }}>
+                <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                  {t("admin.roleCopyFrom" as any)}
+                </label>
+                <select
+                  class="input"
+                  value={copyFrom()}
+                  onChange={(e) => setCopyFrom(e.currentTarget.value)}
+                  style={{ width: "200px" }}
+                >
+                  <option value="">---</option>
+                  <For each={roles()}>
+                    {(r) => <option value={r.name}>{r.display_name}</option>}
+                  </For>
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button class="btn btn-small" onClick={handleCreate}>
+                  {t("admin.roleCreate" as any)}
+                </button>
+                <button class="btn btn-small" onClick={() => setShowCreate(false)}>
+                  {t("common.cancel" as any)}
+                </button>
+              </div>
+            </div>
+          </Show>
+        </div>
       </Show>
     </div>
   );

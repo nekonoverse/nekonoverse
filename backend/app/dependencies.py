@@ -79,9 +79,9 @@ def get_permitted_staff(permission: str):
             return user
         if not user.is_staff:
             raise HTTPException(status_code=403, detail="Staff access required")
-        from app.services.permission_service import has_moderator_permission
+        from app.services.role_service import has_permission
 
-        if not await has_moderator_permission(db, user, permission):
+        if not await has_permission(db, user, permission):
             raise HTTPException(status_code=403, detail="Permission denied")
         return user
 

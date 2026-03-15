@@ -45,6 +45,7 @@ import app.models.push_subscription  # noqa: F401
 import app.models.passkey  # noqa: F401
 import app.models.reaction  # noqa: F401
 import app.models.report  # noqa: F401
+import app.models.role  # noqa: F401
 import app.models.server_setting  # noqa: F401
 import app.models.user  # noqa: F401
 import app.models.user_block  # noqa: F401
@@ -193,6 +194,31 @@ async def authed_client(app_client, test_user, mock_valkey):
     mock_valkey.get = AsyncMock(return_value=str(test_user.id))
     app_client.cookies.set("nekonoverse_session", session_id)
     return app_client
+
+
+@pytest.fixture
+async def seed_roles(db):
+    """Seed the three built-in roles for tests that need them."""
+    from app.models.role import Role
+
+    for name, display_name, is_admin, quota, priority, perms in [
+        ("user", "User", False, 1073741824, 0, {}),
+        ("moderator", "Moderator", False, 5368709120, 50,
+         {"users": True, "reports": True, "content": True, "domains": True,
+          "federation": True, "emoji": True, "registrations": True}),
+        ("admin", "Admin", True, 0, 100, {}),
+    ]:
+        role = Role(
+            name=name,
+            display_name=display_name,
+            permissions=perms,
+            is_admin=is_admin,
+            quota_bytes=quota,
+            priority=priority,
+            is_system=True,
+        )
+        db.add(role)
+    await db.flush()
 
 
 async def make_remote_actor(db, *, username="remote", domain="remote.example"):
