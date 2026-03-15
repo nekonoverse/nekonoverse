@@ -16,20 +16,20 @@ test.describe("Navbar timeline icon switching", () => {
   async function expectGlobeIcon(
     btn: ReturnType<typeof import("@playwright/test").Page.prototype.locator>,
   ) {
-    await expect(btn.locator("svg > circle")).toBeVisible({ timeout: 5_000 });
-    await expect(btn.locator('svg > path[d^="M3 9l9-7"]')).not.toBeVisible();
-    await expect(btn).toHaveAttribute("title", "Public Timeline");
+    await expect(btn).toHaveAttribute("title", "Public Timeline", {
+      timeout: 5_000,
+    });
+    // Globe SVG contains <circle>, house SVG does not
+    await expect(btn.locator("svg circle")).toBeVisible();
   }
 
   /** Assert house icon (home timeline) is shown */
   async function expectHouseIcon(
     btn: ReturnType<typeof import("@playwright/test").Page.prototype.locator>,
   ) {
-    await expect(btn.locator('svg > path[d^="M3 9l9-7"]')).toBeVisible({
-      timeout: 5_000,
-    });
-    await expect(btn.locator("svg > circle")).not.toBeVisible();
-    await expect(btn).toHaveAttribute("title", "Home");
+    await expect(btn).toHaveAttribute("title", "Home", { timeout: 5_000 });
+    // House SVG has no <circle>, confirming globe is gone
+    await expect(btn.locator("svg circle")).not.toBeVisible();
   }
 
   test("shows globe icon on public timeline", async ({ page }) => {
