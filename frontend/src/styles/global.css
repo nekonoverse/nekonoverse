@@ -1620,6 +1620,7 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: 999px;
   font-size: 0.95em;
+  color: var(--text-primary);
   cursor: pointer;
   -webkit-touch-callout: none;
   -webkit-user-select: none;
