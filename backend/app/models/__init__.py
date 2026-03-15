@@ -18,6 +18,7 @@ from app.models.pinned_note import PinnedNote
 from app.models.push_subscription import PushSubscription
 from app.models.poll_vote import PollVote
 from app.models.reaction import Reaction
+from app.models.role import Role
 from app.models.report import Report
 from app.models.server_setting import ServerSetting
 from app.models.user import User
@@ -48,6 +49,7 @@ __all__ = [
     "OAuthToken",
     "PasskeyCredential",
     "Reaction",
+    "Role",
     "Report",
     "ServerSetting",
     "User",

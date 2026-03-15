@@ -1,13 +1,15 @@
 import { createSignal, onMount, Show, For } from "solid-js";
 import { getDriveFiles, deleteDriveFile, type DriveFile } from "@nekonoverse/ui/api/drive";
 import { uploadMedia } from "@nekonoverse/ui/api/statuses";
+import { getAccountStorage, type StorageInfo } from "@nekonoverse/ui/api/admin";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
 export default function Drive() {
@@ -17,10 +19,17 @@ export default function Drive() {
   const [uploading, setUploading] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
   const [loadingMore, setLoadingMore] = createSignal(false);
+  const [storage, setStorage] = createSignal<StorageInfo | null>(null);
 
   let fileInput!: HTMLInputElement;
 
   const PAGE_SIZE = 20;
+
+  const loadStorage = async () => {
+    try {
+      setStorage(await getAccountStorage());
+    } catch {}
+  };
 
   const load = async () => {
     try {
@@ -31,7 +40,10 @@ export default function Drive() {
     setLoading(false);
   };
 
-  onMount(load);
+  onMount(() => {
+    load();
+    loadStorage();
+  });
 
   const loadMore = async () => {
     if (loadingMore()) return;
@@ -55,6 +67,7 @@ export default function Drive() {
     setUploading(false);
     if (fileInput) fileInput.value = "";
     await load();
+    await loadStorage();
   };
 
   const handleDelete = async (id: string) => {
@@ -62,7 +75,13 @@ export default function Drive() {
     try {
       await deleteDriveFile(id);
       setFiles((prev) => prev.filter((f) => f.id !== id));
+      await loadStorage();
     } catch {}
+  };
+
+  const quotaExceeded = () => {
+    const s = storage();
+    return s && s.quota_bytes > 0 && s.usage_percent >= 100;
   };
 
   return (
@@ -73,7 +92,7 @@ export default function Drive() {
           <button
             class="btn btn-small"
             onClick={() => fileInput.click()}
-            disabled={uploading()}
+            disabled={uploading() || quotaExceeded()}
           >
             {uploading() ? t("common.loading") : t("drive.upload")}
           </button>
@@ -87,6 +106,54 @@ export default function Drive() {
           />
         </Show>
       </div>
+
+      <Show when={storage()}>
+        {(s) => (
+          <div class="drive-quota-bar" style={{ "margin-bottom": "16px" }}>
+            <div style={{
+              display: "flex",
+              "justify-content": "space-between",
+              "font-size": "0.9em",
+              "margin-bottom": "4px",
+            }}>
+              <span>
+                {t("drive.storageUsed" as any)}: {formatSize(s().usage_bytes)}
+                {" "}{t("drive.storageOf" as any)}{" "}
+                {s().quota_bytes === 0
+                  ? t("drive.storageUnlimited" as any)
+                  : formatSize(s().quota_bytes)}
+              </span>
+              <Show when={s().quota_bytes > 0}>
+                <span>{s().usage_percent}%</span>
+              </Show>
+            </div>
+            <Show when={s().quota_bytes > 0}>
+              <div style={{
+                width: "100%",
+                height: "8px",
+                "background-color": "var(--bg-secondary)",
+                "border-radius": "4px",
+                overflow: "hidden",
+              }}>
+                <div style={{
+                  width: `${Math.min(100, s().usage_percent)}%`,
+                  height: "100%",
+                  "background-color": s().usage_percent >= 90
+                    ? "var(--error, #e74c3c)"
+                    : "var(--accent)",
+                  "border-radius": "4px",
+                  transition: "width 0.3s ease",
+                }} />
+              </div>
+            </Show>
+            <Show when={quotaExceeded()}>
+              <p style={{ color: "var(--error, #e74c3c)", "font-size": "0.85em", "margin-top": "4px" }}>
+                {t("drive.quotaExceeded" as any)}
+              </p>
+            </Show>
+          </div>
+        )}
+      </Show>
 
       <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<p>{t("drive.loginRequired")}</p>}>

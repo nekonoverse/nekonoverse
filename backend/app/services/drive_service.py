@@ -108,6 +108,14 @@ async def upload_drive_file(
     if mime_type not in ALLOWED_IMAGE_TYPES:
         raise ValueError(f"Unsupported file type: {mime_type}")
 
+    # Quota check (skip for server files)
+    if owner and not server_file:
+        from app.services.quota_service import check_quota
+
+        ok, usage, limit = await check_quota(db, owner, len(data))
+        if not ok:
+            raise ValueError("Storage quota exceeded")
+
     # マジックバイト検証: 申告されたMIMEタイプと実際のファイル内容が一致するか確認
     _validate_magic_bytes(data, mime_type)
 

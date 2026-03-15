@@ -19,7 +19,7 @@ class User(Base):
         UUID(as_uuid=True), ForeignKey("actors.id"), unique=True, nullable=False
     )
     role: Mapped[str] = mapped_column(
-        String(20),
+        String(50),
         default="user",
         server_default="user",
         nullable=False,
@@ -70,4 +70,4 @@ class User(Base):
 
     @property
     def is_staff(self) -> bool:
-        return self.role in ("admin", "moderator")
+        return self.role != "user"

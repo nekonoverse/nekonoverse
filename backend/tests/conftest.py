@@ -45,6 +45,7 @@ import app.models.push_subscription  # noqa: F401
 import app.models.passkey  # noqa: F401
 import app.models.reaction  # noqa: F401
 import app.models.report  # noqa: F401
+import app.models.role  # noqa: F401
 import app.models.server_setting  # noqa: F401
 import app.models.user  # noqa: F401
 import app.models.user_block  # noqa: F401

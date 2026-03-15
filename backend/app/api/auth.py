@@ -219,6 +219,19 @@ async def verify_credentials(
     return await _user_response(user, db)
 
 
+@router.get("/accounts/storage")
+async def get_account_storage(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return storage usage and quota for the current user."""
+    from app.services.quota_service import check_quota
+
+    _, usage, quota = await check_quota(db, user, 0)
+    percent = (usage / quota * 100) if quota > 0 else 0.0
+    return {"usage_bytes": usage, "quota_bytes": quota, "usage_percent": round(percent, 1)}
+
+
 DEFAULT_AVATAR_PATH = "/default-avatar.svg"
 
 
