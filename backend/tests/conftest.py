@@ -117,6 +117,16 @@ async def db_engine(worker_id):
         await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
         await conn.execute(sa.text("CREATE SCHEMA public"))
         await conn.run_sync(Base.metadata.create_all)
+        # Seed built-in roles
+        # Escape colons in JSON values so SQLAlchemy text() doesn't treat them as bind params
+        await conn.execute(sa.text(r"""
+            INSERT INTO roles (name, display_name, permissions, is_admin, quota_bytes, priority, is_system, created_at)
+            VALUES
+                ('user', 'User', '{}', false, 1073741824, 0, true, NOW()),
+                ('moderator', 'Moderator', '{"users"\:true,"reports"\:true,"content"\:true,"domains"\:true,"federation"\:true,"emoji"\:true,"registrations"\:true}', false, 5368709120, 50, true, NOW()),
+                ('admin', 'Admin', '{}', true, 0, 100, true, NOW())
+            ON CONFLICT (name) DO NOTHING
+        """))
     yield engine
     async with engine.begin() as conn:
         await conn.execute(sa.text("DROP SCHEMA public CASCADE"))
