@@ -166,20 +166,20 @@ export default function Navbar() {
               </Show>
             </a>
           </Show>
+        </div>
+        <div class="navbar-right">
           <button
             class="navbar-icon"
             title={t("search.title")}
             onClick={() => setSearchOpen(true)}
           >
             <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="10" cy="8" r="5" />
-              <path d="M2 21v-2a5 5 0 0 1 5-5" />
-              <circle cx="19" cy="19" r="3" />
-              <line x1="22" y1="22" x2="21.1" y2="21.1" />
+              <circle cx="9" cy="9" r="4" />
+              <path d="M2 21v-2a4 4 0 0 1 4-4" />
+              <circle cx="17.5" cy="14.5" r="4.5" />
+              <line x1="21" y1="18" x2="23" y2="20" />
             </svg>
           </button>
-        </div>
-        <div class="navbar-right">
           <Show
             when={currentUser()}
             fallback={
