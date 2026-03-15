@@ -6311,4 +6311,13 @@ a:hover {
     width: 100%;
     text-align: center;
   }
+
+  .page-container {
+    padding: 0 10px;
+  }
+
+  .note-avatar {
+    width: 54px;
+    height: 54px;
+  }
 }
