@@ -1,74 +1,90 @@
 import { test, expect } from "@playwright/test";
 import { loginAsAdmin } from "./helpers";
 
+/**
+ * Navbar timeline icon switching tests.
+ *
+ * Verifies that the navbar correctly switches between globe (public TL)
+ * and house (home TL) icons via DOM assertions (SVG element + title attribute).
+ */
 test.describe("Navbar timeline icon switching", () => {
   test.beforeEach(async ({ page }) => {
     await loginAsAdmin(page);
   });
 
+  /** Assert globe icon (public timeline) is shown */
+  async function expectGlobeIcon(
+    btn: ReturnType<typeof import("@playwright/test").Page.prototype.locator>,
+  ) {
+    await expect(btn.locator("svg > circle")).toBeVisible({ timeout: 5_000 });
+    await expect(btn.locator('svg > path[d^="M3 9l9-7"]')).not.toBeVisible();
+    await expect(btn).toHaveAttribute("title", "Public Timeline");
+  }
+
+  /** Assert house icon (home timeline) is shown */
+  async function expectHouseIcon(
+    btn: ReturnType<typeof import("@playwright/test").Page.prototype.locator>,
+  ) {
+    await expect(btn.locator('svg > path[d^="M3 9l9-7"]')).toBeVisible({
+      timeout: 5_000,
+    });
+    await expect(btn.locator("svg > circle")).not.toBeVisible();
+    await expect(btn).toHaveAttribute("title", "Home");
+  }
+
   test("shows globe icon on public timeline", async ({ page }) => {
     await page.goto("/");
     const btn = page.locator(".navbar-tl-wrap > button.navbar-icon");
-    await expect(btn).toBeVisible({ timeout: 5_000 });
-    await expect(btn).toHaveScreenshot("tl-icon-globe.png");
+    await expectGlobeIcon(btn);
   });
 
   test("shows house icon on home timeline", async ({ page }) => {
     await page.goto("/?tl=home");
     const btn = page.locator(".navbar-tl-wrap > button.navbar-icon");
-    await expect(btn).toBeVisible({ timeout: 5_000 });
-    await expect(btn).toHaveScreenshot("tl-icon-house.png");
+    await expectHouseIcon(btn);
   });
 
   test("icon switches when navigating via dropdown", async ({ page }) => {
-    // Start on public timeline — globe icon
     await page.goto("/");
     const btn = page.locator(".navbar-tl-wrap > button.navbar-icon");
-    await expect(btn).toBeVisible({ timeout: 5_000 });
-    await expect(btn).toHaveScreenshot("tl-icon-globe.png");
+    await expectGlobeIcon(btn);
 
-    // Open dropdown and switch to home timeline
+    // Switch to home timeline
     await btn.click();
     await expect(page.locator(".navbar-tl-dropdown")).toBeVisible();
     await page.locator('.navbar-tl-dropdown a[href="/?tl=home"]').click();
+    await expectHouseIcon(btn);
 
-    // Should now show house icon
-    await expect(btn).toHaveScreenshot("tl-icon-house.png");
-
-    // Open dropdown and switch back to public timeline
+    // Switch back to public timeline
     await btn.click();
     await expect(page.locator(".navbar-tl-dropdown")).toBeVisible();
     await page.locator('.navbar-tl-dropdown a[href="/"]').click();
-
-    // Should now show globe icon again
-    await expect(btn).toHaveScreenshot("tl-icon-globe.png");
+    await expectGlobeIcon(btn);
   });
 
   test("icon updates with browser back/forward", async ({ page }) => {
-    // Start on public timeline — globe
     await page.goto("/");
     const btn = page.locator(".navbar-tl-wrap > button.navbar-icon");
-    await expect(btn).toHaveScreenshot("tl-icon-globe.png");
+    await expectGlobeIcon(btn);
 
     // Navigate to home timeline via dropdown
     await btn.click();
     await page.locator('.navbar-tl-dropdown a[href="/?tl=home"]').click();
-    await expect(btn).toHaveScreenshot("tl-icon-house.png");
+    await expectHouseIcon(btn);
 
-    // Browser back → public timeline (globe)
+    // Browser back → public timeline
     await page.goBack();
-    await expect(btn).toHaveScreenshot("tl-icon-globe.png");
+    await expectGlobeIcon(btn);
 
-    // Browser forward → home timeline (house)
+    // Browser forward → home timeline
     await page.goForward();
-    await expect(btn).toHaveScreenshot("tl-icon-house.png");
+    await expectHouseIcon(btn);
   });
 
   test("icon correct after navigating away and back", async ({ page }) => {
-    // Start on home timeline
     await page.goto("/?tl=home");
     const btn = page.locator(".navbar-tl-wrap > button.navbar-icon");
-    await expect(btn).toHaveScreenshot("tl-icon-house.png");
+    await expectHouseIcon(btn);
 
     // Navigate to notifications
     await page.click('a[href="/notifications"]');
@@ -76,22 +92,29 @@ test.describe("Navbar timeline icon switching", () => {
 
     // Navigate to public timeline
     await page.goto("/");
-    await expect(btn).toHaveScreenshot("tl-icon-globe.png");
+    await expectGlobeIcon(btn);
   });
 
   test("dropdown highlights active timeline correctly", async ({ page }) => {
-    // On public timeline — open dropdown
     await page.goto("/");
     const btn = page.locator(".navbar-tl-wrap > button.navbar-icon");
     await btn.click();
     const dropdown = page.locator(".navbar-tl-dropdown");
     await expect(dropdown).toBeVisible();
-    await expect(dropdown).toHaveScreenshot("tl-dropdown-public-active.png");
 
-    // Switch to home timeline — open dropdown
+    // Public timeline item should be active
+    await expect(dropdown.locator('a[href="/"]')).toHaveClass(/active/);
+    await expect(
+      dropdown.locator('a[href="/?tl=home"]'),
+    ).not.toHaveClass(/active/);
+
+    // Switch to home timeline
     await page.locator('.navbar-tl-dropdown a[href="/?tl=home"]').click();
     await btn.click();
     await expect(dropdown).toBeVisible();
-    await expect(dropdown).toHaveScreenshot("tl-dropdown-home-active.png");
+
+    // Home timeline item should now be active
+    await expect(dropdown.locator('a[href="/?tl=home"]')).toHaveClass(/active/);
+    await expect(dropdown.locator('a[href="/"]')).not.toHaveClass(/active/);
   });
 });
