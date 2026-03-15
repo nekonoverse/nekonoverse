@@ -9,6 +9,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
+from app.services.follow_service import get_follow_counts
+from app.services.note_service import get_statuses_count
+from app.utils.media_proxy import media_proxy_url
 from app.schemas.user import (
     ChangePasswordRequest,
     FocalPoint,
@@ -211,12 +214,12 @@ async def logout(request: Request, response: Response):
     return {"ok": True}
 
 
-@router.get("/accounts/verify_credentials", response_model=UserResponse)
+@router.get("/accounts/verify_credentials")
 async def verify_credentials(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _user_response(user, db)
+    return await _credential_account_response(user, db)
 
 
 DEFAULT_AVATAR_PATH = "/default-avatar.svg"
@@ -251,6 +254,96 @@ async def _user_response(user: User, db: AsyncSession) -> UserResponse:
         role=user.role,
         created_at=user.created_at,
     )
+
+
+def _focal_to_dict(drive_file) -> dict | None:
+    """Extract focal point as plain dict for JSON serialization."""
+    if drive_file and drive_file.focal_x is not None and drive_file.focal_y is not None:
+        return {"x": drive_file.focal_x, "y": drive_file.focal_y}
+    return None
+
+
+async def _credential_account_response(user: User, db: AsyncSession) -> dict:
+    """Build Mastodon CredentialAccount response with nekonoverse extensions."""
+    import re
+
+    actor = user.actor
+    await db.refresh(actor, ["avatar_file", "header_file"])
+    fc, fic = await get_follow_counts(db, actor.id)
+    sc = await get_statuses_count(db, actor.id)
+
+    data = {
+        # Mastodon CredentialAccount fields
+        "id": str(user.id),
+        "username": actor.username,
+        "acct": actor.username,
+        "display_name": actor.display_name,
+        "note": actor.summary or "",
+        "avatar": media_proxy_url(actor.avatar_url) or DEFAULT_AVATAR_PATH,
+        "avatar_static": media_proxy_url(actor.avatar_url) or DEFAULT_AVATAR_PATH,
+        "header": media_proxy_url(actor.header_url) or "",
+        "header_static": media_proxy_url(actor.header_url) or "",
+        "url": f"{settings.server_url}/@{actor.username}",
+        "email": user.email,
+        "created_at": user.created_at.isoformat() if user.created_at else None,
+        "bot": actor.is_bot,
+        "locked": actor.manually_approves_followers,
+        "discoverable": actor.discoverable,
+        "followers_count": fc,
+        "following_count": fic,
+        "statuses_count": sc,
+        "last_status_at": None,
+        "fields": [
+            {"name": f.get("name", ""), "value": f.get("value", ""), "verified_at": None}
+            for f in (actor.fields or [])
+        ],
+        "emojis": [],
+        "source": {
+            "privacy": "public",
+            "sensitive": False,
+            "language": "",
+            "note": actor.summary or "",
+            "fields": [
+                {"name": f.get("name", ""), "value": f.get("value", "")}
+                for f in (actor.fields or [])
+            ],
+        },
+        # Nekonoverse extensions (used by our frontend)
+        "avatar_url": actor.avatar_url or DEFAULT_AVATAR_PATH,
+        "header_url": actor.header_url,
+        "avatar_focal": _focal_to_dict(actor.avatar_file),
+        "header_focal": _focal_to_dict(actor.header_file),
+        "summary": actor.summary,
+        "birthday": str(actor.birthday) if actor.birthday else None,
+        "is_cat": actor.is_cat,
+        "is_bot": actor.is_bot,
+        "role": user.role,
+    }
+
+    # Resolve custom emoji
+    shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
+    texts = [data["display_name"] or "", data["note"]]
+    for f in actor.fields or []:
+        texts.append(f.get("name", ""))
+        texts.append(f.get("value", ""))
+    shortcodes = set()
+    for text in texts:
+        shortcodes.update(shortcode_re.findall(text))
+    if shortcodes:
+        from app.services.emoji_service import get_emojis_by_shortcodes
+
+        emoji_list = await get_emojis_by_shortcodes(db, shortcodes, None)
+        data["emojis"] = [
+            {
+                "shortcode": e.shortcode,
+                "url": media_proxy_url(e.url),
+                "static_url": media_proxy_url(e.static_url) if e.static_url
+                else media_proxy_url(e.url),
+            }
+            for e in emoji_list
+        ]
+
+    return data
 
 
 @router.patch("/accounts/update_credentials", response_model=UserResponse)
