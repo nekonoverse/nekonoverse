@@ -67,13 +67,20 @@ export default function Notifications() {
   const load = async () => {
     try {
       const data = await getNotifications({ limit: 40 });
-      setAllNotifs(data);
+      // SSE で先に追加された通知を失わないようマージ
+      setAllNotifs((prev) => {
+        if (prev.length === 0) return data;
+        const dataIds = new Set(data.map((n) => n.id));
+        const extra = prev.filter((n) => !dataIds.has(n.id));
+        return extra.length > 0 ? [...extra, ...data] : data;
+      });
       setHasMore(data.length >= 40);
 
       // 現在のタブが空で他方にデータがあれば自動切替
       const currentTab = tab();
-      const hasMentions = data.some((n) => n.type === "mention" || n.type === "reply");
-      const hasOther = data.some((n) => n.type !== "mention" && n.type !== "reply");
+      const all = allNotifs();
+      const hasMentions = all.some((n) => n.type === "mention" || n.type === "reply");
+      const hasOther = all.some((n) => n.type !== "mention" && n.type !== "reply");
       if (currentTab === "mentions" && !hasMentions && hasOther) {
         setTab("other");
       } else if (currentTab === "other" && !hasOther && hasMentions) {
@@ -94,14 +101,23 @@ export default function Notifications() {
     } catch { /* ignore */ }
   });
 
-  const unsub = onNotification(async () => {
+  const unsub = onNotification(async (data) => {
+    const eventData = data as { id?: string };
     try {
-      const fresh = await getNotifications({ limit: 1 });
-      if (fresh.length > 0) {
-        setAllNotifs((prev) => {
-          if (prev.some((n) => n.id === fresh[0].id)) return prev;
-          return [fresh[0], ...prev];
-        });
+      // DB commit の可視化を待つためリトライ付きで取得
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const fresh = await getNotifications({ limit: 5 });
+        const target = eventData.id
+          ? fresh.find((n) => n.id === eventData.id)
+          : fresh[0];
+        if (target) {
+          setAllNotifs((prev) => {
+            if (prev.some((n) => n.id === target.id)) return prev;
+            return [target, ...prev];
+          });
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
       }
     } catch { /* ignore */ }
     resetUnread();
