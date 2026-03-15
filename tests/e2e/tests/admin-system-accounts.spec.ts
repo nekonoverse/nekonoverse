@@ -26,6 +26,10 @@ test.describe("Admin System Accounts", () => {
     // System badge should be displayed
     const systemBadge = systemUser.locator(".admin-status-badge.system");
     await expect(systemBadge).toBeVisible();
+
+    // Role badge (admin) should NOT be displayed for system accounts
+    const roleBadge = systemUser.locator(".admin-role-badge");
+    await expect(roleBadge).toHaveCount(0);
   });
 
   test("system account has no action buttons", async ({ page }) => {
