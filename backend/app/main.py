@@ -47,6 +47,7 @@ from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.streaming import router as streaming_router
 from app.api.mastodon.timelines import router as timelines_router
 from app.api.media import router as media_router
+from app.api.authorized_apps import router as authorized_apps_router
 from app.api.oauth import router as oauth_router
 from app.api.passkey import router as passkey_router
 from app.config import settings
@@ -677,6 +678,7 @@ app.include_router(timelines_router)
 app.include_router(streaming_router)
 app.include_router(search_router)
 app.include_router(compat_router)
+app.include_router(authorized_apps_router)
 app.include_router(oauth_router)
 app.include_router(passkey_router)
 app.include_router(media_proxy_router)
