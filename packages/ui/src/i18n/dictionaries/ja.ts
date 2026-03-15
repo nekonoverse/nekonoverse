@@ -492,6 +492,9 @@ export const ja = {
   "reply.repliesCount": "返信",
   "cw.show": "もっと見る",
   "cw.hide": "隠す",
+  "sensitive.label": "センシティブな内容",
+  "sensitive.show": "表示する",
+  "sensitive.hide": "隠す",
   "remote.viewOnRemote": "元サーバーで表示",
   "totp.title": "二要素認証",
   "totp.description":

@@ -494,6 +494,9 @@ export const neko: Dictionary = {
   "reply.repliesCount": "へんしんにゃ",
   "cw.show": "もっとみるにゃ",
   "cw.hide": "かくすにゃ",
+  "sensitive.label": "センシティブにゃないようにゃ",
+  "sensitive.show": "みるにゃ",
+  "sensitive.hide": "かくすにゃ",
   "remote.viewOnRemote": "元サーバーでみるにゃ",
   "totp.title": "にゃんそう認証",
   "totp.description":

@@ -1335,6 +1335,66 @@ a:hover {
   color: var(--text-primary);
 }
 
+/* Sensitive media overlay */
+.sensitive-overlay {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  margin-top: 10px;
+  min-height: 160px;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.sensitive-overlay:hover {
+  background: var(--bg-primary);
+}
+
+.sensitive-overlay-small {
+  min-height: 80px;
+  margin-top: 8px;
+}
+
+.sensitive-overlay-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 0.9em;
+}
+
+.sensitive-overlay-content svg {
+  opacity: 0.6;
+}
+
+.sensitive-overlay-action {
+  font-size: 0.85em;
+  color: var(--accent);
+}
+
+.sensitive-hide-btn {
+  display: inline-block;
+  background: var(--bg-primary);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 2px 12px;
+  font-size: 0.85em;
+  cursor: pointer;
+  margin-top: 10px;
+  margin-bottom: 2px;
+  transition: background 0.15s, color 0.15s;
+}
+
+.sensitive-hide-btn:hover {
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+}
+
 /* Note media */
 .note-media {
   display: grid;
