@@ -349,6 +349,153 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     return resp
 
 
+@app.get("/api/v2/instance")
+async def instance_info_v2(db: AsyncSession = Depends(get_db)):
+    """Mastodon API v2 instance endpoint (required by DAWN, Ice Cubes, etc.)."""
+    from sqlalchemy import func, select
+
+    from app.models.actor import Actor
+    from app.models.note import Note
+    from app.models.user import User
+    from app.services.server_settings_service import get_setting
+
+    thumbnail_url = None
+    title = "Nekonoverse"
+    description = "A cat-friendly ActivityPub server"
+    registration_open = settings.registration_open
+    registration_mode = "open"
+    try:
+        icon_url = await get_setting(db, "server_icon_url")
+        if icon_url:
+            thumbnail_url = icon_url
+        name = await get_setting(db, "server_name")
+        if name:
+            title = name
+        desc = await get_setting(db, "server_description")
+        if desc:
+            description = desc
+        mode = await get_setting(db, "registration_mode")
+        if mode is not None:
+            registration_mode = mode
+            registration_open = mode != "closed"
+        else:
+            reg = await get_setting(db, "registration_open")
+            if reg is not None:
+                registration_open = reg == "true"
+            registration_mode = "open" if registration_open else "closed"
+    except Exception:
+        pass
+
+    user_count = 0
+    status_count = 0
+    domain_count = 0
+    try:
+        user_result = await db.execute(
+            select(func.count())
+            .select_from(Actor)
+            .join(User, User.actor_id == Actor.id)
+            .where(Actor.domain.is_(None), User.is_system.is_(False))
+        )
+        user_count = user_result.scalar() or 0
+
+        status_result = await db.execute(
+            select(func.count()).select_from(Note).where(Note.local.is_(True))
+        )
+        status_count = status_result.scalar() or 0
+
+        domain_result = await db.execute(
+            select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
+        )
+        domain_count = domain_result.scalar() or 0
+    except Exception:
+        pass
+
+    vapid_key = None
+    try:
+        from app.services.push_service import get_vapid_public_key_base64url, is_push_enabled
+
+        if await is_push_enabled(db):
+            vapid_key = get_vapid_public_key_base64url()
+    except Exception:
+        pass
+
+    contact_info = await _build_contact(db)
+
+    thumbnail = None
+    if thumbnail_url:
+        thumbnail = {"url": thumbnail_url, "blurhash": None, "versions": {}}
+
+    registrations = {
+        "enabled": registration_open,
+        "approval_required": registration_mode == "approval",
+        "message": None,
+    }
+
+    resp: dict = {
+        "domain": settings.domain,
+        "title": title,
+        "version": __version__,
+        "source_url": "https://github.com/nekonoverse/nekonoverse",
+        "description": description,
+        "usage": {
+            "users": {
+                "active_month": user_count,
+            },
+        },
+        "thumbnail": thumbnail,
+        "icon": [],
+        "languages": ["ja", "en"],
+        "configuration": {
+            "urls": {
+                "streaming": f"wss://{settings.domain}/api/v1/streaming",
+            },
+            "accounts": {
+                "max_featured_tags": 0,
+                "max_pinned_statuses": 5,
+            },
+            "statuses": {
+                "max_characters": 5000,
+                "max_media_attachments": 4,
+                "characters_reserved_per_url": 23,
+            },
+            "media_attachments": {
+                "supported_mime_types": [
+                    "image/jpeg", "image/png", "image/gif", "image/webp",
+                ],
+                "description_limit": 1500,
+                "image_size_limit": 10485760,
+                "image_matrix_limit": 16777216,
+                "video_size_limit": 41943040,
+                "video_frame_rate_limit": 60,
+                "video_matrix_limit": 8294400,
+            },
+            "polls": {
+                "max_options": 10,
+                "max_characters_per_option": 200,
+                "min_expiration": 300,
+                "max_expiration": 2592000,
+            },
+            "translation": {
+                "enabled": False,
+            },
+        },
+        "registrations": registrations,
+        "api_versions": {
+            "mastodon": 2,
+        },
+        "contact": {
+            "email": contact_info.get("email", ""),
+            "account": contact_info.get("account"),
+        },
+        "rules": [],
+    }
+
+    if vapid_key:
+        resp["configuration"]["vapid"] = {"public_key": vapid_key}
+
+    return resp
+
+
 _LEGAL_ALLOWED_TAGS = [
     "h1", "h2", "h3", "h4", "h5", "h6",
     "p", "br", "hr",
