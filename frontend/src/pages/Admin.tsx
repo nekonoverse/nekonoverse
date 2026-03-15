@@ -858,10 +858,11 @@ function UsersTab() {
                   <div class="admin-user-info">
                     <strong>{u.display_name || u.username}</strong>
                     <span class="admin-user-handle">@{u.username}</span>
-                    <span class={`admin-role-badge role-${u.role}`}>
-                      {u.role}
-                    </span>
-                    <Show when={u.is_system}>
+                    <Show when={u.is_system} fallback={
+                      <span class={`admin-role-badge role-${u.role}`}>
+                        {u.role}
+                      </span>
+                    }>
                       <span class="admin-status-badge system">
                         {t("admin.systemAccount")}
                       </span>
