@@ -130,9 +130,10 @@ async def authorize_form(
     if redirect_uri not in allowed_uris:
         raise HTTPException(status_code=400, detail="Invalid redirect_uri")
 
-    # 危険なスキーム(javascript:等)のブロック
+    # 危険なスキームのブロック (カスタムスキームはMastodonクライアントアプリで使用)
     parsed_redirect = urlparse(redirect_uri)
-    if parsed_redirect.scheme not in ("https", "http", "urn"):
+    _blocked_schemes = {"javascript", "data", "vbscript", "blob"}
+    if parsed_redirect.scheme in _blocked_schemes:
         raise HTTPException(status_code=400, detail="Invalid redirect_uri scheme")
 
     # セッションからユーザーを取得
