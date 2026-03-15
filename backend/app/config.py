@@ -56,3 +56,15 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+# デフォルトのSECRET_KEYでの運用を防止
+_INSECURE_KEYS = {"change-this-to-a-random-secret-key", ""}
+if not settings.debug and settings.secret_key in _INSECURE_KEYS:
+    import sys
+
+    print(
+        "FATAL: SECRET_KEY is not configured. "
+        "Set a strong random value in .env (e.g. python -c \"import secrets; print(secrets.token_hex(32))\")",
+        file=sys.stderr,
+    )
+    sys.exit(1)

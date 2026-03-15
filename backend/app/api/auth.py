@@ -1,4 +1,5 @@
 import asyncio
+import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
@@ -185,7 +186,7 @@ async def login(
 
     from app.valkey_client import valkey
 
-    session_id = uuid.uuid4().hex
+    session_id = secrets.token_urlsafe(32)
     await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
 
     response.set_cookie(
@@ -694,7 +695,7 @@ async def totp_verify(
     await valkey.delete(f"totp_pending:{body.totp_token}")
 
     # Create session
-    session_id = uuid.uuid4().hex
+    session_id = secrets.token_urlsafe(32)
     await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
 
     response.set_cookie(

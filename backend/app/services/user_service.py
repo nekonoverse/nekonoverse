@@ -27,11 +27,11 @@ async def create_user(
         select(Actor).where(Actor.username == username, Actor.domain.is_(None))
     )
     if existing_actor.scalar_one_or_none():
-        raise ValueError("Username already taken")
+        raise ValueError("Username or email is already in use")
 
     existing_email = await db.execute(select(User).where(User.email == email))
     if existing_email.scalar_one_or_none():
-        raise ValueError("Email already registered")
+        raise ValueError("Username or email is already in use")
 
     # Generate RSA key pair
     private_pem, public_pem = generate_rsa_keypair()

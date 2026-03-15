@@ -28,6 +28,26 @@ ALLOWED_IMAGE_TYPES = {
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
+# マジックバイト: MIMEタイプと実際のファイルヘッダーの対応
+_MAGIC_BYTES: dict[str, list[bytes]] = {
+    "image/jpeg": [b"\xff\xd8\xff"],
+    "image/png": [b"\x89PNG\r\n\x1a\n"],
+    "image/gif": [b"GIF87a", b"GIF89a"],
+    "image/webp": [b"RIFF"],  # RIFF????WEBP
+    "image/avif": [],  # AVIFはftypベースで複雑なためスキップ
+}
+
+
+def _validate_magic_bytes(data: bytes, mime_type: str) -> None:
+    """Validate that file content matches the declared MIME type."""
+    signatures = _MAGIC_BYTES.get(mime_type)
+    if not signatures:
+        return  # 検証定義がないMIMEタイプはスキップ
+    for sig in signatures:
+        if data[:len(sig)] == sig:
+            return
+    raise ValueError(f"File content does not match declared type {mime_type}")
+
 # MIME types where EXIF stripping is safe (skip GIF/WebP/AVIF which may be animated)
 _EXIF_STRIP_TYPES = {"image/jpeg", "image/png"}
 
@@ -87,6 +107,9 @@ async def upload_drive_file(
 
     if mime_type not in ALLOWED_IMAGE_TYPES:
         raise ValueError(f"Unsupported file type: {mime_type}")
+
+    # マジックバイト検証: 申告されたMIMEタイプと実際のファイル内容が一致するか確認
+    _validate_magic_bytes(data, mime_type)
 
     # Strip EXIF metadata before storing (defense-in-depth for privacy)
     data = strip_exif(data, mime_type)

@@ -22,6 +22,36 @@ router = APIRouter(tags=["oauth"])
 # トークン有効期限: 90日
 TOKEN_LIFETIME = timedelta(days=90)
 
+# OAuthレート制限
+OAUTH_MAX_ATTEMPTS = 20
+OAUTH_LOCKOUT_TTL = 300  # 5 minutes
+
+
+def _hash_token(token: str) -> str:
+    """Hash an OAuth token for secure storage."""
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def _check_oauth_rate_limit(request: Request, endpoint: str) -> None:
+    """Check rate limit for OAuth endpoints."""
+    from app.valkey_client import valkey
+
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"oauth_attempts:{endpoint}:{client_ip}"
+    try:
+        attempts = await valkey.get(key)
+        if attempts is not None and int(attempts) >= OAUTH_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many requests. Please wait and try again.",
+            )
+        await valkey.incr(key)
+        await valkey.expire(key, OAUTH_LOCKOUT_TTL)
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # レート制限の失敗でリクエストをブロックしない
+
 
 class AppCreateRequest(BaseModel):
     client_name: str
@@ -31,8 +61,11 @@ class AppCreateRequest(BaseModel):
 
 
 @router.post("/api/v1/apps")
-async def create_app(body: AppCreateRequest, db: AsyncSession = Depends(get_db)):
+async def create_app(
+    body: AppCreateRequest, request: Request, db: AsyncSession = Depends(get_db),
+):
     """Register an OAuth application."""
+    await _check_oauth_rate_limit(request, "apps")
     app = OAuthApplication(
         name=body.client_name,
         client_id=secrets.token_urlsafe(32),
@@ -325,6 +358,7 @@ button:hover {{ background: #4f50e6; }}
 
 @router.post("/oauth/token")
 async def token(
+    request: Request,
     grant_type: str = Form(...),
     code: str | None = Form(None),
     client_id: str = Form(...),
@@ -335,6 +369,7 @@ async def token(
     db: AsyncSession = Depends(get_db),
 ):
     """Exchange authorization code for access token."""
+    await _check_oauth_rate_limit(request, "token")
     # Validate application
     result = await db.execute(
         select(OAuthApplication).where(OAuthApplication.client_id == client_id)
@@ -363,8 +398,12 @@ async def token(
         if redirect_uri and auth_code.redirect_uri != redirect_uri:
             raise HTTPException(status_code=400, detail="Redirect URI mismatch")
 
-        # PKCE verification
-        if auth_code.code_challenge and auth_code.code_challenge_method == "S256":
+        # PKCE verification (S256のみサポート、plainメソッドは拒否)
+        if auth_code.code_challenge:
+            if auth_code.code_challenge_method != "S256":
+                raise HTTPException(
+                    status_code=400, detail="Unsupported code_challenge_method (use S256)"
+                )
             if not code_verifier:
                 raise HTTPException(status_code=400, detail="Missing code_verifier")
             challenge = hashlib.sha256(code_verifier.encode()).digest()
@@ -374,10 +413,10 @@ async def token(
             if expected != auth_code.code_challenge:
                 raise HTTPException(status_code=400, detail="Invalid code_verifier")
 
-        # Create access token
+        # Create access token (ハッシュ化して保存、プレーンテキストはレスポンスのみ)
         access_token = secrets.token_urlsafe(64)
         token_obj = OAuthToken(
-            access_token=access_token,
+            access_token=_hash_token(access_token),
             scopes=auth_code.scopes,
             application_id=app.id,
             user_id=auth_code.user_id,
@@ -399,7 +438,7 @@ async def token(
     elif grant_type == "client_credentials":
         access_token = secrets.token_urlsafe(64)
         token_obj = OAuthToken(
-            access_token=access_token,
+            access_token=_hash_token(access_token),
             scopes=scope or "read",
             application_id=app.id,
             user_id=None,
@@ -421,12 +460,14 @@ async def token(
 
 @router.post("/oauth/revoke")
 async def revoke_token(
+    request: Request,
     token: str = Form(...),
     client_id: str = Form(...),
     client_secret: str = Form(...),
     db: AsyncSession = Depends(get_db),
 ):
     """Revoke an access token."""
+    await _check_oauth_rate_limit(request, "revoke")
     # クライアント認証
     result = await db.execute(
         select(OAuthApplication).where(OAuthApplication.client_id == client_id)
@@ -435,8 +476,13 @@ async def revoke_token(
     if not app or not hmac.compare_digest(app.client_secret, client_secret):
         raise HTTPException(status_code=401, detail="Invalid client credentials")
 
-    result = await db.execute(select(OAuthToken).where(OAuthToken.access_token == token))
+    # ハッシュ化トークンで検索(新方式)、見つからなければプレーンテキスト(互換)
+    token_hash = _hash_token(token)
+    result = await db.execute(select(OAuthToken).where(OAuthToken.access_token == token_hash))
     token_obj = result.scalar_one_or_none()
+    if not token_obj:
+        result = await db.execute(select(OAuthToken).where(OAuthToken.access_token == token))
+        token_obj = result.scalar_one_or_none()
     if token_obj:
         # トークンが要求元のアプリケーションに属するか検証
         if token_obj.application_id != app.id:

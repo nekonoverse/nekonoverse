@@ -32,11 +32,19 @@ async def verify_app_credentials(
 
         raise HTTPException(status_code=401, detail="Unauthorized")
 
+    import hashlib
+
     token_str = auth_header[7:]
+    token_hash = hashlib.sha256(token_str.encode()).hexdigest()
     result = await db.execute(
-        select(OAuthToken).where(OAuthToken.access_token == token_str)
+        select(OAuthToken).where(OAuthToken.access_token == token_hash)
     )
     token = result.scalar_one_or_none()
+    if not token:
+        result = await db.execute(
+            select(OAuthToken).where(OAuthToken.access_token == token_str)
+        )
+        token = result.scalar_one_or_none()
     if not token or token.revoked_at or token.is_expired:
         from fastapi import HTTPException
 

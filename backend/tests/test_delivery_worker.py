@@ -133,7 +133,10 @@ async def test_deliver_activity_success(db, test_user, pending_job, mock_valkey)
     actor = test_user.actor
     mock_client = _mock_httpx_client(202)
 
-    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
+    with (
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
+    ):
         result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     assert result is True
@@ -144,7 +147,10 @@ async def test_deliver_activity_failure_500(db, test_user, pending_job, mock_val
     actor = test_user.actor
     mock_client = _mock_httpx_client(500)
 
-    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
+    with (
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
+    ):
         result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     assert result is False
@@ -154,7 +160,10 @@ async def test_deliver_activity_accepts_200(db, test_user, pending_job, mock_val
     actor = test_user.actor
     mock_client = _mock_httpx_client(200)
 
-    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
+    with (
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
+    ):
         result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     assert result is True
@@ -164,7 +173,10 @@ async def test_deliver_activity_accepts_204(db, test_user, pending_job, mock_val
     actor = test_user.actor
     mock_client = _mock_httpx_client(204)
 
-    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
+    with (
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
+    ):
         result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     assert result is True
@@ -174,7 +186,10 @@ async def test_deliver_activity_sends_signed_headers(db, test_user, pending_job,
     actor = test_user.actor
     mock_client = _mock_httpx_client(202)
 
-    with patch("app.worker.delivery_worker._get_http_client", return_value=mock_client):
+    with (
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
+    ):
         await deliver_activity(pending_job, actor, test_user.private_key_pem)
 
     call_kwargs = mock_client.post.call_args
@@ -209,6 +224,7 @@ async def test_process_jobs_successful_delivery(db, test_user, pending_job, mock
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
         patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -226,6 +242,7 @@ async def test_process_jobs_failed_delivery_retries(db, test_user, pending_job, 
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
         patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -248,6 +265,7 @@ async def test_process_jobs_max_attempts_marks_dead(db, test_user, pending_job, 
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
         patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
@@ -331,6 +349,7 @@ async def test_process_jobs_network_error_retries(db, test_user, pending_job, mo
     with (
         patch("app.worker.delivery_worker.async_session") as mock_session_ctx,
         patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
     ):
         mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=db)
         mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
