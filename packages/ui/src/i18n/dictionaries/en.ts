@@ -612,4 +612,9 @@ export const en: Dictionary = {
   "admin.roleInUseCannotDelete": "Cannot delete roles in use",
   "admin.roleConfirmDelete": "Delete this role?",
   "admin.roleUsers": "Users",
+  "admin.termsOfService": "Terms of Service (Markdown)",
+  "admin.privacyPolicy": "Privacy Policy (Markdown)",
+  "legal.terms": "Terms of Service",
+  "legal.privacy": "Privacy Policy",
+  "legal.notSet": "Not yet configured for this server.",
 };
