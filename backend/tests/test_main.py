@@ -49,3 +49,7 @@ async def test_instance_contact_account(app_client, db, mock_valkey):
     assert "email" in account
     assert account["email"] == ""
     assert contact["email"] == "admin@example.com"
+    # v1 compat: email and contact_account at root level
+    assert data["email"] == "admin@example.com"
+    assert data["contact_account"] is not None
+    assert data["contact_account"]["username"] == "adminuser"

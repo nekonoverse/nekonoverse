@@ -270,6 +270,8 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
+    contact_info = await _build_contact(db)
+
     resp: dict = {
         "uri": settings.domain,
         "title": title,
@@ -288,7 +290,9 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         "registration_mode": registration_mode,
         "languages": ["ja", "en"],
         "rules": [],
-        "contact": await _build_contact(db),
+        "email": contact_info.get("email", ""),
+        "contact_account": contact_info.get("account"),
+        "contact": contact_info,
         "configuration": {
             "statuses": {
                 "max_characters": 5000,
