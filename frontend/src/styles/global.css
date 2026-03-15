@@ -886,6 +886,7 @@ a:hover {
 
 .composer-vis-wrap {
   position: relative;
+  z-index: 10;
 }
 
 .composer-vis-dropdown {
@@ -898,7 +899,7 @@ a:hover {
   border-radius: 8px;
   min-width: 160px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  z-index: 200;
+  z-index: 10;
   overflow: hidden;
 }
 
