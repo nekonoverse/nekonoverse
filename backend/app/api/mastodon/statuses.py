@@ -10,6 +10,15 @@ from sqlalchemy.orm import selectinload
 
 logger = logging.getLogger(__name__)
 
+
+def _to_mastodon_datetime(dt: datetime | None) -> str:
+    """Format datetime to Mastodon-compatible ISO 8601 string (with Z suffix)."""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
+
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.note import Note
 from app.models.user import User
@@ -285,7 +294,7 @@ async def note_to_response(
 
     edited_at = None
     if note.updated_at:
-        edited_at = note.updated_at.isoformat()
+        edited_at = _to_mastodon_datetime(note.updated_at)
 
     # Build poll response
     poll_response = None
@@ -332,7 +341,7 @@ async def note_to_response(
         note=actor.summary or "",
         bot=actor.is_bot,
         group=actor.type == "Group",
-        created_at=actor.created_at.isoformat() if actor.created_at else "",
+        created_at=_to_mastodon_datetime(actor.created_at),
         locked=actor.manually_approves_followers,
         discoverable=actor.discoverable,
     )
@@ -345,7 +354,7 @@ async def note_to_response(
         visibility="private" if note.visibility == "followers" else note.visibility,
         sensitive=note.sensitive,
         spoiler_text=note.spoiler_text or "",
-        published=note.published,
+        published=_to_mastodon_datetime(note.published),
         edited_at=edited_at,
         replies_count=note.replies_count,
         reactions_count=note.reactions_count,
@@ -366,7 +375,7 @@ async def note_to_response(
         uri=note.ap_id,
         url=f"{app_settings.server_url}/notes/{note.id}",
         account=actor_resp,
-        created_at=note.published.isoformat() if note.published else "",
+        created_at=_to_mastodon_datetime(note.published),
         reblogs_count=note.renotes_count,
         favourites_count=note.reactions_count,
     )
@@ -1079,7 +1088,7 @@ async def reblog_status(
         note_ap_id=original.ap_id,
         to=to_list,
         cc=cc_list,
-        published=reblog_note.published.isoformat() + "Z",
+        published=_to_mastodon_datetime(reblog_note.published),
     )
     inboxes = await get_follower_inboxes(db, actor.id)
     for inbox_url in inboxes:
@@ -1147,7 +1156,7 @@ async def unreblog_status(
         note_ap_id=original.ap_id,
         to=reblog_note.to,
         cc=reblog_note.cc,
-        published=reblog_note.published.isoformat() + "Z",
+        published=_to_mastodon_datetime(reblog_note.published),
     )
     undo_id = f"{reblog_note.ap_id}/undo"
     undo_activity = render_undo_activity(undo_id, actor_uri(actor), announce_activity)
