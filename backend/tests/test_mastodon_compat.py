@@ -228,3 +228,92 @@ async def test_search_empty_query(authed_client, mock_valkey):
     """GET /api/v2/search with empty query returns 422."""
     resp = await authed_client.get("/api/v2/search?q=")
     assert resp.status_code == 422
+
+
+# --- Mastodon entity field completeness ---
+
+_STATUS_REQUIRED = {
+    "id", "uri", "url", "account", "content", "created_at",
+    "emojis", "replies_count", "reblogs_count", "favourites_count",
+    "sensitive", "spoiler_text", "visibility", "media_attachments",
+    "mentions", "tags", "favourited", "reblogged", "muted",
+    "bookmarked", "pinned", "filtered", "reblog", "poll",
+    "card", "language", "application",
+}
+
+_ACCOUNT_REQUIRED = {
+    "id", "username", "acct", "display_name", "note", "uri",
+    "url", "avatar", "avatar_static", "header", "header_static",
+    "locked", "bot", "group", "created_at", "followers_count",
+    "following_count", "statuses_count", "emojis", "fields",
+}
+
+
+async def test_status_has_all_fields(authed_client, mock_valkey):
+    """Status response includes all Mastodon-required fields."""
+    resp = await authed_client.post(
+        "/api/v1/statuses", json={"content": "field check", "visibility": "public"}
+    )
+    status = resp.json()
+    missing = _STATUS_REQUIRED - set(status.keys())
+    assert not missing, f"Status missing: {missing}"
+
+
+async def test_status_string_fields_not_null(authed_client, mock_valkey):
+    """String fields must not be null."""
+    resp = await authed_client.post(
+        "/api/v1/statuses", json={"content": "null check", "visibility": "public"}
+    )
+    status = resp.json()
+    for key in ("uri", "created_at", "spoiler_text", "content", "visibility"):
+        assert status[key] is not None, f"status.{key} is null"
+
+
+async def test_account_has_all_fields(authed_client, mock_valkey):
+    """Account in status has all Mastodon-required fields."""
+    resp = await authed_client.post(
+        "/api/v1/statuses", json={"content": "acct check", "visibility": "public"}
+    )
+    account = resp.json()["account"]
+    missing = _ACCOUNT_REQUIRED - set(account.keys())
+    assert not missing, f"Account missing: {missing}"
+
+
+async def test_account_string_fields_not_null(authed_client, mock_valkey):
+    """Account string fields must not be null."""
+    resp = await authed_client.post(
+        "/api/v1/statuses", json={"content": "acct null", "visibility": "public"}
+    )
+    account = resp.json()["account"]
+    for key in (
+        "display_name", "note", "uri", "url", "avatar",
+        "avatar_static", "header", "header_static", "created_at",
+    ):
+        assert account[key] is not None, f"account.{key} is null"
+
+
+async def test_instance_approval_required(app_client, db, mock_valkey):
+    """Instance info includes approval_required."""
+    resp = await app_client.get("/api/v1/instance")
+    data = resp.json()
+    assert "approval_required" in data
+    assert isinstance(data["approval_required"], bool)
+
+
+async def test_instance_thumbnail_not_object(app_client, db, mock_valkey):
+    """V1 thumbnail must be a string URL, not an object."""
+    resp = await app_client.get("/api/v1/instance")
+    thumb = resp.json().get("thumbnail")
+    if thumb is not None:
+        assert isinstance(thumb, str)
+
+
+async def test_media_type_detection():
+    """_mime_to_media_type returns correct Mastodon media types."""
+    from app.api.mastodon.statuses import _mime_to_media_type
+
+    assert _mime_to_media_type("image/jpeg") == "image"
+    assert _mime_to_media_type("image/gif") == "gifv"
+    assert _mime_to_media_type("video/mp4") == "video"
+    assert _mime_to_media_type("audio/mpeg") == "audio"
+    assert _mime_to_media_type("application/pdf") == "unknown"

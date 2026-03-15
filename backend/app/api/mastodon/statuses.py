@@ -42,6 +42,19 @@ _SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
 
 
+def _mime_to_media_type(mime: str) -> str:
+    """Convert a MIME type to Mastodon media type string."""
+    if mime.startswith("image/gif"):
+        return "gifv"
+    if mime.startswith("image/"):
+        return "image"
+    if mime.startswith("video/"):
+        return "video"
+    if mime.startswith("audio/"):
+        return "audio"
+    return "unknown"
+
+
 def _attachment_to_media(att) -> NoteMediaAttachment:
     """Convert a NoteAttachment to NoteMediaAttachment for API response."""
     if att.drive_file:
@@ -58,7 +71,7 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
             meta["focus"] = {"x": att.drive_file.focal_x, "y": att.drive_file.focal_y}
         return NoteMediaAttachment(
             id=str(att.id),
-            type="image" if mime.startswith("image/") else "unknown",
+            type=_mime_to_media_type(mime),
             url=url,
             preview_url=url,
             description=att.drive_file.description,
@@ -77,9 +90,10 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
     proxied = media_proxy_url(att.remote_url)
     return NoteMediaAttachment(
         id=str(att.id),
-        type="image" if mime.startswith("image/") else "unknown",
+        type=_mime_to_media_type(mime),
         url=proxied,
         preview_url=proxied,
+        remote_url=att.remote_url,
         description=att.remote_description,
         blurhash=att.remote_blurhash,
         meta=meta,
@@ -303,12 +317,13 @@ async def note_to_response(
     actor_resp = NoteActorResponse(
         id=actor.id,
         username=actor.username,
-        display_name=actor.display_name,
+        display_name=actor.display_name or "",
         avatar_url=avatar,
         ap_id=actor.ap_id,
         domain=actor.domain,
         emojis=actor_emojis,
         acct=acct,
+        uri=actor.ap_id,
         url=actor_url,
         avatar=avatar,
         avatar_static=avatar,
@@ -316,8 +331,10 @@ async def note_to_response(
         header_static=header,
         note=actor.summary or "",
         bot=actor.is_bot,
+        group=actor.type == "Group",
         created_at=actor.created_at.isoformat() if actor.created_at else "",
         locked=actor.manually_approves_followers,
+        discoverable=actor.discoverable,
     )
 
     return NoteResponse(
