@@ -333,7 +333,13 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
         "birthday": str(actor.birthday) if actor.birthday else None,
         "is_cat": actor.is_cat,
         "is_bot": actor.is_bot,
-        "role": user.role,
+        "role": {
+            "id": "3" if user.role == "admin" else ("2" if user.role == "moderator" else "-1"),
+            "name": user.role.capitalize() if user.role else "",
+            "permissions": "65535" if user.role == "admin" else "0",
+            "color": "",
+            "highlighted": user.role in ("admin", "moderator"),
+        },
     }
 
     # Resolve custom emoji

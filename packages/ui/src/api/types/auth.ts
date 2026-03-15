@@ -8,6 +8,14 @@ export interface FocalPoint {
   y: number;
 }
 
+export interface RoleObject {
+  id: string;
+  name: string;
+  permissions: string;
+  color: string;
+  highlighted: boolean;
+}
+
 export interface CurrentUser {
   id: string;
   username: string;
@@ -23,7 +31,14 @@ export interface CurrentUser {
   is_bot: boolean;
   locked: boolean;
   discoverable: boolean;
-  role: string;
+  role: string | RoleObject;
+}
+
+/** Extract role name string from either string or Mastodon-compatible object. */
+export function getRoleName(role: string | RoleObject | undefined): string {
+  if (!role) return "";
+  if (typeof role === "string") return role;
+  return role.name.toLowerCase();
 }
 
 export interface LoginResponse {
