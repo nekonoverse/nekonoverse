@@ -14,7 +14,8 @@ export default function Navbar() {
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const isHomeTl = () => searchParams.tl === "home";
+  const isHomeTl = () =>
+    (searchParams.tl ?? localStorage.getItem("nekonoverse:tl")) === "home";
   const [menuOpen, setMenuOpen] = createSignal(false);
   const [searchOpen, setSearchOpen] = createSignal(false);
   const [composeOpen, setComposeOpen] = createSignal(false);
