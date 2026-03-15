@@ -79,6 +79,37 @@ test.describe("Composer Sensitive Flag", () => {
     expect(note.spoiler_text).toBe("NSFW content");
   });
 
+  test("sensitive note posted via API shows overlay on note page", async ({
+    page,
+  }) => {
+    const png = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/58BAwAI/AL+hc2rNAAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    const uploadResp = await page.request.post("/api/v1/media", {
+      multipart: {
+        file: { name: "test.png", mimeType: "image/png", buffer: png },
+      },
+    });
+    const media = await uploadResp.json();
+    const noteResp = await page.request.post("/api/v1/statuses", {
+      data: {
+        content: `sensitive flow test ${Date.now()}`,
+        visibility: "public",
+        sensitive: true,
+        media_ids: [media.id],
+      },
+    });
+    const note = await noteResp.json();
+
+    await page.goto(`/notes/${note.id}`);
+    await page.waitForSelector(".note-card", { timeout: 10_000 });
+
+    // Overlay should be visible on the note page
+    await expect(page.locator(".sensitive-overlay")).toBeVisible();
+    await expect(page.locator(".note-media-item img")).toHaveCount(0);
+  });
+
   test("note without sensitive flag has sensitive=false", async ({ page }) => {
     const noteResp = await page.request.post("/api/v1/statuses", {
       data: {
