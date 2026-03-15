@@ -11,6 +11,7 @@ import {
 import { useParams, A } from "@solidjs/router";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { getRoleName } from "@nekonoverse/ui/api/types/auth";
 import { registrationMode } from "@nekonoverse/ui/stores/instance";
 import Breadcrumb from "../components/Breadcrumb";
 import {
@@ -190,10 +191,11 @@ export default function Admin() {
 
   const isStaff = () => {
     const u = currentUser();
-    return u && (u.role === "admin" || u.role === "moderator");
+    const r = getRoleName(u?.role);
+    return u && (r === "admin" || r === "moderator");
   };
 
-  const isAdmin = () => currentUser()?.role === "admin";
+  const isAdmin = () => getRoleName(currentUser()?.role) === "admin";
 
   // Fetch moderator permissions for non-admin staff to filter visible sections
   const [modPerms, setModPerms] = createSignal<Record<string, boolean> | null>(null);
@@ -764,7 +766,7 @@ function UsersTab() {
   const [users, setUsers] = createSignal<AdminUser[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
-  const isAdmin = () => currentUser()?.role === "admin";
+  const isAdmin = () => getRoleName(currentUser()?.role) === "admin";
   const isSelf = (userId: string) => currentUser()?.id === userId;
 
   const loadUsers = async () => {

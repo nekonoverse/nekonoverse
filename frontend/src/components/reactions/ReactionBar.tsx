@@ -6,6 +6,7 @@ import { importRemoteEmojiByShortcode } from "@nekonoverse/ui/api/admin";
 import EmojiPicker from "./EmojiPicker";
 import Emoji from "../Emoji";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { getRoleName } from "@nekonoverse/ui/api/types/auth";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
@@ -154,7 +155,7 @@ export default function ReactionBar(props: Props) {
                 {t("reactions.reactedBy")}
               </h3>
               <div style="display: flex; align-items: center; gap: 8px">
-                <Show when={currentUser()?.role === "admin" && importableEmoji()}>
+                <Show when={getRoleName(currentUser()?.role) === "admin" && importableEmoji()}>
                   <Show when={importState() === "idle"}>
                     <button class="btn btn-small" onClick={handleImport}>
                       {t("reactions.importEmoji")}

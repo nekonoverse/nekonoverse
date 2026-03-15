@@ -1,6 +1,7 @@
 import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
+import { getRoleName } from "@nekonoverse/ui/api/types/auth";
 import { connect, disconnect, unreadCount } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
@@ -259,7 +260,7 @@ export default function Navbar() {
                     </div>
                   </Show>
                 </div>
-                <Show when={user().role === "admin" || user().role === "moderator"}>
+                <Show when={getRoleName(user().role) === "admin" || getRoleName(user().role) === "moderator"}>
                   <a
                     href="/admin"
                     class={`navbar-icon${isActive("/admin") ? " active" : ""}`}
