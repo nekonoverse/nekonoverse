@@ -91,6 +91,16 @@ async def create_app(
     await db.commit()
     await db.refresh(app)
 
+    # VAPID公開鍵 (Web Push用)
+    vapid_key = ""
+    try:
+        from app.services.push_service import get_vapid_public_key_base64url, is_push_enabled
+
+        if await is_push_enabled(db):
+            vapid_key = get_vapid_public_key_base64url() or ""
+    except Exception:
+        pass
+
     return {
         "id": str(app.id),
         "name": app.name,
@@ -101,6 +111,7 @@ async def create_app(
         "client_id": app.client_id,
         "client_secret": app.client_secret,
         "client_secret_expires_at": 0,
+        "vapid_key": vapid_key,
     }
 
 
