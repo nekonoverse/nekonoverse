@@ -59,7 +59,13 @@ async def test_verify_credentials_success(authed_client, test_user):
     assert resp.status_code == 200
     data = resp.json()
     assert data["username"] == "testuser"
-    assert data["role"] == "user"
+    assert data["role"] == {
+        "id": "-1",
+        "name": "User",
+        "permissions": "0",
+        "color": "",
+        "highlighted": False,
+    }
 
 
 async def test_verify_credentials_mastodon_compat(authed_client, test_user):
