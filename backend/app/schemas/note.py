@@ -71,6 +71,17 @@ class ReactionSummary(BaseModel):
     emoji_url: str | None = None
 
 
+class EmojiReaction(BaseModel):
+    """Fedibird-compatible emoji reaction format."""
+
+    name: str
+    count: int
+    me: bool = False
+    url: str | None = None
+    static_url: str | None = None
+    account_ids: list[str] = []
+
+
 class CustomEmojiInfo(BaseModel):
     shortcode: str
     url: str
@@ -143,6 +154,7 @@ class NoteResponse(BaseModel):
     in_reply_to_account_id: uuid.UUID | None = None
     actor: NoteActorResponse
     reactions: list[ReactionSummary] = []
+    emoji_reactions: list[EmojiReaction] = []
     reblog: "NoteResponse | None" = None
     media_attachments: list[NoteMediaAttachment] = []
     quote: "NoteResponse | None" = None
