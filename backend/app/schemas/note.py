@@ -39,6 +39,22 @@ class NoteActorResponse(BaseModel):
     ap_id: str
     domain: str | None
     emojis: list["CustomEmojiInfo"] = []
+    # Mastodon Account compat
+    acct: str = ""
+    url: str = ""
+    avatar: str = ""
+    avatar_static: str = ""
+    header: str = ""
+    header_static: str = ""
+    note: str = ""
+    bot: bool = False
+    created_at: str = ""
+    followers_count: int = 0
+    following_count: int = 0
+    statuses_count: int = 0
+    locked: bool = False
+    fields: list = []
+    last_status_at: str | None = None
 
     model_config = {"from_attributes": True}
 
