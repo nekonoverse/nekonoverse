@@ -156,6 +156,10 @@ async def verify_authentication_response(
     if not user or not user.is_active:
         raise ValueError("User not found or inactive")
 
+    # システムアカウントはPasskeyログイン不可
+    if user.is_system:
+        raise ValueError("System accounts cannot authenticate")
+
     # 承認待ちユーザーはPasskeyログイン不可
     if user.approval_status == "pending":
         raise ValueError("Your registration is pending approval")

@@ -14,6 +14,24 @@ async def test_create_app(app_client, mock_valkey):
     assert "client_secret" in data
 
 
+async def test_create_app_form_urlencoded(app_client, mock_valkey):
+    """Mastodon clients (Feather, Ivory, etc.) send form-urlencoded."""
+    resp = await app_client.post(
+        "/api/v1/apps",
+        data={
+            "client_name": "Feather",
+            "redirect_uris": "feather://callback",
+            "scopes": "read write follow push",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["name"] == "Feather"
+    assert "client_id" in data
+    assert "client_secret" in data
+    assert data["redirect_uri"] == "feather://callback"
+
+
 async def test_authorize_not_logged_in(app_client, mock_valkey):
     app_resp = await app_client.post("/api/v1/apps", json={
         "client_name": "TestApp", "redirect_uris": "http://localhost/callback"

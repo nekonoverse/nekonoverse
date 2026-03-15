@@ -171,6 +171,7 @@ export const ja = {
   "admin.tosUrl": "利用規約URL",
   "admin.themeColor": "テーマカラー",
   "admin.registrationOpen": "新規登録を受け付ける",
+  "admin.systemAccount": "システム",
   "admin.suspended": "凍結中",
   "admin.silenced": "サイレンス中",
   "admin.suspend": "凍結",

@@ -3617,6 +3617,11 @@ a:hover {
   font-weight: 600;
 }
 
+.admin-status-badge.system {
+  background: #6c5ce7;
+  color: #fff;
+}
+
 .admin-status-badge.suspended {
   background: #e74c3c;
   color: #fff;
@@ -6310,5 +6315,14 @@ a:hover {
   .entrance-hero-actions .btn {
     width: 100%;
     text-align: center;
+  }
+
+  .page-container {
+    padding: 0 10px;
+  }
+
+  .note-avatar {
+    width: 54px;
+    height: 54px;
   }
 }

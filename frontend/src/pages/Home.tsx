@@ -53,7 +53,10 @@ export default function Home() {
     }
   };
 
-  const isHomeTL = () => searchParams.tl === "home" && !!currentUser();
+  const isHomeTL = () => {
+    const tl = searchParams.tl ?? localStorage.getItem("nekonoverse:tl");
+    return tl === "home" && !!currentUser();
+  };
 
   const loadTimeline = async () => {
     try {

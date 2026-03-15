@@ -61,7 +61,7 @@ services:
     image: ghcr.io/nekonoverse/nekonoverse-backend:latest
     restart: unless-stopped
     command: >
-      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
+      sh -c "alembic upgrade head && python -m scripts.check_schema && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
       VALKEY_URL: valkey://valkey:6379/0
