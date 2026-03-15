@@ -151,6 +151,48 @@ class InstanceClient:
         resp.raise_for_status()
         return resp.json()
 
+    def search_accounts(self, q: str, resolve: bool = False):
+        """Search/resolve accounts (triggers WebFinger for remote)."""
+        resp = self.http.get(
+            "/api/v2/search",
+            params={"q": q, "type": "accounts", "resolve": str(resolve).lower()},
+        )
+        resp.raise_for_status()
+        data = resp.json()
+        return data.get("accounts", [])
+
+    def update_credentials(self, **kwargs):
+        """Update account credentials (display_name, also_known_as, etc.)."""
+        import json as _json
+
+        form_data = {}
+        for key, value in kwargs.items():
+            if isinstance(value, (list, dict)):
+                form_data[key] = _json.dumps(value)
+            elif value is not None:
+                form_data[key] = value
+        resp = self.http.patch(
+            "/api/v1/accounts/update_credentials",
+            data=form_data,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def move_account(self, target_ap_id: str):
+        """Initiate account migration to target."""
+        resp = self.http.post(
+            "/api/v1/accounts/move",
+            json={"target_ap_id": target_ap_id},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_account(self, actor_id: str):
+        """Get account info by actor UUID."""
+        resp = self.http.get(f"/api/v1/accounts/{actor_id}")
+        resp.raise_for_status()
+        return resp.json()
+
 
 @pytest.fixture(scope="session", autouse=True)
 def wait_for_instances():

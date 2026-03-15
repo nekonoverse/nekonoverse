@@ -269,6 +269,7 @@ async def update_credentials(
     header_delete: str | None = Form(None),
     avatar_focus: str | None = Form(None),
     header_focus: str | None = Form(None),
+    also_known_as: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -379,6 +380,18 @@ async def update_credentials(
 
     if discoverable is not None:
         user.actor.discoverable = discoverable
+        changed = True
+
+    if also_known_as is not None:
+        import json as _json2
+
+        try:
+            aka_list = _json2.loads(also_known_as)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="Invalid also_known_as JSON")
+        if not isinstance(aka_list, list) or not all(isinstance(v, str) for v in aka_list):
+            raise HTTPException(status_code=422, detail="also_known_as must be a list of strings")
+        user.actor.also_known_as = aka_list if aka_list else None
         changed = True
 
     if avatar:
