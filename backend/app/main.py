@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI
 
 _DEFAULT_FAVICON_SVG = b"""\
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none">
@@ -96,6 +96,16 @@ async def lifespan(app: FastAPI):
     except Exception as e:
         logging.getLogger(__name__).warning("Could not ensure default icons: %s", e)
 
+    # システムアカウントの自動作成
+    try:
+        from app.database import async_session as _sa
+        from app.services.system_account_service import ensure_system_accounts
+
+        async with _sa() as sys_db:
+            await ensure_system_accounts(sys_db)
+    except Exception as e:
+        logging.getLogger(__name__).warning("Could not ensure system accounts: %s", e)
+
     from app.pubsub_hub import pubsub_hub
 
     await pubsub_hub.start()
@@ -136,6 +146,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
 
     from app.models.actor import Actor
     from app.models.note import Note
+    from app.models.user import User
     from app.services.server_settings_service import get_setting
 
     thumbnail_url = None
@@ -174,8 +185,12 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     status_count = 0
     domain_count = 0
     try:
+        # システムアカウントをユーザー数から除外
         user_result = await db.execute(
-            select(func.count()).select_from(Actor).where(Actor.domain.is_(None))
+            select(func.count())
+            .select_from(Actor)
+            .join(User, User.actor_id == Actor.id)
+            .where(Actor.domain.is_(None), User.is_system.is_(False))
         )
         user_count = user_result.scalar() or 0
 

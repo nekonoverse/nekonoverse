@@ -173,6 +173,7 @@ export const en: Dictionary = {
   "admin.tosUrl": "Terms of Service URL",
   "admin.themeColor": "Theme Color",
   "admin.registrationOpen": "Open registration",
+  "admin.systemAccount": "System",
   "admin.suspended": "Suspended",
   "admin.silenced": "Silenced",
   "admin.suspend": "Suspend",

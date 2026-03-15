@@ -37,6 +37,7 @@ class AdminUserResponse(BaseModel):
     display_name: str | None
     role: str
     is_active: bool
+    is_system: bool = False
     suspended: bool = False
     silenced: bool = False
     created_at: datetime

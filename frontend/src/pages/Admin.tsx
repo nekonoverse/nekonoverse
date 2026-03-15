@@ -856,6 +856,11 @@ function UsersTab() {
                     <span class={`admin-role-badge role-${u.role}`}>
                       {u.role}
                     </span>
+                    <Show when={u.is_system}>
+                      <span class="admin-status-badge system">
+                        {t("admin.systemAccount")}
+                      </span>
+                    </Show>
                     <Show when={u.suspended}>
                       <span class="admin-status-badge suspended">
                         {t("admin.suspended")}
@@ -867,7 +872,7 @@ function UsersTab() {
                       </span>
                     </Show>
                   </div>
-                  <Show when={!isSelf(u.id)}>
+                  <Show when={!isSelf(u.id) && !u.is_system}>
                     <div class="admin-user-actions">
                       <Show when={isAdmin()}>
                         <select

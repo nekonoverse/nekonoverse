@@ -25,6 +25,9 @@ class User(Base):
         nullable=False,
     )
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    is_system: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
     private_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
     totp_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     totp_enabled: Mapped[bool] = mapped_column(

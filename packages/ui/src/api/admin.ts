@@ -26,6 +26,7 @@ export interface AdminUser {
   display_name: string | null;
   role: string;
   is_active: boolean;
+  is_system: boolean;
   suspended: boolean;
   silenced: boolean;
   created_at: string;

@@ -76,16 +76,20 @@ async def create_user(
 
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
+    # タイミング差によるユーザー列挙を防ぐためのダミーハッシュ
+    _dummy_hash = b"$2b$12$LJ3m4ys3Lg2VEqGOAOPMb.5Q9MQhRr0vIIfSCpOIYXJDkJp0wqvN6"
     result = await db.execute(
         select(Actor).where(Actor.username == username.lower(), Actor.domain.is_(None))
     )
     actor = result.scalar_one_or_none()
     if actor is None or actor.local_user is None:
-        # タイミング差によるユーザー列挙を防ぐためダミーbcrypt比較を実行
-        _dummy_hash = b"$2b$12$LJ3m4ys3Lg2VEqGOAOPMb.5Q9MQhRr0vIIfSCpOIYXJDkJp0wqvN6"
         await asyncio.to_thread(_bcrypt.checkpw, password.encode(), _dummy_hash)
         return None
     user = actor.local_user
+    # システムアカウントはログイン不可
+    if user.is_system:
+        await asyncio.to_thread(_bcrypt.checkpw, password.encode(), _dummy_hash)
+        return None
     valid = await asyncio.to_thread(_bcrypt.checkpw, password.encode(), user.password_hash.encode())
     if not valid:
         return None
@@ -100,6 +104,9 @@ async def reset_password(db: AsyncSession, username: str, new_password: str) -> 
     if actor is None or actor.local_user is None:
         raise ValueError(f"User not found: {username}")
     user = actor.local_user
+    # システムアカウントのパスワードリセットを拒否
+    if user.is_system:
+        raise ValueError("Cannot reset password for system account")
     user.password_hash = (
         await asyncio.to_thread(_bcrypt.hashpw, new_password.encode(), _bcrypt.gensalt())
     ).decode()

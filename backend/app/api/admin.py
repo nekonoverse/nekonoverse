@@ -294,6 +294,7 @@ async def list_users(
             display_name=u.actor.display_name,
             role=u.role,
             is_active=u.is_active,
+            is_system=u.is_system,
             suspended=u.actor.is_suspended,
             silenced=u.actor.is_silenced,
             created_at=u.created_at,
@@ -312,6 +313,8 @@ async def change_user_role(
     from app.services.moderation_service import log_action
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if target.id == user.id:
         raise HTTPException(status_code=422, detail="Cannot change own role")
 
@@ -334,6 +337,8 @@ async def suspend_user(
     from app.services.moderation_service import suspend_actor
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if target.actor.is_suspended:
         raise HTTPException(status_code=422, detail="Already suspended")
     if target.id == user.id:
@@ -354,6 +359,8 @@ async def unsuspend_user(
     from app.services.moderation_service import unsuspend_actor
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if not target.actor.is_suspended:
         raise HTTPException(status_code=422, detail="Not suspended")
     _check_moderation_permission(user, target)
@@ -373,6 +380,8 @@ async def silence_user(
     from app.services.moderation_service import silence_actor
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Already silenced")
     if target.id == user.id:
@@ -393,6 +402,8 @@ async def unsilence_user(
     from app.services.moderation_service import unsilence_actor
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if not target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Not silenced")
     _check_moderation_permission(user, target)
