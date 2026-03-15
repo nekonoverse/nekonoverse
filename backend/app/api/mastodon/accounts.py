@@ -306,6 +306,7 @@ async def unmute_account(
 async def get_account_statuses(
     actor_id: uuid.UUID,
     limit: int = 20,
+    max_id: uuid.UUID | None = None,
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -368,6 +369,15 @@ async def get_account_statuses(
             actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc
         )
         query = query.where(Note.published > threshold)
+
+    if max_id:
+        # Cursor-based pagination: get the published timestamp of max_id note
+        cursor_result = await db.execute(
+            select(Note.published).where(Note.id == max_id)
+        )
+        cursor_ts = cursor_result.scalar_one_or_none()
+        if cursor_ts:
+            query = query.where(Note.published < cursor_ts)
 
     query = query.order_by(Note.published.desc()).limit(min(limit, 40))
     notes_result = await db.execute(query)
