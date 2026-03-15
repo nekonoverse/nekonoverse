@@ -126,7 +126,7 @@ async def test_create_status_followers(authed_client, mock_valkey):
         "content": "Followers only", "visibility": "followers"
     })
     assert resp.status_code == 201
-    assert resp.json()["visibility"] == "followers"
+    assert resp.json()["visibility"] == "private"
 
 
 async def test_get_status_includes_reactions(authed_client, mock_valkey):

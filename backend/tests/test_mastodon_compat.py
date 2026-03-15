@@ -308,6 +308,25 @@ async def test_instance_thumbnail_not_object(app_client, db, mock_valkey):
         assert isinstance(thumb, str)
 
 
+async def test_visibility_followers_mapped_to_private(authed_client, mock_valkey):
+    """visibility=followers must be returned as 'private' for Mastodon compat."""
+    resp = await authed_client.post(
+        "/api/v1/statuses",
+        json={"content": "followers vis", "visibility": "followers"},
+    )
+    assert resp.json()["visibility"] == "private"
+
+
+async def test_visibility_private_accepted(authed_client, mock_valkey):
+    """Mastodon clients send visibility=private; must be accepted."""
+    resp = await authed_client.post(
+        "/api/v1/statuses",
+        json={"content": "private vis", "visibility": "private"},
+    )
+    assert resp.status_code in (200, 201)
+    assert resp.json()["visibility"] == "private"
+
+
 async def test_media_type_detection():
     """_mime_to_media_type returns correct Mastodon media types."""
     from app.api.mastodon.statuses import _mime_to_media_type
