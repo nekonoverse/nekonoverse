@@ -177,7 +177,7 @@ async def test_duplicate_notification_skipped(db, mock_valkey, test_user, test_u
 
 @pytest.mark.anyio
 async def test_duplicate_allowed_after_read(db, mock_valkey, test_user, test_user_b):
-    """After marking as read, a new notification of the same type is allowed."""
+    """After marking as read, duplicate notification of the same type is still deduplicated."""
     from app.services.notification_service import (
         create_notification,
         mark_as_read,
@@ -196,7 +196,7 @@ async def test_duplicate_allowed_after_read(db, mock_valkey, test_user, test_use
         db, "follow", test_user.actor_id, test_user_b.actor_id,
     )
     await db.commit()
-    assert n2 is not None  # allowed because first was read
+    assert n2 is None  # deduplicated regardless of read status
 
 
 # ── Notification API ─────────────────────────────────────────────────────────

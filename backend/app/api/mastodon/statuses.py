@@ -798,18 +798,18 @@ async def favourite_status(
     try:
         await add_reaction(db, user, note, "\u2b50")
     except ValueError:
-        pass  # 既にリアクション済みの場合は無視
+        pass  # 既にリアクション済みの場合は無視（通知は作成しない）
+    else:
+        # 通知作成 (新規リアクション成功時、ローカルユーザーの場合のみ)
+        if note.actor.is_local and note.actor_id != user.actor_id:
+            from app.services.notification_service import create_notification, publish_notification
 
-    # 通知作成 (ローカルユーザーの場合)
-    if note.actor.is_local and note.actor_id != user.actor_id:
-        from app.services.notification_service import create_notification, publish_notification
-
-        notif = await create_notification(
-            db, "reaction", note.actor_id, user.actor_id, note.id, reaction_emoji="\u2b50"
-        )
-        await db.commit()
-        if notif:
-            await publish_notification(notif)
+            notif = await create_notification(
+                db, "reaction", note.actor_id, user.actor_id, note.id, reaction_emoji="\u2b50"
+            )
+            await db.commit()
+            if notif:
+                await publish_notification(notif)
 
     note = await get_note_by_id(db, note_id)
     reactions = await get_reaction_summary(db, note.id, user.actor_id)
