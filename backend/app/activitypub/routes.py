@@ -229,6 +229,7 @@ async def get_featured(username: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/notes/{note_id}")
 async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)):
+    from app.services.hashtag_service import get_hashtags_for_notes
     from app.services.note_service import get_note_by_id
 
     note = await get_note_by_id(db, note_id)
@@ -237,6 +238,10 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
 
     if not is_ap_request(request):
         raise HTTPException(status_code=404, detail="Not found")
+
+    # Load hashtags for AP rendering
+    hashtags_map = await get_hashtags_for_notes(db, [note.id])
+    note._hashtag_names = hashtags_map.get(note.id, [])
 
     return Response(
         content=json.dumps(render_note(note)),
