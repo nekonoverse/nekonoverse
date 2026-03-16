@@ -153,17 +153,8 @@ async def authenticate_verify(
         await valkey.expire(key, PASSKEY_LOCKOUT_TTL)
         raise HTTPException(status_code=401, detail=str(e))
 
-    # H-2: Passkey認証成功後もTOTP 2FAが有効な場合は検証を要求
-    if user.totp_enabled:
-        from app.api.auth import TOTP_TOKEN_TTL
-
-        totp_token = secrets.token_urlsafe(32)
-        await valkey.set(
-            f"totp_pending:{totp_token}",
-            str(user.id),
-            ex=TOTP_TOKEN_TTL,
-        )
-        return {"requires_totp": True, "totp_token": totp_token}
+    # Passkey (WebAuthn) はデバイス所持+生体認証/PINで既にMFAを満たすため、
+    # TOTP追加検証は不要。パスワード認証時のみTOTPを要求する。
 
     session_id = secrets.token_urlsafe(32)
     await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)

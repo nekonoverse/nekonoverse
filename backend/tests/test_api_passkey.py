@@ -143,11 +143,10 @@ async def test_authenticate_verify_success(
     mock_valkey.set.assert_called()
 
 
-async def test_authenticate_verify_totp_required(
+async def test_authenticate_verify_totp_user_gets_session(
     app_client, db, test_user, mock_valkey,
 ):
-    """H-2: Passkey auth with TOTP enabled must NOT issue session directly."""
-    # Create a user-like object with TOTP enabled
+    """Passkey is MFA by itself — TOTP user still gets session directly."""
     totp_user = MagicMock()
     totp_user.id = test_user.id
     totp_user.totp_enabled = True
@@ -168,17 +167,12 @@ async def test_authenticate_verify_totp_required(
                 },
             },
         )
-
     assert resp.status_code == 200
     data = resp.json()
-    assert data["requires_totp"] is True
-    assert "totp_token" in data
-    assert "ok" not in data
-    assert "nekonoverse_session" not in resp.cookies
-
-    # Verify totp_pending token was stored in Valkey
-    set_calls = [str(c) for c in mock_valkey.set.call_args_list]
-    assert any("totp_pending:" in c for c in set_calls)
+    assert data["ok"] is True
+    assert "nekonoverse_session" in resp.cookies
+    # Should NOT require TOTP — Passkey is already MFA
+    assert "requires_totp" not in data
 
 
 async def test_authenticate_verify_invalid(app_client, mock_valkey):

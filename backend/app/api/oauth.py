@@ -344,13 +344,8 @@ async def authorize_submit(
                 csrf_token=csrf_token,
             )
 
-        # Passkey成功後もTOTPチェック
-        if user.totp_enabled:
-            return await _redirect_to_totp(
-                valkey, user, app, client_id, redirect_uri, scope,
-                response_type, state, code_challenge, code_challenge_method,
-            )
-
+        # Passkey (WebAuthn) はデバイス所持+生体認証/PINで既にMFAを満たすため、
+        # TOTP追加検証は不要。パスワード認証時のみTOTPを要求する。
         return await _issue_authorization_code(
             db=db, app=app, user_id=user.id, redirect_uri=redirect_uri,
             scope=scope, state=state, code_challenge=code_challenge,

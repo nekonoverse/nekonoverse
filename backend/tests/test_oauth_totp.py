@@ -204,10 +204,10 @@ async def test_oauth_passkey_login(
     assert location.startswith("http://localhost:3000/callback")
 
 
-async def test_oauth_passkey_with_totp(
+async def test_oauth_passkey_with_totp_skips_totp(
     app_client, db, test_user, mock_valkey,
 ):
-    """Passkey + TOTP enabled must show TOTP form, not issue code."""
+    """Passkey is MFA by itself — TOTP enabled user still gets auth code directly."""
     app_data = await _create_test_app(app_client, mock_valkey)
 
     test_user.totp_enabled = True
@@ -243,8 +243,8 @@ async def test_oauth_passkey_with_totp(
             follow_redirects=False,
         )
 
-    assert resp.status_code == 200
-    assert "Two-Factor Authentication" in resp.text
-    assert "totp_token" in resp.text
-    set_calls = [str(c) for c in mock_valkey.set.call_args_list]
-    assert any("totp_pending_oauth:" in c for c in set_calls)
+    # Passkey is already MFA — should issue auth code without TOTP
+    assert resp.status_code == 302
+    location = resp.headers["location"]
+    assert "code=" in location
+    assert location.startswith("http://localhost:3000/callback")
