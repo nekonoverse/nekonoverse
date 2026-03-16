@@ -95,21 +95,28 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
     if is_custom_emoji_shortcode(emoji):
         import re
 
-        sc_match = re.match(r"^:([a-zA-Z0-9_]+):", emoji)
+        sc_match = re.match(r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:", emoji)
         if sc_match:
             from app.services.emoji_service import get_custom_emoji
 
-            local_emoji = await get_custom_emoji(db, sc_match.group(1), None)
-            if local_emoji:
+            shortcode = sc_match.group(1)
+            domain = sc_match.group(2)
+
+            # Try local emoji first, fall back to cached remote emoji
+            emoji_obj = await get_custom_emoji(db, shortcode, None)
+            if not emoji_obj and domain:
+                emoji_obj = await get_custom_emoji(db, shortcode, domain)
+
+            if emoji_obj:
                 emoji_tag = [
                     {
-                        "id": local_emoji.url,
+                        "id": emoji_obj.url,
                         "type": "Emoji",
-                        "name": f":{local_emoji.shortcode}:",
+                        "name": f":{emoji_obj.shortcode}:",
                         "icon": {
                             "type": "Image",
                             "mediaType": "image/png",
-                            "url": local_emoji.url,
+                            "url": emoji_obj.url,
                         },
                     }
                 ]
