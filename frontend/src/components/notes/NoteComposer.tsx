@@ -3,7 +3,7 @@ import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment, 
 import { useI18n } from "@nekonoverse/ui/i18n";
 import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
-import EmojiPicker from "../reactions/EmojiPicker";
+import EmojiSuggest from "./EmojiSuggest";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { stripExifFromFile } from "@nekonoverse/ui/utils/stripExif";
@@ -67,7 +67,9 @@ export default function NoteComposer(props: Props) {
   const [visMenuOpen, setVisMenuOpen] = createSignal(false);
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
   const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
-  const [emojiPickerOpen, setEmojiPickerOpen] = createSignal(false);
+  const [suggestOpen, setSuggestOpen] = createSignal(false);
+  const [suggestQuery, setSuggestQuery] = createSignal("");
+  const [colonPos, setColonPos] = createSignal(0);
   const [dragging, setDragging] = createSignal(false);
   const [pollOpen, setPollOpen] = createSignal(false);
   const [pollOptions, setPollOptions] = createSignal<string[]>(["", ""]);
@@ -79,6 +81,7 @@ export default function NoteComposer(props: Props) {
 
   let fileInput!: HTMLInputElement;
   let textareaRef!: HTMLTextAreaElement;
+  let suggestKeyHandler: ((e: KeyboardEvent) => boolean) | undefined;
 
   // Auto-set visibility and prepend @mention when replying
   createEffect(() => {
@@ -290,21 +293,18 @@ export default function NoteComposer(props: Props) {
     }
   };
 
-  const handleEmojiSelect = (emoji: string) => {
-    const textarea = textareaRef;
-    const start = textarea?.selectionStart ?? content().length;
-    const end = textarea?.selectionEnd ?? content().length;
-    const before = content().slice(0, start);
-    const after = content().slice(end);
-    setContent(before + emoji + after);
-    setEmojiPickerOpen(false);
-    // カーソルを挿入した絵文字の後ろに移動
+  const handleSuggestSelect = (emojiText: string) => {
+    // Replace from colonPos to current cursor with emojiText + space
+    const before = content().slice(0, colonPos());
+    const after = content().slice(textareaRef?.selectionStart ?? content().length);
+    setContent(before + emojiText + " " + after);
+    setSuggestOpen(false);
     requestAnimationFrame(() => {
-      if (textarea) {
-        const pos = start + emoji.length;
-        textarea.selectionStart = pos;
-        textarea.selectionEnd = pos;
-        textarea.focus();
+      if (textareaRef) {
+        const pos = colonPos() + emojiText.length + 1;
+        textareaRef.selectionStart = pos;
+        textareaRef.selectionEnd = pos;
+        textareaRef.focus();
       }
     });
   };
@@ -371,20 +371,47 @@ export default function NoteComposer(props: Props) {
           maxLength={500}
         />
       </Show>
-      <textarea
-        ref={textareaRef}
-        value={content()}
-        onInput={(e) => setContent(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !uploading()) {
-            handleSubmit(e);
-          }
-        }}
-        onPaste={handlePaste}
-        placeholder={props.replyTo ? t("reply.reply") + "..." : t("composer.placeholder")}
-        rows={3}
-        maxLength={5000}
-      />
+      <div class="composer-textarea-wrap">
+        <textarea
+          ref={textareaRef}
+          value={content()}
+          onInput={(e) => {
+            const textarea = e.currentTarget;
+            setContent(textarea.value);
+            // Detect :query pattern before cursor
+            const before = textarea.value.slice(0, textarea.selectionStart);
+            const match = before.match(/(?:^|\s):([a-zA-Z0-9_]*)$/);
+            if (match) {
+              setSuggestOpen(true);
+              setSuggestQuery(match[1]);
+              setColonPos(textarea.selectionStart - match[1].length - 1);
+            } else {
+              setSuggestOpen(false);
+            }
+          }}
+          onKeyDown={(e) => {
+            // Forward to emoji suggest if open
+            if (suggestOpen() && suggestKeyHandler?.(e)) {
+              return;
+            }
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !uploading()) {
+              handleSubmit(e);
+            }
+          }}
+          onPaste={handlePaste}
+          placeholder={props.replyTo ? t("reply.reply") + "..." : t("composer.placeholder")}
+          rows={3}
+          maxLength={5000}
+        />
+        <Show when={suggestOpen()}>
+          <EmojiSuggest
+            query={suggestQuery()}
+            onSelect={handleSuggestSelect}
+            onClose={() => setSuggestOpen(false)}
+            bindKeyHandler={(h) => { suggestKeyHandler = h; }}
+          />
+        </Show>
+      </div>
       <Show when={attachments().length > 0}>
         <div class="composer-media-preview">
           <For each={attachments()}>
@@ -510,32 +537,40 @@ export default function NoteComposer(props: Props) {
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
           </button>
-          <div class="composer-emoji-wrap">
-            <button
-              type="button"
-              class="composer-attach-btn"
-              onClick={() => {
-                const opening = !emojiPickerOpen();
-                if (opening) textareaRef?.blur();
-                setEmojiPickerOpen(opening);
-              }}
-              title={t("composer.emoji" as any)}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                <line x1="9" y1="9" x2="9.01" y2="9" />
-                <line x1="15" y1="9" x2="15.01" y2="9" />
-              </svg>
-            </button>
-            <Show when={emojiPickerOpen()}>
-              <div class="composer-emoji-backdrop" onClick={() => setEmojiPickerOpen(false)} />
-              <EmojiPicker
-                onSelect={handleEmojiSelect}
-                onClose={() => setEmojiPickerOpen(false)}
-              />
-            </Show>
-          </div>
+          <button
+            type="button"
+            class="composer-attach-btn"
+            onClick={() => {
+              // Insert ":" at cursor and open suggest
+              const textarea = textareaRef;
+              if (!textarea) return;
+              const start = textarea.selectionStart ?? content().length;
+              const end = textarea.selectionEnd ?? content().length;
+              const before = content().slice(0, start);
+              const after = content().slice(end);
+              // Add space before ":" if cursor is right after a non-space char
+              const needsSpace = before.length > 0 && !/\s$/.test(before);
+              const insert = (needsSpace ? " " : "") + ":";
+              setContent(before + insert + after);
+              const newPos = start + insert.length;
+              setSuggestOpen(true);
+              setSuggestQuery("");
+              setColonPos(newPos - 1);
+              requestAnimationFrame(() => {
+                textarea.selectionStart = newPos;
+                textarea.selectionEnd = newPos;
+                textarea.focus();
+              });
+            }}
+            title={t("composer.emoji" as any)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </button>
           <button
             type="button"
             class={`composer-attach-btn${pollOpen() ? " active" : ""}`}

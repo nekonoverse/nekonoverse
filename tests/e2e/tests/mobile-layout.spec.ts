@@ -13,19 +13,20 @@ test.describe("Mobile layout", () => {
     await page.setViewportSize({ width: MOBILE_WIDTH, height: MOBILE_HEIGHT });
   });
 
-  test("composer emoji picker fits within viewport", async ({ page }) => {
+  test("composer emoji suggest fits within viewport", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/");
     await page.waitForSelector(".note-composer", { timeout: 10_000 });
 
-    // 絵文字ボタン（composer-emoji-wrap 内の composer-attach-btn）をクリック
-    const emojiBtn = page.locator(".composer-emoji-wrap .composer-attach-btn");
-    await emojiBtn.click();
+    // テキストエリアに `:smi` を入力してインラインサジェストを表示
+    const textarea = page.locator("form.note-composer textarea");
+    await textarea.click();
+    await textarea.type(":smi");
 
-    // ピッカーが表示されるのを待つ
-    await page.waitForSelector(".emoji-picker", { timeout: 5_000 });
+    // サジェストが表示されるのを待つ
+    await page.waitForSelector(".emoji-suggest", { timeout: 5_000 });
 
-    const box = await page.locator(".emoji-picker").boundingBox();
+    const box = await page.locator(".emoji-suggest").boundingBox();
     expect(box).not.toBeNull();
     if (box) {
       // ビューポート内に収まっていること
