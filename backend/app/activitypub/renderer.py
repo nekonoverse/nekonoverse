@@ -344,6 +344,20 @@ def render_like_activity(activity_id: str, actor_ap_id: str, note_ap_id: str, em
     }
 
 
+def render_emoji_react_activity(
+    activity_id: str, actor_ap_id: str, note_ap_id: str, emoji: str
+) -> dict:
+    """Render an EmojiReact activity (Fedibird/Pleroma/Akkoma compatible)."""
+    return {
+        "@context": AP_CONTEXT,
+        "id": activity_id,
+        "type": "EmojiReact",
+        "actor": actor_ap_id,
+        "object": note_ap_id,
+        "content": emoji,
+    }
+
+
 def render_follow_activity(activity_id: str, actor_ap_id: str, target_ap_id: str) -> dict:
     return {
         "@context": AP_CONTEXT,

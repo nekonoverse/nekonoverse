@@ -6,6 +6,7 @@ from app.activitypub.renderer import (
     render_actor,
     render_create_activity,
     render_delete_activity,
+    render_emoji_react_activity,
     render_follow_activity,
     render_like_activity,
     render_note,
@@ -104,6 +105,14 @@ def test_render_like_activity_misskey():
     assert data["type"] == "Like"
     assert data["_misskey_reaction"] == "\U0001f600"
     assert data["content"] == "\U0001f600"
+
+
+def test_render_emoji_react_activity():
+    data = render_emoji_react_activity("act-id", "actor-id", "note-id", "\U0001f600")
+    assert data["type"] == "EmojiReact"
+    assert data["content"] == "\U0001f600"
+    assert data["object"] == "note-id"
+    assert "_misskey_reaction" not in data
 
 
 def test_render_follow_activity():

@@ -72,12 +72,19 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
 
     await _publish_reaction_event(db, note)
 
-    # Build Like activity and deliver to all observing servers
-    from app.activitypub.renderer import render_like_activity
+    # Build Like (Misskey) + EmojiReact (Fedibird/Pleroma/Akkoma) activities
+    from app.activitypub.renderer import (
+        render_emoji_react_activity,
+        render_like_activity,
+    )
     from app.services.delivery_service import enqueue_delivery
     from app.services.follow_service import get_follower_inboxes
 
-    activity = render_like_activity(ap_id, actor_uri(actor), note.ap_id, emoji)
+    like_activity = render_like_activity(ap_id, actor_uri(actor), note.ap_id, emoji)
+    react_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
+    react_activity = render_emoji_react_activity(
+        react_id, actor_uri(actor), note.ap_id, emoji
+    )
 
     # Attach emoji tag for custom emoji so remote server can display it
     if is_custom_emoji_shortcode(emoji):
@@ -89,7 +96,7 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
 
             local_emoji = await get_custom_emoji(db, sc_match.group(1), None)
             if local_emoji:
-                activity["tag"] = [
+                emoji_tag = [
                     {
                         "type": "Emoji",
                         "name": f":{local_emoji.shortcode}:",
@@ -100,6 +107,8 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
                         },
                     }
                 ]
+                like_activity["tag"] = emoji_tag
+                react_activity["tag"] = emoji_tag
 
     # Collect target inboxes: note author + reactor's followers
     inboxes: set[str] = set()
@@ -109,7 +118,8 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
     inboxes.update(follower_inboxes)
 
     for inbox_url in inboxes:
-        await enqueue_delivery(db, actor.id, inbox_url, activity)
+        await enqueue_delivery(db, actor.id, inbox_url, like_activity)
+        await enqueue_delivery(db, actor.id, inbox_url, react_activity)
 
     return reaction
 
@@ -137,17 +147,29 @@ async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
 
     await _publish_reaction_event(db, note)
 
-    # Send Undo(Like) to all observing servers
+    # Send Undo(Like) + Undo(EmojiReact) to all observing servers
     if reaction_ap_id:
-        from app.activitypub.renderer import render_like_activity, render_undo_activity
+        from app.activitypub.renderer import (
+            render_emoji_react_activity,
+            render_like_activity,
+            render_undo_activity,
+        )
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
 
         like_activity = render_like_activity(
             reaction_ap_id, actor_uri(actor), note.ap_id, emoji
         )
-        undo_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
-        undo_activity = render_undo_activity(undo_id, actor_uri(actor), like_activity)
+        undo_like_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
+        undo_like = render_undo_activity(undo_like_id, actor_uri(actor), like_activity)
+
+        react_activity = render_emoji_react_activity(
+            f"{reaction_ap_id}/react", actor_uri(actor), note.ap_id, emoji
+        )
+        undo_react_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
+        undo_react = render_undo_activity(
+            undo_react_id, actor_uri(actor), react_activity
+        )
 
         inboxes: set[str] = set()
         if not note.actor.is_local:
@@ -156,4 +178,5 @@ async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
         inboxes.update(follower_inboxes)
 
         for inbox_url in inboxes:
-            await enqueue_delivery(db, actor.id, inbox_url, undo_activity)
+            await enqueue_delivery(db, actor.id, inbox_url, undo_like)
+            await enqueue_delivery(db, actor.id, inbox_url, undo_react)
