@@ -48,14 +48,25 @@ export default function ImageLightbox(props: Props) {
     else if (e.key === "ArrowRight") next();
   };
 
+  let savedScrollY = 0;
+
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown);
+    // モバイルで position: fixed のズレを防ぐ body 固定テクニック
+    savedScrollY = window.scrollY;
+    document.body.style.position = "fixed";
+    document.body.style.top = `-${savedScrollY}px`;
+    document.body.style.width = "100%";
     document.body.style.overflow = "hidden";
   });
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown);
+    document.body.style.position = "";
+    document.body.style.top = "";
+    document.body.style.width = "";
     document.body.style.overflow = "";
+    window.scrollTo(0, savedScrollY);
   });
 
   const handleBackdropClick = (e: MouseEvent) => {
