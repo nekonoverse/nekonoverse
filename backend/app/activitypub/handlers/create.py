@@ -82,29 +82,45 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     else:
         visibility = "direct"
 
-    # Resolve reply
+    # Resolve reply and quote
     in_reply_to_ap_id = note_data.get("inReplyTo")
-    in_reply_to_id = None
-    if in_reply_to_ap_id:
-        reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id)
-        # ローカルに無ければリモートからfetch
-        if not reply_note:
-            reply_note = await fetch_remote_note(db, in_reply_to_ap_id)
-        if reply_note:
-            in_reply_to_id = reply_note.id
-
-    # Resolve quote (Misskey-style)
     quote_ap_id = (
         note_data.get("_misskey_quote") or note_data.get("quoteUrl") or note_data.get("quoteUri")
     )
+
+    # ローカルDBを先にチェック
+    in_reply_to_id = None
     quote_id = None
-    if quote_ap_id:
-        quoted_note = await get_note_by_ap_id(db, quote_ap_id)
-        # ローカルに無ければリモートからfetch
-        if not quoted_note:
-            quoted_note = await fetch_remote_note(db, quote_ap_id)
-        if quoted_note:
-            quote_id = quoted_note.id
+    reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id) if in_reply_to_ap_id else None
+    quoted_note = await get_note_by_ap_id(db, quote_ap_id) if quote_ap_id else None
+
+    # H-4: ローカルに無い場合のリモートフェッチを並列化
+    import asyncio as _asyncio
+
+    fetch_tasks = []
+    need_reply_fetch = in_reply_to_ap_id and not reply_note
+    need_quote_fetch = quote_ap_id and not quoted_note
+    if need_reply_fetch:
+        fetch_tasks.append(fetch_remote_note(db, in_reply_to_ap_id))
+    if need_quote_fetch:
+        fetch_tasks.append(fetch_remote_note(db, quote_ap_id))
+    if fetch_tasks:
+        results = await _asyncio.gather(*fetch_tasks, return_exceptions=True)
+        idx = 0
+        if need_reply_fetch:
+            r = results[idx]
+            if not isinstance(r, Exception):
+                reply_note = r
+            idx += 1
+        if need_quote_fetch:
+            r = results[idx]
+            if not isinstance(r, Exception):
+                quoted_note = r
+
+    if reply_note:
+        in_reply_to_id = reply_note.id
+    if quoted_note:
+        quote_id = quoted_note.id
 
     # Extract mentions and custom emoji from tag array
     tags = note_data.get("tag", [])

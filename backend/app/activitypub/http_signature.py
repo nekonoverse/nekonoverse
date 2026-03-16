@@ -1,4 +1,5 @@
 import base64
+import functools
 import hashlib
 from datetime import datetime, timezone
 from email.utils import format_datetime, parsedate_to_datetime
@@ -6,6 +7,17 @@ from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
+
+
+# C-4: パース済みRSA鍵をキャッシュしてCPU負荷を削減
+@functools.lru_cache(maxsize=256)
+def _parse_private_key(pem: str):
+    return serialization.load_pem_private_key(pem.encode(), password=None)
+
+
+@functools.lru_cache(maxsize=1024)
+def _parse_public_key(pem: str):
+    return serialization.load_pem_public_key(pem.encode())
 
 
 def sign_request(
@@ -45,7 +57,7 @@ def sign_request(
 
     signed_string = "\n".join(signed_parts)
 
-    private_key = serialization.load_pem_private_key(private_key_pem.encode(), password=None)
+    private_key = _parse_private_key(private_key_pem)
     signature = private_key.sign(
         signed_string.encode("utf-8"),
         padding.PKCS1v15(),
@@ -115,7 +127,7 @@ def verify_signature(
     signed_string = "\n".join(signed_parts)
 
     try:
-        public_key = serialization.load_pem_public_key(public_key_pem.encode())
+        public_key = _parse_public_key(public_key_pem)
         public_key.verify(
             base64.b64decode(params["signature"]),
             signed_string.encode("utf-8"),

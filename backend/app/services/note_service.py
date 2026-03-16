@@ -303,9 +303,15 @@ async def create_note(
         if visibility == "public":
             await valkey_client.publish("timeline:public", event)
         follower_ids = await get_follower_ids(db, actor.id)
-        for fid in follower_ids:
-            await valkey_client.publish(f"timeline:home:{fid}", event)
-        await valkey_client.publish(f"timeline:home:{actor.id}", event)
+        # M-9: Valkeyパイプラインで一括pub/sub
+        if follower_ids:
+            pipe = valkey_client.pipeline()
+            for fid in follower_ids:
+                pipe.publish(f"timeline:home:{fid}", event)
+            pipe.publish(f"timeline:home:{actor.id}", event)
+            await pipe.execute()
+        else:
+            await valkey_client.publish(f"timeline:home:{actor.id}", event)
     except Exception:
         pass  # Don't fail note creation if pub/sub fails
 
@@ -316,6 +322,12 @@ async def create_note(
         first_url = _extract_first_url(content)
         if first_url:
             await enqueue_summary(note_id, first_url)
+
+    # M-12: statuses_countキャッシュを無効化
+    try:
+        await valkey_client.delete(f"perf:statuses_count:{actor.id}")
+    except Exception:
+        pass
 
     # Re-query after delivery commits to get fresh state
     return await get_note_by_id(db, note_id)

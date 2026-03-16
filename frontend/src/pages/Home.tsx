@@ -346,7 +346,7 @@ export default function Home() {
                 when={notes().length > 0}
                 fallback={<p class="empty">{t("timeline.empty")}</p>}
               >
-                <For each={notes()}>
+                <For each={notes().slice(0, 200)}>
                   {(note) => (
                     <div
                       class={newNoteIds().has(note.id) ? "note-slide-in" : ""}

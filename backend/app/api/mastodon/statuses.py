@@ -780,6 +780,44 @@ async def get_status_history(
     return history
 
 
+async def _batch_filter_visible(
+    db: AsyncSession, notes: list, actor_id: uuid.UUID | None,
+) -> list:
+    """C-2: ノートリストの可視性をバッチチェックしてフィルタ。"""
+    if not notes or actor_id is None:
+        return [n for n in notes if n.visibility in ("public", "unlisted")]
+
+    # followers可視性のノートのactor_idを収集し、フォロー状態を一括チェック
+    followers_actor_ids = {
+        n.actor_id for n in notes
+        if n.visibility == "followers" and n.actor_id != actor_id
+    }
+    followed_ids: set = set()
+    if followers_actor_ids:
+        from app.models.follow import Follow
+
+        follow_result = await db.execute(
+            select(Follow.following_id).where(
+                Follow.follower_id == actor_id,
+                Follow.following_id.in_(followers_actor_ids),
+                Follow.accepted.is_(True),
+            )
+        )
+        followed_ids = {row[0] for row in follow_result.all()}
+
+    visible = []
+    for n in notes:
+        if n.visibility in ("public", "unlisted"):
+            visible.append(n)
+        elif n.visibility == "followers":
+            if n.actor_id == actor_id or n.actor_id in followed_ids:
+                visible.append(n)
+        elif n.visibility == "direct":
+            if n.actor_id == actor_id:
+                visible.append(n)
+    return visible
+
+
 @router.get("/{note_id}/context", response_model=ContextResponse)
 async def get_status_context(
     note_id: uuid.UUID,
@@ -794,28 +832,23 @@ async def get_status_context(
     if not await check_note_visible(db, note, actor_id):
         raise HTTPException(status_code=404, detail="Note not found")
 
-    # 祖先ノードのIDを先に収集してバッチ取得
+    # C-1: 祖先ノードのIDを軽量クエリで収集してからバッチ取得
     MAX_ANCESTORS = 40
     MAX_DESCENDANTS = 200
     ancestor_ids: list[uuid.UUID] = []
-    current = note
+    current_id = note.in_reply_to_id
     seen_ids: set[uuid.UUID] = {note.id}
-    while (
-        current.in_reply_to_id
-        and current.in_reply_to_id not in seen_ids
-        and len(ancestor_ids) < MAX_ANCESTORS
-    ):
-        parent = await get_note_by_id(db, current.in_reply_to_id)
-        if not parent:
-            break
-        if not await check_note_visible(db, parent, actor_id):
-            break
-        seen_ids.add(parent.id)
-        ancestor_ids.append(parent.id)
-        current = parent
+    while current_id and current_id not in seen_ids and len(ancestor_ids) < MAX_ANCESTORS:
+        seen_ids.add(current_id)
+        ancestor_ids.append(current_id)
+        row = await db.execute(
+            select(Note.in_reply_to_id).where(
+                Note.id == current_id, Note.deleted_at.is_(None)
+            )
+        )
+        current_id = row.scalar_one_or_none()
     ancestor_ids.reverse()
 
-    # バッチ取得した祖先をID順で復元
     ancestors = []
     if ancestor_ids:
         result = await db.execute(
@@ -825,6 +858,8 @@ async def get_status_context(
         )
         ancestor_map = {n.id: n for n in result.scalars().all()}
         ancestors = [ancestor_map[aid] for aid in ancestor_ids if aid in ancestor_map]
+        # バッチ可視性チェック
+        ancestors = await _batch_filter_visible(db, ancestors, actor_id)
 
     # 子孫ノードをBFSで取得(深さ/件数制限付き)
     descendants = []
@@ -849,9 +884,11 @@ async def get_status_context(
             visited.add(child.id)
             if len(descendants) >= MAX_DESCENDANTS:
                 break
-            if await check_note_visible(db, child, actor_id):
-                descendants.append(child)
-                queue.append(child.id)
+            descendants.append(child)
+            queue.append(child.id)
+
+    # C-2: 子孫の可視性をバッチチェック
+    descendants = await _batch_filter_visible(db, descendants, actor_id)
 
     # バッチで絵文字キャッシュを構築
     all_context_notes = ancestors + descendants
@@ -1190,6 +1227,7 @@ async def favourited_by(
 async def reacted_by(
     note_id: uuid.UUID,
     emoji: str | None = None,
+    limit: int = Query(40, le=80),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1211,6 +1249,7 @@ async def reacted_by(
     )
     if emoji:
         query = query.where(Reaction.emoji == emoji)
+    query = query.limit(limit)
 
     result = await db.execute(query)
     reactions = result.scalars().all()

@@ -202,6 +202,19 @@ async def _build_contact(db) -> dict:
 
 @app.get("/api/v1/instance")
 async def instance_info(db: AsyncSession = Depends(get_db)):
+    import json as _json
+
+    from app.valkey_client import valkey as _valkey
+
+    # H-10: レスポンス全体をValkeyにキャッシュ
+    _cache_key = "perf:instance_info_v1"
+    try:
+        _cached = await _valkey.get(_cache_key)
+        if _cached:
+            return _json.loads(_cached)
+    except Exception:
+        pass
+
     from sqlalchemy import func, select
 
     from app.models.actor import Actor
@@ -347,12 +360,29 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
+    try:
+        await _valkey.set(_cache_key, _json.dumps(resp), ex=120)
+    except Exception:
+        pass
+
     return resp
 
 
 @app.get("/api/v2/instance")
 async def instance_info_v2(db: AsyncSession = Depends(get_db)):
     """Mastodon API v2 instance endpoint (required by DAWN, Ice Cubes, etc.)."""
+    import json as _json2
+
+    from app.valkey_client import valkey as _valkey2
+
+    _cache_key2 = "perf:instance_info_v2"
+    try:
+        _cached2 = await _valkey2.get(_cache_key2)
+        if _cached2:
+            return _json2.loads(_cached2)
+    except Exception:
+        pass
+
     from sqlalchemy import func, select
 
     from app.models.actor import Actor
@@ -494,6 +524,11 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
     if vapid_key:
         resp["configuration"]["vapid"] = {"public_key": vapid_key}
 
+    try:
+        await _valkey2.set(_cache_key2, _json2.dumps(resp), ex=120)
+    except Exception:
+        pass
+
     return resp
 
 
@@ -599,7 +634,11 @@ async def favicon_ico(db: AsyncSession = Depends(get_db)):
         return RedirectResponse(url=url, status_code=302)
 
     # Default: serve the built-in SVG cat icon
-    return Response(content=_DEFAULT_FAVICON_SVG, media_type="image/svg+xml")
+    return Response(
+        content=_DEFAULT_FAVICON_SVG,
+        media_type="image/svg+xml",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 @app.get("/api/v1/custom_emojis")

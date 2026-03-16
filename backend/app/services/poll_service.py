@@ -122,9 +122,11 @@ async def get_poll_data(
     db: AsyncSession,
     note_id: uuid.UUID,
     current_actor_id: uuid.UUID | None = None,
+    note: Note | None = None,
 ) -> dict | None:
     """Get poll data for a note. Returns None if not a poll."""
-    note = await get_note_by_id(db, note_id)
+    if note is None:
+        note = await get_note_by_id(db, note_id)
     if not note or not note.is_poll:
         return None
 
