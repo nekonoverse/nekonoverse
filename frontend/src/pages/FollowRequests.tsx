@@ -4,6 +4,7 @@ import type { Account } from "@nekonoverse/ui/api/accounts";
 import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { setPendingFollowRequests } from "@nekonoverse/ui/stores/streaming";
 
 export default function FollowRequests() {
   const { t } = useI18n();
@@ -22,6 +23,7 @@ export default function FollowRequests() {
     try {
       await apiRequest(`/api/v1/follow_requests/${id}/authorize`, { method: "POST" });
       setRequests((prev) => prev.filter((r) => r.id !== id));
+      setPendingFollowRequests((c) => Math.max(0, c - 1));
     } catch {}
   };
 
@@ -29,6 +31,7 @@ export default function FollowRequests() {
     try {
       await apiRequest(`/api/v1/follow_requests/${id}/reject`, { method: "POST" });
       setRequests((prev) => prev.filter((r) => r.id !== id));
+      setPendingFollowRequests((c) => Math.max(0, c - 1));
     } catch {}
   };
 

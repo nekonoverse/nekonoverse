@@ -21,8 +21,9 @@ const [connected, setConnected] = createSignal(false);
 const [unreadCount, setUnreadCount] = createSignal(0);
 const [unreadMentions, setUnreadMentions] = createSignal(0);
 const [unreadOther, setUnreadOther] = createSignal(0);
+const [pendingFollowRequests, setPendingFollowRequests] = createSignal(0);
 
-export { connected, unreadCount, setUnreadCount, unreadMentions, unreadOther };
+export { connected, unreadCount, setUnreadCount, unreadMentions, unreadOther, pendingFollowRequests, setPendingFollowRequests };
 
 function doConnect(path: string) {
   if (es) return;
@@ -33,6 +34,7 @@ function doConnect(path: string) {
   es.onopen = () => {
     retryMs = 1000;
     setConnected(true);
+    fetchFollowRequestCount();
   };
 
   es.addEventListener("update", (e: MessageEvent) => {
@@ -51,6 +53,9 @@ function doConnect(path: string) {
         setUnreadMentions((c) => c + 1);
       } else {
         setUnreadOther((c) => c + 1);
+      }
+      if (type === "follow") {
+        fetchFollowRequestCount();
       }
       notificationHandlers.forEach((h) => h(data));
     } catch { /* ignore */ }
@@ -132,4 +137,15 @@ export function resetUnreadMentions() {
 
 export function resetUnreadOther() {
   setUnreadOther(0);
+}
+
+/** Fetch pending follow request count from API */
+export async function fetchFollowRequestCount() {
+  try {
+    const resp = await fetch("/api/v1/follow_requests", { credentials: "include" });
+    if (resp.ok) {
+      const data = await resp.json();
+      setPendingFollowRequests(Array.isArray(data) ? data.length : 0);
+    }
+  } catch { /* ignore */ }
 }

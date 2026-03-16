@@ -2,7 +2,7 @@ import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
 import { getRoleName } from "@nekonoverse/ui/api/types/auth";
-import { connect, disconnect, unreadCount } from "@nekonoverse/ui/stores/streaming";
+import { connect, disconnect, unreadCount, pendingFollowRequests, fetchFollowRequestCount } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
@@ -29,6 +29,7 @@ export default function Navbar() {
   createEffect(() => {
     if (currentUser()) {
       connect();
+      fetchFollowRequestCount();
     } else {
       disconnect();
     }
@@ -202,12 +203,16 @@ export default function Navbar() {
                   </svg>
                 </button>
                 <div class="navbar-user-menu">
-                  <img
-                    src={user().avatar_url || defaultAvatar()}
-                    alt={user().username}
-                    class="navbar-avatar"
-                    onClick={() => setMenuOpen(!menuOpen())}
-                  />
+                  <div class="navbar-avatar-wrap" onClick={() => setMenuOpen(!menuOpen())}>
+                    <img
+                      src={user().avatar_url || defaultAvatar()}
+                      alt={user().username}
+                      class="navbar-avatar"
+                    />
+                    <Show when={pendingFollowRequests() > 0}>
+                      <span class="navbar-avatar-badge">!</span>
+                    </Show>
+                  </div>
                   <Show when={menuOpen()}>
                     <div class="navbar-dropdown">
                       <a
@@ -241,6 +246,9 @@ export default function Navbar() {
                       >
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" /><circle cx="8.5" cy="7" r="4" /><line x1="20" y1="8" x2="20" y2="14" /><line x1="23" y1="11" x2="17" y2="11" /></svg>
                         {t("followRequest.title")}
+                        <Show when={pendingFollowRequests() > 0}>
+                          <span class="navbar-dropdown-badge">{pendingFollowRequests()}</span>
+                        </Show>
                       </a>
                       <a
                         href="/settings"
