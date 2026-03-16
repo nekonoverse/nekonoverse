@@ -43,8 +43,14 @@ test.describe("Follow Requests", () => {
     expect(followResp.ok()).toBeTruthy();
 
     // Avatar badge should appear indicating pending follow request
+    // Wait for the follow_requests API fetch (triggered on SSE connect) to complete
+    const frResponsePromise = page.waitForResponse(
+      (resp) => resp.url().includes("/api/v1/follow_requests") && resp.status() === 200,
+      { timeout: 15_000 },
+    );
     await page.goto("/");
-    await expect(page.locator(".navbar-avatar-badge")).toBeVisible({ timeout: 10_000 });
+    await frResponsePromise;
+    await expect(page.locator(".navbar-avatar-badge")).toBeVisible({ timeout: 5_000 });
 
     // Dropdown should show follow request count
     await page.locator(".navbar-avatar-wrap").click();
