@@ -328,7 +328,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     if vapid_key:
         resp["vapid_key"] = vapid_key
     if thumbnail_url:
-        resp["thumbnail"] = thumbnail_url
+        resp["thumbnail"] = {"url": thumbnail_url}
     if theme_color:
         resp["theme_color"] = theme_color
 

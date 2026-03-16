@@ -33,9 +33,10 @@ describe("Instance API", () => {
     expect(data.configuration.media_attachments).toBeDefined();
     expect(data.configuration.polls).toBeDefined();
 
-    // thumbnail should be string or absent (not object)
+    // thumbnail should be object with url field, or absent
     if (data.thumbnail !== undefined && data.thumbnail !== null) {
-      expect(data.thumbnail).toBeTypeOf("string");
+      expect(typeof data.thumbnail).toBe("object");
+      expect(data.thumbnail.url).toBeTypeOf("string");
     }
 
     // contact
