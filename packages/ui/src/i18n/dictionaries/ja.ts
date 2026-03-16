@@ -226,6 +226,7 @@ export const ja = {
   "notifications.type.reblog": "にブーストされました",
   "notifications.type.favourite": "にお気に入りされました",
   "notifications.type.reaction": "がリアクションしました",
+  "notifications.type.reply": "に返信されました",
   "notifications.tabMentions": "メンション",
   "notifications.tabOther": "その他",
   "mentions.title": "メンション",

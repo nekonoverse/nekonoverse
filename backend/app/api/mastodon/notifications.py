@@ -162,8 +162,12 @@ async def _notification_to_response(
     if emoji_url_map and notif.reaction_emoji:
         emoji_url = emoji_url_map.get(notif.reaction_emoji)
 
-    # Map internal types to Mastodon types
-    notif_type = "favourite" if notif.type == "reaction" else notif.type
+    # Map internal types to Mastodon-compatible types
+    notif_type = notif.type
+    if notif.type == "reaction" and notif.reaction_emoji == "\u2b50":
+        notif_type = "favourite"
+    elif notif.type == "renote":
+        notif_type = "reblog"
 
     return NotificationResponse(
         id=notif.id,
