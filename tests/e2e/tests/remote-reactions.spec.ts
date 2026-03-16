@@ -22,8 +22,9 @@ test.describe("Remote reaction display", () => {
     const { page: reactorPage, context: reactorCtx } =
       await registerAndLogin(browser, `reactor${uid}`, "Reactor1234!", baseURL);
 
+    // 👍 を使用 — ⭐はReactionBarから除外され専用ボタンに移動したため
     const reactResp = await reactorPage.request.post(
-      `/api/v1/statuses/${note.id}/react/%E2%AD%90`,
+      `/api/v1/statuses/${note.id}/react/%F0%9F%91%8D`,
     );
     expect(reactResp.ok()).toBeTruthy();
     await reactorCtx.close();
@@ -37,7 +38,7 @@ test.describe("Remote reaction display", () => {
       .filter({ hasText: `remote-react-${uid}` })
       .first();
 
-    // リアクションバッジ (⭐ 1) が表示される
+    // リアクションバッジ (👍 1) が表示される
     const badge = noteCard.locator(".reaction-badge");
     await expect(badge).toBeVisible({ timeout: 5_000 });
     await expect(badge).toContainText("1");
@@ -130,7 +131,7 @@ test.describe("Remote reaction display", () => {
     const baseURL =
       process.env.E2E_BASE_URL ?? "http://localhost:3080";
 
-    // ユーザーA: ⭐
+    // ユーザーA: 👍 (⭐はReactionBarから除外されたため)
     const { page: pA, context: cA } = await registerAndLogin(
       browser,
       `emojiA${uid}`,
@@ -138,7 +139,7 @@ test.describe("Remote reaction display", () => {
       baseURL,
     );
     await pA.request.post(
-      `/api/v1/statuses/${note.id}/react/%E2%AD%90`,
+      `/api/v1/statuses/${note.id}/react/%F0%9F%91%8D`,
     );
     await cA.close();
 
@@ -197,8 +198,9 @@ test.describe("Remote reaction display", () => {
         "SSEtest1!",
         baseURL,
       );
+    // 👍 を使用 — ⭐はReactionBarから除外されたため
     await reactorPage.request.post(
-      `/api/v1/statuses/${note.id}/react/%E2%AD%90`,
+      `/api/v1/statuses/${note.id}/react/%F0%9F%91%8D`,
     );
     await reactorCtx.close();
 

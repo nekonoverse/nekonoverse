@@ -38,8 +38,8 @@ test.describe("Reactions", () => {
     const uid = Date.now();
     const note = await createNote(page, `unreact-test-${uid}`);
 
-    // API でリアクション追加
-    await page.request.post(`/api/v1/statuses/${note.id}/react/%E2%AD%90`);
+    // API でリアクション追加 (👍 を使用 — ⭐はお気に入りボタンに移動したため)
+    await page.request.post(`/api/v1/statuses/${note.id}/react/%F0%9F%91%8D`);
 
     await page.goto("/");
     await page.waitForSelector(".note-card", { timeout: 10_000 });
