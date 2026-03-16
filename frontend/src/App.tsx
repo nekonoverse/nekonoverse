@@ -1,5 +1,5 @@
-import { Router, Route } from "@solidjs/router";
-import { lazy, onMount, onCleanup, type ParentProps } from "solid-js";
+import { Router, Route, useLocation } from "@solidjs/router";
+import { lazy, onMount, onCleanup, createEffect, createSignal, Show, type ParentProps } from "solid-js";
 import { I18nProvider } from "@nekonoverse/ui/i18n";
 import { initTheme } from "@nekonoverse/ui/stores/theme";
 import { fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
@@ -32,6 +32,46 @@ const NoteThread = lazy(() => import("./pages/NoteThread"));
 const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 
+function NavigationProgress() {
+  const location = useLocation();
+  const [visible, setVisible] = createSignal(false);
+  const [width, setWidth] = createSignal(0);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let growTimer: ReturnType<typeof setInterval> | undefined;
+
+  createEffect((prevPath: string | undefined) => {
+    const path = location.pathname;
+    if (prevPath !== undefined && prevPath !== path) {
+      // ルート変更検知 → バー開始
+      setVisible(true);
+      setWidth(30);
+      clearInterval(growTimer);
+      growTimer = setInterval(() => {
+        setWidth((w) => (w < 90 ? w + (90 - w) * 0.1 : w));
+      }, 100);
+      // 完了: 次のマイクロタスクでページが描画されるので短いディレイ後に100%
+      clearTimeout(timer);
+      timer = setTimeout(() => {
+        clearInterval(growTimer);
+        setWidth(100);
+        setTimeout(() => setVisible(false), 200);
+      }, 150);
+    }
+    return path;
+  });
+
+  onCleanup(() => {
+    clearTimeout(timer);
+    clearInterval(growTimer);
+  });
+
+  return (
+    <Show when={visible()}>
+      <div class="nav-progress-bar" style={{ width: `${width()}%` }} />
+    </Show>
+  );
+}
+
 function Layout(props: ParentProps) {
   onMount(() => {
     fetchCurrentUser();
@@ -43,6 +83,7 @@ function Layout(props: ParentProps) {
 
   return (
     <>
+      <NavigationProgress />
       <Navbar />
       <SwipeBack />
       {props.children}
