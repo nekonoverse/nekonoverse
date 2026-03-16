@@ -58,11 +58,11 @@ test.describe("Note Composer", () => {
     // Select first item with Enter
     await page.keyboard.press("Enter");
 
-    // Suggest should close and textarea should contain the emoji
+    // Suggest should close and textarea should contain the emoji (not the :smi query)
     await expect(page.locator(".emoji-suggest")).not.toBeVisible({ timeout: 5_000 });
     const value = await textarea.inputValue();
     expect(value.startsWith("Hello ")).toBe(true);
-    expect(value.length).toBeGreaterThan("Hello :smi".length);
+    expect(value).not.toContain(":smi");
   });
 
   test("emoji button inserts colon and opens suggest", async ({ page }) => {
