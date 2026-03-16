@@ -77,6 +77,8 @@ export interface Note {
   quote: Note | null;
   poll: Poll | null;
   reblogged: boolean;
+  favourited: boolean;
+  favourites_count: number;
   pinned: boolean;
   emojis: CustomEmoji[];
   tags: TagInfo[];
@@ -211,6 +213,18 @@ export interface ReactionUser {
 export async function getReactedBy(noteId: string, emoji?: string): Promise<ReactionUser[]> {
   const qs = emoji ? `?emoji=${encodeURIComponent(emoji)}` : "";
   return apiRequest<ReactionUser[]>(`/api/v1/statuses/${noteId}/reacted_by${qs}`);
+}
+
+export async function favouriteNote(noteId: string): Promise<Note> {
+  return apiRequest<Note>(`/api/v1/statuses/${noteId}/favourite`, {
+    method: "POST",
+  });
+}
+
+export async function unfavouriteNote(noteId: string): Promise<Note> {
+  return apiRequest<Note>(`/api/v1/statuses/${noteId}/unfavourite`, {
+    method: "POST",
+  });
 }
 
 export async function deleteNote(noteId: string): Promise<void> {

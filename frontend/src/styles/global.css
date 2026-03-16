@@ -9,6 +9,7 @@
   --accent-text: #ffffff;
   --border: #2a2a4a;
   --reblog: #2ecc71;
+  --favourite: #f1c40f;
   --radius: 8px;
   --font-size-base: 16px;
   --font-family: "Noto Sans JP", sans-serif;
@@ -25,6 +26,7 @@
   --accent-text: #ffffff;
   --border: #cccccc;
   --reblog: #27ae60;
+  --favourite: #d4a017;
 }
 
 [data-theme="novel"] {
@@ -38,6 +40,7 @@
   --accent-text: #f7f0e3;
   --border: #c8b898;
   --reblog: #6b8e23;
+  --favourite: #c49b1a;
 }
 
 * {
@@ -1743,6 +1746,13 @@ a:hover {
 }
 .note-boost-btn.boosted:hover {
   color: #27ae60;
+}
+
+.note-fav-btn.favourited {
+  color: var(--favourite, #f1c40f);
+}
+.note-fav-btn.favourited:hover {
+  color: #d4ac0d;
 }
 
 /* Quote embed inside note */

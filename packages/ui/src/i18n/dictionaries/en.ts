@@ -251,6 +251,8 @@ export const en: Dictionary = {
   "note.unpin": "Unpin",
   "note.pinned": "Pinned",
   "note.pinnedPosts": "Pinned Posts",
+  "favourite.add": "Favourite",
+  "favourite.remove": "Unfavourite",
   "bookmark.title": "Bookmarks",
   "bookmark.add": "Bookmark",
   "bookmark.remove": "Remove bookmark",

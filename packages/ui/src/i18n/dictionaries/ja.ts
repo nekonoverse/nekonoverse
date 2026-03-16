@@ -249,6 +249,8 @@ export const ja = {
   "note.unpin": "ピン留め解除",
   "note.pinned": "ピン留め投稿",
   "note.pinnedPosts": "ピン留め投稿",
+  "favourite.add": "お気に入り",
+  "favourite.remove": "お気に入り解除",
   "bookmark.title": "ブックマーク",
   "bookmark.add": "ブックマーク",
   "bookmark.remove": "ブックマーク解除",
