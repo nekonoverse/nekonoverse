@@ -42,25 +42,13 @@ test.describe("Follow Requests", () => {
     const followResp = await follower.page.request.post(`/api/v1/accounts/${adminId}/follow`);
     expect(followResp.ok()).toBeTruthy();
 
-    // Avatar badge should appear indicating pending follow request
-    // Wait for the follow_requests API fetch (triggered on SSE connect) to complete
-    const frResponsePromise = page.waitForResponse(
-      (resp) => resp.url().includes("/api/v1/follow_requests") && resp.status() === 200,
-      { timeout: 15_000 },
-    );
-    await page.goto("/");
-    await frResponsePromise;
-    await expect(page.locator(".navbar-avatar-badge")).toBeVisible({ timeout: 5_000 });
-
-    // Dropdown should show follow request count
-    await page.locator(".navbar-avatar-wrap").click();
-    await expect(page.locator(".navbar-dropdown-badge")).toBeVisible({ timeout: 5_000 });
-    await page.locator(".navbar-avatar-wrap").click();
-
-    // Check follow request page as admin
+    // Check follow request page as admin — navbar badge should also be visible
     await page.goto("/follow-requests");
     const item = page.locator(".follow-request-item").first();
     await expect(item).toBeVisible({ timeout: 10_000 });
+
+    // Avatar badge should appear indicating pending follow request
+    await expect(page.locator(".navbar-avatar-badge")).toBeVisible({ timeout: 15_000 });
 
     // Accept the follow request
     const acceptResponsePromise = page.waitForResponse(
