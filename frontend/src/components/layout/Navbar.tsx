@@ -2,7 +2,7 @@ import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
 import { getRoleName } from "@nekonoverse/ui/api/types/auth";
-import { connect, disconnect, unreadCount, pendingFollowRequests } from "@nekonoverse/ui/stores/streaming";
+import { connect, disconnect, unreadCount, pendingFollowRequests, fetchFollowRequestCount } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
@@ -29,6 +29,7 @@ export default function Navbar() {
   createEffect(() => {
     if (currentUser()) {
       connect();
+      fetchFollowRequestCount();
     } else {
       disconnect();
     }
