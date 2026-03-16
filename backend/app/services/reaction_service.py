@@ -72,36 +72,44 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
 
     await _publish_reaction_event(db, note)
 
-    # Deliver Like activity to the note's author server
+    # Build Like activity and deliver to all observing servers
+    from app.activitypub.renderer import render_like_activity
+    from app.services.delivery_service import enqueue_delivery
+    from app.services.follow_service import get_follower_inboxes
+
+    activity = render_like_activity(ap_id, actor_uri(actor), note.ap_id, emoji)
+
+    # Attach emoji tag for custom emoji so remote server can display it
+    if is_custom_emoji_shortcode(emoji):
+        import re
+
+        sc_match = re.match(r"^:([a-zA-Z0-9_]+):", emoji)
+        if sc_match:
+            from app.services.emoji_service import get_custom_emoji
+
+            local_emoji = await get_custom_emoji(db, sc_match.group(1), None)
+            if local_emoji:
+                activity["tag"] = [
+                    {
+                        "type": "Emoji",
+                        "name": f":{local_emoji.shortcode}:",
+                        "icon": {
+                            "type": "Image",
+                            "mediaType": "image/png",
+                            "url": local_emoji.url,
+                        },
+                    }
+                ]
+
+    # Collect target inboxes: note author + reactor's followers
+    inboxes: set[str] = set()
     if not note.actor.is_local:
-        from app.activitypub.renderer import render_like_activity
-        from app.services.delivery_service import enqueue_delivery
+        inboxes.add(note.actor.shared_inbox_url or note.actor.inbox_url)
+    follower_inboxes = await get_follower_inboxes(db, actor.id)
+    inboxes.update(follower_inboxes)
 
-        activity = render_like_activity(ap_id, actor_uri(actor), note.ap_id, emoji)
-
-        # Attach emoji tag for custom emoji so remote server can display it
-        if is_custom_emoji_shortcode(emoji):
-            import re
-
-            sc_match = re.match(r"^:([a-zA-Z0-9_]+):", emoji)
-            if sc_match:
-                from app.services.emoji_service import get_custom_emoji
-
-                local_emoji = await get_custom_emoji(db, sc_match.group(1), None)
-                if local_emoji:
-                    activity["tag"] = [
-                        {
-                            "type": "Emoji",
-                            "name": f":{local_emoji.shortcode}:",
-                            "icon": {
-                                "type": "Image",
-                                "mediaType": "image/png",
-                                "url": local_emoji.url,
-                            },
-                        }
-                    ]
-
-        await enqueue_delivery(db, actor.id, note.actor.inbox_url, activity)
+    for inbox_url in inboxes:
+        await enqueue_delivery(db, actor.id, inbox_url, activity)
 
     return reaction
 
@@ -129,12 +137,23 @@ async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
 
     await _publish_reaction_event(db, note)
 
-    # Send Undo(Like) to the note's author server
-    if not note.actor.is_local and reaction_ap_id:
+    # Send Undo(Like) to all observing servers
+    if reaction_ap_id:
         from app.activitypub.renderer import render_like_activity, render_undo_activity
         from app.services.delivery_service import enqueue_delivery
+        from app.services.follow_service import get_follower_inboxes
 
-        like_activity = render_like_activity(reaction_ap_id, actor_uri(actor), note.ap_id, emoji)
+        like_activity = render_like_activity(
+            reaction_ap_id, actor_uri(actor), note.ap_id, emoji
+        )
         undo_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
         undo_activity = render_undo_activity(undo_id, actor_uri(actor), like_activity)
-        await enqueue_delivery(db, actor.id, note.actor.inbox_url, undo_activity)
+
+        inboxes: set[str] = set()
+        if not note.actor.is_local:
+            inboxes.add(note.actor.shared_inbox_url or note.actor.inbox_url)
+        follower_inboxes = await get_follower_inboxes(db, actor.id)
+        inboxes.update(follower_inboxes)
+
+        for inbox_url in inboxes:
+            await enqueue_delivery(db, actor.id, inbox_url, undo_activity)

@@ -65,3 +65,98 @@ async def test_remove_reaction_count_floor(db, test_user, mock_valkey):
     note.reactions_count = 0  # Force to 0
     await remove_reaction(db, test_user, note, "\U0001f600")
     assert note.reactions_count >= 0
+
+
+async def test_add_reaction_fanout_to_followers(db, test_user, mock_valkey):
+    """Reaction delivery fans out to the reactor's followers' inboxes."""
+    from app.models.follow import Follow
+    from app.services.reaction_service import add_reaction
+
+    remote_follower = await make_remote_actor(db, username="follower1", domain="f1.example")
+    # Create accepted follow: remote_follower follows test_user
+    follow = Follow(
+        follower_id=remote_follower.id,
+        following_id=test_user.actor.id,
+        accepted=True,
+    )
+    db.add(follow)
+    await db.flush()
+
+    note = await make_note(db, test_user.actor)
+    await add_reaction(db, test_user, note, "\U0001f600")
+
+    # Should have delivered to the follower's shared inbox
+    calls = [str(c) for c in mock_valkey.lpush.call_args_list]
+    assert any("delivery:queue" in c for c in calls)
+
+
+async def test_add_reaction_remote_note_includes_author_and_followers(
+    db, test_user, mock_valkey
+):
+    """Reaction to a remote note delivers to both author and reactor's followers."""
+    from app.models.delivery import DeliveryJob
+    from app.models.follow import Follow
+    from app.services.reaction_service import add_reaction
+    from sqlalchemy import select
+
+    remote_author = await make_remote_actor(db, username="author", domain="a.example")
+    remote_follower = await make_remote_actor(db, username="follower2", domain="f2.example")
+
+    follow = Follow(
+        follower_id=remote_follower.id,
+        following_id=test_user.actor.id,
+        accepted=True,
+    )
+    db.add(follow)
+    await db.flush()
+
+    note = await make_note(db, remote_author, local=False)
+    await add_reaction(db, test_user, note, "\U0001f600")
+
+    # Check that delivery jobs were created for both targets
+    result = await db.execute(select(DeliveryJob).where(DeliveryJob.actor_id == test_user.actor.id))
+    jobs = result.scalars().all()
+    target_urls = {j.target_inbox_url for j in jobs}
+
+    # Should include author's shared inbox and follower's shared inbox
+    assert remote_author.shared_inbox_url in target_urls or remote_author.inbox_url in target_urls
+    assert remote_follower.shared_inbox_url in target_urls or remote_follower.inbox_url in target_urls
+
+
+async def test_remove_reaction_fanout_undo(db, test_user, mock_valkey):
+    """Undo(Like) is also delivered to followers, not just note author."""
+    from app.models.delivery import DeliveryJob
+    from app.models.follow import Follow
+    from app.services.reaction_service import add_reaction, remove_reaction
+    from sqlalchemy import select
+
+    remote_follower = await make_remote_actor(db, username="follower3", domain="f3.example")
+    follow = Follow(
+        follower_id=remote_follower.id,
+        following_id=test_user.actor.id,
+        accepted=True,
+    )
+    db.add(follow)
+    await db.flush()
+
+    note = await make_note(db, test_user.actor)
+    await add_reaction(db, test_user, note, "\U0001f600")
+
+    # Clear previous delivery jobs
+    prev_result = await db.execute(
+        select(DeliveryJob).where(DeliveryJob.actor_id == test_user.actor.id)
+    )
+    for job in prev_result.scalars().all():
+        await db.delete(job)
+    await db.flush()
+
+    await remove_reaction(db, test_user, note, "\U0001f600")
+
+    # Undo should have been delivered to follower
+    result = await db.execute(
+        select(DeliveryJob).where(DeliveryJob.actor_id == test_user.actor.id)
+    )
+    jobs = result.scalars().all()
+    assert len(jobs) >= 1
+    target_urls = {j.target_inbox_url for j in jobs}
+    assert remote_follower.shared_inbox_url in target_urls or remote_follower.inbox_url in target_urls
