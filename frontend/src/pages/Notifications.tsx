@@ -181,6 +181,7 @@ export default function Notifications() {
   const notifIcon = (type: string) => {
     switch (type) {
       case "follow": return "\u{1F464}";
+      case "follow_request": return "\u{1F464}";
       case "mention": return "\u{1F4AC}";
       case "reply": return "\u{1F4AC}";
       case "reblog": return "\u{1F501}";

@@ -224,6 +224,7 @@ export const neko: Dictionary = {
   "notifications.loadMore": "もっとみるにゃ",
   "notifications.loginRequired": "おしらせ見るにはにゃグインが必要にゃ。",
   "notifications.type.follow": "にフォローされたにゃ",
+  "notifications.type.follow_request": "がフォローリクエストしたにゃ",
   "notifications.type.mention": "にめんしょんされたにゃ",
   "notifications.type.reblog": "にブーストされたにゃ",
   "notifications.type.favourite": "におきにいりされたにゃ",
