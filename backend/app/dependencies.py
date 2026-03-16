@@ -21,7 +21,22 @@ async def get_current_user(
     # OAuthベアラートークンを先にチェック
     auth_header = request.headers.get("authorization", "")
     if auth_header.startswith("Bearer "):
-        return await get_oauth_user(request, db)
+        user = await get_oauth_user(request, db)
+        # H-3: HTTPメソッドに基づくOAuthスコープ検証
+        scopes = getattr(request.state, "oauth_scopes", [])
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            if "write" not in scopes and not any(s.startswith("write:") for s in scopes):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Insufficient scope: write access required",
+                )
+        else:
+            if "read" not in scopes and not any(s.startswith("read:") for s in scopes):
+                raise HTTPException(
+                    status_code=403,
+                    detail="Insufficient scope: read access required",
+                )
+        return user
 
     session_id = request.cookies.get("nekonoverse_session")
     if not session_id:
@@ -138,6 +153,9 @@ async def get_oauth_user(
     if not token_obj.user_id:
         raise HTTPException(status_code=401, detail="Token has no associated user")
 
+    # H-3: リクエストにOAuthスコープ情報を付与
+    request.state.oauth_scopes = (token_obj.scopes or "read").split()
+
     user = await get_user_by_id(db, token_obj.user_id)
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
@@ -152,6 +170,32 @@ async def get_oauth_user(
         raise HTTPException(status_code=403, detail="Your registration is pending approval")
 
     return user
+
+
+def require_oauth_scope(scope: str):
+    """Dependency that checks the OAuth token has the required scope.
+
+    For session-based auth, all scopes are implicitly granted.
+    Scope hierarchy: 'read' grants 'read:*', 'write' grants 'write:*'.
+    """
+
+    async def dependency(request: Request):
+        scopes = getattr(request.state, "oauth_scopes", None)
+        if scopes is None:
+            # セッション認証の場合は全スコープ許可
+            return
+        # スコープ階層チェック: "read" は "read:statuses" 等を含む
+        scope_prefix = scope.split(":")[0] if ":" in scope else None
+        if scope in scopes:
+            return
+        if scope_prefix and scope_prefix in scopes:
+            return
+        raise HTTPException(
+            status_code=403,
+            detail=f"Insufficient scope: {scope} required",
+        )
+
+    return dependency
 
 
 async def get_optional_user(

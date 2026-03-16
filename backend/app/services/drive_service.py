@@ -7,7 +7,6 @@ import math
 import uuid
 from urllib.parse import urlparse
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -34,12 +33,21 @@ _MAGIC_BYTES: dict[str, list[bytes]] = {
     "image/png": [b"\x89PNG\r\n\x1a\n"],
     "image/gif": [b"GIF87a", b"GIF89a"],
     "image/webp": [b"RIFF"],  # RIFF????WEBP
-    "image/avif": [],  # AVIFはftypベースで複雑なためスキップ
+    # L-12: AVIFのftypボックスチェック追加
+    "image/avif": [b"\x00\x00\x00"],  # ftypボックス (先頭4バイトはサイズ、8-11バイトが"ftyp")
 }
 
 
 def _validate_magic_bytes(data: bytes, mime_type: str) -> None:
     """Validate that file content matches the declared MIME type."""
+    # L-12: AVIFのftypボックス検証
+    if mime_type == "image/avif":
+        if len(data) >= 12 and data[4:8] == b"ftyp":
+            ftyp_brand = data[8:12]
+            if ftyp_brand in (b"avif", b"avis", b"mif1"):
+                return
+        raise ValueError(f"File content does not match declared type {mime_type}")
+
     signatures = _MAGIC_BYTES.get(mime_type)
     if not signatures:
         return  # 検証定義がないMIMEタイプはスキップ

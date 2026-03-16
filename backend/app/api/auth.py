@@ -6,13 +6,10 @@ from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Resp
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
-from app.services.follow_service import get_follow_counts
-from app.services.note_service import get_statuses_count
-from app.api.mastodon.statuses import _to_mastodon_datetime
-from app.utils.media_proxy import media_proxy_url
 from app.schemas.user import (
     ChangePasswordRequest,
     FocalPoint,
@@ -20,6 +17,8 @@ from app.schemas.user import (
     UserRegisterRequest,
     UserResponse,
 )
+from app.services.follow_service import get_follow_counts
+from app.services.note_service import get_statuses_count
 from app.services.user_service import (
     authenticate_user,
     change_password,
@@ -27,6 +26,7 @@ from app.services.user_service import (
     get_user_by_id,
     update_display_name,
 )
+from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
@@ -180,7 +180,7 @@ async def login(
     if user.totp_enabled:
         from app.valkey_client import valkey
 
-        totp_token = uuid.uuid4().hex
+        totp_token = secrets.token_urlsafe(32)
         await valkey.set(
             f"totp_pending:{totp_token}",
             str(user.id),
@@ -211,7 +211,13 @@ async def logout(request: Request, response: Response):
         from app.valkey_client import valkey
 
         await valkey.delete(f"session:{session_id}")
-    response.delete_cookie(SESSION_COOKIE)
+    # L-1: セキュリティ属性を指定してCookieを削除
+    response.delete_cookie(
+        SESSION_COOKIE,
+        httponly=True,
+        secure=settings.use_https,
+        samesite="lax",
+    )
     return {"ok": True}
 
 
@@ -460,10 +466,9 @@ async def update_credentials(
         # Auto-accept all pending follow requests when turning off locked mode
         if was_locked and not locked:
             from sqlalchemy import select as sel
+            from sqlalchemy.orm import joinedload
 
             from app.models.follow import Follow
-
-            from sqlalchemy.orm import joinedload
 
             pending_result = await db.execute(
                 sel(Follow).where(
@@ -605,6 +610,10 @@ async def update_credentials(
     return await _user_response(user, db)
 
 
+CHANGE_PW_MAX_ATTEMPTS = 5
+CHANGE_PW_LOCKOUT_TTL = 300  # 5 minutes
+
+
 @router.post("/auth/change_password")
 async def change_password_endpoint(
     body: ChangePasswordRequest,
@@ -612,6 +621,19 @@ async def change_password_endpoint(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # L-8: パスワード変更にレート制限追加
+    from app.valkey_client import valkey
+
+    pw_key = f"change_pw_attempts:{user.id}"
+    pw_attempts = await valkey.get(pw_key)
+    if pw_attempts is not None and int(pw_attempts) >= CHANGE_PW_MAX_ATTEMPTS:
+        raise HTTPException(
+            status_code=429,
+            detail="Too many password change attempts. Please wait.",
+        )
+    await valkey.incr(pw_key)
+    await valkey.expire(pw_key, CHANGE_PW_LOCKOUT_TTL)
+
     try:
         await change_password(
             db,

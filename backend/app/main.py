@@ -32,6 +32,7 @@ from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.authorized_apps import router as authorized_apps_router
 from app.api.invites import router as invites_router
 from app.api.mastodon.accounts import relationships_router
 from app.api.mastodon.accounts import router as accounts_router
@@ -47,7 +48,6 @@ from app.api.mastodon.statuses import router as statuses_router
 from app.api.mastodon.streaming import router as streaming_router
 from app.api.mastodon.timelines import router as timelines_router
 from app.api.media import router as media_router
-from app.api.authorized_apps import router as authorized_apps_router
 from app.api.oauth import router as oauth_router
 from app.api.passkey import router as passkey_router
 from app.config import settings
@@ -124,10 +124,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-cors_origins = [
-    "http://localhost:3000",
-    settings.server_url,
-]
+# L-10: 本番環境では開発用オリジンを除外
+cors_origins = [settings.server_url]
+if settings.debug:
+    cors_origins.append("http://localhost:3000")
 # Allow frontend URL configured via environment
 if settings.frontend_url and settings.frontend_url not in cors_origins:
     cors_origins.append(settings.frontend_url)

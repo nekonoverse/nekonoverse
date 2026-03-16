@@ -137,6 +137,19 @@ async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
         logger.exception("Error fetching remote actor %s", ap_id)
         return existing
 
+    # M-12: リクエストURLとレスポンスのidのドメインが一致するか検証
+    from urllib.parse import urlparse as _urlparse
+
+    response_id = data.get("id", "")
+    if response_id:
+        req_domain = _urlparse(ap_id).hostname
+        res_domain = _urlparse(response_id).hostname
+        if req_domain and res_domain and req_domain != res_domain:
+            logger.warning(
+                "Domain mismatch: requested %s but got id %s", ap_id, response_id
+            )
+            return existing
+
     return await upsert_remote_actor(db, data)
 
 
@@ -340,8 +353,8 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
         async with make_async_client(
             timeout=10.0, verify=not settings.skip_ssl_verify
         ) as client:
-            # HTTPS → HTTPフォールバック (RFC 7033ではHTTPSが必須だが、
-            # テスト環境やHTTPS未対応のサーバーのためHTTPにフォールバック)
+            # HTTPS → HTTPフォールバック (RFC 7033ではHTTPSが必須)
+            # M-13: 本番環境ではHTTPフォールバックを無効化
             try:
                 resp = await client.get(
                     f"https://{domain}/.well-known/webfinger?resource={resource}",
@@ -349,7 +362,8 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
                 )
             except Exception:
                 pass
-            if resp is None or resp.status_code != 200:
+            if (resp is None or resp.status_code != 200) and settings.allow_private_networks:
+                # テスト/開発環境のみHTTPフォールバック
                 resp = await client.get(
                     f"http://{domain}/.well-known/webfinger?resource={resource}",
                     follow_redirects=True,

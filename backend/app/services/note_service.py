@@ -793,6 +793,15 @@ async def fetch_remote_note(
     if not note_ap_id:
         return None
 
+    # M-12: リクエストURLとレスポンスidのドメイン一致検証
+    from urllib.parse import urlparse as _urlparse
+
+    req_domain = _urlparse(ap_id).hostname
+    res_domain = _urlparse(note_ap_id).hostname
+    if req_domain and res_domain and req_domain != res_domain:
+        logger.warning("Domain mismatch for note: requested %s but got id %s", ap_id, note_ap_id)
+        return None
+
     # 重複チェック(fetchの間に別のリクエストで作成された可能性)
     existing = await get_note_by_ap_id(db, note_ap_id)
     if existing:
