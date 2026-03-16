@@ -162,9 +162,15 @@ async def _notification_to_response(
     if emoji_url_map and notif.reaction_emoji:
         emoji_url = emoji_url_map.get(notif.reaction_emoji)
 
+    # ⭐ reaction (from Mastodon favourite API) → "favourite" type for compat
+    # Other emoji reactions → "reaction" type (Fedibird/Misskey extension)
+    notif_type = notif.type
+    if notif.type == "reaction" and notif.reaction_emoji == "\u2b50":
+        notif_type = "favourite"
+
     return NotificationResponse(
         id=notif.id,
-        type=notif.type,
+        type=notif_type,
         created_at=_to_mastodon_datetime(notif.created_at),
         read=notif.read,
         group_key=f"ungrouped-{notif.id}",
