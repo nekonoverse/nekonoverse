@@ -187,6 +187,36 @@ class InstanceClient:
         resp.raise_for_status()
         return resp.json()
 
+    def block(self, actor_id: str):
+        resp = self.http.post(f"/api/v1/accounts/{actor_id}/block")
+        resp.raise_for_status()
+        return resp.json()
+
+    def unblock(self, actor_id: str):
+        resp = self.http.post(f"/api/v1/accounts/{actor_id}/unblock")
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_follow_requests(self):
+        resp = self.http.get("/api/v1/follow_requests")
+        resp.raise_for_status()
+        return resp.json()
+
+    def authorize_follow_request(self, account_id: str):
+        resp = self.http.post(f"/api/v1/follow_requests/{account_id}/authorize")
+        resp.raise_for_status()
+        return resp.json()
+
+    def reject_follow_request(self, account_id: str):
+        resp = self.http.post(f"/api/v1/follow_requests/{account_id}/reject")
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_relationship(self, actor_id: str):
+        resp = self.http.get(f"/api/v1/accounts/{actor_id}/relationship")
+        resp.raise_for_status()
+        return resp.json()
+
     def get_account(self, actor_id: str):
         """Get account info by actor UUID."""
         resp = self.http.get(f"/api/v1/accounts/{actor_id}")
