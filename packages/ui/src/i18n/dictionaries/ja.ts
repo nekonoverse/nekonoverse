@@ -130,6 +130,7 @@ export const ja = {
   "visibility.public": "公開",
   "visibility.unlisted": "未収載",
   "visibility.followers": "フォロワー",
+  "visibility.private": "フォロワー",
   "visibility.direct": "ダイレクト",
   "profile.posts": "投稿",
   "profile.joined": "登録日:",
