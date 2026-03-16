@@ -32,7 +32,7 @@ services:
     command: >
       valkey-server
         --unixsocket /var/run/valkey/valkey.sock
-        --unixsocketperm 777
+        --unixsocketperm 770
         --port 0
         --save 60 1
         --loglevel warning

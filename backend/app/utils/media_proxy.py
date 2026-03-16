@@ -27,22 +27,11 @@ def media_proxy_url(original_url: str | None) -> str:
 
 
 def verify_proxy_hmac(url: str, h: str) -> bool:
-    """Verify that the HMAC matches the given URL."""
+    """Verify that the HMAC matches the given URL.
+
+    L-7: レガシー16文字HMAC互換とレガシーキー互換を廃止。
+    32文字のHMAC署名のみ受け入れる。
+    """
     key = _media_proxy_signing_key()
     expected = _hmac.new(key, url.encode(), hashlib.sha256).hexdigest()[:32]
-
-    # 旧形式(16文字)との互換性を維持
-    if len(h) == 16:
-        if _hmac.compare_digest(expected[:16], h):
-            return True
-
-    if _hmac.compare_digest(expected, h):
-        return True
-
-    # レガシーキー(secret_key直接使用)との互換性
-    legacy = _hmac.new(
-        settings.secret_key.encode(), url.encode(), hashlib.sha256,
-    ).hexdigest()[:32]
-    if len(h) == 16:
-        return _hmac.compare_digest(legacy[:16], h)
-    return _hmac.compare_digest(legacy, h)
+    return _hmac.compare_digest(expected, h)

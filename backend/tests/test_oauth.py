@@ -1,5 +1,7 @@
 """Tests for OAuth 2.0 endpoints."""
 
+import re
+
 from unittest.mock import AsyncMock
 
 # ── POST /api/v1/apps ───────────────────────────────────────────────────
@@ -98,10 +100,9 @@ async def test_authorize_invalid_redirect_uri(app_client, db, mock_valkey):
     assert resp.status_code == 400
 
 
-async def test_authorize_logged_in_redirects(app_client, db, mock_valkey, test_user):
-    """Logged-in user gets redirected with an auth code."""
+async def test_authorize_logged_in_shows_consent(app_client, db, mock_valkey, test_user):
+    """H-1: Logged-in user sees consent form instead of auto-redirect."""
     app_data = await _create_test_app(app_client, mock_valkey)
-    # セッションクッキーを設定
     mock_valkey.get = AsyncMock(return_value=str(test_user.id))
     app_client.cookies.set("nekonoverse_session", "test-session")
 
@@ -115,10 +116,8 @@ async def test_authorize_logged_in_redirects(app_client, db, mock_valkey, test_u
         },
         follow_redirects=False,
     )
-    assert resp.status_code == 302
-    location = resp.headers["location"]
-    assert "code=" in location
-    assert "state=test-state" in location
+    assert resp.status_code == 200
+    assert "Authorize" in resp.text
 
 
 async def test_authorize_expired_session(app_client, db, mock_valkey):
@@ -187,26 +186,61 @@ async def test_token_unsupported_grant_type(app_client, db, mock_valkey):
     assert resp.status_code == 400
 
 
-async def test_token_authorization_code_flow(app_client, db, mock_valkey, test_user):
-    """Full authorization code flow: create app, authorize, exchange token."""
-    app_data = await _create_test_app(app_client, mock_valkey)
-
-    # Step 1: Authorize
-    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
-    app_client.cookies.set("nekonoverse_session", "test-oauth-session")
-
-    resp = await app_client.get(
+async def _authorize_via_consent(client, mock_valkey, *, client_id, redirect_uri,
+                                 scope="read write"):
+    """Get consent form, extract CSRF token, POST to authorize."""
+    consent_resp = await client.get(
         "/oauth/authorize",
         params={
-            "client_id": app_data["client_id"],
-            "redirect_uri": "http://localhost:3000/callback",
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
             "response_type": "code",
+            "scope": scope,
         },
         follow_redirects=False,
     )
-    assert resp.status_code == 302
-    location = resp.headers["location"]
-    code = location.split("code=")[1].split("&")[0]
+    assert consent_resp.status_code == 200
+    csrf_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', consent_resp.text)
+    assert csrf_match
+    csrf_token = csrf_match.group(1)
+
+    original_get = mock_valkey.get
+    async def _csrf_aware_get(key):
+        if key.startswith("csrf:"):
+            return "1"
+        return await original_get(key)
+    mock_valkey.get = _csrf_aware_get
+
+    auth_resp = await client.post(
+        "/oauth/authorize",
+        data={
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "response_type": "code",
+            "csrf_token": csrf_token,
+        },
+        follow_redirects=False,
+    )
+    mock_valkey.get = original_get
+    assert auth_resp.status_code == 302
+    location = auth_resp.headers["location"]
+    return location.split("code=")[1].split("&")[0]
+
+
+async def test_token_authorization_code_flow(app_client, db, mock_valkey, test_user):
+    """Full authorization code flow: create app, consent, exchange token."""
+    app_data = await _create_test_app(app_client, mock_valkey)
+
+    # Step 1: Authorize via consent form
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-oauth-session")
+
+    code = await _authorize_via_consent(
+        app_client, mock_valkey,
+        client_id=app_data["client_id"],
+        redirect_uri="http://localhost:3000/callback",
+    )
 
     # Step 2: Exchange code for token
     resp = await app_client.post(

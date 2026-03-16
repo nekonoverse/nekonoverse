@@ -27,6 +27,10 @@ async def _event_stream(request: Request, channels: list[str]):
                 msg = queue.get_nowait()
                 data = json.loads(msg["data"])
                 event_type = data.get("event", "update")
+                # L-9: イベントタイプを英数字とアンダースコアに制限
+                import re
+                if not re.match(r'^[a-zA-Z0-9_]+$', event_type):
+                    event_type = "update"
                 payload = json.dumps(data.get("payload", {}))
                 yield f"event: {event_type}\ndata: {payload}\n\n"
                 keepalive_counter = 0

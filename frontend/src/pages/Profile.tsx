@@ -175,16 +175,20 @@ export default function Profile() {
     return acc && currentUser()?.username === acc.username && !acc.acct.includes("@");
   };
 
+  // M-9: テキストノードベースのデコードに切り替え (innerHTMLへの未サニタイズ代入を回避)
   const htmlToPlainText = (html: string): string => {
-    const el = document.createElement("div");
-    el.innerHTML = html.replace(/<br\s*\/?>/gi, "\n");
-    return el.textContent?.trim() || "";
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(
+      html.replace(/<br\s*\/?>/gi, "\n"),
+      "text/html",
+    );
+    return doc.body.textContent?.trim() || "";
   };
 
   const decodeHtmlEntities = (text: string): string => {
-    const el = document.createElement("div");
-    el.innerHTML = text;
-    return el.textContent || "";
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = text;
+    return textarea.value || "";
   };
 
   const startEditing = () => {

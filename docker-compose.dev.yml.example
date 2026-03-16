@@ -9,7 +9,7 @@ services:
     volumes:
       - postgresql_data:/var/lib/postgresql
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U nekonoverse"]
       interval: 10s
@@ -22,7 +22,7 @@ services:
     volumes:
       - valkey_data:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "valkey-cli", "ping"]
       interval: 10s

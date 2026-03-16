@@ -384,16 +384,31 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
 
     from app.models.poll_vote import PollVote
 
-    existing = await db.execute(
-        select(PollVote).where(
-            PollVote.note_id == poll_note.id,
-            PollVote.actor_id == voter.id,
-            PollVote.choice_index == choice_index,
+    # M-14: 単一選択投票では同一アクターの既存投票をチェック
+    if not poll_note.poll_multiple:
+        existing_any = await db.execute(
+            select(PollVote).where(
+                PollVote.note_id == poll_note.id,
+                PollVote.actor_id == voter.id,
+            )
         )
-    )
-    if existing.scalars().first():
-        logger.debug("Duplicate poll vote from %s on %s", voter_ap_id, in_reply_to)
-        return
+        if existing_any.scalars().first():
+            logger.debug(
+                "Duplicate poll vote (single-choice) from %s on %s",
+                voter_ap_id, in_reply_to,
+            )
+            return
+    else:
+        existing = await db.execute(
+            select(PollVote).where(
+                PollVote.note_id == poll_note.id,
+                PollVote.actor_id == voter.id,
+                PollVote.choice_index == choice_index,
+            )
+        )
+        if existing.scalars().first():
+            logger.debug("Duplicate poll vote from %s on %s", voter_ap_id, in_reply_to)
+            return
 
     # Record vote
     vote = PollVote(

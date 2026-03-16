@@ -68,7 +68,12 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
     )
     db.add(reaction)
     note.reactions_count += 1
-    await db.commit()
+    # L-11: 競合状態対策 -- DB一意制約違反時は既存リアクションとして扱う
+    try:
+        await db.commit()
+    except Exception:
+        await db.rollback()
+        raise ValueError("Already reacted with this emoji")
 
     await _publish_reaction_event(db, note)
 

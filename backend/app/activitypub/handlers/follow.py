@@ -84,8 +84,18 @@ async def handle_accept(db: AsyncSession, activity: dict):
     if inner.get("type") != "Follow":
         return
 
-    actor_ap_id = inner.get("actor")
+    # M-16: Accept actorがフォロー先(inner object)と一致するか検証
+    accept_actor = activity.get("actor")
     target_ap_id = inner.get("object")
+    if accept_actor and target_ap_id and accept_actor != target_ap_id:
+        logger.warning(
+            "Accept actor mismatch: accept.actor=%s, follow.object=%s",
+            accept_actor,
+            target_ap_id,
+        )
+        return
+
+    actor_ap_id = inner.get("actor")
 
     if not actor_ap_id or not target_ap_id:
         return
@@ -118,8 +128,18 @@ async def handle_reject(db: AsyncSession, activity: dict):
     if inner.get("type") != "Follow":
         return
 
-    actor_ap_id = inner.get("actor")
+    # M-16: Reject actorがフォロー先(inner object)と一致するか検証
+    reject_actor = activity.get("actor")
     target_ap_id = inner.get("object")
+    if reject_actor and target_ap_id and reject_actor != target_ap_id:
+        logger.warning(
+            "Reject actor mismatch: reject.actor=%s, follow.object=%s",
+            reject_actor,
+            target_ap_id,
+        )
+        return
+
+    actor_ap_id = inner.get("actor")
 
     if not actor_ap_id or not target_ap_id:
         return
