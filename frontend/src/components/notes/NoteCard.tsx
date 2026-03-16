@@ -521,7 +521,7 @@ export default function NoteCard(props: Props) {
                   <path d="M7 11V7a5 5 0 0 1 9.9-1" />
                 </svg>
               )}
-              {note().visibility === "followers" && (
+              {note().visibility === "private" && (
                 <svg
                   width="14"
                   height="14"
@@ -749,11 +749,11 @@ export default function NoteCard(props: Props) {
               </Show>
             </button>
             <button
-              class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${note().visibility === "followers" || note().visibility === "direct" ? " disabled" : ""}`}
+              class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${note().visibility === "private" || note().visibility === "direct" ? " disabled" : ""}`}
               onClick={handleBoost}
-              disabled={boostLoading() || note().visibility === "followers" || note().visibility === "direct"}
+              disabled={boostLoading() || note().visibility === "private" || note().visibility === "direct"}
               title={
-                note().visibility === "followers" || note().visibility === "direct"
+                note().visibility === "private" || note().visibility === "direct"
                   ? t("boost.cannotRenote")
                   : t(boosted() ? "boost.unboost" : "boost.boost")
               }
@@ -778,11 +778,11 @@ export default function NoteCard(props: Props) {
               </Show>
             </button>
             <button
-              class={`note-action-btn note-quote-btn${note().visibility === "followers" || note().visibility === "direct" ? " disabled" : ""}`}
+              class={`note-action-btn note-quote-btn${note().visibility === "private" || note().visibility === "direct" ? " disabled" : ""}`}
               onClick={handleQuote}
-              disabled={note().visibility === "followers" || note().visibility === "direct"}
+              disabled={note().visibility === "private" || note().visibility === "direct"}
               title={
-                note().visibility === "followers" || note().visibility === "direct"
+                note().visibility === "private" || note().visibility === "direct"
                   ? t("boost.cannotRenote")
                   : t("boost.quote")
               }

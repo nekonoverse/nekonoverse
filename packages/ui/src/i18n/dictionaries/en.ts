@@ -132,6 +132,7 @@ export const en: Dictionary = {
   "visibility.public": "Public",
   "visibility.unlisted": "Unlisted",
   "visibility.followers": "Followers",
+  "visibility.private": "Followers",
   "visibility.direct": "Direct",
   "profile.posts": "Posts",
   "profile.joined": "Joined:",

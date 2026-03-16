@@ -132,6 +132,7 @@ export const neko: Dictionary = {
   "visibility.public": "こうかいにゃ",
   "visibility.unlisted": "ひみつにゃ",
   "visibility.followers": "なかまにゃ",
+  "visibility.private": "なかまにゃ",
   "visibility.direct": "ないしょにゃ",
   "profile.posts": "とうこうにゃ",
   "profile.joined": "はじめた日にゃ:",
