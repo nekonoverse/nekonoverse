@@ -155,6 +155,15 @@ async def update_server_settings(
     await log_action(db, user, "update_settings", "server", "settings")
     await db.commit()
 
+    # instance_infoキャッシュを無効化 (設定変更を即時反映)
+    try:
+        from app.valkey_client import valkey as _v
+
+        await _v.delete("perf:instance_info_v1")
+        await _v.delete("perf:instance_info_v2")
+    except Exception:
+        pass
+
     settings = await get_all_settings(db)
     mode = settings.get("registration_mode")
     if mode is None:

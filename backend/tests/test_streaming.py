@@ -61,7 +61,7 @@ async def test_event_stream_subscribes_channels():
 
 
 async def test_event_stream_empty_queue_no_event():
-    """_event_stream should not yield events when queue is empty."""
+    """_event_stream should yield keepalive when queue is empty."""
     from app.api.mastodon.streaming import _event_stream
 
     call_count = 0
@@ -69,6 +69,7 @@ async def test_event_stream_empty_queue_no_event():
     async def mock_is_disconnected():
         nonlocal call_count
         call_count += 1
+        # keepaliveが1回出た後に切断
         return call_count > 2
 
     mock_request = AsyncMock()
@@ -78,7 +79,7 @@ async def test_event_stream_empty_queue_no_event():
 
     with (
         patch("app.api.mastodon.streaming.pubsub_hub") as mock_hub,
-        patch("app.api.mastodon.streaming.asyncio.sleep", new_callable=AsyncMock),
+        patch("app.api.mastodon.streaming.KEEPALIVE_INTERVAL", 0.01),
     ):
         mock_hub.subscribe = AsyncMock(return_value=mock_queue)
         mock_hub.unsubscribe = AsyncMock()
@@ -87,8 +88,8 @@ async def test_event_stream_empty_queue_no_event():
         async for chunk in _event_stream(mock_request, ["timeline:public"]):
             chunks.append(chunk)
 
-    # No SSE events yielded (keepalive needs 30 ticks)
-    assert all(c == ":\n\n" or c.startswith("event:") for c in chunks)
+    # 空キューではkeepaliveのみ
+    assert all(c == ":\n\n" for c in chunks)
 
 
 async def test_event_stream_multiple_events():
