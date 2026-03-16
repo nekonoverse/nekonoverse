@@ -69,6 +69,70 @@ export function png1x1(): Buffer {
 }
 
 /**
+ * Generate a valid PNG of arbitrary dimensions filled with a single color.
+ * Uses raw zlib deflate to create a minimal but valid PNG.
+ */
+export function pngOfSize(width: number, height: number): Buffer {
+  const { deflateSync } = require("zlib");
+
+  // PNG signature
+  const signature = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]);
+
+  // IHDR chunk
+  const ihdrData = Buffer.alloc(13);
+  ihdrData.writeUInt32BE(width, 0);
+  ihdrData.writeUInt32BE(height, 4);
+  ihdrData[8] = 8; // bit depth
+  ihdrData[9] = 2; // color type (RGB)
+  ihdrData[10] = 0; // compression
+  ihdrData[11] = 0; // filter
+  ihdrData[12] = 0; // interlace
+  const ihdr = makeChunk("IHDR", ihdrData);
+
+  // IDAT chunk — each row: filter byte (0) + RGB pixels
+  const rowSize = 1 + width * 3;
+  const raw = Buffer.alloc(rowSize * height);
+  for (let y = 0; y < height; y++) {
+    raw[y * rowSize] = 0; // no filter
+    for (let x = 0; x < width; x++) {
+      const offset = y * rowSize + 1 + x * 3;
+      // Simple color pattern based on position
+      raw[offset] = (x * 37 + y * 59) & 0xff;
+      raw[offset + 1] = (x * 73 + y * 97) & 0xff;
+      raw[offset + 2] = (x * 113 + y * 131) & 0xff;
+    }
+  }
+  const compressed = deflateSync(raw);
+  const idat = makeChunk("IDAT", compressed);
+
+  // IEND chunk
+  const iend = makeChunk("IEND", Buffer.alloc(0));
+
+  return Buffer.concat([signature, ihdr, idat, iend]);
+}
+
+function makeChunk(type: string, data: Buffer): Buffer {
+  const length = Buffer.alloc(4);
+  length.writeUInt32BE(data.length, 0);
+  const typeBuffer = Buffer.from(type, "ascii");
+  const crcInput = Buffer.concat([typeBuffer, data]);
+  const crc = Buffer.alloc(4);
+  crc.writeUInt32BE(crc32(crcInput), 0);
+  return Buffer.concat([length, typeBuffer, data, crc]);
+}
+
+function crc32(buf: Buffer): number {
+  let c = 0xffffffff;
+  for (let i = 0; i < buf.length; i++) {
+    c = c ^ buf[i];
+    for (let j = 0; j < 8; j++) {
+      c = (c >>> 1) ^ (c & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (c ^ 0xffffffff) >>> 0;
+}
+
+/**
  * Create a note via the API. Requires an authenticated page (call loginAsAdmin first).
  * Returns the created note's JSON response.
  */
