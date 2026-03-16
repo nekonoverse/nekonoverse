@@ -782,12 +782,7 @@ class TestEmojiReactionFederation:
         )
 
         # bob reacts with emoji on Fedibird
-        # Fedibird's emoji reaction API endpoint
-        try:
-            fedibird.emoji_react(fb_status["id"], "👍")
-        except Exception:
-            # Fallback: Fedibird may use favourite as fallback
-            fedibird.favourite(fb_status["id"])
+        fedibird.emoji_react(fb_status["id"], "👍")
 
         # Check notification on Neko — emoji reaction or favourite
         def check_reaction_on_neko():

@@ -265,9 +265,13 @@ class FedibirdClient:
         return resp.json()
 
     def emoji_react(self, status_id: str, emoji: str):
-        """Fedibird-specific emoji reaction API."""
+        """Fedibird-specific emoji reaction API.
+
+        Fedibird uses POST /api/v1/statuses/:id/react/:emoji
+        (not /emoji_reactions/:emoji).
+        """
         resp = self.http.post(
-            f"/api/v1/statuses/{status_id}/emoji_reactions/{emoji}",
+            f"/api/v1/statuses/{status_id}/react/{emoji}",
             headers=self._headers(),
         )
         resp.raise_for_status()
