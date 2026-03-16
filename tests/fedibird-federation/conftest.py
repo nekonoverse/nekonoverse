@@ -1,4 +1,4 @@
-"""Fixtures and helpers for Mastodon cross-platform federation tests."""
+"""Fixtures and helpers for Fedibird cross-platform federation tests."""
 
 import os
 import ssl
@@ -8,9 +8,9 @@ import httpx
 import pytest
 
 NEKO_URL = os.environ.get("NEKO_URL", "https://nekonoverse")
-MASTODON_URL = os.environ.get("MASTODON_URL", "https://mastodon")
+FEDIBIRD_URL = os.environ.get("FEDIBIRD_URL", "https://fedibird")
 NEKO_DOMAIN = os.environ.get("NEKO_DOMAIN", "nekonoverse")
-MASTODON_DOMAIN = os.environ.get("MASTODON_DOMAIN", "mastodon")
+FEDIBIRD_DOMAIN = os.environ.get("FEDIBIRD_DOMAIN", "fedibird")
 
 # Accept self-signed certs in test environment
 SSL_CONTEXT = ssl.create_default_context()
@@ -167,8 +167,12 @@ class NekoClient:
         return resp.json()
 
 
-class MastodonClient:
-    """Helper to interact with Mastodon instance via its REST API."""
+class FedibirdClient:
+    """Helper to interact with Fedibird instance via its REST API.
+
+    Fedibird is a Mastodon fork that adds emoji reaction support
+    while maintaining Mastodon API compatibility.
+    """
 
     def __init__(self, base_url: str, domain: str):
         self.base_url = base_url
@@ -259,6 +263,15 @@ class MastodonClient:
         resp.raise_for_status()
         return resp.json()
 
+    def emoji_react(self, status_id: str, emoji: str):
+        """Fedibird-specific emoji reaction API."""
+        resp = self.http.post(
+            f"/api/v1/statuses/{status_id}/emoji_reactions/{emoji}",
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def timeline_public(self, local: bool = False, limit: int = 20):
         params = {"limit": str(limit)}
         if local:
@@ -315,7 +328,7 @@ class MastodonClient:
 def wait_for_instances():
     """Wait for both instances to be healthy."""
     wait_for_health(NEKO_URL, "/api/v1/health")
-    wait_for_health(MASTODON_URL, "/api/v1/instance")
+    wait_for_health(FEDIBIRD_URL, "/api/v1/instance")
 
 
 @pytest.fixture(scope="session")
@@ -324,8 +337,8 @@ def neko() -> NekoClient:
 
 
 @pytest.fixture(scope="session")
-def mastodon() -> MastodonClient:
-    return MastodonClient(MASTODON_URL, MASTODON_DOMAIN)
+def fedibird() -> FedibirdClient:
+    return FedibirdClient(FEDIBIRD_URL, FEDIBIRD_DOMAIN)
 
 
 @pytest.fixture(scope="session")
@@ -333,14 +346,13 @@ def alice(neko: NekoClient) -> dict:
     """Register and login alice on Nekonoverse."""
     neko.register("alice", "alice@example.com", "password1234", "Alice")
     neko.login("alice", "password1234")
-    # Return account info via search (consistent regardless of register/login)
     accounts = neko.search_accounts("alice")
     return accounts[0] if accounts else {"username": "alice"}
 
 
 @pytest.fixture(scope="session")
-def bob(mastodon: MastodonClient) -> dict:
-    """Login bob on Mastodon (created by tootctl in entrypoint)."""
-    mastodon.ensure_user("bob", "Password1234!")
-    creds = mastodon.verify_credentials()
+def bob(fedibird: FedibirdClient) -> dict:
+    """Login bob on Fedibird (created by tootctl in entrypoint)."""
+    fedibird.ensure_user("bob", "Password1234!")
+    creds = fedibird.verify_credentials()
     return creds

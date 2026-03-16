@@ -1,3 +1,14 @@
+# Fedibird federation test
+#
+# Usage:
+#   # 初回のみ: Fedibirdイメージのビルド（5-10分かかる）
+#   docker compose -f docker-compose.fedibird-federation.yml build fedibird-web
+#
+#   # テスト実行
+#   docker compose -f docker-compose.fedibird-federation.yml up -d --build --wait
+#   docker compose -f docker-compose.fedibird-federation.yml run --rm test-runner
+#   docker compose -f docker-compose.fedibird-federation.yml down -v
+
 services:
   # ── Certificate Generator ──────────────────────────────────
   certs:
@@ -6,7 +17,7 @@ services:
       sh -c "apk add --no-cache openssl >/dev/null 2>&1 && /gen-certs.sh"
     volumes:
       - certs:/certs
-      - ./tests/mastodon-federation/gen-certs.sh:/gen-certs.sh:ro
+      - ./tests/fedibird-federation/gen-certs.sh:/gen-certs.sh:ro
 
   # ── Nekonoverse Instance ───────────────────────────────────
   postgres-neko:
@@ -21,7 +32,7 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
   valkey-neko:
     image: valkey/valkey:8-alpine
@@ -31,7 +42,7 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
   app-neko:
     build: ./backend
@@ -58,7 +69,7 @@ services:
       timeout: 5s
       retries: 15
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
   worker-neko:
     build: ./backend
@@ -77,12 +88,12 @@ services:
       app-neko:
         condition: service_healthy
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
   nginx-neko:
     image: nginx:alpine
     volumes:
-      - ./tests/mastodon-federation/nginx-neko-ssl.conf:/etc/nginx/nginx.conf:ro
+      - ./tests/fedibird-federation/nginx-neko-ssl.conf:/etc/nginx/nginx.conf:ro
       - certs:/certs:ro
     depends_on:
       app-neko:
@@ -90,26 +101,26 @@ services:
       certs:
         condition: service_completed_successfully
     networks:
-      mastodon-fed:
+      fedibird-fed:
         aliases:
           - nekonoverse
 
-  # ── Mastodon Instance ──────────────────────────────────────
-  postgres-mdn:
+  # ── Fedibird Instance ──────────────────────────────────────
+  postgres-fb:
     image: postgres:18-alpine
     environment:
-      POSTGRES_DB: mastodon
-      POSTGRES_USER: mastodon
+      POSTGRES_DB: fedibird
+      POSTGRES_USER: fedibird
       POSTGRES_PASSWORD: testpass
     healthcheck:
-      test: pg_isready -U mastodon
+      test: pg_isready -U fedibird
       interval: 3s
       timeout: 3s
       retries: 10
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
-  redis-mdn:
+  redis-fb:
     image: redis:7-alpine
     healthcheck:
       test: redis-cli ping
@@ -117,55 +128,59 @@ services:
       timeout: 3s
       retries: 10
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
-  mastodon-web:
-    image: ghcr.io/mastodon/mastodon:v4.3
+  fedibird-web:
+    build:
+      context: https://github.com/fedibird/mastodon.git#fedibird
+      dockerfile: Dockerfile
     user: root
     entrypoint: ["/custom-entrypoint.sh"]
     environment:
-      LOCAL_DOMAIN: mastodon
+      LOCAL_DOMAIN: fedibird
       RAILS_ENV: production
-      SECRET_KEY_BASE: test-secret-key-base-not-for-production-use-only-for-federation-testing-1234567890
-      OTP_SECRET: test-otp-secret-not-for-production-use-only-for-federation-testing-1234567890abcdef
-      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: test-deterministic-key-not-for-production-00000001
-      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: test-key-derivation-salt-not-for-production-00001
-      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: test-primary-key-not-for-production-use-only-00000001
-      DB_HOST: postgres-mdn
+      SECRET_KEY_BASE: test-secret-key-base-not-for-production-use-only-for-fedibird-testing-1234567890
+      OTP_SECRET: test-otp-secret-not-for-production-use-only-for-fedibird-testing-1234567890abcdef
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: test-deterministic-key-not-for-production-00000002
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: test-key-derivation-salt-not-for-production-00002
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: test-primary-key-not-for-production-use-only-00000002
+      DB_HOST: postgres-fb
       DB_PORT: "5432"
-      DB_NAME: mastodon
-      DB_USER: mastodon
+      DB_NAME: fedibird
+      DB_USER: fedibird
       DB_PASS: testpass
-      REDIS_HOST: redis-mdn
+      REDIS_HOST: redis-fb
       REDIS_PORT: "6379"
       SINGLE_USER_MODE: "false"
       ALLOWED_PRIVATE_ADDRESSES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
       # Disable email requirements for testing
       SMTP_SERVER: localhost
       SMTP_PORT: "25"
-      SMTP_FROM_ADDRESS: "mastodon@mastodon"
+      SMTP_FROM_ADDRESS: "fedibird@fedibird"
     volumes:
-      - ./tests/mastodon-federation/mastodon-entrypoint.sh:/custom-entrypoint.sh:ro
+      - ./tests/fedibird-federation/fedibird-entrypoint.sh:/custom-entrypoint.sh:ro
       - certs:/certs:ro
-      - mastodon_system:/opt/mastodon/public/system
+      - fedibird_system:/opt/mastodon/public/system
     depends_on:
-      postgres-mdn:
+      postgres-fb:
         condition: service_healthy
-      redis-mdn:
+      redis-fb:
         condition: service_healthy
       certs:
         condition: service_completed_successfully
     healthcheck:
-      test: ["CMD-SHELL", "curl -sf -H 'Host: mastodon' http://localhost:3000/api/v1/instance || exit 1"]
+      test: ["CMD-SHELL", "curl -sf -H 'Host: fedibird' http://localhost:3000/api/v1/instance || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 60
       start_period: 30s
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
-  mastodon-sidekiq:
-    image: ghcr.io/mastodon/mastodon:v4.3
+  fedibird-sidekiq:
+    build:
+      context: https://github.com/fedibird/mastodon.git#fedibird
+      dockerfile: Dockerfile
     user: root
     command: >
       bash -c "
@@ -176,70 +191,70 @@ services:
         exec bundle exec sidekiq
       "
     environment:
-      LOCAL_DOMAIN: mastodon
+      LOCAL_DOMAIN: fedibird
       RAILS_ENV: production
-      SECRET_KEY_BASE: test-secret-key-base-not-for-production-use-only-for-federation-testing-1234567890
-      OTP_SECRET: test-otp-secret-not-for-production-use-only-for-federation-testing-1234567890abcdef
-      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: test-deterministic-key-not-for-production-00000001
-      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: test-key-derivation-salt-not-for-production-00001
-      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: test-primary-key-not-for-production-use-only-00000001
-      DB_HOST: postgres-mdn
+      SECRET_KEY_BASE: test-secret-key-base-not-for-production-use-only-for-fedibird-testing-1234567890
+      OTP_SECRET: test-otp-secret-not-for-production-use-only-for-fedibird-testing-1234567890abcdef
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: test-deterministic-key-not-for-production-00000002
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: test-key-derivation-salt-not-for-production-00002
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: test-primary-key-not-for-production-use-only-00000002
+      DB_HOST: postgres-fb
       DB_PORT: "5432"
-      DB_NAME: mastodon
-      DB_USER: mastodon
+      DB_NAME: fedibird
+      DB_USER: fedibird
       DB_PASS: testpass
-      REDIS_HOST: redis-mdn
+      REDIS_HOST: redis-fb
       REDIS_PORT: "6379"
       ALLOWED_PRIVATE_ADDRESSES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     volumes:
       - certs:/certs:ro
-      - mastodon_system:/opt/mastodon/public/system
+      - fedibird_system:/opt/mastodon/public/system
     depends_on:
-      mastodon-web:
+      fedibird-web:
         condition: service_healthy
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
-  nginx-mdn:
+  nginx-fb:
     image: nginx:alpine
     volumes:
-      - ./tests/mastodon-federation/nginx-mastodon-ssl.conf:/etc/nginx/nginx.conf:ro
+      - ./tests/fedibird-federation/nginx-fedibird-ssl.conf:/etc/nginx/nginx.conf:ro
       - certs:/certs:ro
     depends_on:
-      mastodon-web:
+      fedibird-web:
         condition: service_started
       certs:
         condition: service_completed_successfully
     networks:
-      mastodon-fed:
+      fedibird-fed:
         aliases:
-          - mastodon
+          - fedibird
 
   # ── Test Runner ────────────────────────────────────────────
   test-runner:
     profiles: ["test"]
-    build: ./tests/mastodon-federation
+    build: ./tests/fedibird-federation
     environment:
       NEKO_URL: https://nekonoverse
-      MASTODON_URL: https://mastodon
+      FEDIBIRD_URL: https://fedibird
       NEKO_DOMAIN: nekonoverse
-      MASTODON_DOMAIN: mastodon
+      FEDIBIRD_DOMAIN: fedibird
     depends_on:
       nginx-neko:
         condition: service_started
-      nginx-mdn:
+      nginx-fb:
         condition: service_started
       worker-neko:
         condition: service_started
-      mastodon-sidekiq:
+      fedibird-sidekiq:
         condition: service_started
     networks:
-      - mastodon-fed
+      - fedibird-fed
 
 volumes:
   certs:
-  mastodon_system:
+  fedibird_system:
 
 networks:
-  mastodon-fed:
+  fedibird-fed:
     driver: bridge

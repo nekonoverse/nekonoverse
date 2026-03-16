@@ -554,7 +554,7 @@ class TestRenoteFederation:
         def check_notification():
             notifs = neko.notifications(limit=20)
             return any(
-                n.get("type") == "renote" and n.get("status", {}).get("id") == note["id"]
+                n.get("type") in ("renote", "reblog") and n.get("status", {}).get("id") == note["id"]
                 for n in notifs
             )
 

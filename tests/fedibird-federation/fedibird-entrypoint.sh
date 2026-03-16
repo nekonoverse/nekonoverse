@@ -26,11 +26,8 @@ SAFETY_ASSURED=1 bundle exec rails db:setup 2>/dev/null || bundle exec rails db:
 # Enable open registration
 bundle exec rails runner "Setting.registrations_mode = 'open'" 2>/dev/null || true
 
-# Disable email MX check for testing (allows example.com emails)
-bundle exec rails runner "Setting.min_invite_role = 'user'" 2>/dev/null || true
-
 # Create test user bob (idempotent)
-RAILS_ENV=production bundle exec tootctl accounts create bob --email bob@mastodon --confirmed 2>/dev/null || true
+RAILS_ENV=production bundle exec tootctl accounts create bob --email bob@fedibird --confirmed 2>/dev/null || true
 # Set known password for bob
 bundle exec rails runner "
   account = Account.find_local('bob')
