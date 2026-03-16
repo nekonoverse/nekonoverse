@@ -6,6 +6,8 @@ import {
   deleteNote,
   bookmarkNote,
   unbookmarkNote,
+  favouriteNote,
+  unfavouriteNote,
   pinNote,
   unpinNote,
   votePoll,
@@ -228,6 +230,8 @@ export default function NoteCard(props: Props) {
   const [boostLoading, setBoostLoading] = createSignal(false);
   const [boostCount, setBoostCount] = createSignal(0);
   const [bookmarked, setBookmarked] = createSignal(false);
+  const [favourited, setFavourited] = createSignal(false);
+  const [favCount, setFavCount] = createSignal(0);
   const [pinned, setPinned] = createSignal(false);
   const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
   const [cwExpanded, setCwExpanded] = createSignal(false);
@@ -250,6 +254,8 @@ export default function NoteCard(props: Props) {
     setNoteSource(displayNote().source);
     setNoteEditedAt(displayNote().edited_at);
     if (boostCount() === 0) setBoostCount(initBoostCount());
+    setFavourited(displayNote().favourited || false);
+    setFavCount(displayNote().favourites_count || 0);
     if (displayNote().pinned) setPinned(true);
   });
 
@@ -345,6 +351,21 @@ export default function NoteCard(props: Props) {
         await bookmarkNote(displayNote().id);
         setBookmarked(true);
       }
+    } catch {}
+  };
+
+  const handleFavourite = async () => {
+    try {
+      if (favourited()) {
+        await unfavouriteNote(displayNote().id);
+        setFavourited(false);
+        setFavCount((c) => Math.max(0, c - 1));
+      } else {
+        await favouriteNote(displayNote().id);
+        setFavourited(true);
+        setFavCount((c) => c + 1);
+      }
+      props.onReactionUpdate?.();
     } catch {}
   };
 
@@ -803,6 +824,27 @@ export default function NoteCard(props: Props) {
               </svg>
             </button>
             <button
+              class={`note-action-btn note-fav-btn${favourited() ? " favourited" : ""}`}
+              onClick={handleFavourite}
+              title={t(favourited() ? "favourite.remove" : "favourite.add")}
+            >
+              <svg
+                width="18"
+                height="18"
+                viewBox="0 0 24 24"
+                fill={favourited() ? "currentColor" : "none"}
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+              </svg>
+              <Show when={favCount() > 0}>
+                <span class="note-action-count">{favCount()}</span>
+              </Show>
+            </button>
+            <button
               class={`note-action-btn note-bookmark-btn${bookmarked() ? " bookmarked" : ""}`}
               onClick={handleBookmark}
               title={t(bookmarked() ? "bookmark.remove" : "bookmark.add")}
@@ -823,7 +865,7 @@ export default function NoteCard(props: Props) {
           </div>
           <ReactionBar
             noteId={note().id}
-            reactions={note().reactions}
+            reactions={note().reactions.filter((r) => r.emoji !== "\u2b50")}
             onUpdate={props.onReactionUpdate}
           />
         </Show>

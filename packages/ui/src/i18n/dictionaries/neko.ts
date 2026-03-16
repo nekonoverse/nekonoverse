@@ -249,6 +249,8 @@ export const neko: Dictionary = {
   "note.unpin": "ピンどめやめるにゃ",
   "note.pinned": "ピンどめにゃ",
   "note.pinnedPosts": "ピンどめとうこうにゃ",
+  "favourite.add": "おきにいりにゃ",
+  "favourite.remove": "おきにいりかいじょにゃ",
   "bookmark.title": "ブックマークにゃ",
   "bookmark.add": "ブックマークにゃ",
   "bookmark.remove": "ブックマークやめるにゃ",
