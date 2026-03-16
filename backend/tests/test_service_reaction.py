@@ -125,8 +125,6 @@ async def test_add_reaction_remote_note_includes_author_and_followers(
 
 async def test_add_reaction_sends_like_and_emoji_react(db, test_user, mock_valkey):
     """Reaction to a remote note delivers both Like and EmojiReact activities."""
-    import json
-
     from app.models.delivery import DeliveryJob
     from app.services.reaction_service import add_reaction
     from sqlalchemy import select
@@ -141,22 +139,20 @@ async def test_add_reaction_sends_like_and_emoji_react(db, test_user, mock_valke
         select(DeliveryJob).where(DeliveryJob.actor_id == test_user.actor.id)
     )
     jobs = result.scalars().all()
-    payloads = [json.loads(j.payload) for j in jobs]
-    types = {p["type"] for p in payloads}
+    # payload is JSONB (already a dict)
+    types = {j.payload["type"] for j in jobs}
     assert "Like" in types
     assert "EmojiReact" in types
 
     # Both should have the emoji in content
-    for p in payloads:
-        assert p["content"] == "\U0001f600"
+    for j in jobs:
+        assert j.payload["content"] == "\U0001f600"
 
 
 async def test_remove_reaction_sends_undo_like_and_undo_emoji_react(
     db, test_user, mock_valkey
 ):
     """Undo sends both Undo(Like) and Undo(EmojiReact)."""
-    import json
-
     from app.models.delivery import DeliveryJob
     from app.services.reaction_service import add_reaction, remove_reaction
     from sqlalchemy import select
@@ -181,10 +177,9 @@ async def test_remove_reaction_sends_undo_like_and_undo_emoji_react(
         select(DeliveryJob).where(DeliveryJob.actor_id == test_user.actor.id)
     )
     jobs = result.scalars().all()
-    payloads = [json.loads(j.payload) for j in jobs]
 
-    # All should be Undo wrapping Like or EmojiReact
-    inner_types = {p["object"]["type"] for p in payloads}
+    # payload is JSONB (already a dict) — all should be Undo wrapping Like or EmojiReact
+    inner_types = {j.payload["object"]["type"] for j in jobs}
     assert "Like" in inner_types
     assert "EmojiReact" in inner_types
 
