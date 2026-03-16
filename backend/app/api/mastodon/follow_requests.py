@@ -76,6 +76,14 @@ async def authorize_follow_request(
     follow.accepted = True
     await db.flush()
 
+    # Create "follow" notification now that the request is accepted
+    from app.services.notification_service import create_notification, publish_notification
+
+    notif = await create_notification(db, "follow", user.actor_id, account_id)
+    if notif:
+        await db.flush()
+        await publish_notification(notif)
+
     # Send Accept activity to remote follower
     follower = follow.follower
     if follower and not follower.is_local and follower.inbox_url:

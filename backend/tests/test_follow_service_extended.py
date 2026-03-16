@@ -26,6 +26,44 @@ async def test_follow_local_actor(db, mock_valkey, test_user, test_user_b):
     assert follow.following_id == test_user_b.actor_id
 
 
+async def test_follow_unlocked_creates_follow_notification(db, mock_valkey, test_user, test_user_b):
+    """Following an unlocked local actor creates a 'follow' notification."""
+    from sqlalchemy import select
+    from app.models.notification import Notification
+
+    await follow_actor(db, test_user, test_user_b.actor)
+    result = await db.execute(
+        select(Notification).where(
+            Notification.recipient_id == test_user_b.actor_id,
+            Notification.sender_id == test_user.actor_id,
+        )
+    )
+    notif = result.scalar_one()
+    assert notif.type == "follow"
+
+
+async def test_follow_locked_creates_follow_request_notification(db, mock_valkey, test_user, test_user_b):
+    """Following a locked local actor creates a 'follow_request' notification."""
+    from sqlalchemy import select
+    from app.models.notification import Notification
+
+    # Lock the target account
+    test_user_b.actor.manually_approves_followers = True
+    await db.flush()
+
+    follow = await follow_actor(db, test_user, test_user_b.actor)
+    assert follow.accepted is False
+
+    result = await db.execute(
+        select(Notification).where(
+            Notification.recipient_id == test_user_b.actor_id,
+            Notification.sender_id == test_user.actor_id,
+        )
+    )
+    notif = result.scalar_one()
+    assert notif.type == "follow_request"
+
+
 async def test_follow_remote_actor(db, mock_valkey, test_user):
     """Following a remote actor delivers Follow activity."""
     remote = await make_remote_actor(db, username="rem_follow", domain="follow.example")

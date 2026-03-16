@@ -56,7 +56,8 @@ async def handle_follow(db: AsyncSession, activity: dict):
         # Notify the local target about the new follower
         from app.services.notification_service import create_notification, publish_notification
 
-        notif = await create_notification(db, "follow", target.id, follower.id)
+        notif_type = "follow" if not target.manually_approves_followers else "follow_request"
+        notif = await create_notification(db, notif_type, target.id, follower.id)
         await db.commit()
         if notif:
             await publish_notification(notif)

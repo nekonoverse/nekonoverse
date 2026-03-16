@@ -54,7 +54,7 @@ function doConnect(path: string) {
       } else {
         setUnreadOther((c) => c + 1);
       }
-      if (type === "follow") {
+      if (type === "follow" || type === "follow_request") {
         fetchFollowRequestCount();
       }
       notificationHandlers.forEach((h) => h(data));
