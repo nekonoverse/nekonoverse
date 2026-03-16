@@ -8,7 +8,7 @@ import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 import { getNote } from "@nekonoverse/ui/api/statuses";
 import { onNotification, onReaction, resetUnread, unreadMentions, unreadOther, resetUnreadMentions, resetUnreadOther } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
-import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 import { isPushSupported, getPermissionState, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "@nekonoverse/ui/utils/pushNotification";
 import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
