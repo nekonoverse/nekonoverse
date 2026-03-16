@@ -66,6 +66,17 @@ a:hover {
   color: var(--accent-hover);
 }
 
+/* Navigation Progress Bar */
+.nav-progress-bar {
+  position: fixed;
+  top: 0;
+  left: 0;
+  height: 3px;
+  background: var(--accent);
+  z-index: 201;
+  transition: width 0.15s ease-out, opacity 0.2s ease;
+}
+
 /* Navbar */
 .navbar {
   background: var(--bg-secondary);
