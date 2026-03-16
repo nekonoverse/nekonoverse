@@ -231,6 +231,7 @@ def render_note(note: Note) -> dict:
             }.get(ext, "image/png")
 
             emoji_tag: dict = {
+                "id": url,
                 "type": "Emoji",
                 "name": f":{e['shortcode']}:",
                 "icon": {"type": "Image", "mediaType": media_type, "url": url},

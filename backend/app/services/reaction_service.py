@@ -103,6 +103,7 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
             if local_emoji:
                 emoji_tag = [
                     {
+                        "id": local_emoji.url,
                         "type": "Emoji",
                         "name": f":{local_emoji.shortcode}:",
                         "icon": {
