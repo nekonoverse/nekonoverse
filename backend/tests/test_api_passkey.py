@@ -143,6 +143,38 @@ async def test_authenticate_verify_success(
     mock_valkey.set.assert_called()
 
 
+async def test_authenticate_verify_totp_user_gets_session(
+    app_client, db, test_user, mock_valkey,
+):
+    """Passkey is MFA by itself — TOTP user still gets session directly."""
+    totp_user = MagicMock()
+    totp_user.id = test_user.id
+    totp_user.totp_enabled = True
+
+    mock_verify = AsyncMock(return_value=totp_user)
+    with patch(
+        f"{PASSKEY_SVC}.verify_authentication_response", mock_verify,
+    ):
+        resp = await app_client.post(
+            "/api/v1/passkey/authenticate/verify",
+            json={
+                "challengeId": "test-challenge-id",
+                "id": "abc", "rawId": "abc", "type": "public-key",
+                "response": {
+                    "authenticatorData": "AA",
+                    "clientDataJSON": "BB",
+                    "signature": "CC",
+                },
+            },
+        )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["ok"] is True
+    assert "nekonoverse_session" in resp.cookies
+    # Should NOT require TOTP — Passkey is already MFA
+    assert "requires_totp" not in data
+
+
 async def test_authenticate_verify_invalid(app_client, mock_valkey):
     mock_verify = AsyncMock(
         side_effect=ValueError("Challenge expired or not found"),
