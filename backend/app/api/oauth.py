@@ -3,6 +3,7 @@
 import hashlib
 import hmac
 import html as html_mod
+import json
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -197,43 +198,164 @@ async def authorize_form(
 @router.post("/oauth/authorize")
 async def authorize_submit(
     request: Request,
-    client_id: str = Form(...),
-    redirect_uri: str = Form(...),
-    scope: str = Form("read"),
-    response_type: str = Form("code"),
-    state: str | None = Form(None),
-    code_challenge: str | None = Form(None),
-    code_challenge_method: str | None = Form(None),
-    username: str | None = Form(None),
-    password: str | None = Form(None),
     db: AsyncSession = Depends(get_db),
 ):
-    """Handle login/consent form submission and issue authorization code."""
+    """Handle login/consent/TOTP/passkey form submission and issue authorization code."""
     # OAuthフォームログインにもレート制限適用 (M-3)
     await _check_oauth_rate_limit(request, "authorize")
 
-    # CSRFトークン検証 (M-1): 同意フォーム(ログイン済み)では必須、
-    # ログインフォーム(username/password送信)ではクレデンシャル自体が認証
-    csrf_token_value = (await request.form()).get("csrf_token", "")
+    form = await request.form()
+    client_id = str(form.get("client_id", ""))
+    redirect_uri = str(form.get("redirect_uri", ""))
+    scope = str(form.get("scope", "read"))
+    response_type = str(form.get("response_type", "code"))
+    state = str(form["state"]) if form.get("state") else None
+    code_challenge = str(form["code_challenge"]) if form.get("code_challenge") else None
+    code_challenge_method = (
+        str(form["code_challenge_method"]) if form.get("code_challenge_method") else None
+    )
+    username = str(form["username"]) if form.get("username") else None
+    password = str(form["password"]) if form.get("password") else None
+    totp_token = str(form["totp_token"]) if form.get("totp_token") else None
+    totp_code = str(form["totp_code"]) if form.get("totp_code") else None
+    passkey_credential = str(form["passkey_credential"]) if form.get("passkey_credential") else None
+    csrf_token_value = str(form.get("csrf_token", ""))
+
+    # CSRFトークン検証 (M-1)
     is_login_submission = username and password
-    if not is_login_submission:
-        if not csrf_token_value or not await _verify_csrf_token(str(csrf_token_value)):
-            raise HTTPException(status_code=403, detail="Invalid CSRF token")
+    is_totp_submission = totp_token and totp_code
+    is_passkey_submission = passkey_credential
+    if not is_login_submission and not is_passkey_submission:
+        if not csrf_token_value or not await _verify_csrf_token(csrf_token_value):
+            if not is_totp_submission:
+                raise HTTPException(status_code=403, detail="Invalid CSRF token")
     elif csrf_token_value:
-        # ログインフォームでもCSRFトークンがあれば検証する
-        await _verify_csrf_token(str(csrf_token_value))
+        await _verify_csrf_token(csrf_token_value)
 
     # アプリケーション検証
-    result = await db.execute(
-        select(OAuthApplication).where(OAuthApplication.client_id == client_id)
-    )
-    app = result.scalar_one_or_none()
-    if not app:
-        raise HTTPException(status_code=400, detail="Invalid client_id")
+    if not client_id and totp_token:
+        # TOTP送信時はclient_idがフォームにないのでValkeyから復元
+        pass
+    else:
+        result = await db.execute(
+            select(OAuthApplication).where(OAuthApplication.client_id == client_id)
+        )
+        app = result.scalar_one_or_none()
+        if not app:
+            raise HTTPException(status_code=400, detail="Invalid client_id")
 
-    allowed_uris = [u.strip() for u in app.redirect_uris.split() if u.strip()]
-    if redirect_uri not in allowed_uris:
-        raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+        allowed_uris = [u.strip() for u in app.redirect_uris.split() if u.strip()]
+        if redirect_uri not in allowed_uris:
+            raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+
+    from app.valkey_client import valkey
+
+    # ── TOTP検証パス ──
+    if is_totp_submission:
+        data_str = await valkey.get(f"totp_pending_oauth:{totp_token}")
+        if not data_str:
+            raise HTTPException(status_code=401, detail="TOTP session expired")
+
+        data = json.loads(data_str)
+        from app.services.user_service import get_user_by_id
+
+        user = await get_user_by_id(db, uuid.UUID(data["user_id"]))
+        if not user:
+            raise HTTPException(status_code=401, detail="User not found")
+
+        from app.services.totp_service import decrypt_secret, verify_totp_code
+
+        secret = decrypt_secret(user.totp_secret)
+        code = totp_code.strip().replace("-", "")
+        totp_valid = verify_totp_code(secret, code)
+
+        if not totp_valid and user.totp_recovery_codes:
+            from app.services.totp_service import verify_recovery_code
+
+            valid, remaining = verify_recovery_code(
+                totp_code.strip(), user.totp_recovery_codes
+            )
+            if valid:
+                user.totp_recovery_codes = remaining
+                await db.commit()
+                totp_valid = True
+
+        if not totp_valid:
+            csrf_token = await _generate_csrf_token()
+            return _render_totp_form(
+                totp_token=totp_token,
+                app_name=data.get("app_name", ""),
+                csrf_token=csrf_token,
+                error="Invalid verification code",
+            )
+
+        await valkey.delete(f"totp_pending_oauth:{totp_token}")
+
+        # ValkeyからOAuthパラメータを復元
+        result = await db.execute(
+            select(OAuthApplication).where(
+                OAuthApplication.client_id == data["client_id"]
+            )
+        )
+        app = result.scalar_one_or_none()
+        if not app:
+            raise HTTPException(status_code=400, detail="Invalid client_id")
+
+        return await _issue_authorization_code(
+            db=db,
+            app=app,
+            user_id=user.id,
+            redirect_uri=data["redirect_uri"],
+            scope=data["scope"],
+            state=data.get("state"),
+            code_challenge=data.get("code_challenge"),
+            code_challenge_method=data.get("code_challenge_method"),
+        )
+
+    # ── Passkey認証パス ──
+    if is_passkey_submission:
+        try:
+            cred = json.loads(passkey_credential)
+        except (json.JSONDecodeError, TypeError):
+            raise HTTPException(status_code=400, detail="Invalid passkey credential")
+
+        challenge_id = cred.pop("challengeId", None)
+        if not challenge_id:
+            raise HTTPException(status_code=400, detail="Missing challengeId")
+
+        from app.services import passkey_service
+
+        try:
+            user = await passkey_service.verify_authentication_response(
+                db=db, challenge_id=challenge_id, credential_json=cred,
+            )
+        except Exception:
+            csrf_token = await _generate_csrf_token()
+            return _render_login_form(
+                app_name=app.name,
+                client_id=client_id,
+                redirect_uri=redirect_uri,
+                scope=scope,
+                response_type=response_type,
+                state=state,
+                code_challenge=code_challenge,
+                code_challenge_method=code_challenge_method,
+                error="Passkey authentication failed",
+                csrf_token=csrf_token,
+            )
+
+        # Passkey成功後もTOTPチェック
+        if user.totp_enabled:
+            return await _redirect_to_totp(
+                valkey, user, app, client_id, redirect_uri, scope,
+                response_type, state, code_challenge, code_challenge_method,
+            )
+
+        return await _issue_authorization_code(
+            db=db, app=app, user_id=user.id, redirect_uri=redirect_uri,
+            scope=scope, state=state, code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
+        )
 
     # セッションからユーザーを取得(既にログイン済みの場合)
     user_id = await _get_session_user_id(request)
@@ -280,6 +402,13 @@ async def authorize_submit(
                 status_code=403, detail="Your registration is pending approval"
             )
 
+        # TOTP チェック
+        if user.totp_enabled:
+            return await _redirect_to_totp(
+                valkey, user, app, client_id, redirect_uri, scope,
+                response_type, state, code_challenge, code_challenge_method,
+            )
+
         user_id = user.id
 
     return await _issue_authorization_code(
@@ -292,6 +421,32 @@ async def authorize_submit(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
     )
+
+
+OAUTH_TOTP_TTL = 300  # 5 minutes
+
+
+async def _redirect_to_totp(valkey, user, app, client_id, redirect_uri, scope,
+                             response_type, state, code_challenge, code_challenge_method):
+    """Store OAuth params in Valkey and render TOTP form."""
+    totp_token = secrets.token_urlsafe(32)
+    await valkey.set(
+        f"totp_pending_oauth:{totp_token}",
+        json.dumps({
+            "user_id": str(user.id),
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "response_type": response_type,
+            "state": state,
+            "code_challenge": code_challenge,
+            "code_challenge_method": code_challenge_method,
+            "app_name": app.name,
+        }),
+        ex=OAUTH_TOTP_TTL,
+    )
+    csrf_token = await _generate_csrf_token()
+    return _render_totp_form(totp_token=totp_token, app_name=app.name, csrf_token=csrf_token)
 
 
 async def _get_session_user_id(request: Request) -> uuid.UUID | None:
@@ -372,6 +527,56 @@ async def _issue_authorization_code(
     return RedirectResponse(location, status_code=302)
 
 
+def _render_totp_form(
+    *,
+    totp_token: str,
+    app_name: str,
+    csrf_token: str = "",
+    error: str | None = None,
+) -> HTMLResponse:
+    """Render a TOTP verification form for OAuth flow."""
+    esc = html_mod.escape
+    error_html = f'<p style="color:red">{esc(error)}</p>' if error else ""
+
+    return HTMLResponse(
+        f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Two-Factor Authentication</title>
+<style>
+body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0 16px; }}
+h2 {{ margin-bottom: 4px; }}
+.app-name {{ color: #666; margin-top: 0; }}
+label {{ display: block; margin-top: 12px; font-weight: bold; }}
+input[type=text] {{
+  width: 100%; padding: 8px; margin-top: 4px; box-sizing: border-box;
+  border: 1px solid #ccc; border-radius: 4px; font-size: 18px;
+  letter-spacing: 4px; text-align: center;
+}}
+button {{ margin-top: 16px; padding: 10px 20px; width: 100%;
+  background: #6364ff; color: white; border: none; border-radius: 4px;
+  font-size: 16px; cursor: pointer; }}
+button:hover {{ background: #4f50e6; }}
+p.hint {{ color: #888; font-size: 13px; margin-top: 4px; }}
+</style></head><body>
+<h2>Two-Factor Authentication</h2>
+<p class="app-name">{esc(app_name)}</p>
+{error_html}
+<form method="POST" action="/oauth/authorize">
+<input type="hidden" name="totp_token" value="{esc(totp_token)}">
+<input type="hidden" name="csrf_token" value="{esc(csrf_token)}">
+<input type="hidden" name="client_id" value="">
+<input type="hidden" name="redirect_uri" value="">
+<label for="totp_code">Verification Code</label>
+<input type="text" id="totp_code" name="totp_code" required autofocus
+  autocomplete="one-time-code" inputmode="numeric" maxlength="11"
+  pattern="[0-9]{{6}}|[a-zA-Z0-9]{{5}}-[a-zA-Z0-9]{{5}}"
+  placeholder="000000">
+<p class="hint">Enter your 6-digit code or a recovery code.</p>
+<button type="submit">Verify</button>
+</form></body></html>"""
+    )
+
+
 def _render_login_form(
     *,
     app_name: str,
@@ -425,18 +630,83 @@ button {{ margin-top: 16px; padding: 10px 20px; width: 100%;
   background: #6364ff; color: white; border: none; border-radius: 4px;
   font-size: 16px; cursor: pointer; }}
 button:hover {{ background: #4f50e6; }}
+.divider {{ text-align: center; margin: 16px 0 8px; color: #888; font-size: 14px; }}
+#passkey-btn {{ background: #333; }}
+#passkey-btn:hover {{ background: #111; }}
+#passkey-error {{ color: red; font-size: 13px; display: none; margin-top: 8px; }}
 </style></head><body>
 <h2>Authorize</h2>
 <p class="app-name">{esc(app_name)}</p>
 {error_html}
-<form method="POST" action="/oauth/authorize">
+<form id="login-form" method="POST" action="/oauth/authorize">
 {hidden_inputs}
+<input type="hidden" id="passkey_credential" name="passkey_credential" value="">
 <label for="username">Username</label>
 <input type="text" id="username" name="username" required autofocus>
 <label for="password">Password</label>
 <input type="password" id="password" name="password" required>
 <button type="submit">Log in and Authorize</button>
-</form></body></html>"""
+</form>
+<div id="passkey-section" style="display:none">
+<div class="divider">or</div>
+<button id="passkey-btn" onclick="passkeyLogin()">Sign in with Passkey</button>
+<p id="passkey-error"></p>
+</div>
+<script>
+function b64url(buf) {{
+  var b = new Uint8Array(buf), s = "";
+  for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=/g, "");
+}}
+function b64dec(s) {{
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  var bin = atob(s), a = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+  return a.buffer;
+}}
+async function passkeyLogin() {{
+  var errEl = document.getElementById("passkey-error");
+  errEl.style.display = "none";
+  try {{
+    var resp = await fetch("/api/v1/passkey/authenticate/options", {{method:"POST"}});
+    if (!resp.ok) throw new Error("Failed to get options");
+    var opts = await resp.json();
+    var cid = opts.challengeId;
+    delete opts.challengeId;
+    opts.challenge = b64dec(opts.challenge);
+    if (opts.allowCredentials) {{
+      opts.allowCredentials = opts.allowCredentials.map(function(c) {{
+        return Object.assign({{}}, c, {{id: b64dec(c.id), type: "public-key"}});
+      }});
+    }}
+    var cred = await navigator.credentials.get({{publicKey: opts}});
+    if (!cred) throw new Error("Cancelled");
+    var r = cred.response;
+    var payload = JSON.stringify({{
+      challengeId: cid, id: cred.id, rawId: b64url(cred.rawId),
+      type: cred.type,
+      response: {{
+        authenticatorData: b64url(r.authenticatorData),
+        clientDataJSON: b64url(r.clientDataJSON),
+        signature: b64url(r.signature),
+        userHandle: r.userHandle ? b64url(r.userHandle) : null
+      }}
+    }});
+    document.getElementById("passkey_credential").value = payload;
+    document.getElementById("username").removeAttribute("required");
+    document.getElementById("password").removeAttribute("required");
+    document.getElementById("login-form").submit();
+  }} catch(e) {{
+    errEl.textContent = e.message || "Passkey authentication failed";
+    errEl.style.display = "block";
+  }}
+}}
+if (window.PublicKeyCredential) {{
+  document.getElementById("passkey-section").style.display = "block";
+}}
+</script>
+</body></html>"""
     )
 
 
