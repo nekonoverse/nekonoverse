@@ -5036,6 +5036,7 @@ a:hover {
   overflow: hidden;
   cursor: pointer;
   border: 2px solid transparent;
+  min-width: 0;
 }
 
 .drive-picker-item:hover {
@@ -5047,9 +5048,12 @@ a:hover {
 }
 
 .drive-picker-item img {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: cover;
+  display: block;
 }
 
 .drive-picker-check {
@@ -5071,6 +5075,13 @@ a:hover {
 .drive-picker-count {
   font-size: 0.85em;
   color: var(--text-secondary);
+}
+
+@media (max-width: 600px) {
+  .drive-picker-grid {
+    grid-template-columns: repeat(3, 1fr);
+    padding: 8px;
+  }
 }
 
 /* Profile settings */
