@@ -167,6 +167,8 @@ async def _notification_to_response(
     notif_type = notif.type
     if notif.type == "reaction" and notif.reaction_emoji == "\u2b50":
         notif_type = "favourite"
+    elif notif.type == "renote":
+        notif_type = "reblog"
 
     return NotificationResponse(
         id=notif.id,

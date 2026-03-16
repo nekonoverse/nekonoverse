@@ -2156,9 +2156,10 @@ a:hover {
     min-width: unset;
     max-width: unset;
     width: 100%;
-    max-height: 50vh;
+    max-height: 50dvh;
     border-radius: var(--radius) var(--radius) 0 0;
     z-index: 200;
+    padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 
   .reaction-emoji-backdrop {
@@ -3009,6 +3010,9 @@ a:hover {
 
 .profile-display-name {
   font-size: 1.25em;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .profile-edit-btn {

@@ -282,3 +282,37 @@ async def test_handle_create_sanitizes_content(db, mock_valkey):
     await handle_create(db, activity)
     note = await get_note_by_ap_id(db, "http://san.example/notes/san1")
     assert "<script>" not in note.content
+
+
+async def test_handle_create_reply_resolves_in_reply_to_id(db, mock_valkey):
+    """Incoming reply with inReplyTo pointing to a local note should set in_reply_to_id."""
+    from tests.conftest import make_note, make_remote_actor
+
+    from app.activitypub.handlers.create import handle_create
+    from app.services.note_service import get_note_by_ap_id
+
+    # Create a local note as the parent
+    local_actor = await make_remote_actor(db, username="local_rpl", domain="localhost")
+    parent = await make_note(db, local_actor, content="Parent note")
+
+    # Remote actor replies
+    remote = await make_remote_actor(db, username="replier", domain="replier.example")
+    activity = {
+        "type": "Create",
+        "actor": remote.ap_id,
+        "object": {
+            "type": "Note",
+            "id": "http://replier.example/notes/reply1",
+            "attributedTo": remote.ap_id,
+            "content": "<p>This is a reply</p>",
+            "inReplyTo": parent.ap_id,
+            "published": "2025-06-01T00:00:00Z",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [],
+        },
+    }
+    await handle_create(db, activity)
+    reply = await get_note_by_ap_id(db, "http://replier.example/notes/reply1")
+    assert reply is not None
+    assert reply.in_reply_to_id == parent.id
+    assert reply.in_reply_to_ap_id == parent.ap_id

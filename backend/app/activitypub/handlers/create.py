@@ -87,6 +87,9 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     in_reply_to_id = None
     if in_reply_to_ap_id:
         reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id)
+        # ローカルに無ければリモートからfetch
+        if not reply_note:
+            reply_note = await fetch_remote_note(db, in_reply_to_ap_id)
         if reply_note:
             in_reply_to_id = reply_note.id
 
