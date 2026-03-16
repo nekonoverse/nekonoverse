@@ -209,13 +209,19 @@ async def authorize_submit(
     db: AsyncSession = Depends(get_db),
 ):
     """Handle login/consent form submission and issue authorization code."""
-    # CSRFトークン検証 (M-1)
-    csrf_token_value = (await request.form()).get("csrf_token", "")
-    if not csrf_token_value or not await _verify_csrf_token(str(csrf_token_value)):
-        raise HTTPException(status_code=403, detail="Invalid CSRF token")
-
     # OAuthフォームログインにもレート制限適用 (M-3)
     await _check_oauth_rate_limit(request, "authorize")
+
+    # CSRFトークン検証 (M-1): 同意フォーム(ログイン済み)では必須、
+    # ログインフォーム(username/password送信)ではクレデンシャル自体が認証
+    csrf_token_value = (await request.form()).get("csrf_token", "")
+    is_login_submission = username and password
+    if not is_login_submission:
+        if not csrf_token_value or not await _verify_csrf_token(str(csrf_token_value)):
+            raise HTTPException(status_code=403, detail="Invalid CSRF token")
+    elif csrf_token_value:
+        # ログインフォームでもCSRFトークンがあれば検証する
+        await _verify_csrf_token(str(csrf_token_value))
 
     # アプリケーション検証
     result = await db.execute(
