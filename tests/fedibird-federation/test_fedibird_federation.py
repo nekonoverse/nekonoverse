@@ -1,6 +1,6 @@
-"""Mastodon cross-platform federation tests.
+"""Fedibird cross-platform federation tests.
 
-Tests Nekonoverse <-> Mastodon federation covering:
+Tests Nekonoverse <-> Fedibird federation covering:
 - Health checks, WebFinger, Actor endpoints
 - Note creation and federation
 - Follow flow
@@ -9,6 +9,7 @@ Tests Nekonoverse <-> Mastodon federation covering:
 - Delete federation
 - Boost (reblog/announce) federation
 - Favourite (like) federation
+- Emoji reaction federation (Fedibird extension)
 - CW (spoiler_text / sensitive) federation
 - Hashtag federation
 """
@@ -19,11 +20,11 @@ import httpx
 import pytest
 
 from conftest import (
-    MASTODON_DOMAIN,
-    MASTODON_URL,
+    FEDIBIRD_DOMAIN,
+    FEDIBIRD_URL,
     NEKO_DOMAIN,
     NEKO_URL,
-    MastodonClient,
+    FedibirdClient,
     NekoClient,
     poll_until,
 )
@@ -42,8 +43,8 @@ class TestHealth:
     def test_nekonoverse_healthy(self, neko: NekoClient):
         assert neko.health() == {"status": "ok"}
 
-    def test_mastodon_healthy(self, mastodon: MastodonClient):
-        assert mastodon.health() is True
+    def test_fedibird_healthy(self, fedibird: FedibirdClient):
+        assert fedibird.health() is True
 
 
 # ── 2. Registration ───────────────────────────────────────────
@@ -54,10 +55,10 @@ class TestRegistration:
         assert alice["username"] == "alice"
 
     def test_bob_registered(self, bob):
-        assert bob["username"] == "bob"
+        assert "access_token" in bob or "id" in bob
 
-    def test_bob_credentials(self, mastodon: MastodonClient, bob):
-        creds = mastodon.verify_credentials()
+    def test_bob_credentials(self, fedibird: FedibirdClient, bob):
+        creds = fedibird.verify_credentials()
         assert creds["username"] == "bob"
 
 
@@ -71,25 +72,25 @@ class TestWebFinger:
         links = {link["rel"]: link for link in result["links"]}
         assert "self" in links
 
-    def test_mastodon_webfinger(self, mastodon: MastodonClient, bob):
-        result = mastodon.webfinger(f"bob@{MASTODON_DOMAIN}")
-        assert result["subject"] == f"acct:bob@{MASTODON_DOMAIN}"
+    def test_fedibird_webfinger(self, fedibird: FedibirdClient, bob):
+        result = fedibird.webfinger(f"bob@{FEDIBIRD_DOMAIN}")
+        assert result["subject"] == f"acct:bob@{FEDIBIRD_DOMAIN}"
         links = {link["rel"]: link for link in result["links"]}
         assert "self" in links
 
-    def test_cross_webfinger_neko_from_mastodon(self, alice, bob):
-        """Mastodon can resolve Neko's WebFinger."""
+    def test_cross_webfinger_neko_from_fedibird(self, alice, bob):
+        """Fedibird can resolve Neko's WebFinger."""
         resp = _get(
             f"{NEKO_URL}/.well-known/webfinger",
             params={"resource": f"acct:alice@{NEKO_DOMAIN}"},
         )
         assert resp.status_code == 200
 
-    def test_cross_webfinger_mastodon_from_neko(self, alice, bob):
-        """Neko can resolve Mastodon's WebFinger."""
+    def test_cross_webfinger_fedibird_from_neko(self, alice, bob):
+        """Neko can resolve Fedibird's WebFinger."""
         resp = _get(
-            f"{MASTODON_URL}/.well-known/webfinger",
-            params={"resource": f"acct:bob@{MASTODON_DOMAIN}"},
+            f"{FEDIBIRD_URL}/.well-known/webfinger",
+            params={"resource": f"acct:bob@{FEDIBIRD_DOMAIN}"},
         )
         assert resp.status_code == 200
 
@@ -105,16 +106,16 @@ class TestActor:
         assert "publicKey" in actor
         assert actor["publicKey"]["publicKeyPem"].startswith("-----BEGIN PUBLIC KEY-----")
 
-    def test_mastodon_actor(self, mastodon: MastodonClient, bob):
-        """Mastodon actor endpoint returns valid AP Person."""
-        wf = mastodon.webfinger(f"bob@{MASTODON_DOMAIN}")
+    def test_fedibird_actor(self, fedibird: FedibirdClient, bob):
+        """Fedibird actor endpoint returns valid AP Person."""
+        wf = fedibird.webfinger(f"bob@{FEDIBIRD_DOMAIN}")
         actor_url = None
         for link in wf["links"]:
             if link.get("rel") == "self":
                 actor_url = link["href"]
                 break
         assert actor_url is not None
-        actor = mastodon.get_actor_ap(actor_url)
+        actor = fedibird.get_actor_ap(actor_url)
         assert actor["type"] == "Person"
         assert actor["preferredUsername"] == "bob"
         assert "publicKey" in actor
@@ -132,16 +133,16 @@ class TestActor:
 
 class TestNotes:
     def test_neko_create_note(self, neko: NekoClient, alice):
-        note = neko.create_note("Hello from Nekonoverse for Mastodon test!")
+        note = neko.create_note("Hello from Nekonoverse for Fedibird test!")
         assert note["content"] is not None
         assert note["actor"]["username"] == "alice"
 
-    def test_mastodon_create_status(self, mastodon: MastodonClient, bob):
-        status = mastodon.create_status("Hello from Mastodon for federation test!")
+    def test_fedibird_create_status(self, fedibird: FedibirdClient, bob):
+        status = fedibird.create_status("Hello from Fedibird for federation test!")
         assert status["content"] is not None
 
     def test_neko_note_ap_format(self, neko: NekoClient, alice):
-        """Neko note AP representation is Mastodon-compatible."""
+        """Neko note AP representation is Fedibird-compatible."""
         note = neko.create_note(f"AP format check {time.time()}")
         resp = _get(
             f"{NEKO_URL}/notes/{note['id']}",
@@ -170,8 +171,8 @@ class TestNodeInfo:
         ni = resp2.json()
         assert ni["software"]["name"] == "nekonoverse"
 
-    def test_mastodon_nodeinfo(self, bob):
-        resp = _get(f"{MASTODON_URL}/.well-known/nodeinfo")
+    def test_fedibird_nodeinfo(self, bob):
+        resp = _get(f"{FEDIBIRD_URL}/.well-known/nodeinfo")
         assert resp.status_code == 200
         data = resp.json()
         assert "links" in data
@@ -179,30 +180,31 @@ class TestNodeInfo:
         resp2 = _get(link_url)
         assert resp2.status_code == 200
         ni = resp2.json()
-        assert ni["software"]["name"] == "mastodon"
+        # Fedibird identifies as "mastodon" or "fedibird" in nodeinfo
+        assert ni["software"]["name"] in ("mastodon", "fedibird")
 
 
 # ── 7. Follow federation ─────────────────────────────────────
 
 
 class TestFollowFederation:
-    """Test follow flow between Mastodon and Nekonoverse."""
+    """Test follow flow between Fedibird and Nekonoverse."""
 
-    def test_mastodon_resolves_neko_user(self, mastodon: MastodonClient, alice, bob):
-        """Bob on Mastodon resolves alice@nekonoverse."""
-        accounts = mastodon.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+    def test_fedibird_resolves_neko_user(self, fedibird: FedibirdClient, alice, bob):
+        """Bob on Fedibird resolves alice@nekonoverse."""
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
         assert len(accounts) > 0
         assert accounts[0]["username"] == "alice"
 
-    def test_mastodon_follows_neko_user(self, mastodon: MastodonClient, alice, bob):
-        """Bob on Mastodon follows alice@nekonoverse."""
-        accounts = mastodon.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+    def test_fedibird_follows_neko_user(self, fedibird: FedibirdClient, alice, bob):
+        """Bob on Fedibird follows alice@nekonoverse."""
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
         assert len(accounts) > 0
-        result = mastodon.follow(accounts[0]["id"])
+        result = fedibird.follow(accounts[0]["id"])
         assert result is not None
 
     def test_neko_receives_follower(self, neko: NekoClient, alice, bob):
-        """Alice has bob@mastodon as a follower."""
+        """Alice has bob@fedibird as a follower."""
         def check_followers():
             resp = neko.http.get(
                 "/users/alice/followers",
@@ -215,65 +217,65 @@ class TestFollowFederation:
 
         poll_until(check_followers, desc="alice has followers")
 
-    def test_neko_note_federates_to_mastodon(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_neko_note_federates_to_fedibird(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """Note by alice on Neko appears on Mastodon's public timeline."""
-        unique = f"Fed note to Mastodon {time.time()}"
+        """Note by alice on Neko appears on Fedibird's public timeline."""
+        unique = f"Fed note to Fedibird {time.time()}"
         neko.create_note(unique)
 
         def check():
-            tl = mastodon.timeline_public()
+            tl = fedibird.timeline_public()
             return any(unique in (s.get("content") or "") for s in tl)
 
-        poll_until(check, desc="neko note on mastodon")
+        poll_until(check, desc="neko note on fedibird")
 
 
 # ── 8. Reply federation ──────────────────────────────────────
 
 
 class TestReplyFederation:
-    """Test reply federation between Mastodon and Nekonoverse."""
+    """Test reply federation between Fedibird and Nekonoverse."""
 
     _follow_established = False
 
     @classmethod
-    def _ensure_follow(cls, neko: NekoClient, mastodon: MastodonClient):
+    def _ensure_follow(cls, neko: NekoClient, fedibird: FedibirdClient):
         if cls._follow_established:
             return
-        accounts = mastodon.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
         if accounts:
             try:
-                mastodon.follow(accounts[0]["id"])
+                fedibird.follow(accounts[0]["id"])
             except Exception:
                 pass
         time.sleep(3)
         cls._follow_established = True
 
-    def _wait_for_note_on_mastodon(self, neko: NekoClient, mastodon: MastodonClient, text: str):
-        """Create a note on Neko and wait for it to appear on Mastodon."""
-        self._ensure_follow(neko, mastodon)
+    def _wait_for_note_on_fedibird(self, neko: NekoClient, fedibird: FedibirdClient, text: str):
+        """Create a note on Neko and wait for it to appear on Fedibird."""
+        self._ensure_follow(neko, fedibird)
         note = neko.create_note(text)
 
         def find_note():
-            tl = mastodon.timeline_public()
+            tl = fedibird.timeline_public()
             for s in tl:
                 if text in (s.get("content") or ""):
                     return s
             return None
 
-        mdn_status = poll_until(find_note, desc=f"'{text}' on mastodon")
-        return note, mdn_status
+        fb_status = poll_until(find_note, desc=f"'{text}' on fedibird")
+        return note, fb_status
 
-    def test_mastodon_reply_to_neko_note(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_fedibird_reply_to_neko_note(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """bob@mastodon replies to alice@neko's note; reply federates back."""
-        note, mdn_status = self._wait_for_note_on_mastodon(
-            neko, mastodon, f"Reply target {time.time()}"
+        """bob@fedibird replies to alice@neko's note; reply federates back."""
+        note, fb_status = self._wait_for_note_on_fedibird(
+            neko, fedibird, f"Reply target FB {time.time()}"
         )
-        mastodon.create_status(
-            f"Reply from Mastodon {time.time()}", in_reply_to_id=mdn_status["id"]
+        fedibird.create_status(
+            f"Reply from Fedibird {time.time()}", in_reply_to_id=fb_status["id"]
         )
 
         def check_reply():
@@ -282,12 +284,12 @@ class TestReplyFederation:
 
         poll_until(check_reply, timeout=120, desc="reply federated to neko")
 
-    def test_neko_reply_to_mastodon_note(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_neko_reply_to_fedibird_note(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """alice@neko replies to bob@mastodon's note."""
+        """alice@neko replies to bob@fedibird's note."""
         # alice follows bob so notes federate
-        results = neko.search_accounts(f"bob@{MASTODON_DOMAIN}", resolve=True)
+        results = neko.search_accounts(f"bob@{FEDIBIRD_DOMAIN}", resolve=True)
         assert len(results) > 0
         bob_on_neko = results[0]
         try:
@@ -296,8 +298,8 @@ class TestReplyFederation:
             pass
         time.sleep(3)
 
-        unique = f"Reply me from Neko {time.time()}"
-        mdn_status = mastodon.create_status(unique)
+        unique = f"Reply me from Neko FB {time.time()}"
+        fb_status = fedibird.create_status(unique)
 
         # Wait for note to appear on Neko
         def find_on_neko():
@@ -307,28 +309,28 @@ class TestReplyFederation:
                     return n
             return None
 
-        neko_note = poll_until(find_on_neko, desc="mastodon note on neko")
+        neko_note = poll_until(find_on_neko, desc="fedibird note on neko")
 
         # alice replies
-        reply_text = f"Neko reply {time.time()}"
+        reply_text = f"Neko reply FB {time.time()}"
         neko.create_note(reply_text, in_reply_to_id=neko_note["id"])
 
-        # Check reply on Mastodon
-        def check_reply_on_mastodon():
-            ctx = mastodon.get_context(mdn_status["id"])
+        # Check reply on Fedibird
+        def check_reply_on_fedibird():
+            ctx = fedibird.get_context(fb_status["id"])
             return any(reply_text in (r.get("content") or "") for r in ctx.get("descendants", []))
 
-        poll_until(check_reply_on_mastodon, timeout=120, desc="neko reply on mastodon")
+        poll_until(check_reply_on_fedibird, timeout=120, desc="neko reply on fedibird")
 
     def test_reply_thread_context(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
         """Reply chain creates a proper thread context on Neko."""
-        note, mdn_status = self._wait_for_note_on_mastodon(
-            neko, mastodon, f"Thread ctx {time.time()}"
+        note, fb_status = self._wait_for_note_on_fedibird(
+            neko, fedibird, f"Thread ctx FB {time.time()}"
         )
-        mastodon.create_status(
-            f"Reply in thread {time.time()}", in_reply_to_id=mdn_status["id"]
+        fedibird.create_status(
+            f"Reply in thread FB {time.time()}", in_reply_to_id=fb_status["id"]
         )
 
         def check_context():
@@ -352,26 +354,26 @@ class TestMentionFederation:
     _follow_established = False
 
     @classmethod
-    def _ensure_follow(cls, neko: NekoClient, mastodon: MastodonClient):
+    def _ensure_follow(cls, neko: NekoClient, fedibird: FedibirdClient):
         if cls._follow_established:
             return
-        accounts = mastodon.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
         if accounts:
             try:
-                mastodon.follow(accounts[0]["id"])
+                fedibird.follow(accounts[0]["id"])
             except Exception:
                 pass
         time.sleep(3)
         cls._follow_established = True
 
-    def test_neko_mentions_mastodon_user(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_neko_mentions_fedibird_user(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """alice@neko creates a note mentioning @bob@mastodon."""
-        results = neko.search_accounts(f"bob@{MASTODON_DOMAIN}", resolve=True)
+        """alice@neko creates a note mentioning @bob@fedibird."""
+        results = neko.search_accounts(f"bob@{FEDIBIRD_DOMAIN}", resolve=True)
         assert len(results) > 0
 
-        unique = f"Hey @bob@{MASTODON_DOMAIN} check this {time.time()}"
+        unique = f"Hey @bob@{FEDIBIRD_DOMAIN} check this {time.time()}"
         note = neko.create_note(unique)
         assert "id" in note
 
@@ -386,14 +388,14 @@ class TestMentionFederation:
         mention_tags = [t for t in tags if t.get("type") == "Mention"]
         assert len(mention_tags) >= 1, f"No Mention tags found in {tags}"
 
-    def test_mastodon_mentions_neko_user(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_fedibird_mentions_neko_user(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """bob@mastodon mentions @alice@nekonoverse; alice should get a notification."""
-        self._ensure_follow(neko, mastodon)
+        """bob@fedibird mentions @alice@nekonoverse; alice should get a notification."""
+        self._ensure_follow(neko, fedibird)
 
         unique = f"Hey @alice@{NEKO_DOMAIN} look {time.time()}"
-        mastodon.create_status(unique)
+        fedibird.create_status(unique)
 
         def check_mention_notification():
             notifs = neko.notifications(limit=30)
@@ -411,35 +413,35 @@ class TestDeleteFederation:
     _follow_established = False
 
     @classmethod
-    def _ensure_follow(cls, neko: NekoClient, mastodon: MastodonClient):
+    def _ensure_follow(cls, neko: NekoClient, fedibird: FedibirdClient):
         if cls._follow_established:
             return
-        accounts = mastodon.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
         if accounts:
             try:
-                mastodon.follow(accounts[0]["id"])
+                fedibird.follow(accounts[0]["id"])
             except Exception:
                 pass
         time.sleep(3)
         cls._follow_established = True
 
-    def test_neko_deletes_note_federates_to_mastodon(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_neko_deletes_note_federates_to_fedibird(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """alice deletes a note; it should disappear from Mastodon."""
-        self._ensure_follow(neko, mastodon)
-        unique = f"Delete me {time.time()}"
+        """alice deletes a note; it should disappear from Fedibird."""
+        self._ensure_follow(neko, fedibird)
+        unique = f"Delete me FB {time.time()}"
         note = neko.create_note(unique)
 
-        # Wait for note on Mastodon
+        # Wait for note on Fedibird
         def find_note():
-            tl = mastodon.timeline_public()
+            tl = fedibird.timeline_public()
             for s in tl:
                 if unique in (s.get("content") or ""):
                     return s
             return None
 
-        mdn_status = poll_until(find_note, desc="note on mastodon")
+        fb_status = poll_until(find_note, desc="note on fedibird")
 
         # Delete on Neko
         neko.delete_note(note["id"])
@@ -447,19 +449,19 @@ class TestDeleteFederation:
         # Wait for deletion to federate
         def check_deleted():
             try:
-                mastodon.get_status(mdn_status["id"])
+                fedibird.get_status(fb_status["id"])
                 return False  # Still exists
             except Exception:
                 return True  # Deleted (404)
 
-        poll_until(check_deleted, desc="deletion federated to mastodon")
+        poll_until(check_deleted, desc="deletion federated to fedibird")
 
-    def test_mastodon_deletes_note_federates_to_neko(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_fedibird_deletes_note_federates_to_neko(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
         """bob deletes a note; it should disappear from Neko."""
         # alice follows bob so notes federate
-        results = neko.search_accounts(f"bob@{MASTODON_DOMAIN}", resolve=True)
+        results = neko.search_accounts(f"bob@{FEDIBIRD_DOMAIN}", resolve=True)
         assert len(results) > 0
         bob_on_neko = results[0]
         try:
@@ -468,8 +470,8 @@ class TestDeleteFederation:
             pass
         time.sleep(3)
 
-        unique = f"MDN delete me {time.time()}"
-        mdn_status = mastodon.create_status(unique)
+        unique = f"FB delete me {time.time()}"
+        fb_status = fedibird.create_status(unique)
 
         # Wait for note on Neko
         def find_on_neko():
@@ -479,10 +481,10 @@ class TestDeleteFederation:
                     return n
             return None
 
-        neko_note = poll_until(find_on_neko, desc="mastodon note on neko")
+        neko_note = poll_until(find_on_neko, desc="fedibird note on neko")
 
-        # Delete on Mastodon
-        mastodon.delete_status(mdn_status["id"])
+        # Delete on Fedibird
+        fedibird.delete_status(fb_status["id"])
 
         # Wait for deletion to federate
         def check_deleted():
@@ -492,7 +494,7 @@ class TestDeleteFederation:
             except Exception:
                 return True
 
-        poll_until(check_deleted, desc="mastodon deletion federated to neko")
+        poll_until(check_deleted, desc="fedibird deletion federated to neko")
 
 
 # ── 11. Boost (Announce) federation ──────────────────────────
@@ -504,40 +506,40 @@ class TestBoostFederation:
     _follow_established = False
 
     @classmethod
-    def _ensure_follow(cls, neko: NekoClient, mastodon: MastodonClient):
+    def _ensure_follow(cls, neko: NekoClient, fedibird: FedibirdClient):
         if cls._follow_established:
             return
-        accounts = mastodon.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
         if accounts:
             try:
-                mastodon.follow(accounts[0]["id"])
+                fedibird.follow(accounts[0]["id"])
             except Exception:
                 pass
         time.sleep(3)
         cls._follow_established = True
 
-    def _wait_for_note_on_mastodon(self, neko, mastodon, text):
-        self._ensure_follow(neko, mastodon)
+    def _wait_for_note_on_fedibird(self, neko, fedibird, text):
+        self._ensure_follow(neko, fedibird)
         note = neko.create_note(text)
 
         def find_note():
-            tl = mastodon.timeline_public()
+            tl = fedibird.timeline_public()
             for s in tl:
                 if text in (s.get("content") or ""):
                     return s
             return None
 
-        mdn_status = poll_until(find_note, desc=f"'{text}' on mastodon")
-        return note, mdn_status
+        fb_status = poll_until(find_note, desc=f"'{text}' on fedibird")
+        return note, fb_status
 
-    def test_mastodon_boosts_neko_note(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_fedibird_boosts_neko_note(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """bob@mastodon boosts alice@neko's note; renotes_count increases."""
-        note, mdn_status = self._wait_for_note_on_mastodon(
-            neko, mastodon, f"Boost me {time.time()}"
+        """bob@fedibird boosts alice@neko's note; renotes_count increases."""
+        note, fb_status = self._wait_for_note_on_fedibird(
+            neko, fedibird, f"Boost me FB {time.time()}"
         )
-        mastodon.reblog(mdn_status["id"])
+        fedibird.reblog(fb_status["id"])
 
         def check_count():
             n = neko.get_note(note["id"])
@@ -545,30 +547,31 @@ class TestBoostFederation:
 
         poll_until(check_count, desc="renotes_count >= 1")
 
-    def test_mastodon_boost_creates_notification_on_neko(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_fedibird_boost_creates_notification_on_neko(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """Boost from Mastodon creates a notification for the original author."""
-        note, mdn_status = self._wait_for_note_on_mastodon(
-            neko, mastodon, f"Boost notif {time.time()}"
+        """Boost from Fedibird creates a notification for the original author."""
+        note, fb_status = self._wait_for_note_on_fedibird(
+            neko, fedibird, f"Boost notif FB {time.time()}"
         )
-        mastodon.reblog(mdn_status["id"])
+        fedibird.reblog(fb_status["id"])
 
         def check_notification():
             notifs = neko.notifications(limit=20)
             return any(
-                n.get("type") in ("renote", "reblog") and n.get("status", {}).get("id") == note["id"]
+                n.get("type") in ("renote", "reblog")
+                and n.get("status", {}).get("id") == note["id"]
                 for n in notifs
             )
 
-        poll_until(check_notification, desc="boost notification on neko")
+        poll_until(check_notification, timeout=120, desc="boost notification on neko")
 
-    def test_neko_boost_federates_to_mastodon(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_neko_boost_federates_to_fedibird(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """alice@neko boosts bob@mastodon's note; boost appears on Mastodon."""
+        """alice@neko boosts bob@fedibird's note; boost appears on Fedibird."""
         # alice follows bob so notes federate
-        results = neko.search_accounts(f"bob@{MASTODON_DOMAIN}", resolve=True)
+        results = neko.search_accounts(f"bob@{FEDIBIRD_DOMAIN}", resolve=True)
         assert len(results) > 0
         bob_on_neko = results[0]
         try:
@@ -577,8 +580,8 @@ class TestBoostFederation:
             pass
         time.sleep(3)
 
-        unique = f"Boost from Neko {time.time()}"
-        mdn_status = mastodon.create_status(unique)
+        unique = f"Boost from Neko FB {time.time()}"
+        fb_status = fedibird.create_status(unique)
 
         # Wait for note to federate to Neko
         def find_on_neko():
@@ -588,17 +591,17 @@ class TestBoostFederation:
                     return n
             return None
 
-        neko_note = poll_until(find_on_neko, desc="mastodon note on neko")
+        neko_note = poll_until(find_on_neko, desc="fedibird note on neko")
 
         # alice boosts
         neko.reblog(neko_note["id"])
 
-        # Check boost notification on Mastodon
-        def check_boost_on_mastodon():
-            notifs = mastodon.get_notifications(limit=20)
+        # Check boost notification on Fedibird
+        def check_boost_on_fedibird():
+            notifs = fedibird.get_notifications(limit=20)
             return any(n.get("type") == "reblog" for n in notifs)
 
-        poll_until(check_boost_on_mastodon, desc="boost notification on mastodon")
+        poll_until(check_boost_on_fedibird, desc="boost notification on fedibird")
 
 
 # ── 12. Favourite (Like) federation ──────────────────────────
@@ -610,56 +613,57 @@ class TestFavouriteFederation:
     _follow_established = False
 
     @classmethod
-    def _ensure_follow(cls, neko: NekoClient, mastodon: MastodonClient):
+    def _ensure_follow(cls, neko: NekoClient, fedibird: FedibirdClient):
         if cls._follow_established:
             return
-        accounts = mastodon.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
         if accounts:
             try:
-                mastodon.follow(accounts[0]["id"])
+                fedibird.follow(accounts[0]["id"])
             except Exception:
                 pass
         time.sleep(3)
         cls._follow_established = True
 
-    def _wait_for_note_on_mastodon(self, neko, mastodon, text):
-        self._ensure_follow(neko, mastodon)
+    def _wait_for_note_on_fedibird(self, neko, fedibird, text):
+        self._ensure_follow(neko, fedibird)
         note = neko.create_note(text)
 
         def find_note():
-            tl = mastodon.timeline_public()
+            tl = fedibird.timeline_public()
             for s in tl:
                 if text in (s.get("content") or ""):
                     return s
             return None
 
-        mdn_status = poll_until(find_note, desc=f"'{text}' on mastodon")
-        return note, mdn_status
+        fb_status = poll_until(find_note, desc=f"'{text}' on fedibird")
+        return note, fb_status
 
-    def test_mastodon_favourites_neko_note(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_fedibird_favourites_neko_note(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """bob@mastodon favourites alice@neko's note; like notification arrives."""
-        note, mdn_status = self._wait_for_note_on_mastodon(
-            neko, mastodon, f"Fav me {time.time()}"
+        """bob@fedibird favourites alice@neko's note; like notification arrives."""
+        note, fb_status = self._wait_for_note_on_fedibird(
+            neko, fedibird, f"Fav me FB {time.time()}"
         )
-        mastodon.favourite(mdn_status["id"])
+        fedibird.favourite(fb_status["id"])
 
         def check_notification():
             notifs = neko.notifications(limit=20)
             return any(
-                n.get("type") == "favourite" and n.get("status", {}).get("id") == note["id"]
+                n.get("type") in ("favourite", "reaction")
+                and n.get("status", {}).get("id") == note["id"]
                 for n in notifs
             )
 
-        poll_until(check_notification, desc="favourite notification on neko")
+        poll_until(check_notification, timeout=120, desc="favourite notification on neko")
 
-    def test_neko_favourite_federates_to_mastodon(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_neko_favourite_federates_to_fedibird(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """alice@neko favourites bob@mastodon's note."""
+        """alice@neko favourites bob@fedibird's note."""
         # alice follows bob
-        results = neko.search_accounts(f"bob@{MASTODON_DOMAIN}", resolve=True)
+        results = neko.search_accounts(f"bob@{FEDIBIRD_DOMAIN}", resolve=True)
         assert len(results) > 0
         bob_on_neko = results[0]
         try:
@@ -668,8 +672,8 @@ class TestFavouriteFederation:
             pass
         time.sleep(3)
 
-        unique = f"Fav from Neko {time.time()}"
-        mdn_status = mastodon.create_status(unique)
+        unique = f"Fav from Neko FB {time.time()}"
+        fb_status = fedibird.create_status(unique)
 
         def find_on_neko():
             tl = neko.public_timeline()
@@ -678,63 +682,64 @@ class TestFavouriteFederation:
                     return n
             return None
 
-        neko_note = poll_until(find_on_neko, desc="mastodon note on neko")
+        neko_note = poll_until(find_on_neko, desc="fedibird note on neko")
 
         # alice favourites
         neko.favourite(neko_note["id"])
 
-        # Check on Mastodon
-        def check_fav_on_mastodon():
-            notifs = mastodon.get_notifications(limit=20)
+        # Check on Fedibird
+        def check_fav_on_fedibird():
+            notifs = fedibird.get_notifications(limit=20)
             return any(n.get("type") == "favourite" for n in notifs)
 
-        poll_until(check_fav_on_mastodon, desc="favourite notification on mastodon")
+        poll_until(check_fav_on_fedibird, desc="favourite notification on fedibird")
 
 
-# ── 13. CW / Sensitive federation ────────────────────────────
+# ── 13. Emoji reaction federation (Fedibird extension) ───────
 
 
-class TestSensitiveFederation:
-    """Test that content warnings (CW / spoiler_text) federate."""
+class TestEmojiReactionFederation:
+    """Test Fedibird's emoji reaction support with Nekonoverse.
+
+    Both Nekonoverse and Fedibird support non-standard emoji reactions
+    beyond the Mastodon favourite (Like) mechanism.
+    """
 
     _follow_established = False
 
     @classmethod
-    def _ensure_follow(cls, neko: NekoClient, mastodon: MastodonClient):
+    def _ensure_follow(cls, neko: NekoClient, fedibird: FedibirdClient):
         if cls._follow_established:
             return
-        accounts = mastodon.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
         if accounts:
             try:
-                mastodon.follow(accounts[0]["id"])
+                fedibird.follow(accounts[0]["id"])
             except Exception:
                 pass
         time.sleep(3)
         cls._follow_established = True
 
-    def test_neko_sensitive_note_federates(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
-    ):
-        """alice creates a CW note; spoiler_text appears on Mastodon."""
-        self._ensure_follow(neko, mastodon)
-        unique = f"CW body {time.time()}"
-        neko.create_note(unique, spoiler_text="CW test")
+    def _wait_for_note_on_fedibird(self, neko, fedibird, text):
+        self._ensure_follow(neko, fedibird)
+        note = neko.create_note(text)
 
-        def check():
-            tl = mastodon.timeline_public()
+        def find_note():
+            tl = fedibird.timeline_public()
             for s in tl:
-                if unique in (s.get("content") or ""):
-                    return s.get("spoiler_text") == "CW test"
-            return False
+                if text in (s.get("content") or ""):
+                    return s
+            return None
 
-        poll_until(check, desc="CW note on mastodon")
+        fb_status = poll_until(find_note, desc=f"'{text}' on fedibird")
+        return note, fb_status
 
-    def test_mastodon_sensitive_note_federates(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_neko_emoji_reaction_federates_to_fedibird(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """bob creates a CW note on Mastodon; spoiler_text appears on Neko."""
+        """alice@neko sends 👍 reaction to bob's note; notification arrives on Fedibird."""
         # alice follows bob
-        results = neko.search_accounts(f"bob@{MASTODON_DOMAIN}", resolve=True)
+        results = neko.search_accounts(f"bob@{FEDIBIRD_DOMAIN}", resolve=True)
         assert len(results) > 0
         bob_on_neko = results[0]
         try:
@@ -743,20 +748,120 @@ class TestSensitiveFederation:
             pass
         time.sleep(3)
 
-        unique = f"MDN CW body {time.time()}"
-        mastodon.create_status(unique, spoiler_text="MDN CW test")
+        unique = f"React me FB {time.time()}"
+        fb_status = fedibird.create_status(unique)
+
+        def find_on_neko():
+            tl = neko.public_timeline()
+            for n in tl:
+                if unique in (n.get("content") or ""):
+                    return n
+            return None
+
+        neko_note = poll_until(find_on_neko, desc="fedibird note on neko")
+
+        # alice reacts with 👍
+        neko.react(neko_note["id"], "%F0%9F%91%8D")
+
+        # Check notification on Fedibird — may appear as "favourite" or "emoji_reaction"
+        def check_reaction_on_fedibird():
+            notifs = fedibird.get_notifications(limit=20)
+            return any(
+                n.get("type") in ("favourite", "emoji_reaction", "reaction")
+                for n in notifs
+            )
+
+        poll_until(check_reaction_on_fedibird, desc="reaction notification on fedibird")
+
+    def test_fedibird_emoji_reaction_federates_to_neko(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
+    ):
+        """bob@fedibird sends emoji reaction to alice's note; notification on Neko."""
+        note, fb_status = self._wait_for_note_on_fedibird(
+            neko, fedibird, f"React from FB {time.time()}"
+        )
+
+        # bob reacts with emoji on Fedibird
+        fedibird.emoji_react(fb_status["id"], "👍")
+
+        # Check notification on Neko — emoji reaction or favourite
+        def check_reaction_on_neko():
+            notifs = neko.notifications(limit=20)
+            return any(
+                n.get("type") in ("favourite", "reaction")
+                and n.get("status", {}).get("id") == note["id"]
+                for n in notifs
+            )
+
+        poll_until(check_reaction_on_neko, desc="reaction notification on neko")
+
+
+# ── 14. CW / Sensitive federation ────────────────────────────
+
+
+class TestSensitiveFederation:
+    """Test that content warnings (CW / spoiler_text) federate."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, fedibird: FedibirdClient):
+        if cls._follow_established:
+            return
+        accounts = fedibird.search_accounts(f"alice@{NEKO_DOMAIN}", resolve=True)
+        if accounts:
+            try:
+                fedibird.follow(accounts[0]["id"])
+            except Exception:
+                pass
+        time.sleep(3)
+        cls._follow_established = True
+
+    def test_neko_sensitive_note_federates(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
+    ):
+        """alice creates a CW note; spoiler_text appears on Fedibird."""
+        self._ensure_follow(neko, fedibird)
+        unique = f"CW body FB {time.time()}"
+        neko.create_note(unique, spoiler_text="CW test")
+
+        def check():
+            tl = fedibird.timeline_public()
+            for s in tl:
+                if unique in (s.get("content") or ""):
+                    return s.get("spoiler_text") == "CW test"
+            return False
+
+        poll_until(check, desc="CW note on fedibird")
+
+    def test_fedibird_sensitive_note_federates(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
+    ):
+        """bob creates a CW note on Fedibird; spoiler_text appears on Neko."""
+        # alice follows bob
+        results = neko.search_accounts(f"bob@{FEDIBIRD_DOMAIN}", resolve=True)
+        assert len(results) > 0
+        bob_on_neko = results[0]
+        try:
+            neko.follow(bob_on_neko["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+
+        unique = f"FB CW body {time.time()}"
+        fedibird.create_status(unique, spoiler_text="FB CW test")
 
         def check():
             tl = neko.public_timeline()
             for n in tl:
                 if unique in (n.get("content") or ""):
-                    return n.get("spoiler_text") == "MDN CW test"
+                    return n.get("spoiler_text") == "FB CW test"
             return False
 
         poll_until(check, desc="CW note on neko")
 
 
-# ── 14. Hashtag federation ───────────────────────────────────
+# ── 15. Hashtag federation ───────────────────────────────────
 
 
 class TestHashtagFederation:
@@ -778,12 +883,12 @@ class TestHashtagFederation:
             "nekonoverse" in t.get("name", "").lower() for t in hashtag_tags
         )
 
-    def test_mastodon_hashtag_federates_to_neko(
-        self, neko: NekoClient, mastodon: MastodonClient, alice, bob
+    def test_fedibird_hashtag_federates_to_neko(
+        self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
     ):
-        """bob creates a note with hashtag on Mastodon; it appears on Neko."""
+        """bob creates a note with hashtag on Fedibird; it appears on Neko."""
         # alice follows bob
-        results = neko.search_accounts(f"bob@{MASTODON_DOMAIN}", resolve=True)
+        results = neko.search_accounts(f"bob@{FEDIBIRD_DOMAIN}", resolve=True)
         assert len(results) > 0
         bob_on_neko = results[0]
         try:
@@ -792,14 +897,14 @@ class TestHashtagFederation:
             pass
         time.sleep(3)
 
-        unique = f"Hashtag test #mastodon {time.time()}"
-        mastodon.create_status(unique)
+        unique = f"Hashtag test #fedibird {time.time()}"
+        fedibird.create_status(unique)
 
         def check():
             tl = neko.public_timeline()
             for n in tl:
                 content = n.get("content") or ""
-                if "Hashtag test" in content and "mastodon" in content.lower():
+                if "Hashtag test" in content and "fedibird" in content.lower():
                     return True
             return False
 

@@ -249,7 +249,7 @@ export default function EmojiPicker(props: Props) {
   );
 
   return (
-    <div class="emoji-picker" ref={ref} style={kbHeight() > 0 ? { bottom: `${kbHeight()}px` } : undefined}>
+    <div class="emoji-picker" ref={ref} style={kbHeight() > 0 ? { bottom: `${kbHeight()}px`, "max-height": `calc(100dvh - ${kbHeight()}px - 16px)` } : undefined}>
       {/* Search bar — always visible */}
       <input
         ref={searchRef}

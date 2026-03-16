@@ -156,7 +156,7 @@ services:
       certs:
         condition: service_completed_successfully
     healthcheck:
-      test: curl -sf http://localhost:3000/api/v1/instance || exit 1
+      test: ["CMD-SHELL", "curl -sf -H 'Host: mastodon' http://localhost:3000/api/v1/instance || exit 1"]
       interval: 5s
       timeout: 5s
       retries: 60

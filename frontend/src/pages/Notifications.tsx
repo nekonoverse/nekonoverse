@@ -183,6 +183,7 @@ export default function Notifications() {
     switch (type) {
       case "follow": return "\u{1F464}";
       case "mention": return "\u{1F4AC}";
+      case "reply": return "\u{1F4AC}";
       case "reblog": return "\u{1F501}";
       case "favourite": return "\u2B50";
       case "reaction": return "\u2728";
