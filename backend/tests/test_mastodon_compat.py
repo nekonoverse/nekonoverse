@@ -300,12 +300,14 @@ async def test_instance_approval_required(app_client, db, mock_valkey):
     assert isinstance(data["approval_required"], bool)
 
 
-async def test_instance_thumbnail_not_object(app_client, db, mock_valkey):
-    """V1 thumbnail must be a string URL, not an object."""
+async def test_instance_thumbnail_is_object(app_client, db, mock_valkey):
+    """V1 thumbnail must be an object with a url field."""
     resp = await app_client.get("/api/v1/instance")
     thumb = resp.json().get("thumbnail")
     if thumb is not None:
-        assert isinstance(thumb, str)
+        assert isinstance(thumb, dict)
+        assert "url" in thumb
+        assert isinstance(thumb["url"], str)
 
 
 async def test_visibility_followers_mapped_to_private(authed_client, mock_valkey):
