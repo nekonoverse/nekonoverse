@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, For } from "solid-js";
+import { createSignal, createResource, Show, For } from "solid-js";
 import { useParams, useNavigate } from "@solidjs/router";
 import { getNote, getContext, type Note, type NoteContext } from "@nekonoverse/ui/api/statuses";
 import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
@@ -40,11 +40,25 @@ export default function NoteThread() {
   const { t } = useI18n();
   const [targetNote, setTargetNote] = createSignal<Note | null>(null);
   const [context, setContext] = createSignal<NoteContext | null>(null);
-  const [loading, setLoading] = createSignal(true);
   const [notFound, setNotFound] = createSignal(false);
 
+  const [initialData] = createResource(
+    () => (!authLoading() && params.id ? params.id : false),
+    async (id) => {
+      setNotFound(false);
+      try {
+        const [note, ctx] = await Promise.all([getNote(id), getContext(id)]);
+        setTargetNote(note);
+        setContext(ctx);
+        return { note, ctx };
+      } catch {
+        setNotFound(true);
+        return null;
+      }
+    },
+  );
+
   const loadThread = async () => {
-    setLoading(true);
     setNotFound(false);
     try {
       const [note, ctx] = await Promise.all([
@@ -55,20 +69,8 @@ export default function NoteThread() {
       setContext(ctx);
     } catch {
       setNotFound(true);
-    } finally {
-      setLoading(false);
     }
   };
-
-  // Load when params change or auth settles
-  let loaded = false;
-  createEffect(() => {
-    const id = params.id;
-    if (!authLoading() && id) {
-      loaded = true;
-      loadThread();
-    }
-  });
 
   const handleReply = async (newNote: Note) => {
     // Reload thread to show the new reply
@@ -124,7 +126,7 @@ export default function NoteThread() {
 
   return (
     <div class="page-container">
-      <Show when={!loading()} fallback={<p>{t("thread.loading")}</p>}>
+      <Show when={initialData.state === "ready"} fallback={<p>{t("thread.loading")}</p>}>
         <Show when={!notFound()} fallback={<p class="empty">{t("thread.notFound")}</p>}>
           <div class="thread-view">
             <h2>{t("thread.title")}</h2>

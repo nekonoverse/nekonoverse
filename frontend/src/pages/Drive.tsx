@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, createResource, Show, For } from "solid-js";
 import { getDriveFiles, deleteDriveFile, type DriveFile } from "@nekonoverse/ui/api/drive";
 import { uploadMedia } from "@nekonoverse/ui/api/statuses";
 import { getAccountStorage, type StorageInfo } from "@nekonoverse/ui/api/admin";
@@ -15,7 +15,6 @@ function formatSize(bytes: number): string {
 export default function Drive() {
   const { t } = useI18n();
   const [files, setFiles] = createSignal<DriveFile[]>([]);
-  const [loading, setLoading] = createSignal(true);
   const [uploading, setUploading] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
   const [loadingMore, setLoadingMore] = createSignal(false);
@@ -32,18 +31,19 @@ export default function Drive() {
   };
 
   const load = async () => {
-    try {
-      const data = await getDriveFiles(PAGE_SIZE, 0);
-      setFiles(data);
-      setHasMore(data.length >= PAGE_SIZE);
-    } catch {}
-    setLoading(false);
+    const data = await getDriveFiles(PAGE_SIZE, 0);
+    setFiles(data);
+    setHasMore(data.length >= PAGE_SIZE);
+    return data;
   };
 
-  onMount(() => {
-    load();
-    loadStorage();
-  });
+  const [initialData] = createResource(
+    () => true,
+    async () => {
+      const [data] = await Promise.all([load(), loadStorage()]);
+      return data;
+    },
+  );
 
   const loadMore = async () => {
     if (loadingMore()) return;
@@ -155,7 +155,7 @@ export default function Drive() {
         )}
       </Show>
 
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+      <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<p>{t("drive.loginRequired")}</p>}>
           <Show when={files().length > 0} fallback={<p class="empty">{t("drive.empty")}</p>}>
             <div class="drive-grid">

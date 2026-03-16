@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, createResource, Show, For } from "solid-js";
 import { apiRequest } from "@nekonoverse/ui/api/client";
 import type { Account } from "@nekonoverse/ui/api/accounts";
 import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
@@ -8,15 +8,15 @@ import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 export default function FollowRequests() {
   const { t } = useI18n();
   const [requests, setRequests] = createSignal<Account[]>([]);
-  const [loading, setLoading] = createSignal(true);
 
-  onMount(async () => {
-    try {
+  const [initialData] = createResource(
+    () => (!authLoading() && currentUser() ? true : false),
+    async () => {
       const data = await apiRequest<Account[]>("/api/v1/follow_requests");
       setRequests(data);
-    } catch {}
-    setLoading(false);
-  });
+      return data;
+    },
+  );
 
   const authorize = async (id: string) => {
     try {
@@ -37,7 +37,7 @@ export default function FollowRequests() {
       <h1>{t("followRequest.title")}</h1>
       <Show when={!authLoading()} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<p>{t("followRequest.loginRequired")}</p>}>
-          <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
             <Show when={requests().length > 0} fallback={<p class="empty">{t("followRequest.empty")}</p>}>
               <div class="follow-requests-list">
                 <For each={requests()}>

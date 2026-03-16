@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, createResource, Show, For } from "solid-js";
 import { A, useParams, useLocation } from "@solidjs/router";
 import {
   lookupAccount,
@@ -24,32 +24,31 @@ export default function FollowList() {
 
   const [account, setAccount] = createSignal<Account | null>(null);
   const [accounts, setAccounts] = createSignal<Account[]>([]);
-  const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
   const [followLoadingId, setFollowLoadingId] = createSignal<string | null>(null);
 
   const tab = () => location.pathname.endsWith("/following") ? "following" : "followers";
 
-  const loadData = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const acct = params.acct.replace(/^@/, "");
-      const acc = await lookupAccount(acct);
-      setAccount(acc);
+  const [initialData] = createResource(
+    () => `${params.acct}:${tab()}`,
+    async () => {
+      setError("");
+      try {
+        const acct = params.acct.replace(/^@/, "");
+        const acc = await lookupAccount(acct);
+        setAccount(acc);
 
-      const list = tab() === "followers"
-        ? await getFollowers(acc.id)
-        : await getFollowing(acc.id);
-      setAccounts(list);
-    } catch (e: any) {
-      setError(e.message || "Not found");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  onMount(loadData);
+        const list = tab() === "followers"
+          ? await getFollowers(acc.id)
+          : await getFollowing(acc.id);
+        setAccounts(list);
+        return { acc, list };
+      } catch (e: any) {
+        setError(e.message || "Not found");
+        return null;
+      }
+    },
+  );
 
   const handleFollow = async (targetId: string) => {
     setFollowLoadingId(targetId);
@@ -69,7 +68,7 @@ export default function FollowList() {
 
   return (
     <div class="page-container">
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+      <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
         <Show when={!error()} fallback={<p class="error">{error()}</p>}>
           <div class="follow-list-header">
             <A href={acctPath()} class="follow-list-back">

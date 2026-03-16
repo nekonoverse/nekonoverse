@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, For } from "solid-js";
+import { createSignal, createResource, Show, For } from "solid-js";
 import { useParams } from "@solidjs/router";
 import { getTagTimeline, getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -8,26 +8,16 @@ export default function TagTimeline() {
   const { t } = useI18n();
   const params = useParams<{ tag: string }>();
   const [notes, setNotes] = createSignal<Note[]>([]);
-  const [loading, setLoading] = createSignal(true);
   const [loadingMore, setLoadingMore] = createSignal(false);
 
-  const loadTimeline = async () => {
-    setLoading(true);
-    try {
-      const data = await getTagTimeline(params.tag);
+  const [initialData] = createResource(
+    () => params.tag,
+    async (tag) => {
+      const data = await getTagTimeline(tag);
       setNotes(data);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  createEffect(() => {
-    // Re-run whenever the tag param changes
-    const _tag = params.tag;
-    loadTimeline();
-  });
+      return data;
+    },
+  );
 
   const loadMore = async () => {
     const current = notes();
@@ -63,7 +53,7 @@ export default function TagTimeline() {
     <div class="page-container">
       <div class="timeline">
         <h2 class="tag-timeline-header">#{params.tag}</h2>
-        <Show when={!loading()} fallback={<p>{t("timeline.loading")}</p>}>
+        <Show when={initialData.state === "ready"} fallback={<p>{t("timeline.loading")}</p>}>
           <Show
             when={notes().length > 0}
             fallback={<p class="empty">{t("hashtag.empty")}</p>}
