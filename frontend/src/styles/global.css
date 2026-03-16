@@ -3079,6 +3079,7 @@ a:hover {
 /* Note Avatar Link */
 .note-avatar-link {
   flex-shrink: 0;
+  align-self: flex-start;
 }
 
 .note-display-name-link {
