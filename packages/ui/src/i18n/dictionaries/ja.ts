@@ -222,6 +222,7 @@ export const ja = {
   "notifications.loadMore": "もっと見る",
   "notifications.loginRequired": "通知を見るにはログインが必要です。",
   "notifications.type.follow": "にフォローされました",
+  "notifications.type.follow_request": "があなたにフォローリクエストしました",
   "notifications.type.mention": "にメンションされました",
   "notifications.type.reblog": "にブーストされました",
   "notifications.type.favourite": "にお気に入りされました",

@@ -58,7 +58,8 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
     if target_actor.is_local:
         from app.services.notification_service import create_notification, publish_notification
 
-        notif = await create_notification(db, "follow", target_actor.id, actor.id)
+        notif_type = "follow" if auto_accept else "follow_request"
+        notif = await create_notification(db, notif_type, target_actor.id, actor.id)
         await db.commit()
         if notif:
             await publish_notification(notif)

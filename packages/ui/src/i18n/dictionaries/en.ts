@@ -224,6 +224,7 @@ export const en: Dictionary = {
   "notifications.loadMore": "Load more",
   "notifications.loginRequired": "Please log in to view notifications.",
   "notifications.type.follow": "followed you",
+  "notifications.type.follow_request": "requested to follow you",
   "notifications.type.mention": "mentioned you",
   "notifications.type.reblog": "boosted your post",
   "notifications.type.favourite": "favorited your post",
