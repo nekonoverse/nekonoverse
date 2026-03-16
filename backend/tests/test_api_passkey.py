@@ -143,6 +143,44 @@ async def test_authenticate_verify_success(
     mock_valkey.set.assert_called()
 
 
+async def test_authenticate_verify_totp_required(
+    app_client, db, test_user, mock_valkey,
+):
+    """H-2: Passkey auth with TOTP enabled must NOT issue session directly."""
+    # Create a user-like object with TOTP enabled
+    totp_user = MagicMock()
+    totp_user.id = test_user.id
+    totp_user.totp_enabled = True
+
+    mock_verify = AsyncMock(return_value=totp_user)
+    with patch(
+        f"{PASSKEY_SVC}.verify_authentication_response", mock_verify,
+    ):
+        resp = await app_client.post(
+            "/api/v1/passkey/authenticate/verify",
+            json={
+                "challengeId": "test-challenge-id",
+                "id": "abc", "rawId": "abc", "type": "public-key",
+                "response": {
+                    "authenticatorData": "AA",
+                    "clientDataJSON": "BB",
+                    "signature": "CC",
+                },
+            },
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["requires_totp"] is True
+    assert "totp_token" in data
+    assert "ok" not in data
+    assert "nekonoverse_session" not in resp.cookies
+
+    # Verify totp_pending token was stored in Valkey
+    set_calls = [str(c) for c in mock_valkey.set.call_args_list]
+    assert any("totp_pending:" in c for c in set_calls)
+
+
 async def test_authenticate_verify_invalid(app_client, mock_valkey):
     mock_verify = AsyncMock(
         side_effect=ValueError("Challenge expired or not found"),
