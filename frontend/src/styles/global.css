@@ -236,6 +236,42 @@ a:hover {
   border-color: var(--accent);
 }
 
+.navbar-avatar-wrap {
+  position: relative;
+  display: inline-block;
+  cursor: pointer;
+}
+
+.navbar-avatar-badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.6em;
+  font-weight: 700;
+  width: 16px;
+  height: 16px;
+  line-height: 16px;
+  text-align: center;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.navbar-dropdown-badge {
+  margin-left: auto;
+  background: var(--accent);
+  color: #fff;
+  font-size: 0.75em;
+  font-weight: 700;
+  min-width: 18px;
+  height: 18px;
+  line-height: 18px;
+  text-align: center;
+  border-radius: 9px;
+  padding: 0 5px;
+}
+
 .navbar-login-btn {
   padding: 6px 16px;
   background: var(--accent);

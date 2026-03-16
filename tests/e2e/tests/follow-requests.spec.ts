@@ -42,6 +42,15 @@ test.describe("Follow Requests", () => {
     const followResp = await follower.page.request.post(`/api/v1/accounts/${adminId}/follow`);
     expect(followResp.ok()).toBeTruthy();
 
+    // Avatar badge should appear indicating pending follow request
+    await page.goto("/");
+    await expect(page.locator(".navbar-avatar-badge")).toBeVisible({ timeout: 10_000 });
+
+    // Dropdown should show follow request count
+    await page.locator(".navbar-avatar-wrap").click();
+    await expect(page.locator(".navbar-dropdown-badge")).toBeVisible({ timeout: 5_000 });
+    await page.locator(".navbar-avatar-wrap").click();
+
     // Check follow request page as admin
     await page.goto("/follow-requests");
     const item = page.locator(".follow-request-item").first();
@@ -59,6 +68,9 @@ test.describe("Follow Requests", () => {
     const reqResp = await page.request.get("/api/v1/follow_requests");
     const remaining = await reqResp.json();
     expect(remaining.length).toBe(0);
+
+    // Avatar badge should disappear after accepting all requests
+    await expect(page.locator(".navbar-avatar-badge")).not.toBeVisible({ timeout: 5_000 });
     await follower.context.close();
   });
 
