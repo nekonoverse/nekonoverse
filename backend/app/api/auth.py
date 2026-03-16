@@ -625,12 +625,17 @@ async def change_password_endpoint(
     from app.valkey_client import valkey
 
     pw_key = f"change_pw_attempts:{user.id}"
-    pw_attempts = await valkey.get(pw_key)
-    if pw_attempts is not None and int(pw_attempts) >= CHANGE_PW_MAX_ATTEMPTS:
-        raise HTTPException(
-            status_code=429,
-            detail="Too many password change attempts. Please wait.",
-        )
+    try:
+        pw_attempts = await valkey.get(pw_key)
+        if pw_attempts is not None and int(pw_attempts) >= CHANGE_PW_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many password change attempts. Please wait.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # レート制限の失敗でリクエストをブロックしない
     await valkey.incr(pw_key)
     await valkey.expire(pw_key, CHANGE_PW_LOCKOUT_TTL)
 
