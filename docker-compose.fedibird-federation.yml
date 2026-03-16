@@ -133,7 +133,62 @@ services:
   fedibird-web:
     build:
       context: https://github.com/fedibird/mastodon.git#fedibird
-      dockerfile: Dockerfile
+      dockerfile_inline: |
+        FROM docker.io/ruby:3.2.8-slim-bookworm AS build
+        ENV DEBIAN_FRONTEND=noninteractive RAILS_ENV=production NODE_ENV=production BIND=0.0.0.0
+        SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl ca-certificates gnupg && \
+          mkdir -p /etc/apt/keyrings && \
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+          apt-get update && apt-get install -y --no-install-recommends \
+            nodejs autoconf automake build-essential cmake git \
+            libgdbm-dev libglib2.0-dev libgmp-dev libicu-dev libidn-dev \
+            libpq-dev libssl-dev libtool libyaml-dev pkg-config shared-mime-info \
+            imagemagick ffmpeg && \
+          npm install -g yarn && rm -rf /var/lib/apt/lists/*
+        WORKDIR /opt/mastodon
+        COPY Gemfile Gemfile.lock /opt/mastodon/
+        RUN bundle config set --global frozen "true" && \
+          bundle config set --local without "development test" && \
+          bundle config set silence_root_warning "true" && \
+          bundle install -j"$(nproc)"
+        COPY package.json yarn.lock /opt/mastodon/
+        RUN yarn install --frozen-lockfile --production
+        COPY . /opt/mastodon/
+        RUN SECRET_KEY_BASE=precompile_placeholder OTP_SECRET=precompile_placeholder \
+          bundle exec rails assets:precompile && rm -rf /opt/mastodon/tmp
+
+        FROM docker.io/ruby:3.2.8-slim-bookworm
+        ENV DEBIAN_FRONTEND=noninteractive RAILS_ENV=production NODE_ENV=production \
+          BIND=0.0.0.0 RAILS_SERVE_STATIC_FILES=true
+        SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl ca-certificates gnupg tini && \
+          mkdir -p /etc/apt/keyrings && \
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+          apt-get update && apt-get install -y --no-install-recommends \
+            nodejs file imagemagick ffmpeg libjemalloc2 \
+            libexpat1 libglib2.0-0 libicu72 libidn12 libpq5 \
+            libreadline8 libssl3 libyaml-0-2 tzdata procps && \
+          rm -rf /var/lib/apt/lists/*
+        RUN groupadd -g 991 mastodon && \
+          useradd -l -u 991 -g 991 -m -d /opt/mastodon mastodon && \
+          ln -s /opt/mastodon /mastodon
+        WORKDIR /opt/mastodon
+        COPY --from=build /opt/mastodon /opt/mastodon
+        COPY --from=build /usr/local/bundle /usr/local/bundle
+        RUN mkdir -p /opt/mastodon/public/system && \
+          chown mastodon:mastodon /opt/mastodon/public/system && \
+          chown -R mastodon:mastodon /opt/mastodon/tmp || true
+        EXPOSE 3000 4000
+        ENTRYPOINT ["/usr/bin/tini", "--"]
     user: root
     entrypoint: ["/custom-entrypoint.sh"]
     environment:
@@ -161,6 +216,7 @@ services:
       - ./tests/fedibird-federation/fedibird-entrypoint.sh:/custom-entrypoint.sh:ro
       - certs:/certs:ro
       - fedibird_system:/opt/mastodon/public/system
+      - fedibird_tokens:/tokens
     depends_on:
       postgres-fb:
         condition: service_healthy
@@ -180,7 +236,62 @@ services:
   fedibird-sidekiq:
     build:
       context: https://github.com/fedibird/mastodon.git#fedibird
-      dockerfile: Dockerfile
+      dockerfile_inline: |
+        FROM docker.io/ruby:3.2.8-slim-bookworm AS build
+        ENV DEBIAN_FRONTEND=noninteractive RAILS_ENV=production NODE_ENV=production BIND=0.0.0.0
+        SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl ca-certificates gnupg && \
+          mkdir -p /etc/apt/keyrings && \
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+          apt-get update && apt-get install -y --no-install-recommends \
+            nodejs autoconf automake build-essential cmake git \
+            libgdbm-dev libglib2.0-dev libgmp-dev libicu-dev libidn-dev \
+            libpq-dev libssl-dev libtool libyaml-dev pkg-config shared-mime-info \
+            imagemagick ffmpeg && \
+          npm install -g yarn && rm -rf /var/lib/apt/lists/*
+        WORKDIR /opt/mastodon
+        COPY Gemfile Gemfile.lock /opt/mastodon/
+        RUN bundle config set --global frozen "true" && \
+          bundle config set --local without "development test" && \
+          bundle config set silence_root_warning "true" && \
+          bundle install -j"$(nproc)"
+        COPY package.json yarn.lock /opt/mastodon/
+        RUN yarn install --frozen-lockfile --production
+        COPY . /opt/mastodon/
+        RUN SECRET_KEY_BASE=precompile_placeholder OTP_SECRET=precompile_placeholder \
+          bundle exec rails assets:precompile && rm -rf /opt/mastodon/tmp
+
+        FROM docker.io/ruby:3.2.8-slim-bookworm
+        ENV DEBIAN_FRONTEND=noninteractive RAILS_ENV=production NODE_ENV=production \
+          BIND=0.0.0.0 RAILS_SERVE_STATIC_FILES=true
+        SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl ca-certificates gnupg tini && \
+          mkdir -p /etc/apt/keyrings && \
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+          apt-get update && apt-get install -y --no-install-recommends \
+            nodejs file imagemagick ffmpeg libjemalloc2 \
+            libexpat1 libglib2.0-0 libicu72 libidn12 libpq5 \
+            libreadline8 libssl3 libyaml-0-2 tzdata procps && \
+          rm -rf /var/lib/apt/lists/*
+        RUN groupadd -g 991 mastodon && \
+          useradd -l -u 991 -g 991 -m -d /opt/mastodon mastodon && \
+          ln -s /opt/mastodon /mastodon
+        WORKDIR /opt/mastodon
+        COPY --from=build /opt/mastodon /opt/mastodon
+        COPY --from=build /usr/local/bundle /usr/local/bundle
+        RUN mkdir -p /opt/mastodon/public/system && \
+          chown mastodon:mastodon /opt/mastodon/public/system && \
+          chown -R mastodon:mastodon /opt/mastodon/tmp || true
+        EXPOSE 3000 4000
+        ENTRYPOINT ["/usr/bin/tini", "--"]
     user: root
     command: >
       bash -c "
@@ -239,6 +350,9 @@ services:
       FEDIBIRD_URL: https://fedibird
       NEKO_DOMAIN: nekonoverse
       FEDIBIRD_DOMAIN: fedibird
+      FEDIBIRD_BOB_TOKEN_FILE: /tokens/bob_token.txt
+    volumes:
+      - fedibird_tokens:/tokens:ro
     depends_on:
       nginx-neko:
         condition: service_started
@@ -254,6 +368,7 @@ services:
 volumes:
   certs:
   fedibird_system:
+  fedibird_tokens:
 
 networks:
   fedibird-fed:

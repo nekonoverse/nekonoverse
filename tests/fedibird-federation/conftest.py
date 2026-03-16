@@ -198,24 +198,25 @@ class FedibirdClient:
         return resp.json()
 
     def ensure_user(self, username: str, password: str, email: str | None = None):
-        """Ensure user exists and login. User is created by tootctl in entrypoint."""
-        return self.login(email or f"{username}@{self.domain}", password)
+        """Ensure user exists and set token.
 
-    def login(self, email: str, password: str):
-        """Login via OAuth password grant (email is used as username)."""
-        app = self._create_app()
-        resp = self.http.post("/oauth/token", data={
-            "client_id": app["client_id"],
-            "client_secret": app["client_secret"],
-            "grant_type": "password",
-            "username": email,
-            "password": password,
-            "scope": "read write follow",
-        })
-        resp.raise_for_status()
-        data = resp.json()
-        self.token = data["access_token"]
-        return data
+        Fedibird (Mastodon 3.4.1) does not support OAuth password grant.
+        The entrypoint creates a Doorkeeper access token and writes it
+        to a shared volume. We read it from there.
+        """
+        token_file = os.environ.get("FEDIBIRD_BOB_TOKEN_FILE", "/tokens/bob_token.txt")
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            try:
+                with open(token_file) as f:
+                    token = f.read().strip()
+                if token:
+                    self.token = token
+                    return {"access_token": token}
+            except FileNotFoundError:
+                pass
+            time.sleep(2)
+        raise TimeoutError(f"Token file {token_file} not found within 60s")
 
     def _headers(self) -> dict:
         h = {}

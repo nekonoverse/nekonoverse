@@ -27,7 +27,7 @@ SAFETY_ASSURED=1 bundle exec rails db:setup 2>/dev/null || bundle exec rails db:
 bundle exec rails runner "Setting.registrations_mode = 'open'" 2>/dev/null || true
 
 # Create test user bob (idempotent)
-RAILS_ENV=production bundle exec tootctl accounts create bob --email bob@fedibird --confirmed 2>/dev/null || true
+RAILS_ENV=production bundle exec bin/tootctl accounts create bob --email bob@fedibird --confirmed 2>/dev/null || true
 # Set known password for bob
 bundle exec rails runner "
   account = Account.find_local('bob')
@@ -37,6 +37,31 @@ bundle exec rails runner "
     user.save!(validate: false)
   end
 " 2>/dev/null || true
+
+# Create OAuth access token for bob and write to shared volume
+# (Fedibird 3.4.1 does not support OAuth password grant)
+echo "Creating OAuth token for bob..."
+bundle exec rails runner "
+  user = Account.find_local('bob')&.user
+  if user
+    app = Doorkeeper::Application.create_with(
+      redirect_uri: 'urn:ietf:wg:oauth:2.0:oob',
+      scopes: 'read write follow'
+    ).find_or_create_by!(name: 'federation-test')
+    # Always create a fresh token to avoid stale/revoked tokens
+    token = Doorkeeper::AccessToken.create!(
+      application: app,
+      resource_owner_id: user.id,
+      scopes: 'read write follow',
+      expires_in: nil
+    )
+    File.write('/tokens/bob_token.txt', token.token)
+    puts \"Token created: #{token.token[0..7]}...\"
+  else
+    puts 'ERROR: bob user not found'
+    exit 1
+  end
+" || { echo "Failed to create token"; exit 1; }
 
 # Start Puma web server
 exec bundle exec puma -C config/puma.rb

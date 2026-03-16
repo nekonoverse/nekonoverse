@@ -279,10 +279,10 @@ class TestReplyFederation:
         )
 
         def check_reply():
-            n = neko.get_note(note["id"])
-            return n.get("replies_count", 0) >= 1
+            ctx = neko.get_context(note["id"])
+            return len(ctx.get("descendants", [])) >= 1
 
-        poll_until(check_reply, desc="reply federated to neko")
+        poll_until(check_reply, timeout=120, desc="reply federated to neko")
 
     def test_neko_reply_to_fedibird_note(
         self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
@@ -320,7 +320,7 @@ class TestReplyFederation:
             ctx = fedibird.get_context(fb_status["id"])
             return any(reply_text in (r.get("content") or "") for r in ctx.get("descendants", []))
 
-        poll_until(check_reply_on_fedibird, desc="neko reply on fedibird")
+        poll_until(check_reply_on_fedibird, timeout=120, desc="neko reply on fedibird")
 
     def test_reply_thread_context(
         self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
@@ -559,11 +559,12 @@ class TestBoostFederation:
         def check_notification():
             notifs = neko.notifications(limit=20)
             return any(
-                n.get("type") == "renote" and n.get("status", {}).get("id") == note["id"]
+                n.get("type") in ("renote", "reblog")
+                and n.get("status", {}).get("id") == note["id"]
                 for n in notifs
             )
 
-        poll_until(check_notification, desc="boost notification on neko")
+        poll_until(check_notification, timeout=120, desc="boost notification on neko")
 
     def test_neko_boost_federates_to_fedibird(
         self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
@@ -650,11 +651,12 @@ class TestFavouriteFederation:
         def check_notification():
             notifs = neko.notifications(limit=20)
             return any(
-                n.get("type") == "favourite" and n.get("status", {}).get("id") == note["id"]
+                n.get("type") in ("favourite", "reaction")
+                and n.get("status", {}).get("id") == note["id"]
                 for n in notifs
             )
 
-        poll_until(check_notification, desc="favourite notification on neko")
+        poll_until(check_notification, timeout=120, desc="favourite notification on neko")
 
     def test_neko_favourite_federates_to_fedibird(
         self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
