@@ -1,4 +1,4 @@
-import { createSignal, createEffect, on, onMount, onCleanup, Show, For, Index, batch } from "solid-js";
+import { createSignal, createResource, createEffect, on, onMount, onCleanup, Show, For, Index, batch } from "solid-js";
 import { A, useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { updateAvatar, updateHeader, updateProfile, deleteAvatar, deleteHeader, updateHeaderFocus } from "@nekonoverse/ui/api/settings";
@@ -24,7 +24,6 @@ export default function Profile() {
   const params = useParams<{ acct: string }>();
   const [account, setAccount] = createSignal<Account | null>(null);
   const [notes, setNotes] = createSignal<Note[]>([]);
-  const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
 
   // Infinite scroll state
@@ -103,8 +102,6 @@ export default function Profile() {
       await Promise.all(promises);
     } catch (e: any) {
       setError(e.message || "Not found");
-    } finally {
-      setLoading(false);
     }
   };
 
@@ -150,25 +147,28 @@ export default function Profile() {
     observer?.disconnect();
   });
 
-  createEffect(on(() => params.acct, () => {
-    batch(() => {
-      setAccount(null);
-      setNotes([]);
-      setLoading(true);
-      setError("");
-      setHasMore(true);
-      setIsFollowing(false);
-      setIsRequested(false);
-      setIsBlocking(false);
-      setIsMuting(false);
-      setIsFollowedBy(false);
-      setEditing(false);
-      setMoreOpen(false);
-      setShowUnfollowModal(false);
-      setShowUnlockModal(false);
-    });
-    loadProfile();
-  }));
+  const [profileData] = createResource(
+    () => params.acct,
+    async (acct) => {
+      batch(() => {
+        setAccount(null);
+        setNotes([]);
+        setError("");
+        setHasMore(true);
+        setIsFollowing(false);
+        setIsRequested(false);
+        setIsBlocking(false);
+        setIsMuting(false);
+        setIsFollowedBy(false);
+        setEditing(false);
+        setMoreOpen(false);
+        setShowUnfollowModal(false);
+        setShowUnlockModal(false);
+      });
+      await loadProfile();
+      return account();
+    },
+  );
 
   const isOwn = () => {
     const acc = account();
@@ -387,7 +387,7 @@ export default function Profile() {
 
   return (
     <div class="page-container">
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+      <Show when={profileData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
         <Show when={!error()} fallback={<p class="error">{error()}</p>}>
           {(() => {
             const acc = account()!;

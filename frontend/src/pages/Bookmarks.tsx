@@ -1,4 +1,4 @@
-import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
+import { createSignal, createResource, onCleanup, Show, For } from "solid-js";
 import { getBookmarks, getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import { onReaction } from "@nekonoverse/ui/stores/streaming";
@@ -8,28 +8,26 @@ import { useI18n } from "@nekonoverse/ui/i18n";
 export default function Bookmarks() {
   const { t } = useI18n();
   const [notes, setNotes] = createSignal<Note[]>([]);
-  const [loading, setLoading] = createSignal(true);
   const [hasMore, setHasMore] = createSignal(false);
 
   const LIMIT = 20;
 
   const load = async (maxId?: string) => {
-    try {
-      const data = await getBookmarks({ limit: LIMIT + 1, max_id: maxId });
-      setHasMore(data.length > LIMIT);
-      const items = data.slice(0, LIMIT);
-      if (maxId) {
-        setNotes((prev) => [...prev, ...items]);
-      } else {
-        setNotes(items);
-      }
-    } catch {}
-    setLoading(false);
+    const data = await getBookmarks({ limit: LIMIT + 1, max_id: maxId });
+    setHasMore(data.length > LIMIT);
+    const items = data.slice(0, LIMIT);
+    if (maxId) {
+      setNotes((prev) => [...prev, ...items]);
+    } else {
+      setNotes(items);
+    }
+    return items;
   };
 
-  onMount(async () => {
-    await load();
-  });
+  const [initialData] = createResource(
+    () => (!authLoading() && currentUser() ? true : false),
+    () => load(),
+  );
 
   const loadMore = () => {
     const last = notes().at(-1);
@@ -61,7 +59,7 @@ export default function Bookmarks() {
       <h1>{t("bookmark.title")}</h1>
       <Show when={!authLoading()} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<p>{t("bookmark.loginRequired")}</p>}>
-          <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
             <Show when={notes().length > 0} fallback={<p class="empty">{t("bookmark.empty")}</p>}>
               <For each={notes()}>
                 {(note) => (

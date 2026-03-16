@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
+import { createSignal, createResource, createEffect, onCleanup, Show, For } from "solid-js";
 import { getNotifications, dismissNotification, clearNotifications, markAllNotificationsAsRead, type Notification } from "@nekonoverse/ui/api/notifications";
 import NoteCard from "../components/notes/NoteCard";
 import Emoji from "../components/Emoji";
@@ -28,7 +28,6 @@ export default function Notifications() {
   const initialTab: Tab = unreadMentions() === 0 && unreadOther() > 0 ? "other" : "mentions";
   const [tab, setTab] = createSignal<Tab>(initialTab);
   const [allNotifs, setAllNotifs] = createSignal<Notification[]>([]);
-  const [loading, setLoading] = createSignal(true);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
   const [pushSubscribed, setPushSubscribed] = createSignal(false);
@@ -65,41 +64,41 @@ export default function Notifications() {
   };
 
   const load = async () => {
-    try {
-      const data = await getNotifications({ limit: 40 });
-      // SSE で先に追加された通知を失わないようマージ
-      setAllNotifs((prev) => {
-        if (prev.length === 0) return data;
-        const dataIds = new Set(data.map((n) => n.id));
-        const extra = prev.filter((n) => !dataIds.has(n.id));
-        return extra.length > 0 ? [...extra, ...data] : data;
-      });
-      setHasMore(data.length >= 40);
+    const data = await getNotifications({ limit: 40 });
+    // SSE で先に追加された通知を失わないようマージ
+    setAllNotifs((prev) => {
+      if (prev.length === 0) return data;
+      const dataIds = new Set(data.map((n) => n.id));
+      const extra = prev.filter((n) => !dataIds.has(n.id));
+      return extra.length > 0 ? [...extra, ...data] : data;
+    });
+    setHasMore(data.length >= 40);
 
-      // 現在のタブが空で他方にデータがあれば自動切替
-      const currentTab = tab();
-      const all = allNotifs();
-      const hasMentions = all.some((n) => n.type === "mention" || n.type === "reply");
-      const hasOther = all.some((n) => n.type !== "mention" && n.type !== "reply");
-      if (currentTab === "mentions" && !hasMentions && hasOther) {
-        setTab("other");
-      } else if (currentTab === "other" && !hasOther && hasMentions) {
-        setTab("mentions");
-      }
-    } catch {
-    } finally {
-      setLoading(false);
+    // 現在のタブが空で他方にデータがあれば自動切替
+    const currentTab = tab();
+    const all = allNotifs();
+    const hasMentions = all.some((n) => n.type === "mention" || n.type === "reply");
+    const hasOther = all.some((n) => n.type !== "mention" && n.type !== "reply");
+    if (currentTab === "mentions" && !hasMentions && hasOther) {
+      setTab("other");
+    } else if (currentTab === "other" && !hasOther && hasMentions) {
+      setTab("mentions");
     }
+    return data;
   };
 
-  onMount(async () => {
-    await load();
-    resetUnread();
-    try {
-      await markAllNotificationsAsRead();
-      setAllNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
-    } catch { /* ignore */ }
-  });
+  const [initialData] = createResource(
+    () => (!authLoading() && currentUser() ? true : false),
+    async () => {
+      const data = await load();
+      resetUnread();
+      try {
+        await markAllNotificationsAsRead();
+        setAllNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+      } catch { /* ignore */ }
+      return data;
+    },
+  );
 
   const unsub = onNotification(async (data) => {
     const eventData = data as { id?: string };
@@ -253,7 +252,7 @@ export default function Notifications() {
         </button>
       </div>
 
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+      <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<p>{t("notifications.loginRequired")}</p>}>
           <Show
             when={filtered().length > 0}

@@ -1,5 +1,6 @@
 import {
   createSignal,
+  createResource,
   createEffect,
   on,
   onMount,
@@ -27,7 +28,6 @@ export default function Home() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [notes, setNotes] = createSignal<Note[]>([]);
-  const [initialLoading, setInitialLoading] = createSignal(true);
   const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
   const [newNoteIds, setNewNoteIds] = createSignal<Set<string>>(new Set());
 
@@ -66,10 +66,9 @@ export default function Home() {
       setNotes(data);
       setHasMore(data.length >= 20);
       setBufferedNotes([]);
+      return data;
     } catch {
-      // ignore
-    } finally {
-      setInitialLoading(false);
+      return [];
     }
   };
 
@@ -155,13 +154,12 @@ export default function Home() {
   });
 
   // Initial load: wait for auth to settle (App.tsx Layout handles fetchCurrentUser)
-  let loaded = false;
-  createEffect(() => {
-    if (!authLoading() && !loaded) {
-      loaded = true;
-      loadTimeline();
-    }
-  });
+  const [initialData] = createResource(
+    () => (!authLoading() ? true : false),
+    () => loadTimeline(),
+  );
+  // Track whether initial load completed for tl switch effect
+  const loaded = () => initialData.state === "ready";
 
   // Subscribe to real-time timeline updates from global stream
   const unsub = onUpdate(async (data) => {
@@ -279,7 +277,7 @@ export default function Home() {
     on(
       () => searchParams.tl,
       () => {
-        if (loaded) {
+        if (loaded()) {
           setHasMore(true);
           setBufferedNotes([]);
           loadTimeline();
@@ -337,7 +335,7 @@ export default function Home() {
             </Show>
 
             <Show
-              when={!initialLoading()}
+              when={loaded()}
               fallback={<p>{t("timeline.loading")}</p>}
             >
               <Show

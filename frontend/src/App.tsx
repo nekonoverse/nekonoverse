@@ -1,5 +1,5 @@
-import { Router, Route, useLocation } from "@solidjs/router";
-import { lazy, onMount, onCleanup, createEffect, createSignal, Show, type ParentProps } from "solid-js";
+import { Router, Route, useIsRouting } from "@solidjs/router";
+import { lazy, onMount, onCleanup, createEffect, createSignal, Show, Suspense, type ParentProps } from "solid-js";
 import { I18nProvider } from "@nekonoverse/ui/i18n";
 import { initTheme } from "@nekonoverse/ui/stores/theme";
 import { fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
@@ -33,35 +33,32 @@ const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
 
 function NavigationProgress() {
-  const location = useLocation();
+  const isRouting = useIsRouting();
   const [visible, setVisible] = createSignal(false);
   const [width, setWidth] = createSignal(0);
-  let timer: ReturnType<typeof setTimeout> | undefined;
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
   let growTimer: ReturnType<typeof setInterval> | undefined;
 
-  createEffect((prevPath: string | undefined) => {
-    const path = location.pathname;
-    if (prevPath !== undefined && prevPath !== path) {
-      // ルート変更検知 → バー開始
+  createEffect(() => {
+    if (isRouting()) {
+      // ルーティング開始 → バー表示
+      clearTimeout(hideTimer);
       setVisible(true);
       setWidth(30);
       clearInterval(growTimer);
       growTimer = setInterval(() => {
         setWidth((w) => (w < 90 ? w + (90 - w) * 0.1 : w));
       }, 100);
-      // 完了: 次のマイクロタスクでページが描画されるので短いディレイ後に100%
-      clearTimeout(timer);
-      timer = setTimeout(() => {
-        clearInterval(growTimer);
-        setWidth(100);
-        setTimeout(() => setVisible(false), 200);
-      }, 150);
+    } else if (visible()) {
+      // ルーティング完了 → 100%にしてフェードアウト
+      clearInterval(growTimer);
+      setWidth(100);
+      hideTimer = setTimeout(() => setVisible(false), 200);
     }
-    return path;
   });
 
   onCleanup(() => {
-    clearTimeout(timer);
+    clearTimeout(hideTimer);
     clearInterval(growTimer);
   });
 
@@ -86,7 +83,7 @@ function Layout(props: ParentProps) {
       <NavigationProgress />
       <Navbar />
       <SwipeBack />
-      {props.children}
+      <Suspense>{props.children}</Suspense>
     </>
   );
 }
