@@ -29,6 +29,17 @@ def make_face_detect_client(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(**kwargs)
 
 
+def make_media_transform_client(**kwargs) -> httpx.AsyncClient:
+    """Create an httpx.AsyncClient for the media-proxy-transform service."""
+    if settings.media_proxy_transform_uds:
+        kwargs.setdefault(
+            "transport", httpx.AsyncHTTPTransport(uds=settings.media_proxy_transform_uds)
+        )
+    kwargs.setdefault("timeout", 15.0)
+    kwargs.setdefault("proxy", None)
+    return httpx.AsyncClient(**kwargs)
+
+
 def make_async_client(*, use_proxy: bool = True, **kwargs) -> httpx.AsyncClient:
     """Create an httpx.AsyncClient with proxy settings injected.
 

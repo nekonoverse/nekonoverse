@@ -45,8 +45,12 @@ async def _resolve_actor_emojis(
 
     result: list[CustomEmojiInfo] = []
     for emoji in emoji_list:
-        url = media_proxy_url(emoji.url)
-        static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+        url = media_proxy_url(emoji.url, variant="emoji")
+        static = (
+            media_proxy_url(emoji.static_url, variant="emoji", static=True)
+            if emoji.static_url
+            else media_proxy_url(emoji.url, variant="emoji", static=True)
+        )
         result.append(CustomEmojiInfo(shortcode=emoji.shortcode, url=url, static_url=static))
     return result
 
@@ -97,7 +101,7 @@ async def _batch_resolve_emoji_urls(
     url_map: dict[str, str | None] = {}
     for emoji_str, (shortcode, _domain) in parsed.items():
         url = local_map.get(shortcode) or remote_map.get(shortcode)
-        url_map[emoji_str] = media_proxy_url(url) if url else None
+        url_map[emoji_str] = media_proxy_url(url, variant="emoji") if url else None
 
     return url_map
 
@@ -115,7 +119,7 @@ async def _notification_to_response(
             db, notif.sender.display_name, notif.sender.domain
         )
         sender = notif.sender
-        avatar = media_proxy_url(sender.avatar_url) or "/default-avatar.svg"
+        avatar = media_proxy_url(sender.avatar_url, variant="avatar") or "/default-avatar.svg"
         header = media_proxy_url(sender.header_url) or ""
         acct = (
             f"{sender.username}@{sender.domain}" if sender.domain else sender.username

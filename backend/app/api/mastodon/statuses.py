@@ -98,11 +98,12 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
             meta = {}
         meta["focus"] = {"x": att.remote_focal_x, "y": att.remote_focal_y}
     proxied = media_proxy_url(att.remote_url)
+    preview = media_proxy_url(att.remote_url, variant="preview")
     return NoteMediaAttachment(
         id=str(att.id),
         type=_mime_to_media_type(mime),
         url=proxied,
-        preview_url=proxied,
+        preview_url=preview,
         remote_url=att.remote_url,
         description=att.remote_description,
         blurhash=att.remote_blurhash,
@@ -257,8 +258,12 @@ async def note_to_response(
             emoji_list = []
         emoji_map: dict[str, CustomEmojiInfo] = {}
         for emoji in emoji_list:
-            url = media_proxy_url(emoji.url)
-            static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+            url = media_proxy_url(emoji.url, variant="emoji")
+            static = (
+                media_proxy_url(emoji.static_url, variant="emoji", static=True)
+                if emoji.static_url
+                else media_proxy_url(emoji.url, variant="emoji", static=True)
+            )
             info = CustomEmojiInfo(
                 shortcode=emoji.shortcode,
                 url=url,
@@ -316,7 +321,7 @@ async def note_to_response(
 
     from app.config import settings as app_settings
 
-    avatar = media_proxy_url(actor.avatar_url) or "/default-avatar.svg"
+    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or "/default-avatar.svg"
     header = media_proxy_url(actor.header_url) or ""
     acct = actor.username if not actor.domain else f"{actor.username}@{actor.domain}"
     actor_url = (
@@ -1068,8 +1073,12 @@ async def reacted_by(
             for sc in scs:
                 emoji = emoji_cache.get((sc, r.actor.domain)) or emoji_cache.get((sc, None))
                 if emoji:
-                    url = media_proxy_url(emoji.url)
-                    static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+                    url = media_proxy_url(emoji.url, variant="emoji")
+                    static = (
+                        media_proxy_url(emoji.static_url, variant="emoji", static=True)
+                        if emoji.static_url
+                        else media_proxy_url(emoji.url, variant="emoji", static=True)
+                    )
                     actor_emojis.append(
                         CustomEmojiInfo(shortcode=emoji.shortcode, url=url, static_url=static)
                     )
@@ -1079,7 +1088,7 @@ async def reacted_by(
                 id=r.actor.id,
                 username=r.actor.username,
                 display_name=r.actor.display_name,
-                avatar_url=media_proxy_url(r.actor.avatar_url) or "/default-avatar.svg",
+                avatar_url=media_proxy_url(r.actor.avatar_url, variant="avatar") or "/default-avatar.svg",
                 ap_id=r.actor.ap_id,
                 domain=r.actor.domain,
                 emojis=actor_emojis,

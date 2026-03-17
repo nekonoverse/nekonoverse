@@ -1,0 +1,11 @@
+services:
+  media-proxy-transform:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "8002:8002"
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8002/health')"
+      interval: 10s
+      timeout: 5s
+      retries: 3

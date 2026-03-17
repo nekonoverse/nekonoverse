@@ -550,7 +550,7 @@ async def get_reaction_summary(
                 "emoji": emoji,
                 "count": count,
                 "me": me,
-                "emoji_url": media_proxy_url(emoji_url),
+                "emoji_url": media_proxy_url(emoji_url, variant="emoji"),
             }
         )
     return summaries
@@ -670,7 +670,7 @@ async def get_reaction_summaries(
             "emoji": emoji_str,
             "count": count,
             "me": me,
-            "emoji_url": media_proxy_url(emoji_url),
+            "emoji_url": media_proxy_url(emoji_url, variant="emoji"),
         }
         if include_account_ids:
             entry["account_ids"] = account_ids_map.get(

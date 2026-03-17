@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/v1/follow_requests", tags=["follow_requests"])
 
 
 def _account_response(actor: Actor) -> dict:
-    avatar = media_proxy_url(actor.avatar_url) if actor.avatar_url else None
+    avatar = media_proxy_url(actor.avatar_url, variant="avatar") if actor.avatar_url else None
     header = media_proxy_url(actor.header_url) if actor.header_url else None
     return {
         "id": str(actor.id),

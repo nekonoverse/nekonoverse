@@ -76,10 +76,12 @@ services:
       S3_REGION: us-east-1
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
+      # media-proxy-transform (optional — set in .env)
+      MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,localhost}
     expose:
       - "8000"
     depends_on:
@@ -110,7 +112,7 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,localhost}
     depends_on:
       postgresql:
         condition: service_healthy
@@ -155,6 +157,15 @@ services:
   #             capabilities: [gpu]
   #   expose:
   #     - "8001"
+
+  # Optional: Media proxy transform service (uncomment to use)
+  # Provides thumbnail generation and WebP/PNG conversion for proxied media.
+  # Set MEDIA_PROXY_TRANSFORM_URL=http://media-proxy-transform:8002 in app environment.
+  # media-proxy-transform:
+  #   build: ./media-proxy-transform
+  #   restart: unless-stopped
+  #   expose:
+  #     - "8002"
 
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cloudflared:

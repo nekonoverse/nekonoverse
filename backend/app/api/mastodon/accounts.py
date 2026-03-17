@@ -131,7 +131,8 @@ async def _actor_to_account(
 ) -> dict:
     import re
 
-    avatar = media_proxy_url(actor.avatar_url) or "/default-avatar.svg"
+    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or "/default-avatar.svg"
+    avatar_static = media_proxy_url(actor.avatar_url, variant="avatar", static=True) or avatar
     header = media_proxy_url(actor.header_url) or ""
     data = {
         "id": str(actor.id),
@@ -141,7 +142,7 @@ async def _actor_to_account(
         "note": actor.summary or "",
         "uri": actor.ap_id,
         "avatar": avatar,
-        "avatar_static": avatar,
+        "avatar_static": avatar_static,
         "header": header,
         "header_static": header,
         "url": actor.ap_id,
@@ -184,10 +185,10 @@ async def _actor_to_account(
             data["emojis"] = [
                 {
                     "shortcode": e.shortcode,
-                    "url": media_proxy_url(e.url),
-                    "static_url": media_proxy_url(e.static_url)
+                    "url": media_proxy_url(e.url, variant="emoji"),
+                    "static_url": media_proxy_url(e.static_url, variant="emoji", static=True)
                     if e.static_url
-                    else media_proxy_url(e.url),
+                    else media_proxy_url(e.url, variant="emoji", static=True),
                 }
                 for e in emoji_list
             ]
@@ -463,10 +464,10 @@ async def _batch_resolve_actor_emojis(
                 emojis.append(
                     {
                         "shortcode": e.shortcode,
-                        "url": media_proxy_url(e.url),
-                        "static_url": media_proxy_url(e.static_url)
+                        "url": media_proxy_url(e.url, variant="emoji"),
+                        "static_url": media_proxy_url(e.static_url, variant="emoji", static=True)
                         if e.static_url
-                        else media_proxy_url(e.url),
+                        else media_proxy_url(e.url, variant="emoji", static=True),
                     }
                 )
         if emojis:

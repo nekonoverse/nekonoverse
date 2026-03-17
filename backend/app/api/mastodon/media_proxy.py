@@ -2,7 +2,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.utils.media_proxy import verify_proxy_hmac
 from app.utils.network import is_private_host as _is_private_host
@@ -14,10 +14,36 @@ _ALLOWED_CONTENT_PREFIXES = ("image/", "video/", "audio/")
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
 
+async def _transform_image(body: bytes, **params) -> tuple[bytes, str]:
+    """Send image to external transform service. Falls back to original on error."""
+    from app.config import settings
+    from app.utils.http_client import make_media_transform_client
+
+    form_data = {k: str(v) for k, v in params.items() if v}
+    try:
+        async with make_media_transform_client() as client:
+            base = settings.media_proxy_transform_url
+            resp = await client.post(
+                f"{base}/transform" if not base.endswith("/transform") else base,
+                files={"file": ("image", body)},
+                data=form_data,
+            )
+            if resp.status_code == 200:
+                return resp.content, resp.headers.get("content-type", "image/webp")
+    except Exception:
+        pass
+    return body, "image/webp"
+
+
 @router.get("/proxy")
 async def proxy_media(
     url: str = Query(..., min_length=1),
     h: str = Query(..., min_length=16, max_length=32),
+    avatar: int | None = Query(None),
+    emoji: int | None = Query(None),
+    preview: int | None = Query(None),
+    static: int | None = Query(None),
+    badge: int | None = Query(None),
 ):
     if not verify_proxy_hmac(url, h):
         raise HTTPException(status_code=403, detail="Invalid signature")
@@ -70,8 +96,18 @@ async def proxy_media(
         if len(body) > _MAX_SIZE:
             raise HTTPException(status_code=413, detail="Response too large")
 
-    return StreamingResponse(
-        iter([body]),
+    # Transform if params present, image content, and service configured
+    from app.config import settings
+
+    needs_transform = any([avatar, emoji, preview, static, badge])
+    if needs_transform and content_type.startswith("image/") and settings.media_proxy_transform_url:
+        body, content_type = await _transform_image(
+            body, avatar=avatar, emoji=emoji, preview=preview,
+            static=static, badge=badge,
+        )
+
+    return Response(
+        content=body,
         media_type=content_type,
         headers={
             "Cache-Control": "public, max-age=86400",
