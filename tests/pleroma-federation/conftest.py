@@ -281,6 +281,15 @@ class PleromaClient:
         resp.raise_for_status()
         return resp.json()
 
+    def get_emoji_reactions(self, status_id: str):
+        """Pleroma extension: list emoji reactions on a status."""
+        resp = self.http.get(
+            f"/api/v1/pleroma/statuses/{status_id}/reactions",
+            headers=self._headers(),
+        )
+        resp.raise_for_status()
+        return resp.json()
+
     def webfinger(self, acct: str):
         resp = self.http.get(
             "/.well-known/webfinger", params={"resource": f"acct:{acct}"}

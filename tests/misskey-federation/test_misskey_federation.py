@@ -463,12 +463,21 @@ class TestReactionFederation:
         # Alice reacts on Neko
         neko.react(neko_note["id"], "⭐")
 
-        # Check reaction arrived on Misskey
+        # Check reaction arrived on Misskey — exactly one, with the correct emoji
         def check_reaction_on_misskey():
             reactions = misskey.get_reactions(mk_note["id"])
-            return len(reactions) > 0
+            if len(reactions) == 0:
+                return None
+            return reactions
 
-        poll_until(check_reaction_on_misskey, timeout=60, interval=2, desc="reaction federated to misskey")
+        reactions = poll_until(check_reaction_on_misskey, timeout=60, interval=2, desc="reaction federated to misskey")
+        assert len(reactions) == 1, f"Expected exactly 1 reaction, got {len(reactions)}"
+        assert reactions[0]["type"] == "⭐", f"Expected ⭐, got {reactions[0]['type']}"
+
+        # Verify the note itself shows the reaction (display side)
+        mk_note_detail = misskey.get_note(mk_note["id"])
+        note_reactions = mk_note_detail.get("reactions", {})
+        assert sum(note_reactions.values()) == 1, f"Expected 1 total reaction on note, got {note_reactions}"
 
     def test_misskey_heart_reaction_maps_correctly(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """Misskey ❤ (Like) reaction is correctly stored on Nekonoverse."""

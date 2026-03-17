@@ -4,6 +4,7 @@ Tests Nekonoverse <-> Pleroma federation focusing on:
 - ActivityPub endpoint compatibility
 - Following flow (the known issue with followers/following collections)
 - Note federation
+- Emoji reaction federation (EmojiReact, not Like)
 """
 
 import httpx
@@ -187,3 +188,65 @@ class TestFederation:
             return any("Federation test note" in s.get("content", "") for s in tl)
 
         poll_until(check_note, timeout=30, interval=2, desc="alice's note on bob's timeline")
+
+
+# ── Reaction federation ─────────────────────────────────────────
+
+
+class TestReactionFederation:
+    """Test that Neko sends EmojiReact (not Like) to Pleroma and it arrives exactly once."""
+
+    def test_neko_reaction_arrives_on_pleroma(
+        self, neko: NekoClient, pleroma: PleromaClient, alice, bob
+    ):
+        """alice@neko reacts to bob@pleroma's status; Pleroma receives exactly one reaction."""
+        import time
+
+        # Ensure alice follows bob so bob's statuses federate
+        results = neko.search_accounts(f"bob@{PLEROMA_DOMAIN}", resolve=True)
+        assert len(results) > 0, "Could not resolve bob@pleroma on Neko"
+        bob_on_neko = results[0]
+        try:
+            neko.follow(bob_on_neko["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+
+        # bob creates a status on Pleroma
+        unique = f"React to me PL {time.time()}"
+        pl_status = pleroma.create_status(unique)
+
+        # Wait for it to federate to Neko
+        def find_on_neko():
+            tl = neko.public_timeline()
+            for n in tl:
+                if unique in (n.get("content") or ""):
+                    return n
+            return None
+
+        neko_note = poll_until(find_on_neko, timeout=60, interval=2, desc="pleroma note on neko")
+
+        # alice reacts with 👍
+        neko.react(neko_note["id"], "👍")
+
+        # Check reaction on Pleroma via Pleroma extension API — exactly 1, correct emoji
+        def check_reaction_on_pleroma():
+            reactions = pleroma.get_emoji_reactions(pl_status["id"])
+            if not reactions:
+                return None
+            return reactions
+
+        reactions = poll_until(
+            check_reaction_on_pleroma, timeout=60, interval=2, desc="reaction on pleroma"
+        )
+        # Pleroma returns [{"name": "👍", "count": 1, "accounts": [...]}]
+        assert len(reactions) == 1, f"Expected 1 emoji type, got {len(reactions)}: {reactions}"
+        assert reactions[0]["name"] == "👍", f"Expected 👍, got {reactions[0]['name']}"
+        assert reactions[0]["count"] == 1, f"Expected count 1, got {reactions[0]['count']}"
+
+        # Verify the status itself reflects the reaction (display side)
+        status = pleroma.get_status(pl_status["id"])
+        pl_reactions = status.get("pleroma", {}).get("emoji_reactions", [])
+        assert len(pl_reactions) >= 1, f"Expected reactions on status, got {pl_reactions}"
+        assert pl_reactions[0]["name"] == "👍", f"Expected 👍 on status, got {pl_reactions[0]['name']}"
+        assert pl_reactions[0]["count"] == 1, f"Expected count 1 on status, got {pl_reactions[0]['count']}"
