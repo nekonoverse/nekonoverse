@@ -56,49 +56,85 @@ def _validate_magic_bytes(data: bytes, mime_type: str) -> None:
             return
     raise ValueError(f"File content does not match declared type {mime_type}")
 
-# MIME types where EXIF stripping is safe (skip GIF/WebP/AVIF which may be animated)
-_EXIF_STRIP_TYPES = {"image/jpeg", "image/png"}
+# PNG signature
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
-# Mapping from MIME type to Pillow save format
-_MIME_TO_PILLOW_FORMAT = {
-    "image/jpeg": "JPEG",
-    "image/png": "PNG",
-}
+
+def _remove_jpeg_app1(data: bytes) -> bytes:
+    """Remove APP1 (EXIF) segments from JPEG at byte level (no image decoding)."""
+    import struct
+
+    if len(data) < 2 or data[:2] != b"\xff\xd8":
+        return data
+    result = bytearray(b"\xff\xd8")
+    pos = 2
+    while pos < len(data):
+        if data[pos] != 0xFF:
+            result.extend(data[pos:])
+            break
+        marker = data[pos : pos + 2]
+        if marker == b"\xff\xda":  # SOS — rest is image data
+            result.extend(data[pos:])
+            break
+        # Standalone markers (no length field)
+        if marker[1] in range(0xD0, 0xDA) or marker == b"\xff\x01":
+            result.extend(marker)
+            pos += 2
+            continue
+        if pos + 4 > len(data):
+            result.extend(data[pos:])
+            break
+        length = struct.unpack(">H", data[pos + 2 : pos + 4])[0]
+        segment_end = pos + 2 + length
+        if marker == b"\xff\xe1":  # APP1 = EXIF
+            pos = segment_end
+            continue
+        result.extend(data[pos:segment_end])
+        pos = segment_end
+    return bytes(result)
+
+
+def _strip_exif_jpeg(data: bytes) -> bytes:
+    """Remove EXIF from JPEG at byte level. No image decoding."""
+    try:
+        return _remove_jpeg_app1(data)
+    except Exception:
+        return data
+
+
+def _strip_exif_png(data: bytes) -> bytes:
+    """Remove eXIf chunk from PNG at byte level (no image decoding)."""
+    if len(data) < 8 or data[:8] != _PNG_SIGNATURE:
+        return data
+    result = bytearray(data[:8])
+    pos = 8
+    while pos + 8 <= len(data):
+        length = int.from_bytes(data[pos : pos + 4], "big")
+        chunk_type = data[pos + 4 : pos + 8]
+        chunk_end = pos + 12 + length  # 4(len) + 4(type) + data + 4(crc)
+        if chunk_end > len(data):
+            result.extend(data[pos:])
+            break
+        if chunk_type == b"eXIf":
+            pos = chunk_end
+            continue
+        result.extend(data[pos:chunk_end])
+        pos = chunk_end
+    return bytes(result)
 
 
 def strip_exif(data: bytes, mime_type: str) -> bytes:
-    """Remove EXIF metadata from image data, preserving orientation.
+    """Remove EXIF metadata from image data at byte level (no image decoding).
 
-    Only processes JPEG and PNG images. GIF, WebP, and AVIF are returned
-    unchanged because they may contain animation data.
-
-    The EXIF Orientation tag is applied via ``ImageOps.exif_transpose()``
-    before stripping so the image still renders with the correct rotation.
-    Pillow's ``save()`` does not include EXIF by default.
+    JPEG: Removes APP1 segments. PNG: Removes eXIf chunks.
+    Other formats: Returned unchanged.
+    Orientation correction is the client's responsibility.
     """
-    if mime_type not in _EXIF_STRIP_TYPES:
-        return data
-
-    try:
-        from PIL import Image, ImageOps
-
-        img = Image.open(io.BytesIO(data))
-
-        # Apply EXIF orientation so the image looks correct after stripping
-        img = ImageOps.exif_transpose(img)
-
-        # Save without EXIF (Pillow omits EXIF by default)
-        buf = io.BytesIO()
-        save_format = _MIME_TO_PILLOW_FORMAT[mime_type]
-        save_kwargs: dict = {"format": save_format}
-        if save_format == "PNG":
-            # Preserve PNG optimization level
-            save_kwargs["optimize"] = False
-        img.save(buf, **save_kwargs)
-        return buf.getvalue()
-    except Exception:
-        logger.warning("Failed to strip EXIF from %s image, using original", mime_type)
-        return data
+    if mime_type == "image/jpeg":
+        return _strip_exif_jpeg(data)
+    if mime_type == "image/png":
+        return _strip_exif_png(data)
+    return data
 
 
 async def upload_drive_file(

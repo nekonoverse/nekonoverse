@@ -97,16 +97,15 @@ class TestStripExifJPEG:
         exif_after = _get_exif(result)
         assert ExifTags.Base.Make not in exif_after
 
-    def test_preserves_orientation(self):
-        """Image with orientation=6 (rotated 90 CW) should be transposed."""
-        # Orientation 6 means the image is stored rotated 90 degrees CW.
-        # After exif_transpose, a 100x80 image should become 80x100.
+    def test_orientation_tag_stripped_not_applied(self):
+        """Orientation tag should be stripped, not applied. Dimensions stay the same."""
         original = _make_jpeg_with_exif(width=100, height=80, orientation=6)
         result = strip_exif(original, "image/jpeg")
 
+        assert not _get_exif(result), "EXIF (including orientation) should be stripped"
         img = Image.open(io.BytesIO(result))
-        # After applying orientation=6 (90 CW rotation), width/height swap
-        assert img.size == (80, 100)
+        # Dimensions unchanged — orientation correction is the client's responsibility
+        assert img.size == (100, 80)
 
     def test_jpeg_without_exif_is_still_valid(self):
         """A JPEG without EXIF should pass through without error."""
@@ -177,3 +176,36 @@ class TestStripExifErrorHandling:
         """Empty data should fall back to returning original bytes."""
         result = strip_exif(b"", "image/jpeg")
         assert result == b""
+
+
+class TestNoPillowUsed:
+    """Verify Pillow image decoder is NEVER used for EXIF stripping."""
+
+    def test_jpeg_skips_pillow(self):
+        """JPEG EXIF stripping should never use Pillow."""
+        from unittest.mock import patch
+
+        original = _make_jpeg_with_exif(orientation=6)
+
+        with patch("PIL.Image.open") as mock_open:
+            result = strip_exif(original, "image/jpeg")
+            mock_open.assert_not_called()
+
+        assert not _get_exif(result)
+        img = Image.open(io.BytesIO(result))
+        assert img.format == "JPEG"
+
+    def test_png_skips_pillow(self):
+        """PNG eXIf chunk is removed without any image decoding."""
+        from unittest.mock import patch
+
+        original = _make_png_with_exif()
+        assert b"eXIf" in original, "Test PNG should contain eXIf chunk"
+
+        with patch("PIL.Image.open") as mock_open:
+            result = strip_exif(original, "image/png")
+            mock_open.assert_not_called()
+
+        assert b"eXIf" not in result
+        img = Image.open(io.BytesIO(result))
+        assert img.format == "PNG"
