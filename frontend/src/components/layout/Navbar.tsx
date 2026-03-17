@@ -11,7 +11,7 @@ import ComposeModal from "../notes/ComposeModal";
 import KeyboardShortcuts from "../KeyboardShortcuts";
 
 export default function Navbar() {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -176,12 +176,26 @@ export default function Navbar() {
             title={t("search.title")}
             onClick={() => setSearchOpen(true)}
           >
-            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="9" cy="9" r="4" />
-              <path d="M2 21v-2a4 4 0 0 1 4-4" />
-              <circle cx="17.5" cy="14.5" r="4.5" />
-              <line x1="21" y1="18" x2="23" y2="20" />
-            </svg>
+            <Show when={locale() === "neko"} fallback={
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <circle cx="9" cy="9" r="4" />
+                <path d="M2 21v-2a4 4 0 0 1 4-4" />
+                <circle cx="17.5" cy="14.5" r="4.5" />
+                <line x1="21" y1="18" x2="23" y2="20" />
+              </svg>
+            }>
+              <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M1 10 L3 2 L7 7" />
+                <path d="M17 10 L15 2 L11 7" />
+                <circle cx="9" cy="13" r="7" />
+                <line x1="0" y1="12" x2="4" y2="13" />
+                <line x1="0" y1="15" x2="4" y2="15" />
+                <line x1="18" y1="12" x2="14" y2="13" />
+                <line x1="18" y1="15" x2="14" y2="15" />
+                <circle cx="19" cy="18" r="4" />
+                <line x1="22" y1="21" x2="24" y2="23" />
+              </svg>
+            </Show>
           </button>
           <Show
             when={currentUser()}

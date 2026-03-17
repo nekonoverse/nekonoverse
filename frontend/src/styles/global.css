@@ -6682,3 +6682,34 @@ a:hover {
 .legal-links a {
   color: var(--accent);
 }
+
+/* ねこ語選択時の肉球カーソル */
+html[lang="neko"],
+html[lang="neko"] * {
+  cursor: url('/cursors/paw-default.svg') 8 2, auto;
+}
+
+html[lang="neko"] a,
+html[lang="neko"] button,
+html[lang="neko"] [role="button"],
+html[lang="neko"] input[type="submit"],
+html[lang="neko"] select,
+html[lang="neko"] label[for],
+html[lang="neko"] summary {
+  cursor: url('/cursors/paw-pointer.svg') 10 4, pointer;
+}
+
+html[lang="neko"] :active,
+html[lang="neko"] *:active {
+  cursor: url('/cursors/paw-active.svg') 10 4, auto;
+}
+
+html[lang="neko"] input[type="text"],
+html[lang="neko"] input[type="search"],
+html[lang="neko"] input[type="email"],
+html[lang="neko"] input[type="password"],
+html[lang="neko"] input[type="url"],
+html[lang="neko"] textarea,
+html[lang="neko"] [contenteditable="true"] {
+  cursor: text;
+}
