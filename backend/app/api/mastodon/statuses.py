@@ -143,7 +143,7 @@ async def note_to_response(
         emoji_cache: Optional pre-resolved emoji cache mapping
             (shortcode, domain) -> CustomEmoji. When provided, skips per-note
             emoji DB queries.
-        software_cache: Optional mapping domain -> software name (str|None).
+        software_cache: Optional mapping domain -> (software_name, version) tuple.
     """
     actor = note.actor
     reblog = None
@@ -355,12 +355,15 @@ async def note_to_response(
     )
     # Resolve server software from cache or Valkey
     sw = None
+    sw_ver = None
     if actor.domain:
         if software_cache is not None:
-            sw = software_cache.get(actor.domain)
+            cached = software_cache.get(actor.domain)
+            if cached is not None:
+                sw, sw_ver = cached
         elif db:
-            from app.utils.nodeinfo import get_domain_software
-            sw = await get_domain_software(actor.domain)
+            from app.utils.nodeinfo import get_domain_software_info
+            sw, sw_ver = await get_domain_software_info(actor.domain)
 
     actor_resp = NoteActorResponse(
         id=actor.id,
@@ -370,6 +373,7 @@ async def note_to_response(
         ap_id=actor.ap_id,
         domain=actor.domain,
         server_software=sw,
+        server_software_version=sw_ver,
         emojis=actor_emojis,
         acct=acct,
         uri=actor.ap_id,
@@ -577,7 +581,7 @@ async def notes_to_responses(
         reblogged_set = {row[0] for row in reblog_result.all()}
 
     # Batch-fetch server software for all unique remote domains
-    from app.utils.nodeinfo import get_domain_software
+    from app.utils.nodeinfo import get_domain_software_info
 
     domains: set[str] = set()
     for n in notes:
@@ -587,9 +591,9 @@ async def notes_to_responses(
             domains.add(n.renote_of.actor.domain)
         if hasattr(n, "quoted_note") and n.quoted_note and n.quoted_note.actor.domain:
             domains.add(n.quoted_note.actor.domain)
-    software_cache: dict[str, str | None] = {}
+    software_cache: dict[str, tuple[str | None, str | None]] = {}
     for domain in domains:
-        software_cache[domain] = await get_domain_software(domain)
+        software_cache[domain] = await get_domain_software_info(domain)
 
     # Batch-fetch preview cards for all notes
     from app.models.preview_card import PreviewCard

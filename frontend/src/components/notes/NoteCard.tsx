@@ -887,6 +887,11 @@ export default function NoteCard(props: Props) {
           <Show when={noteEditedAt()}>
             <span class="note-edited-label">{t("note.edited")}</span>
           </Show>
+          <Show when={note().actor.domain && note().actor.server_software}>
+            <span class="note-via-label">
+              via <span class="note-via-software">{note().actor.server_software}{note().actor.server_software_version ? ` ${note().actor.server_software_version}` : ""}</span>
+            </span>
+          </Show>
           <Show when={note().actor.domain && note().ap_id && /^https?:\/\//.test(note().ap_id!)}>
             <a
               class="remote-view-link"
@@ -909,7 +914,7 @@ export default function NoteCard(props: Props) {
                 <polyline points="15 3 21 3 21 9" />
                 <line x1="10" y1="14" x2="21" y2="3" />
               </svg>
-              {t("remote.viewOnRemote")}
+              <span class="remote-domain-label">{note().actor.domain}</span>
             </a>
           </Show>
           <a href={`/notes/${note().id}`} class="note-time-link">

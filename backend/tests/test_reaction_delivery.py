@@ -99,8 +99,11 @@ class TestGetDomainSoftware:
             result = await get_domain_software("example.com")
 
         assert result == "pleroma"
-        mock_valkey.set.assert_called_once_with(
+        mock_valkey.set.assert_any_call(
             "nodeinfo:software:example.com", "pleroma", ex=86400
+        )
+        mock_valkey.set.assert_any_call(
+            "nodeinfo:software_version:example.com", "2.5.5", ex=86400
         )
 
     async def test_returns_cached_value(self):
@@ -146,6 +149,72 @@ class TestGetDomainSoftware:
 
         assert result is None
         # Should cache the failure as empty string
-        mock_valkey.set.assert_called_once_with(
+        mock_valkey.set.assert_any_call(
             "nodeinfo:software:unreachable.example", "", ex=86400
         )
+        mock_valkey.set.assert_any_call(
+            "nodeinfo:software_version:unreachable.example", "", ex=86400
+        )
+
+
+class TestGetDomainSoftwareInfo:
+    async def test_returns_name_and_version(self):
+        from app.utils.nodeinfo import get_domain_software_info
+
+        nodeinfo_discovery = {
+            "links": [
+                {
+                    "rel": "http://nodeinfo.diaspora.software/ns/schema/2.0",
+                    "href": "https://example.com/nodeinfo/2.0",
+                }
+            ]
+        }
+        nodeinfo_response = {"software": {"name": "Misskey", "version": "2026.3.1"}}
+
+        mock_valkey = AsyncMock()
+        mock_valkey.get = AsyncMock(return_value=None)
+        mock_valkey.set = AsyncMock()
+
+        responses = [
+            httpx.Response(200, json=nodeinfo_discovery),
+            httpx.Response(200, json=nodeinfo_response),
+        ]
+
+        with (
+            patch("app.valkey_client.valkey", mock_valkey),
+            patch("httpx.AsyncClient") as mock_client_cls,
+        ):
+            mock_client = AsyncMock()
+            mock_client.get = AsyncMock(side_effect=responses)
+            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+            mock_client.__aexit__ = AsyncMock(return_value=False)
+            mock_client_cls.return_value = mock_client
+
+            name, version = await get_domain_software_info("example.com")
+
+        assert name == "misskey"
+        assert version == "2026.3.1"
+
+    async def test_returns_cached_name_and_version(self):
+        from app.utils.nodeinfo import get_domain_software_info
+
+        mock_valkey = AsyncMock()
+        mock_valkey.get = AsyncMock(side_effect=[b"sharkey", b"4.0.0"])
+
+        with patch("app.valkey_client.valkey", mock_valkey):
+            name, version = await get_domain_software_info("example.com")
+
+        assert name == "sharkey"
+        assert version == "4.0.0"
+
+    async def test_cached_empty_returns_none_tuple(self):
+        from app.utils.nodeinfo import get_domain_software_info
+
+        mock_valkey = AsyncMock()
+        mock_valkey.get = AsyncMock(side_effect=[b"", b""])
+
+        with patch("app.valkey_client.valkey", mock_valkey):
+            name, version = await get_domain_software_info("example.com")
+
+        assert name is None
+        assert version is None

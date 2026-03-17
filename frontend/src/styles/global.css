@@ -1288,6 +1288,8 @@ a:hover {
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 4px;
   margin-top: 8px;
 }
 
@@ -6162,6 +6164,41 @@ a:hover {
 
 .remote-view-link svg {
   flex-shrink: 0;
+}
+
+.remote-domain-label {
+  display: inline-block;
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+}
+
+.note-via-label {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  margin-right: 4px;
+  white-space: nowrap;
+}
+
+.note-via-software {
+  display: inline-block;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: bottom;
+  text-transform: capitalize;
+}
+
+@media (max-width: 480px) {
+  .note-via-software {
+    max-width: 100px;
+  }
+  .remote-domain-label {
+    max-width: 100px;
+  }
 }
 
 /* TOTP Two-Factor Authentication */
