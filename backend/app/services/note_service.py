@@ -277,8 +277,30 @@ async def create_note(
     except Exception:
         pass  # Don't fail note creation if pub/sub fails
 
+    # Enqueue URL summary extraction (if summary proxy configured)
+    if content:
+        from app.services.summary_proxy_queue import enqueue as enqueue_summary
+
+        first_url = _extract_first_url(content)
+        if first_url:
+            await enqueue_summary(note_id, first_url)
+
     # Re-query after delivery commits to get fresh state
     return await get_note_by_id(db, note_id)
+
+
+_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
+
+
+def _extract_first_url(text: str) -> str | None:
+    """Extract the first HTTP(S) URL from plain text."""
+    m = _URL_RE.search(text)
+    if m:
+        url = m.group(0)
+        # Strip trailing punctuation
+        url = url.rstrip(".,;:!?")
+        return url
+    return None
 
 
 def _note_load_options():

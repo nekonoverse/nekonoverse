@@ -23,6 +23,8 @@ class Settings(BaseSettings):
     face_detect_uds: str | None = None  # UDS path for face-detect (e.g. /var/run/nekonoverse-face-detect/uvicorn.sock)
     media_proxy_transform_url: str | None = None
     media_proxy_transform_uds: str | None = None
+    summary_proxy_url: str | None = None
+    summary_proxy_uds: str | None = None
 
     # Forward proxy for outbound federation requests (origin IP concealment)
     http_proxy: str | None = None
