@@ -139,9 +139,16 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
     follower_inboxes = await get_follower_inboxes(db, actor.id)
     inboxes.update(follower_inboxes)
 
+    from urllib.parse import urlparse
+
+    from app.utils.nodeinfo import uses_emoji_react
+
     for inbox_url in inboxes:
-        await enqueue_delivery(db, actor.id, inbox_url, like_activity)
-        await enqueue_delivery(db, actor.id, inbox_url, react_activity)
+        domain = urlparse(inbox_url).hostname
+        if domain and await uses_emoji_react(domain):
+            await enqueue_delivery(db, actor.id, inbox_url, react_activity)
+        else:
+            await enqueue_delivery(db, actor.id, inbox_url, like_activity)
 
     return reaction
 
@@ -199,6 +206,13 @@ async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
         follower_inboxes = await get_follower_inboxes(db, actor.id)
         inboxes.update(follower_inboxes)
 
+        from urllib.parse import urlparse
+
+        from app.utils.nodeinfo import uses_emoji_react
+
         for inbox_url in inboxes:
-            await enqueue_delivery(db, actor.id, inbox_url, undo_like)
-            await enqueue_delivery(db, actor.id, inbox_url, undo_react)
+            domain = urlparse(inbox_url).hostname
+            if domain and await uses_emoji_react(domain):
+                await enqueue_delivery(db, actor.id, inbox_url, undo_react)
+            else:
+                await enqueue_delivery(db, actor.id, inbox_url, undo_like)
