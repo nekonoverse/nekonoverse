@@ -221,3 +221,55 @@ async def test_remove_reaction_fanout_undo(db, test_user, mock_valkey):
     assert len(jobs) >= 1
     target_urls = {j.target_inbox_url for j in jobs}
     assert remote_follower.shared_inbox_url in target_urls or remote_follower.inbox_url in target_urls
+
+
+async def test_add_reaction_custom_emoji_strips_domain(db, test_user, mock_valkey):
+    """Remote custom emoji reaction uses bare :shortcode: in activity content.
+
+    Misskey's isCustomEmojiRegexp only accepts :name: or :name@.: — the
+    domain-qualified :name@host: is silently converted to a heart.  We strip
+    the domain in the outgoing activity and let the tag carry the image URL.
+    """
+    from app.models.custom_emoji import CustomEmoji
+    from app.models.delivery import DeliveryJob
+    from app.services.reaction_service import add_reaction
+    from sqlalchemy import select
+
+    # Create a cached remote emoji (as if seen on a remote note)
+    remote_emoji = CustomEmoji(
+        shortcode="blobheart",
+        domain="remote.example",
+        url="https://remote.example/emoji/blobheart.png",
+    )
+    db.add(remote_emoji)
+    await db.flush()
+
+    remote_author = await make_remote_actor(
+        db, username="emoji_author", domain="emoji.example"
+    )
+    note = await make_note(db, remote_author, local=False)
+    await add_reaction(db, test_user, note, ":blobheart@remote.example:")
+
+    result = await db.execute(
+        select(DeliveryJob).where(DeliveryJob.actor_id == test_user.actor.id)
+    )
+    jobs = result.scalars().all()
+
+    like_jobs = [j for j in jobs if j.payload["type"] == "Like"]
+    react_jobs = [j for j in jobs if j.payload["type"] == "EmojiReact"]
+
+    assert len(like_jobs) >= 1
+    assert len(react_jobs) >= 1
+
+    like = like_jobs[0].payload
+    react = react_jobs[0].payload
+
+    # content/_misskey_reaction must use bare shortcode (no @domain)
+    assert like["content"] == ":blobheart:"
+    assert like["_misskey_reaction"] == ":blobheart:"
+    assert react["content"] == ":blobheart:"
+
+    # tag must carry the emoji metadata
+    assert like.get("tag")
+    assert like["tag"][0]["name"] == ":blobheart:"
+    assert like["tag"][0]["icon"]["url"] == "https://remote.example/emoji/blobheart.png"
