@@ -11,10 +11,18 @@ def _media_proxy_signing_key() -> bytes:
     return key.encode()
 
 
-def media_proxy_url(original_url: str | None) -> str:
+def media_proxy_url(
+    original_url: str | None,
+    *,
+    variant: str | None = None,
+    static: bool = False,
+) -> str:
     """Convert a remote URL to an HMAC-signed proxy URL.
 
     Local URLs (starting with / or server_url) are returned as-is.
+
+    variant: Misskey-compatible preset ("avatar", "emoji", "preview", "badge").
+    static: If True, extract first frame of animated images.
     """
     if not original_url:
         return ""
@@ -23,7 +31,12 @@ def media_proxy_url(original_url: str | None) -> str:
     h = _hmac.new(
         _media_proxy_signing_key(), original_url.encode(), hashlib.sha256,
     ).hexdigest()[:32]
-    return f"/api/v1/media/proxy?url={quote(original_url, safe='')}&h={h}"
+    url = f"/api/v1/media/proxy?url={quote(original_url, safe='')}&h={h}"
+    if variant:
+        url += f"&{variant}=1"
+    if static:
+        url += "&static=1"
+    return url
 
 
 def verify_proxy_hmac(url: str, h: str) -> bool:

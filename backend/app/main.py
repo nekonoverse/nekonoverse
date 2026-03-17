@@ -166,7 +166,7 @@ async def _build_contact(db) -> dict:
         actor = result2.scalar_one_or_none()
         if not actor:
             return fallback
-        avatar = media_proxy_url(actor.avatar_url) or "/default-avatar.svg"
+        avatar = media_proxy_url(actor.avatar_url, variant="avatar") or "/default-avatar.svg"
         header = media_proxy_url(actor.header_url) or ""
         return {
             "email": admin_user.email or "",
