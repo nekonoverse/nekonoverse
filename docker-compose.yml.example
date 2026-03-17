@@ -78,10 +78,12 @@ services:
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # media-proxy-transform (optional — set in .env)
       MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
+      # summary-proxy (optional — set in .env)
+      SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,summary-proxy,localhost}
     expose:
       - "8000"
     depends_on:
@@ -109,10 +111,14 @@ services:
       S3_REGION: us-east-1
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
+      # media-proxy-transform (optional — set in .env)
+      MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
+      # summary-proxy (optional — set in .env)
+      SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,summary-proxy,localhost}
     depends_on:
       postgresql:
         condition: service_healthy
@@ -166,6 +172,14 @@ services:
   #   restart: unless-stopped
   #   expose:
   #     - "8002"
+
+  # Optional: URL summary proxy for link preview cards (uncomment to use)
+  # Set SUMMARY_PROXY_URL=http://summary-proxy:8003 in app/worker environment.
+  # summary-proxy:
+  #   build: ./summary-proxy
+  #   restart: unless-stopped
+  #   expose:
+  #     - "8003"
 
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cloudflared:

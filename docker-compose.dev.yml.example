@@ -80,11 +80,13 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,summary-proxy,localhost}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # media-proxy-transform (optional — set in .env)
       MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
+      # summary-proxy (optional — set in .env)
+      SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
     volumes:
       - ./backend:/app
     ports:
@@ -116,10 +118,14 @@ services:
       S3_REGION: us-east-1
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
+      # media-proxy-transform (optional — set in .env)
+      MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
+      # summary-proxy (optional — set in .env)
+      SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,summary-proxy,localhost}
     volumes:
       - ./backend:/app
     depends_on:
