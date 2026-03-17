@@ -79,7 +79,7 @@ export default function ComposeModal(props: Props) {
     }
   };
 
-  const handleOverlayClick = (e: MouseEvent) => {
+  const handleOverlayMouseDown = (e: MouseEvent) => {
     if (e.target === overlayRef) tryClose();
   };
 
@@ -125,7 +125,7 @@ export default function ComposeModal(props: Props) {
 
   return (
     <Show when={props.open}>
-      <div class="modal-overlay" ref={overlayRef} onClick={handleOverlayClick}>
+      <div class="modal-overlay" ref={overlayRef} onMouseDown={handleOverlayMouseDown}>
         <div
           class={`modal-content compose-modal-content${modalDragging() ? " drag-over" : ""}`}
           onDragOver={(e) => { e.preventDefault(); setModalDragging(true); }}
