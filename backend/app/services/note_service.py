@@ -38,6 +38,10 @@ async def create_note(
     poll_expires_in: int | None = None,
     poll_multiple: bool = False,
 ) -> Note:
+    # CW付きノートは自動的にsensitiveにする (Mastodon互換)
+    if spoiler_text and not sensitive:
+        sensitive = True
+
     actor = user.actor
     note_id = uuid.uuid4()
     ap_id = f"{settings.server_url}/notes/{note_id}"
@@ -88,6 +92,20 @@ async def create_note(
             else:
                 if mentioned_uri not in cc_list:
                     cc_list.append(mentioned_uri)
+
+    # リプライ先の作者をcc/toに追加 (AP配送に必要)
+    if in_reply_to_id:
+        parent = await get_note_by_id(db, in_reply_to_id)
+        if parent and parent.actor:
+            from app.services.actor_service import actor_uri
+
+            parent_uri = actor_uri(parent.actor)
+            if visibility == "direct":
+                if parent_uri not in to_list:
+                    to_list.append(parent_uri)
+            else:
+                if parent_uri not in cc_list:
+                    cc_list.append(parent_uri)
 
     html_content = text_to_html(content)
 
@@ -213,6 +231,14 @@ async def create_note(
                 mentioned = await get_actor_by_username(db, m["username"], m["domain"])
                 if mentioned and mentioned.inbox_url:
                     inbox = mentioned.shared_inbox_url or mentioned.inbox_url
+                    inboxes.add(inbox)
+
+        # リプライ先のリモートユーザーへの配送
+        if in_reply_to_id:
+            parent = await get_note_by_id(db, in_reply_to_id)
+            if parent and parent.actor and parent.actor.domain:
+                inbox = parent.actor.shared_inbox_url or parent.actor.inbox_url
+                if inbox:
                     inboxes.add(inbox)
 
         for inbox_url in inboxes:
