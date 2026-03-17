@@ -165,12 +165,12 @@ async def test_add_reaction_to_remote_note_delivers(db, mock_valkey, test_user):
     """Reacting to a remote note triggers delivery."""
     remote_actor = await make_remote_actor(db, username="rem_react", domain="react.example")
     note = await make_note(db, remote_actor, content="remote note", local=False)
+    # Use ⭐ (favourite) — sent to all servers regardless of software
     with patch(
         "app.services.delivery_service.enqueue_delivery",
         new_callable=AsyncMock,
     ) as mock_deliver:
-        await add_reaction(db, test_user, note, "\U0001f44d")
-    # Software-dependent: Like or EmojiReact (not both)
+        await add_reaction(db, test_user, note, "\u2b50")
     assert mock_deliver.call_count == 1
 
 
@@ -191,13 +191,13 @@ async def test_remove_reaction_from_remote_note_delivers(db, mock_valkey, test_u
     """Removing reaction from a remote note sends Undo(Like)."""
     remote_actor = await make_remote_actor(db, username="rem_undo", domain="undo.example")
     note = await make_note(db, remote_actor, content="remote undo", local=False)
-    await add_reaction(db, test_user, note, "\U0001f44d")
+    # Use ⭐ (favourite) — sent to all servers regardless of software
+    await add_reaction(db, test_user, note, "\u2b50")
     with patch(
         "app.services.delivery_service.enqueue_delivery",
         new_callable=AsyncMock,
     ) as mock_deliver:
-        await remove_reaction(db, test_user, note, "\U0001f44d")
-    # Software-dependent: Undo(Like) or Undo(EmojiReact) (not both)
+        await remove_reaction(db, test_user, note, "\u2b50")
     assert mock_deliver.call_count == 1
 
 
@@ -218,13 +218,20 @@ async def test_add_reaction_custom_emoji_to_remote(db, mock_valkey, test_user):
     remote_actor = await make_remote_actor(db, username="rem_custom", domain="custom.example")
     note = await make_note(db, remote_actor, content="custom react", local=False)
 
-    with patch(
-        "app.services.delivery_service.enqueue_delivery",
-        new_callable=AsyncMock,
-    ) as mock_deliver:
+    # Mock: custom.example is a Misskey instance (supports emoji via Like)
+    with (
+        patch(
+            "app.utils.nodeinfo.get_domain_software",
+            new_callable=AsyncMock,
+            return_value="misskey",
+        ),
+        patch(
+            "app.services.delivery_service.enqueue_delivery",
+            new_callable=AsyncMock,
+        ) as mock_deliver,
+    ):
         await add_reaction(db, test_user, note, ":blobcat:")
 
-    # Software-dependent: Like or EmojiReact (not both)
     assert mock_deliver.call_count == 1
     # Activity should have emoji tag
     activity = mock_deliver.call_args_list[0][0][3]
