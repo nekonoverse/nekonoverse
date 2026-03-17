@@ -11,6 +11,7 @@ export interface NoteActor {
   ap_id: string;
   domain: string | null;
   server_software: string | null;
+  server_software_version: string | null;
   emojis: CustomEmoji[];
 }
 

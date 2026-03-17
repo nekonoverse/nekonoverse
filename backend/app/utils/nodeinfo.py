@@ -21,29 +21,47 @@ async def get_domain_software(domain: str) -> str | None:
     Results are cached in Valkey for 24 hours.  Returns lowercase
     software name (e.g. "pleroma", "misskey") or None on failure.
     """
+    name, _version = await get_domain_software_info(domain)
+    return name
+
+
+async def get_domain_software_info(domain: str) -> tuple[str | None, str | None]:
+    """Get software name and version of a remote instance via nodeinfo.
+
+    Results are cached in Valkey for 24 hours.
+    Returns (lowercase_name, version) or (None, None) on failure.
+    """
     from app.valkey_client import valkey
 
-    cache_key = f"nodeinfo:software:{domain}"
-    cached = await valkey.get(cache_key)
-    if cached is not None:
-        val = cached.decode() if isinstance(cached, bytes) else cached
-        return val if val != "" else None
+    name_key = f"nodeinfo:software:{domain}"
+    ver_key = f"nodeinfo:software_version:{domain}"
 
-    software = await _fetch_software(domain)
+    cached_name = await valkey.get(name_key)
+    if cached_name is not None:
+        name_val = cached_name.decode() if isinstance(cached_name, bytes) else cached_name
+        name = name_val if name_val != "" else None
+        cached_ver = await valkey.get(ver_key)
+        ver = None
+        if cached_ver is not None:
+            ver_val = cached_ver.decode() if isinstance(cached_ver, bytes) else cached_ver
+            ver = ver_val if ver_val != "" else None
+        return name, ver
 
-    # Cache result (empty string for None so we don't re-fetch failures)
-    await valkey.set(cache_key, software or "", ex=_CACHE_TTL)
-    return software
+    name, version = await _fetch_software(domain)
+
+    await valkey.set(name_key, name or "", ex=_CACHE_TTL)
+    await valkey.set(ver_key, version or "", ex=_CACHE_TTL)
+    return name, version
 
 
-async def _fetch_software(domain: str) -> str | None:
-    """Fetch software name from remote nodeinfo."""
+async def _fetch_software(domain: str) -> tuple[str | None, str | None]:
+    """Fetch software name and version from remote nodeinfo."""
     try:
         async with httpx.AsyncClient(timeout=5, follow_redirects=True, verify=False) as client:
             # Step 1: Discover nodeinfo URL
             resp = await client.get(f"https://{domain}/.well-known/nodeinfo")
             if resp.status_code != 200:
-                return None
+                return None, None
             data = resp.json()
             links = data.get("links", [])
 
@@ -55,18 +73,20 @@ async def _fetch_software(domain: str) -> str | None:
                     nodeinfo_url = href
                     break
             if not nodeinfo_url:
-                return None
+                return None, None
 
             # Step 2: Fetch nodeinfo
             resp = await client.get(nodeinfo_url)
             if resp.status_code != 200:
-                return None
+                return None, None
             info = resp.json()
-            name = info.get("software", {}).get("name", "")
-            return name.lower() if name else None
+            sw = info.get("software", {})
+            name = sw.get("name", "")
+            version = sw.get("version", "")
+            return (name.lower() if name else None, version if version else None)
     except Exception:
         logger.debug("Failed to fetch nodeinfo for %s", domain, exc_info=True)
-        return None
+        return None, None
 
 
 async def uses_emoji_react(domain: str) -> bool:
