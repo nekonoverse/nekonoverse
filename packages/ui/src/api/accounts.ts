@@ -104,6 +104,13 @@ export async function getFollowing(id: string, limit = 40): Promise<Account[]> {
   return apiRequest<Account[]>(`/api/v1/accounts/${id}/following?limit=${limit}`);
 }
 
+export async function checkUsernameAvailable(username: string): Promise<boolean> {
+  const res = await apiRequest<{ available: boolean }>(
+    `/api/v1/accounts/username_available?username=${encodeURIComponent(username)}`,
+  );
+  return res.available;
+}
+
 export async function moveAccount(targetApId: string): Promise<void> {
   await apiRequest("/api/v1/accounts/move", {
     method: "POST",

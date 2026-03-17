@@ -1,6 +1,7 @@
-import { createSignal, Show } from "solid-js";
+import { createSignal, createEffect, on, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { register } from "@nekonoverse/ui/stores/auth";
+import { checkUsernameAvailable } from "@nekonoverse/ui/api/accounts";
 import { useI18n } from "@nekonoverse/ui/i18n";
 
 interface RegisterFormProps {
@@ -18,6 +19,30 @@ export default function RegisterForm(props: RegisterFormProps) {
   const [error, setError] = createSignal("");
   const [loading, setLoading] = createSignal(false);
   const [pending, setPending] = createSignal(false);
+  const [usernameStatus, setUsernameStatus] = createSignal<"idle" | "checking" | "available" | "taken">("idle");
+
+  let checkTimer: ReturnType<typeof setTimeout> | undefined;
+
+  createEffect(on(username, (val) => {
+    clearTimeout(checkTimer);
+    if (!val || !/^[a-zA-Z0-9_]+$/.test(val)) {
+      setUsernameStatus("idle");
+      return;
+    }
+    setUsernameStatus("checking");
+    checkTimer = setTimeout(async () => {
+      try {
+        const available = await checkUsernameAvailable(val);
+        // Only update if username hasn't changed during the request
+        if (username() === val) {
+          setUsernameStatus(available ? "available" : "taken");
+        }
+      } catch {
+        if (username() === val) setUsernameStatus("idle");
+      }
+    }, 500);
+  }));
+
   const navigate = useNavigate();
 
   const handleSubmit = async (e: Event) => {
@@ -86,7 +111,17 @@ export default function RegisterForm(props: RegisterFormProps) {
             onInput={(e) => setUsername(e.currentTarget.value)}
             pattern="[a-zA-Z0-9_]+"
             required
+            class={usernameStatus() === "taken" ? "input-error" : usernameStatus() === "available" ? "input-ok" : ""}
           />
+          <Show when={usernameStatus() === "checking"}>
+            <span class="field-hint">{t("auth.usernameChecking" as any)}</span>
+          </Show>
+          <Show when={usernameStatus() === "available"}>
+            <span class="field-hint field-ok">{t("auth.usernameAvailable" as any)}</span>
+          </Show>
+          <Show when={usernameStatus() === "taken"}>
+            <span class="field-hint field-error">{t("auth.usernameTaken" as any)}</span>
+          </Show>
         </div>
         <div class="field">
           <label for="email">{t("auth.email")}</label>
@@ -128,7 +163,7 @@ export default function RegisterForm(props: RegisterFormProps) {
           {" ・ "}
           <a href="/privacy" target="_blank">{t("legal.privacy")}</a>
         </p>
-        <button type="submit" disabled={loading()}>
+        <button type="submit" disabled={loading() || usernameStatus() === "taken"}>
           {loading() ? t("auth.registering") : t("common.register")}
         </button>
         <p class="alt-action">

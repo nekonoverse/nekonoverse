@@ -441,6 +441,29 @@ a:hover {
   cursor: not-allowed;
 }
 
+.auth-form .field-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.8em;
+  color: var(--text-secondary);
+}
+
+.auth-form .field-ok {
+  color: #4caf50;
+}
+
+.auth-form .field-error {
+  color: var(--accent);
+}
+
+.auth-form input.input-error {
+  border-color: var(--accent);
+}
+
+.auth-form input.input-ok {
+  border-color: #4caf50;
+}
+
 .auth-form .error {
   background: rgba(233, 69, 96, 0.15);
   color: var(--accent);

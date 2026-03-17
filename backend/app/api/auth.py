@@ -44,6 +44,41 @@ def get_session_id(request: Request) -> str | None:
     return request.cookies.get(SESSION_COOKIE)
 
 
+@router.get("/accounts/username_available")
+async def username_available(
+    username: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.valkey_client import valkey
+
+    # Rate limit by IP
+    client_ip = request.client.host if request.client else "unknown"
+    rl_key = f"username_check:{client_ip}"
+    attempts = await valkey.get(rl_key)
+    if attempts is not None and int(attempts) >= 60:
+        raise HTTPException(status_code=429, detail="Too many requests")
+    await valkey.incr(rl_key)
+    await valkey.expire(rl_key, 60)
+
+    import re
+
+    from sqlalchemy import func
+
+    from app.models.actor import Actor
+
+    if not re.match(r"^[a-zA-Z0-9_]+$", username) or len(username) < 1:
+        return {"available": False}
+
+    result = await db.execute(
+        select(Actor.id).where(
+            func.lower(Actor.username) == username.lower(),
+            Actor.domain.is_(None),
+        )
+    )
+    return {"available": result.scalar_one_or_none() is None}
+
+
 @router.post("/accounts", response_model=UserResponse, status_code=201)
 async def register(
     body: UserRegisterRequest,
