@@ -10,6 +10,18 @@ from app.services.actor_service import get_actor_by_username
 router = APIRouter()
 
 
+@router.get("/.well-known/host-meta")
+async def host_meta():
+    """XRD host-meta for LRDD discovery (used by Pleroma/GNU Social)."""
+    xml = (
+        '<?xml version="1.0" encoding="UTF-8"?>'
+        '<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">'
+        f'<Link rel="lrdd" template="{settings.server_url}/.well-known/webfinger?resource={{uri}}" />'
+        "</XRD>"
+    )
+    return Response(content=xml, media_type="application/xrd+xml")
+
+
 @router.get("/.well-known/webfinger")
 async def webfinger(
     resource: str = Query(...),
