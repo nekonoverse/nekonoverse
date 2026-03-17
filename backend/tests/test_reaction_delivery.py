@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, patch
 import httpx
 import pytest
 
-from app.utils.nodeinfo import uses_emoji_react
+from app.utils.nodeinfo import supports_emoji_reactions, uses_emoji_react
 
 
 class TestUsesEmojiReact:
     """Verify software detection routes EmojiReact correctly."""
 
-    @pytest.mark.parametrize("software", ["pleroma", "akkoma", "fedibird"])
+    @pytest.mark.parametrize("software", ["pleroma", "akkoma", "fedibird", "nekonoverse"])
     async def test_emoji_react_software(self, software):
         with patch(
             "app.utils.nodeinfo.get_domain_software", new_callable=AsyncMock, return_value=software
@@ -30,6 +30,33 @@ class TestUsesEmojiReact:
             "app.utils.nodeinfo.get_domain_software", new_callable=AsyncMock, return_value=None
         ):
             assert await uses_emoji_react("example.com") is False
+
+
+class TestSupportsEmojiReactions:
+    """Verify supports_emoji_reactions covers EmojiReact + Misskey-compat software."""
+
+    @pytest.mark.parametrize(
+        "software",
+        ["pleroma", "akkoma", "fedibird", "nekonoverse", "misskey", "calckey", "firefish", "sharkey"],
+    )
+    async def test_reaction_capable_software(self, software):
+        with patch(
+            "app.utils.nodeinfo.get_domain_software", new_callable=AsyncMock, return_value=software
+        ):
+            assert await supports_emoji_reactions("example.com") is True
+
+    @pytest.mark.parametrize("software", ["mastodon", "gotosocial", "hubzilla"])
+    async def test_reaction_incapable_software(self, software):
+        with patch(
+            "app.utils.nodeinfo.get_domain_software", new_callable=AsyncMock, return_value=software
+        ):
+            assert await supports_emoji_reactions("example.com") is False
+
+    async def test_unknown_software_not_supported(self):
+        with patch(
+            "app.utils.nodeinfo.get_domain_software", new_callable=AsyncMock, return_value=None
+        ):
+            assert await supports_emoji_reactions("example.com") is False
 
 
 class TestGetDomainSoftware:

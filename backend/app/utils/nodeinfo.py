@@ -7,7 +7,10 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Software names that support EmojiReact activity type
-_EMOJI_REACT_SOFTWARE = {"pleroma", "akkoma", "fedibird"}
+_EMOJI_REACT_SOFTWARE = {"pleroma", "akkoma", "fedibird", "nekonoverse"}
+
+# Software names that support emoji reactions (EmojiReact or Like+_misskey_reaction)
+_EMOJI_REACTION_SOFTWARE = _EMOJI_REACT_SOFTWARE | {"misskey", "calckey", "firefish", "sharkey"}
 
 _CACHE_TTL = 86400  # 24 hours
 
@@ -69,3 +72,13 @@ async def uses_emoji_react(domain: str) -> bool:
     """Check if a remote domain supports EmojiReact activity type."""
     software = await get_domain_software(domain)
     return software in _EMOJI_REACT_SOFTWARE
+
+
+async def supports_emoji_reactions(domain: str) -> bool:
+    """Check if a remote domain supports any form of emoji reactions.
+
+    Returns True for servers that understand EmojiReact or Like+_misskey_reaction.
+    Returns False for Mastodon/GoToSocial/unknown (emoji reactions are meaningless there).
+    """
+    software = await get_domain_software(domain)
+    return software in _EMOJI_REACTION_SOFTWARE
