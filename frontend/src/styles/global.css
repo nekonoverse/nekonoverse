@@ -4316,6 +4316,7 @@ a:hover {
   max-width: 620px;
   width: 95vw;
   max-height: 90vh;
+  overflow: visible;
 }
 
 .compose-drafts {
