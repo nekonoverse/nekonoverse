@@ -93,19 +93,22 @@ async def create_note(
                 if mentioned_uri not in cc_list:
                     cc_list.append(mentioned_uri)
 
-    # リプライ先の作者をcc/toに追加 (AP配送に必要)
+    # リプライ先の解決: AP ID取得 + 作者をcc/toに追加 (AP配送に必要)
+    in_reply_to_ap_id = None
     if in_reply_to_id:
         parent = await get_note_by_id(db, in_reply_to_id)
-        if parent and parent.actor:
-            from app.services.actor_service import actor_uri
+        if parent:
+            in_reply_to_ap_id = parent.ap_id
+            if parent.actor:
+                from app.services.actor_service import actor_uri
 
-            parent_uri = actor_uri(parent.actor)
-            if visibility == "direct":
-                if parent_uri not in to_list:
-                    to_list.append(parent_uri)
-            else:
-                if parent_uri not in cc_list:
-                    cc_list.append(parent_uri)
+                parent_uri = actor_uri(parent.actor)
+                if visibility == "direct":
+                    if parent_uri not in to_list:
+                        to_list.append(parent_uri)
+                else:
+                    if parent_uri not in cc_list:
+                        cc_list.append(parent_uri)
 
     html_content = text_to_html(content)
 
@@ -131,6 +134,7 @@ async def create_note(
         cc=cc_list,
         local=True,
         in_reply_to_id=in_reply_to_id,
+        in_reply_to_ap_id=in_reply_to_ap_id,
         mentions=mention_data,
         quote_id=quote_id,
         quote_ap_id=quote_ap_id,
@@ -1059,6 +1063,12 @@ async def fetch_remote_note(
             from app.services.face_detect_queue import enqueue_remote
 
             await enqueue_remote(note.id, att_ids)
+
+    # Increment parent's replies_count for remote replies
+    if in_reply_to_id:
+        parent = await get_note_by_id(db, in_reply_to_id)
+        if parent:
+            parent.replies_count = parent.replies_count + 1
 
     # Extract and upsert hashtags from AP tags
     from app.services.hashtag_service import (
