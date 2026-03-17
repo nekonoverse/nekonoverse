@@ -40,6 +40,17 @@ def make_media_transform_client(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(**kwargs)
 
 
+def make_summary_proxy_client(**kwargs) -> httpx.AsyncClient:
+    """Create an httpx.AsyncClient configured for the summary-proxy service."""
+    if settings.summary_proxy_uds:
+        kwargs.setdefault(
+            "transport", httpx.AsyncHTTPTransport(uds=settings.summary_proxy_uds)
+        )
+    kwargs.setdefault("timeout", 15.0)
+    kwargs.setdefault("proxy", None)
+    return httpx.AsyncClient(**kwargs)
+
+
 def make_async_client(*, use_proxy: bool = True, **kwargs) -> httpx.AsyncClient:
     """Create an httpx.AsyncClient with proxy settings injected.
 

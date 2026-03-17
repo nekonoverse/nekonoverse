@@ -138,6 +138,23 @@ class NoteEditHistoryEntry(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PreviewCardResponse(BaseModel):
+    url: str
+    title: str = ""
+    description: str = ""
+    image: str | None = None
+    type: str = "link"
+    author_name: str = ""
+    author_url: str = ""
+    provider_name: str = ""
+    provider_url: str = ""
+    html: str = ""
+    width: int = 0
+    height: int = 0
+    embed_url: str = ""
+    blurhash: str | None = None
+
+
 class NoteResponse(BaseModel):
     id: uuid.UUID
     ap_id: str
@@ -176,7 +193,7 @@ class NoteResponse(BaseModel):
     bookmarked: bool = False
     mentions: list = []
     filtered: list = []
-    card: dict | None = None
+    card: PreviewCardResponse | None = None
     application: dict | None = None
     language: str | None = None
 

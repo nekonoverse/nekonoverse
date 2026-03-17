@@ -1898,6 +1898,67 @@ a:hover {
   object-fit: cover;
 }
 
+/* Link preview card */
+.link-preview-card {
+  display: flex;
+  margin-top: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  overflow: hidden;
+  text-decoration: none;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  transition: border-color 0.15s;
+}
+.link-preview-card:hover {
+  border-color: var(--accent);
+}
+.link-preview-card-image {
+  flex-shrink: 0;
+  width: 120px;
+  min-height: 80px;
+  background: var(--bg-secondary);
+}
+.link-preview-card-image img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+.link-preview-card-content {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  min-width: 0;
+  overflow: hidden;
+}
+.link-preview-card-site {
+  font-size: 0.75em;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.link-preview-card-title {
+  font-size: 0.9em;
+  line-height: 1.3;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+.link-preview-card-description {
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 /* Composer quote preview */
 .composer-quote-preview {
   border: 1px solid var(--border);
@@ -6625,4 +6686,35 @@ a:hover {
 
 .legal-links a {
   color: var(--accent);
+}
+
+/* ねこ語選択時の肉球カーソル */
+html[lang="neko"],
+html[lang="neko"] * {
+  cursor: url('/cursors/paw-default.svg') 8 2, auto;
+}
+
+html[lang="neko"] a,
+html[lang="neko"] button,
+html[lang="neko"] [role="button"],
+html[lang="neko"] input[type="submit"],
+html[lang="neko"] select,
+html[lang="neko"] label[for],
+html[lang="neko"] summary {
+  cursor: url('/cursors/paw-pointer.svg') 10 4, pointer;
+}
+
+html[lang="neko"] :active,
+html[lang="neko"] *:active {
+  cursor: url('/cursors/paw-active.svg') 10 4, auto;
+}
+
+html[lang="neko"] input[type="text"],
+html[lang="neko"] input[type="search"],
+html[lang="neko"] input[type="email"],
+html[lang="neko"] input[type="password"],
+html[lang="neko"] input[type="url"],
+html[lang="neko"] textarea,
+html[lang="neko"] [contenteditable="true"] {
+  cursor: text;
 }

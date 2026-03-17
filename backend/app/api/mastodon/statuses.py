@@ -33,6 +33,7 @@ from app.schemas.note import (
     NoteMediaAttachment,
     NoteResponse,
     PollResponse,
+    PreviewCardResponse,
     ReactionSummary,
     TagInfo,
 )
@@ -50,6 +51,18 @@ from app.utils.media_proxy import media_proxy_url
 _SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
 
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
+
+
+def _preview_card_to_response(card) -> PreviewCardResponse:
+    """Convert a PreviewCard model to a Mastodon-compatible PreviewCardResponse."""
+    return PreviewCardResponse(
+        url=card.url,
+        title=card.title or "",
+        description=card.description or "",
+        image=card.image,
+        type=card.card_type or "link",
+        provider_name=card.site_name or "",
+    )
 
 
 def _mime_to_media_type(mime: str) -> str:
@@ -122,6 +135,7 @@ async def note_to_response(
     reactions_map: dict | None = None,
     reblogged_set: set | None = None,
     software_cache: dict | None = None,
+    cards_cache: dict | None = None,
 ) -> NoteResponse:
     """Convert a Note model to a NoteResponse.
 
@@ -168,6 +182,7 @@ async def note_to_response(
             reactions_map=reactions_map,
             reblogged_set=reblogged_set,
             software_cache=software_cache,
+            cards_cache=cards_cache,
         )
 
     # Build media attachments
@@ -187,6 +202,7 @@ async def note_to_response(
             actor_id=actor_id,
             reactions_map=reactions_map,
             software_cache=software_cache,
+            cards_cache=cards_cache,
         )
     # Fallback: quoted_note not loaded but quote_id is set
     if not quote and db and note.quote_id:
@@ -199,6 +215,7 @@ async def note_to_response(
                 actor_id=actor_id,
                 reactions_map=reactions_map,
                 software_cache=software_cache,
+                cards_cache=cards_cache,
             )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
     if not quote and db and note.quote_ap_id:
@@ -218,6 +235,7 @@ async def note_to_response(
                     actor_id=actor_id,
                     reactions_map=reactions_map,
                     software_cache=software_cache,
+                    cards_cache=cards_cache,
                 )
 
     # Resolve custom emoji from content and display_name
@@ -368,6 +386,22 @@ async def note_to_response(
         discoverable=actor.discoverable,
     )
 
+    # Resolve preview card
+    card_resp = None
+    if cards_cache is not None:
+        card_obj = cards_cache.get(note.id)
+        if card_obj:
+            card_resp = _preview_card_to_response(card_obj)
+    elif db:
+        from app.models.preview_card import PreviewCard
+
+        card_result = await db.execute(
+            select(PreviewCard).where(PreviewCard.note_id == note.id)
+        )
+        card_obj = card_result.scalar_one_or_none()
+        if card_obj:
+            card_resp = _preview_card_to_response(card_obj)
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
@@ -404,6 +438,7 @@ async def note_to_response(
         poll=poll_response,
         emojis=emojis,
         tags=tags,
+        card=card_resp,
         # Mastodon Status compat
         uri=note.ap_id,
         url=f"{app_settings.server_url}/notes/{note.id}",
@@ -530,8 +565,6 @@ async def notes_to_responses(
     # Batch-check which notes the current user has reblogged
     reblogged_set: set = set()
     if actor_id:
-        from sqlalchemy import select
-
         from app.models.note import Note as NoteModel
 
         reblog_result = await db.execute(
@@ -558,6 +591,14 @@ async def notes_to_responses(
     for domain in domains:
         software_cache[domain] = await get_domain_software(domain)
 
+    # Batch-fetch preview cards for all notes
+    from app.models.preview_card import PreviewCard
+
+    cards_result = await db.execute(
+        select(PreviewCard).where(PreviewCard.note_id.in_(unique_ids))
+    )
+    cards_cache: dict = {c.note_id: c for c in cards_result.scalars().all()}
+
     result = []
     for n in notes:
         reactions = reactions_map.get(n.id, [])
@@ -571,6 +612,7 @@ async def notes_to_responses(
             reactions_map=reactions_map,
             reblogged_set=reblogged_set,
             software_cache=software_cache,
+            cards_cache=cards_cache,
         )
         result.append(resp)
     return result

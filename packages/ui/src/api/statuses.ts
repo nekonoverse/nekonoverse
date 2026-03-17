@@ -56,6 +56,23 @@ export interface TagInfo {
   url: string;
 }
 
+export interface PreviewCard {
+  url: string;
+  title: string;
+  description: string;
+  image: string | null;
+  type: string;
+  author_name: string;
+  author_url: string;
+  provider_name: string;
+  provider_url: string;
+  html: string;
+  width: number;
+  height: number;
+  embed_url: string;
+  blurhash: string | null;
+}
+
 export interface Note {
   id: string;
   ap_id: string;
@@ -83,6 +100,7 @@ export interface Note {
   pinned: boolean;
   emojis: CustomEmoji[];
   tags: TagInfo[];
+  card: PreviewCard | null;
 }
 
 export interface NoteContext {

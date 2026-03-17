@@ -14,6 +14,7 @@ import {
   editNote,
 } from "@nekonoverse/ui/api/statuses";
 import { blockAccount, muteAccount } from "@nekonoverse/ui/api/accounts";
+import LinkPreviewCard from "./LinkPreviewCard";
 import ReactionBar from "../reactions/ReactionBar";
 import Emoji from "../Emoji";
 import ImageLightbox from "../ImageLightbox";
@@ -744,6 +745,9 @@ export default function NoteCard(props: Props) {
                 />
               </Show>
             </Show>
+          </Show>
+          <Show when={note().card && !note().media_attachments?.length}>
+            <LinkPreviewCard card={note().card!} />
           </Show>
         </Show>
         <Show when={currentUser()}>
