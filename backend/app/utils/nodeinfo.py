@@ -39,7 +39,7 @@ async def get_domain_software(domain: str) -> str | None:
 async def _fetch_software(domain: str) -> str | None:
     """Fetch software name from remote nodeinfo."""
     try:
-        async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=5, follow_redirects=True, verify=False) as client:
             # Step 1: Discover nodeinfo URL
             resp = await client.get(f"https://{domain}/.well-known/nodeinfo")
             if resp.status_code != 200:
