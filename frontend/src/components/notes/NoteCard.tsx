@@ -867,6 +867,7 @@ export default function NoteCard(props: Props) {
             noteId={note().id}
             reactions={note().reactions.filter((r) => r.emoji !== "\u2b50")}
             onUpdate={props.onReactionUpdate}
+            serverSoftware={note().actor.server_software}
           />
         </Show>
         <Show when={!currentUser() && note().reactions.length > 0}>

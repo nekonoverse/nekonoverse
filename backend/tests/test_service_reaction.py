@@ -54,8 +54,8 @@ async def test_add_reaction_remote_note_enqueues(db, test_user, mock_valkey):
     from app.services.reaction_service import add_reaction
     remote_actor = await make_remote_actor(db)
     note = await make_note(db, remote_actor, local=False)
-    # Use ⭐ (favourite) — sent to all servers regardless of software
-    await add_reaction(db, test_user, note, "\u2b50")
+    # Emoji reactions are sent to unknown servers (Like + content)
+    await add_reaction(db, test_user, note, "\U0001f600")
     mock_valkey.lpush.assert_called()
 
 
@@ -84,8 +84,8 @@ async def test_add_reaction_fanout_to_followers(db, test_user, mock_valkey):
     await db.flush()
 
     note = await make_note(db, test_user.actor)
-    # Use ⭐ (favourite) — sent to all servers regardless of software
-    await add_reaction(db, test_user, note, "\u2b50")
+    # Emoji reactions are sent to unknown servers
+    await add_reaction(db, test_user, note, "\U0001f600")
 
     # Should have delivered to the follower's shared inbox
     calls = [str(c) for c in mock_valkey.lpush.call_args_list]
@@ -113,8 +113,8 @@ async def test_add_reaction_remote_note_includes_author_and_followers(
     await db.flush()
 
     note = await make_note(db, remote_author, local=False)
-    # Use ⭐ (favourite) — sent to all servers regardless of software
-    await add_reaction(db, test_user, note, "\u2b50")
+    # Emoji reactions are sent to unknown servers
+    await add_reaction(db, test_user, note, "\U0001f600")
 
     # Check that delivery jobs were created for both targets
     result = await db.execute(select(DeliveryJob).where(DeliveryJob.actor_id == test_user.actor.id))
@@ -262,8 +262,8 @@ async def test_favourite_sends_like_without_content(db, test_user, mock_valkey):
         assert "_misskey_reaction" not in j.payload
 
 
-async def test_emoji_reaction_not_sent_to_unknown_server(db, test_user, mock_valkey):
-    """Emoji reactions are NOT delivered to Mastodon/unknown servers."""
+async def test_emoji_reaction_not_sent_to_mastodon(db, test_user, mock_valkey):
+    """Emoji reactions are NOT delivered to Mastodon servers."""
     from unittest.mock import AsyncMock, patch
 
     from app.models.delivery import DeliveryJob
@@ -289,6 +289,36 @@ async def test_emoji_reaction_not_sent_to_unknown_server(db, test_user, mock_val
     # No delivery to mastodon.example for non-favourite emoji
     mastodon_jobs = [j for j in jobs if "mastodon" in j.target_inbox_url]
     assert len(mastodon_jobs) == 0
+
+
+async def test_emoji_reaction_sent_to_unknown_server(db, test_user, mock_valkey):
+    """Emoji reactions ARE delivered to unknown servers as EmojiReact."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.models.delivery import DeliveryJob
+    from app.services.reaction_service import add_reaction
+    from sqlalchemy import select
+
+    remote_author = await make_remote_actor(
+        db, username="unknown_author", domain="unknown.example"
+    )
+    note = await make_note(db, remote_author, local=False)
+
+    # Mock: unknown.example returns None (unknown software)
+    async def mock_software(domain):
+        return None
+
+    with patch("app.utils.nodeinfo.get_domain_software", new_callable=AsyncMock, side_effect=mock_software):
+        await add_reaction(db, test_user, note, "👍")
+
+    result = await db.execute(
+        select(DeliveryJob).where(DeliveryJob.actor_id == test_user.actor.id)
+    )
+    jobs = result.scalars().all()
+    unknown_jobs = [j for j in jobs if "unknown" in j.target_inbox_url]
+    assert len(unknown_jobs) >= 1
+    assert unknown_jobs[0].payload["type"] == "EmojiReact"
+    assert unknown_jobs[0].payload["content"] == "👍"
 
 
 async def test_emoji_reaction_sends_emoji_react_to_neko(db, test_user, mock_valkey):
@@ -320,8 +350,8 @@ async def test_emoji_reaction_sends_emoji_react_to_neko(db, test_user, mock_valk
     assert neko_jobs[0].payload["content"] == "👍"
 
 
-async def test_emoji_reaction_sends_like_to_misskey(db, test_user, mock_valkey):
-    """Emoji reactions are sent as Like+_misskey_reaction to Misskey instances."""
+async def test_emoji_reaction_sends_emoji_react_to_misskey(db, test_user, mock_valkey):
+    """Emoji reactions are sent as EmojiReact to Misskey instances (Misskey supports it)."""
     from unittest.mock import AsyncMock, patch
 
     from app.models.delivery import DeliveryJob
@@ -345,9 +375,8 @@ async def test_emoji_reaction_sends_like_to_misskey(db, test_user, mock_valkey):
     jobs = result.scalars().all()
     mk_jobs = [j for j in jobs if "misskey" in j.target_inbox_url]
     assert len(mk_jobs) >= 1
-    assert mk_jobs[0].payload["type"] == "Like"
+    assert mk_jobs[0].payload["type"] == "EmojiReact"
     assert mk_jobs[0].payload["content"] == "👍"
-    assert mk_jobs[0].payload["_misskey_reaction"] == "👍"
 
 
 async def test_add_reaction_custom_emoji_strips_domain(db, test_user, mock_valkey):
@@ -378,7 +407,7 @@ async def test_add_reaction_custom_emoji_strips_domain(db, test_user, mock_valke
     )
     note = await make_note(db, remote_author, local=False)
 
-    # Mock: emoji.example is a Misskey instance (supports emoji via Like)
+    # Mock: emoji.example is not Mastodon → will receive EmojiReact
     async def mock_software(domain):
         return "misskey" if "emoji" in domain else None
 
@@ -390,14 +419,12 @@ async def test_add_reaction_custom_emoji_strips_domain(db, test_user, mock_valke
     )
     jobs = result.scalars().all()
 
-    # Misskey → Like with _misskey_reaction
     assert len(jobs) >= 1
     activity = jobs[0].payload
-    assert activity["type"] == "Like"
+    assert activity["type"] == "EmojiReact"
 
     # content must use bare shortcode (no @domain)
     assert activity["content"] == ":blobheart:"
-    assert activity["_misskey_reaction"] == ":blobheart:"
 
     # tag must carry the emoji metadata
     assert activity.get("tag")

@@ -218,7 +218,7 @@ async def test_add_reaction_custom_emoji_to_remote(db, mock_valkey, test_user):
     remote_actor = await make_remote_actor(db, username="rem_custom", domain="custom.example")
     note = await make_note(db, remote_actor, content="custom react", local=False)
 
-    # Mock: custom.example is a Misskey instance (supports emoji via Like)
+    # Mock: custom.example is not Mastodon → will receive EmojiReact
     with (
         patch(
             "app.utils.nodeinfo.get_domain_software",

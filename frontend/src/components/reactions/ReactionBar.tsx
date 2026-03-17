@@ -16,6 +16,7 @@ interface Props {
   noteId: string;
   reactions: ReactionSummary[];
   onUpdate?: () => void;
+  serverSoftware?: string | null;
 }
 
 export default function ReactionBar(props: Props) {
@@ -108,6 +109,8 @@ export default function ReactionBar(props: Props) {
 
   onCleanup(() => cancelLongPress());
 
+  const ignoresReactions = () => props.serverSoftware === "mastodon";
+
   return (
     <>
       <div class="reaction-bar">
@@ -125,11 +128,15 @@ export default function ReactionBar(props: Props) {
             <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
           </button>
         ))}
-        <button class="reaction-add-btn" onClick={() => {
-          const opening = !showPicker();
-          if (opening) (document.activeElement as HTMLElement)?.blur();
-          setShowPicker(opening);
-        }}>
+        <button
+          class={`reaction-add-btn${ignoresReactions() ? " reaction-not-delivered" : ""}`}
+          onClick={() => {
+            const opening = !showPicker();
+            if (opening) (document.activeElement as HTMLElement)?.blur();
+            setShowPicker(opening);
+          }}
+          title={ignoresReactions() ? t("reactions.notDelivered" as any) : undefined}
+        >
           +
         </button>
         <Show when={showPicker()}>

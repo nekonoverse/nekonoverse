@@ -142,20 +142,19 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
 
     from urllib.parse import urlparse
 
-    from app.utils.nodeinfo import supports_emoji_reactions, uses_emoji_react
+    from app.utils.nodeinfo import ignores_emoji_reactions
 
     for inbox_url in inboxes:
         domain = urlparse(inbox_url).hostname
         if is_favourite:
             # ☆ favourite → Like to all servers
             await enqueue_delivery(db, actor.id, inbox_url, like_activity)
-        elif domain and await uses_emoji_react(domain):
-            # EmojiReact-capable (Neko/Pleroma/Akkoma/Fedibird) → EmojiReact
+        elif domain and await ignores_emoji_reactions(domain):
+            # Mastodon → don't send (drops content, always shows ❤)
+            pass
+        else:
+            # Everyone else → EmojiReact
             await enqueue_delivery(db, actor.id, inbox_url, react_activity)
-        elif domain and await supports_emoji_reactions(domain):
-            # Misskey-compatible → Like + _misskey_reaction
-            await enqueue_delivery(db, actor.id, inbox_url, like_activity)
-        # else: Mastodon/GoToSocial/unknown → don't send emoji reactions
 
     return reaction
 
@@ -219,17 +218,16 @@ async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
 
         from urllib.parse import urlparse
 
-        from app.utils.nodeinfo import supports_emoji_reactions, uses_emoji_react
+        from app.utils.nodeinfo import ignores_emoji_reactions
 
         for inbox_url in inboxes:
             domain = urlparse(inbox_url).hostname
             if is_favourite:
                 # ☆ favourite → Undo(Like) to all servers
                 await enqueue_delivery(db, actor.id, inbox_url, undo_like)
-            elif domain and await uses_emoji_react(domain):
-                # EmojiReact-capable → Undo(EmojiReact)
+            elif domain and await ignores_emoji_reactions(domain):
+                # Mastodon → nothing was sent, nothing to undo
+                pass
+            else:
+                # Everyone else → Undo(EmojiReact)
                 await enqueue_delivery(db, actor.id, inbox_url, undo_react)
-            elif domain and await supports_emoji_reactions(domain):
-                # Misskey-compatible → Undo(Like)
-                await enqueue_delivery(db, actor.id, inbox_url, undo_like)
-            # else: Mastodon/GoToSocial/unknown → nothing was sent, nothing to undo

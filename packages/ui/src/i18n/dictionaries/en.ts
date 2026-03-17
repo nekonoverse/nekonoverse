@@ -167,6 +167,7 @@ export const en: Dictionary = {
   "reactions.noCustomEmoji": "No custom emoji",
   "reactions.noResults": "No results",
   "reactions.recentlyUsed": "Recently Used",
+  "reactions.notDelivered": "Emoji reactions won't be delivered to this server",
   "admin.title": "Admin",
   "admin.noAccess": "You don't have admin access",
   "admin.tabOverview": "Overview",

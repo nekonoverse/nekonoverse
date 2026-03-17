@@ -83,3 +83,17 @@ async def supports_emoji_reactions(domain: str) -> bool:
     """
     software = await get_domain_software(domain)
     return software in _EMOJI_REACTION_SOFTWARE
+
+
+# Software known to ignore emoji reaction content (shows as plain ❤ like)
+_EMOJI_REACTION_BLOCKLIST = {"mastodon"}
+
+
+async def ignores_emoji_reactions(domain: str) -> bool:
+    """Check if a remote domain is known to ignore emoji reaction content.
+
+    Returns True for Mastodon (drops content, always shows ❤).
+    Returns False for unknown servers (give them the benefit of the doubt).
+    """
+    software = await get_domain_software(domain)
+    return software in _EMOJI_REACTION_BLOCKLIST

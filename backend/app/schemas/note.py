@@ -40,6 +40,7 @@ class NoteActorResponse(BaseModel):
     avatar_url: str | None = None
     ap_id: str
     domain: str | None
+    server_software: str | None = None
     emojis: list["CustomEmojiInfo"] = []
     # Mastodon Account compat
     acct: str = ""

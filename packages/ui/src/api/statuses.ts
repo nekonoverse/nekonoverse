@@ -10,6 +10,7 @@ export interface NoteActor {
   avatar_url: string | null;
   ap_id: string;
   domain: string | null;
+  server_software: string | null;
   emojis: CustomEmoji[];
 }
 
