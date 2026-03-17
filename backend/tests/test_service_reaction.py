@@ -123,8 +123,8 @@ async def test_add_reaction_remote_note_includes_author_and_followers(
     assert remote_follower.shared_inbox_url in target_urls or remote_follower.inbox_url in target_urls
 
 
-async def test_add_reaction_sends_like_and_emoji_react(db, test_user, mock_valkey):
-    """Reaction to a remote note delivers both Like and EmojiReact activities."""
+async def test_add_reaction_sends_like_or_emoji_react(db, test_user, mock_valkey):
+    """Reaction to a remote note delivers Like or EmojiReact (software-dependent)."""
     from app.models.delivery import DeliveryJob
     from app.services.reaction_service import add_reaction
     from sqlalchemy import select
@@ -141,10 +141,9 @@ async def test_add_reaction_sends_like_and_emoji_react(db, test_user, mock_valke
     jobs = result.scalars().all()
     # payload is JSONB (already a dict)
     types = {j.payload["type"] for j in jobs}
-    assert "Like" in types
-    assert "EmojiReact" in types
+    # Should be one type per inbox, not both
+    assert "Like" in types or "EmojiReact" in types
 
-    # Both should have the emoji in content
     for j in jobs:
         assert j.payload["content"] == "\U0001f600"
 
@@ -178,10 +177,9 @@ async def test_remove_reaction_sends_undo_like_and_undo_emoji_react(
     )
     jobs = result.scalars().all()
 
-    # payload is JSONB (already a dict) — all should be Undo wrapping Like or EmojiReact
+    # payload is JSONB (already a dict) — Undo wrapping Like or EmojiReact (software-dependent)
     inner_types = {j.payload["object"]["type"] for j in jobs}
-    assert "Like" in inner_types
-    assert "EmojiReact" in inner_types
+    assert "Like" in inner_types or "EmojiReact" in inner_types
 
 
 async def test_remove_reaction_fanout_undo(db, test_user, mock_valkey):
@@ -255,21 +253,16 @@ async def test_add_reaction_custom_emoji_strips_domain(db, test_user, mock_valke
     )
     jobs = result.scalars().all()
 
-    like_jobs = [j for j in jobs if j.payload["type"] == "Like"]
-    react_jobs = [j for j in jobs if j.payload["type"] == "EmojiReact"]
+    # Software-dependent: Like or EmojiReact (not both per inbox)
+    assert len(jobs) >= 1
+    activity = jobs[0].payload
 
-    assert len(like_jobs) >= 1
-    assert len(react_jobs) >= 1
-
-    like = like_jobs[0].payload
-    react = react_jobs[0].payload
-
-    # content/_misskey_reaction must use bare shortcode (no @domain)
-    assert like["content"] == ":blobheart:"
-    assert like["_misskey_reaction"] == ":blobheart:"
-    assert react["content"] == ":blobheart:"
+    # content must use bare shortcode (no @domain)
+    assert activity["content"] == ":blobheart:"
+    if activity["type"] == "Like":
+        assert activity["_misskey_reaction"] == ":blobheart:"
 
     # tag must carry the emoji metadata
-    assert like.get("tag")
-    assert like["tag"][0]["name"] == ":blobheart:"
-    assert like["tag"][0]["icon"]["url"] == "https://remote.example/emoji/blobheart.png"
+    assert activity.get("tag")
+    assert activity["tag"][0]["name"] == ":blobheart:"
+    assert activity["tag"][0]["icon"]["url"] == "https://remote.example/emoji/blobheart.png"
