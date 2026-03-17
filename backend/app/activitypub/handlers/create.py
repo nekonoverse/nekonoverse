@@ -289,12 +289,15 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
 
     if in_reply_to_id:
         reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id)
-        if reply_note and reply_note.actor and reply_note.actor.is_local and reply_note.actor_id != actor.id:
-            notif = await create_notification(
-                db, "reply", reply_note.actor_id, actor.id, note.id,
-            )
-            if notif:
-                pending_notifs.append(notif)
+        if reply_note:
+            # Increment parent's replies_count
+            reply_note.replies_count = reply_note.replies_count + 1
+            if reply_note.actor and reply_note.actor.is_local and reply_note.actor_id != actor.id:
+                notif = await create_notification(
+                    db, "reply", reply_note.actor_id, actor.id, note.id,
+                )
+                if notif:
+                    pending_notifs.append(notif)
 
     await db.commit()
     logger.info("Saved remote note %s from %s", ap_id, actor_ap_id)
