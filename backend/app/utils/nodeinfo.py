@@ -26,7 +26,8 @@ async def get_domain_software(domain: str) -> str | None:
     cache_key = f"nodeinfo:software:{domain}"
     cached = await valkey.get(cache_key)
     if cached is not None:
-        return cached.decode() if cached != b"" else None
+        val = cached.decode() if isinstance(cached, bytes) else cached
+        return val if val != "" else None
 
     software = await _fetch_software(domain)
 

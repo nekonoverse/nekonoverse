@@ -472,7 +472,8 @@ class TestReactionFederation:
 
         reactions = poll_until(check_reaction_on_misskey, timeout=60, interval=2, desc="reaction federated to misskey")
         assert len(reactions) == 1, f"Expected exactly 1 reaction, got {len(reactions)}"
-        assert reactions[0]["type"] == "⭐", f"Expected ⭐, got {reactions[0]['type']}"
+        # ⭐ favourite is sent as bare Like (no content) — Misskey maps to ❤
+        assert reactions[0]["type"] == "❤", f"Expected ❤ (bare Like→Misskey default), got {reactions[0]['type']}"
 
         # Verify the note itself shows the reaction (display side)
         mk_note_detail = misskey.get_note(mk_note["id"])
