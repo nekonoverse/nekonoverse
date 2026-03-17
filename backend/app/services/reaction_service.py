@@ -123,6 +123,15 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
                 like_activity["tag"] = emoji_tag
                 react_activity["tag"] = emoji_tag
 
+                # Use domain-free shortcode in content/_misskey_reaction.
+                # Misskey only accepts :name: or :name@.: — :name@domain:
+                # is rejected by its regex.  The tag carries the image URL
+                # so the receiving server can cache/resolve the emoji.
+                bare = f":{emoji_obj.shortcode}:"
+                like_activity["content"] = bare
+                like_activity["_misskey_reaction"] = bare
+                react_activity["content"] = bare
+
     # Collect target inboxes: note author + reactor's followers
     inboxes: set[str] = set()
     if not note.actor.is_local:
