@@ -170,8 +170,8 @@ async def test_add_reaction_to_remote_note_delivers(db, mock_valkey, test_user):
         new_callable=AsyncMock,
     ) as mock_deliver:
         await add_reaction(db, test_user, note, "\U0001f44d")
-    # Like + EmojiReact dual delivery
-    assert mock_deliver.call_count == 2
+    # Software-dependent: Like or EmojiReact (not both)
+    assert mock_deliver.call_count == 1
 
 
 async def test_remove_reaction_success(db, mock_valkey, test_user, test_user_b):
@@ -197,8 +197,8 @@ async def test_remove_reaction_from_remote_note_delivers(db, mock_valkey, test_u
         new_callable=AsyncMock,
     ) as mock_deliver:
         await remove_reaction(db, test_user, note, "\U0001f44d")
-    # Undo(Like) + Undo(EmojiReact) dual delivery
-    assert mock_deliver.call_count == 2
+    # Software-dependent: Undo(Like) or Undo(EmojiReact) (not both)
+    assert mock_deliver.call_count == 1
 
 
 async def test_add_reaction_custom_emoji_to_remote(db, mock_valkey, test_user):
@@ -224,10 +224,9 @@ async def test_add_reaction_custom_emoji_to_remote(db, mock_valkey, test_user):
     ) as mock_deliver:
         await add_reaction(db, test_user, note, ":blobcat:")
 
-    # Like + EmojiReact dual delivery
-    assert mock_deliver.call_count == 2
-    # Both activities should have emoji tag
-    for call in mock_deliver.call_args_list:
-        activity = call[0][3]
-        assert "tag" in activity
-        assert activity["tag"][0]["name"] == ":blobcat:"
+    # Software-dependent: Like or EmojiReact (not both)
+    assert mock_deliver.call_count == 1
+    # Activity should have emoji tag
+    activity = mock_deliver.call_args_list[0][0][3]
+    assert "tag" in activity
+    assert activity["tag"][0]["name"] == ":blobcat:"
