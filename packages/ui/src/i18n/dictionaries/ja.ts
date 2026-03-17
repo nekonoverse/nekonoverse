@@ -165,6 +165,7 @@ export const ja = {
   "reactions.noCustomEmoji": "カスタム絵文字がありません",
   "reactions.noResults": "見つかりません",
   "reactions.recentlyUsed": "最近使った絵文字",
+  "reactions.notDelivered": "このサーバーには絵文字リアクションが届きません",
   "admin.title": "管理",
   "admin.noAccess": "管理者権限がありません",
   "admin.tabOverview": "概要",

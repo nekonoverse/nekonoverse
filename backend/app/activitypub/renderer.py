@@ -333,16 +333,22 @@ def render_create_activity(note: Note) -> dict:
 
 
 def render_like_activity(activity_id: str, actor_ap_id: str, note_ap_id: str, emoji: str) -> dict:
-    """Render a Like activity with Misskey-compatible emoji reaction."""
-    return {
+    """Render a Like activity.
+
+    For ⭐ (favourite): standard AP Like without content (all servers understand).
+    For other emoji: Like with content + _misskey_reaction (Misskey format).
+    """
+    activity: dict = {
         "@context": AP_CONTEXT,
         "id": activity_id,
         "type": "Like",
         "actor": actor_ap_id,
         "object": note_ap_id,
-        "content": emoji,
-        "_misskey_reaction": emoji,
     }
+    if emoji != "\u2b50":
+        activity["content"] = emoji
+        activity["_misskey_reaction"] = emoji
+    return activity
 
 
 def render_emoji_react_activity(

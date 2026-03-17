@@ -7,7 +7,10 @@ import httpx
 logger = logging.getLogger(__name__)
 
 # Software names that support EmojiReact activity type
-_EMOJI_REACT_SOFTWARE = {"pleroma", "akkoma", "fedibird"}
+_EMOJI_REACT_SOFTWARE = {"pleroma", "akkoma", "fedibird", "nekonoverse"}
+
+# Software names that support emoji reactions (EmojiReact or Like+_misskey_reaction)
+_EMOJI_REACTION_SOFTWARE = _EMOJI_REACT_SOFTWARE | {"misskey", "calckey", "firefish", "sharkey"}
 
 _CACHE_TTL = 86400  # 24 hours
 
@@ -23,7 +26,8 @@ async def get_domain_software(domain: str) -> str | None:
     cache_key = f"nodeinfo:software:{domain}"
     cached = await valkey.get(cache_key)
     if cached is not None:
-        return cached.decode() if cached != b"" else None
+        val = cached.decode() if isinstance(cached, bytes) else cached
+        return val if val != "" else None
 
     software = await _fetch_software(domain)
 
@@ -35,7 +39,7 @@ async def get_domain_software(domain: str) -> str | None:
 async def _fetch_software(domain: str) -> str | None:
     """Fetch software name from remote nodeinfo."""
     try:
-        async with httpx.AsyncClient(timeout=5, follow_redirects=True) as client:
+        async with httpx.AsyncClient(timeout=5, follow_redirects=True, verify=False) as client:
             # Step 1: Discover nodeinfo URL
             resp = await client.get(f"https://{domain}/.well-known/nodeinfo")
             if resp.status_code != 200:
@@ -69,3 +73,27 @@ async def uses_emoji_react(domain: str) -> bool:
     """Check if a remote domain supports EmojiReact activity type."""
     software = await get_domain_software(domain)
     return software in _EMOJI_REACT_SOFTWARE
+
+
+async def supports_emoji_reactions(domain: str) -> bool:
+    """Check if a remote domain supports any form of emoji reactions.
+
+    Returns True for servers that understand EmojiReact or Like+_misskey_reaction.
+    Returns False for Mastodon/GoToSocial/unknown (emoji reactions are meaningless there).
+    """
+    software = await get_domain_software(domain)
+    return software in _EMOJI_REACTION_SOFTWARE
+
+
+# Software known to ignore emoji reaction content (shows as plain ❤ like)
+_EMOJI_REACTION_BLOCKLIST = {"mastodon"}
+
+
+async def ignores_emoji_reactions(domain: str) -> bool:
+    """Check if a remote domain is known to ignore emoji reaction content.
+
+    Returns True for Mastodon (drops content, always shows ❤).
+    Returns False for unknown servers (give them the benefit of the doubt).
+    """
+    software = await get_domain_software(domain)
+    return software in _EMOJI_REACTION_BLOCKLIST

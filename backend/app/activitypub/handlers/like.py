@@ -33,7 +33,7 @@ async def handle_like(db: AsyncSession, activity: dict):
     elif content and is_single_emoji(content):
         emoji = content
     else:
-        emoji = "\u2764"  # ❤
+        emoji = "\u2b50"  # ⭐ — bare Like (e.g. from Mastodon) = favourite
 
     # Cache custom emoji from tag array
     if is_custom_emoji_shortcode(emoji):

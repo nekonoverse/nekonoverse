@@ -683,12 +683,22 @@ class TestFavouriteFederation:
         # alice favourites
         neko.favourite(neko_note["id"])
 
-        # Check on Mastodon
+        # Check on Mastodon — exactly one favourite notification for this status
         def check_fav_on_mastodon():
             notifs = mastodon.get_notifications(limit=20)
-            return any(n.get("type") == "favourite" for n in notifs)
+            matching = [
+                n for n in notifs
+                if n.get("type") == "favourite"
+                and n.get("status", {}).get("id") == mdn_status["id"]
+            ]
+            return matching if matching else None
 
-        poll_until(check_fav_on_mastodon, desc="favourite notification on mastodon")
+        matching = poll_until(check_fav_on_mastodon, desc="favourite notification on mastodon")
+        assert len(matching) == 1, f"Expected exactly 1 favourite notification, got {len(matching)}"
+
+        # Verify the status itself reflects the favourite (display side)
+        status = mastodon.get_status(mdn_status["id"])
+        assert status["favourites_count"] >= 1, f"Expected favourites_count >= 1, got {status['favourites_count']}"
 
 
 # ── 13. CW / Sensitive federation ────────────────────────────

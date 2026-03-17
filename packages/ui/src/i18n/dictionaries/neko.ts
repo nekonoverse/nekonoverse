@@ -167,6 +167,7 @@ export const neko: Dictionary = {
   "reactions.noCustomEmoji": "かすたむえもじがないにゃ",
   "reactions.noResults": "みつからにゃい",
   "reactions.recentlyUsed": "さいきんつかったえもじにゃ",
+  "reactions.notDelivered": "このさーばーにはえもじりあくしょんがとどかにゃいにゃ",
   "admin.title": "かんりにゃ",
   "admin.noAccess": "かんりしゃけんげんにゃいにゃ",
   "admin.tabOverview": "がいようにゃ",

@@ -763,15 +763,24 @@ class TestEmojiReactionFederation:
         # alice reacts with 👍
         neko.react(neko_note["id"], "%F0%9F%91%8D")
 
-        # Check notification on Fedibird — may appear as "favourite" or "emoji_reaction"
+        # Check notification on Fedibird — should be emoji_reaction (EmojiReact), not favourite (Like)
         def check_reaction_on_fedibird():
             notifs = fedibird.get_notifications(limit=20)
-            return any(
-                n.get("type") in ("favourite", "emoji_reaction", "reaction")
-                for n in notifs
-            )
+            matching = [
+                n for n in notifs
+                if n.get("type") in ("emoji_reaction", "reaction")
+                and n.get("status", {}).get("id") == fb_status["id"]
+            ]
+            return matching if matching else None
 
-        poll_until(check_reaction_on_fedibird, desc="reaction notification on fedibird")
+        matching = poll_until(check_reaction_on_fedibird, desc="reaction notification on fedibird")
+        assert len(matching) == 1, f"Expected exactly 1 reaction notification, got {len(matching)}"
+
+        # Verify the status itself reflects the reaction (display side)
+        status = fedibird.get_status(fb_status["id"])
+        # Fedibird shows emoji reactions in emoji_reactions or reactions field
+        reactions = status.get("emoji_reactions") or status.get("reactions") or []
+        assert len(reactions) >= 1, f"Expected at least 1 reaction on status, got {reactions}"
 
     def test_fedibird_emoji_reaction_federates_to_neko(
         self, neko: NekoClient, fedibird: FedibirdClient, alice, bob

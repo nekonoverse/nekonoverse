@@ -2215,6 +2215,11 @@ a:hover {
   color: var(--accent);
 }
 
+.reaction-not-delivered {
+  opacity: 0.45;
+  border-style: dashed;
+}
+
 /* Reaction users modal */
 .reacted-by-list {
   max-height: 400px;

@@ -134,6 +134,7 @@ async def note_to_response(
     actor_id=None,
     reactions_map: dict | None = None,
     reblogged_set: set | None = None,
+    software_cache: dict | None = None,
     cards_cache: dict | None = None,
 ) -> NoteResponse:
     """Convert a Note model to a NoteResponse.
@@ -142,6 +143,7 @@ async def note_to_response(
         emoji_cache: Optional pre-resolved emoji cache mapping
             (shortcode, domain) -> CustomEmoji. When provided, skips per-note
             emoji DB queries.
+        software_cache: Optional mapping domain -> software name (str|None).
     """
     actor = note.actor
     reblog = None
@@ -179,6 +181,7 @@ async def note_to_response(
             actor_id=actor_id,
             reactions_map=reactions_map,
             reblogged_set=reblogged_set,
+            software_cache=software_cache,
             cards_cache=cards_cache,
         )
 
@@ -198,6 +201,7 @@ async def note_to_response(
             hashtags_cache=hashtags_cache,
             actor_id=actor_id,
             reactions_map=reactions_map,
+            software_cache=software_cache,
             cards_cache=cards_cache,
         )
     # Fallback: quoted_note not loaded but quote_id is set
@@ -210,6 +214,7 @@ async def note_to_response(
                 emoji_cache=emoji_cache,
                 actor_id=actor_id,
                 reactions_map=reactions_map,
+                software_cache=software_cache,
                 cards_cache=cards_cache,
             )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
@@ -229,6 +234,7 @@ async def note_to_response(
                     hashtags_cache=hashtags_cache,
                     actor_id=actor_id,
                     reactions_map=reactions_map,
+                    software_cache=software_cache,
                     cards_cache=cards_cache,
                 )
 
@@ -347,6 +353,15 @@ async def note_to_response(
         if not actor.domain
         else f"{app_settings.server_url}/@{acct}"
     )
+    # Resolve server software from cache or Valkey
+    sw = None
+    if actor.domain:
+        if software_cache is not None:
+            sw = software_cache.get(actor.domain)
+        elif db:
+            from app.utils.nodeinfo import get_domain_software
+            sw = await get_domain_software(actor.domain)
+
     actor_resp = NoteActorResponse(
         id=actor.id,
         username=actor.username,
@@ -354,6 +369,7 @@ async def note_to_response(
         avatar_url=avatar,
         ap_id=actor.ap_id,
         domain=actor.domain,
+        server_software=sw,
         emojis=actor_emojis,
         acct=acct,
         uri=actor.ap_id,
@@ -560,6 +576,21 @@ async def notes_to_responses(
         )
         reblogged_set = {row[0] for row in reblog_result.all()}
 
+    # Batch-fetch server software for all unique remote domains
+    from app.utils.nodeinfo import get_domain_software
+
+    domains: set[str] = set()
+    for n in notes:
+        if n.actor.domain:
+            domains.add(n.actor.domain)
+        if hasattr(n, "renote_of") and n.renote_of and n.renote_of.actor.domain:
+            domains.add(n.renote_of.actor.domain)
+        if hasattr(n, "quoted_note") and n.quoted_note and n.quoted_note.actor.domain:
+            domains.add(n.quoted_note.actor.domain)
+    software_cache: dict[str, str | None] = {}
+    for domain in domains:
+        software_cache[domain] = await get_domain_software(domain)
+
     # Batch-fetch preview cards for all notes
     from app.models.preview_card import PreviewCard
 
@@ -580,6 +611,7 @@ async def notes_to_responses(
             actor_id=actor_id,
             reactions_map=reactions_map,
             reblogged_set=reblogged_set,
+            software_cache=software_cache,
             cards_cache=cards_cache,
         )
         result.append(resp)
