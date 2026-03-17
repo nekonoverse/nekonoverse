@@ -20,6 +20,7 @@ export default function ImageLightbox(props: Props) {
   let lastTap = 0;
   let initialPinchDist = 0;
   let initialPinchScale = 1;
+  let touchDidZoom = false;
 
   const current = () => props.media[index()];
 
@@ -70,12 +71,15 @@ export default function ImageLightbox(props: Props) {
   });
 
   const handleBackdropClick = (e: MouseEvent) => {
+    if (scale() > 1) return;
     if ((e.target as HTMLElement).classList.contains("lightbox-overlay")) {
       props.onClose();
     }
   };
 
   const handleDoubleClick = (e: MouseEvent) => {
+    // タッチのダブルタップで既にズーム済みならスキップ（合成dblclick回避）
+    if (touchDidZoom) return;
     e.preventDefault();
     if (scale() > 1) {
       resetZoom();
@@ -91,18 +95,20 @@ export default function ImageLightbox(props: Props) {
     setDragging(true);
     dragStart = { x: e.clientX, y: e.clientY };
     translateStart = { ...translate() };
-  };
 
-  const handleMouseMove = (e: MouseEvent) => {
-    if (!dragging()) return;
-    setTranslate({
-      x: translateStart.x + (e.clientX - dragStart.x),
-      y: translateStart.y + (e.clientY - dragStart.y),
-    });
-  };
-
-  const handleMouseUp = () => {
-    setDragging(false);
+    const onMouseMove = (ev: MouseEvent) => {
+      setTranslate({
+        x: translateStart.x + (ev.clientX - dragStart.x),
+        y: translateStart.y + (ev.clientY - dragStart.y),
+      });
+    };
+    const onMouseUp = () => {
+      setDragging(false);
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
   };
 
   const handleTouchStart = (e: TouchEvent) => {
@@ -121,6 +127,9 @@ export default function ImageLightbox(props: Props) {
           setScale(2);
           setTranslate({ x: 0, y: 0 });
         }
+        // 合成 dblclick イベントでズームが戻るのを防ぐ
+        touchDidZoom = true;
+        setTimeout(() => { touchDidZoom = false; }, 400);
       }
       lastTap = now;
 
@@ -194,9 +203,6 @@ export default function ImageLightbox(props: Props) {
         class="lightbox-image-container"
         onDblClick={handleDoubleClick}
         onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={handleMouseUp}
-        onMouseLeave={handleMouseUp}
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
