@@ -18,13 +18,15 @@ test.describe("Note Footer", () => {
     const noteCard = page.locator(".note-card").filter({ hasText: `${text} edited` });
     await expect(noteCard).toBeVisible({ timeout: 10_000 });
 
-    // Verify footer has align-items: center
+    // Verify footer has align-items: center (CSS may not be applied immediately)
     const footer = noteCard.locator(".note-footer");
     await expect(footer).toBeVisible();
-    const alignItems = await footer.evaluate(
-      (el) => window.getComputedStyle(el).alignItems,
-    );
-    expect(alignItems).toBe("center");
+    await expect(async () => {
+      const alignItems = await footer.evaluate(
+        (el) => window.getComputedStyle(el).alignItems,
+      );
+      expect(alignItems).toBe("center");
+    }).toPass({ timeout: 5_000 });
 
     // Verify edited label and time link are present
     await expect(noteCard.locator(".note-edited-label")).toBeVisible();

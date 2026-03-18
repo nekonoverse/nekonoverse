@@ -27,10 +27,9 @@ test.describe("Keyboard navigation (j/k/g)", () => {
 
     for (let i = 0; i < stepsToTest; i++) {
       await page.keyboard.press("j");
-      await page.waitForTimeout(50);
 
       const focused = page.locator(".note-card.keyboard-focused");
-      await expect(focused).toHaveCount(1);
+      await expect(focused).toHaveCount(1, { timeout: 3_000 });
 
       // The focused card's top must not be hidden behind navbar
       const cardTop = await focused.evaluate(
@@ -53,16 +52,15 @@ test.describe("Keyboard navigation (j/k/g)", () => {
     // Move down first
     for (let i = 0; i < stepsDown; i++) {
       await page.keyboard.press("j");
-      await page.waitForTimeout(30);
+      await page.waitForTimeout(50);
     }
 
     // Now move back up
     for (let i = 0; i < stepsDown - 1; i++) {
       await page.keyboard.press("k");
-      await page.waitForTimeout(50);
 
       const focused = page.locator(".note-card.keyboard-focused");
-      await expect(focused).toHaveCount(1);
+      await expect(focused).toHaveCount(1, { timeout: 3_000 });
 
       const cardTop = await focused.evaluate(
         (el) => el.getBoundingClientRect().top,
@@ -99,7 +97,9 @@ test.describe("Keyboard navigation (j/k/g)", () => {
       await page.waitForTimeout(30);
     }
 
-    await expect(page.locator(".note-card.keyboard-focused")).toHaveCount(1);
+    await expect(page.locator(".note-card.keyboard-focused")).toHaveCount(1, {
+      timeout: 3_000,
+    });
 
     // Press g
     await page.keyboard.press("g");
