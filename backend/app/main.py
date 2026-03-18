@@ -1,6 +1,6 @@
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Query
 
 _DEFAULT_FAVICON_SVG = b"""\
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none">
@@ -51,7 +51,7 @@ from app.api.media import router as media_router
 from app.api.oauth import router as oauth_router
 from app.api.passkey import router as passkey_router
 from app.config import settings
-from app.dependencies import get_db
+from app.dependencies import get_db, get_permitted_staff
 
 
 @asynccontextmanager
@@ -640,6 +640,23 @@ async def list_custom_emojis(db: AsyncSession = Depends(get_db)):
         pass
 
     return result
+
+
+@app.get("/api/v1/emoji/remote-info")
+async def get_remote_emoji_info(
+    shortcode: str = Query(...),
+    domain: str = Query(...),
+    user=Depends(get_permitted_staff("emoji")),
+    db=Depends(get_db),
+):
+    """Get metadata for a remote custom emoji (requires emoji permission)."""
+    from app.schemas.admin import AdminRemoteEmojiResponse
+    from app.services.emoji_service import get_custom_emoji
+
+    emoji = await get_custom_emoji(db, shortcode, domain)
+    if not emoji:
+        raise HTTPException(status_code=404, detail="Remote emoji not found")
+    return AdminRemoteEmojiResponse.model_validate(emoji)
 
 
 @app.get("/api/v1/trends/tags")

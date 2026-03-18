@@ -19,7 +19,8 @@ def _to_mastodon_datetime(dt: datetime | None) -> str:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
-from app.dependencies import get_current_user, get_db, get_optional_user
+from app.dependencies import get_current_user, get_db, get_optional_user, get_permitted_staff
+from app.schemas.note import ImportReactRequest
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.note import (
@@ -900,6 +901,97 @@ async def react_to_note(
             user.actor_id,
             note.id,
             reaction_emoji=emoji,
+        )
+        await db.commit()
+        if notif:
+            await publish_notification(notif)
+
+    return {"ok": True}
+
+
+@router.post("/{note_id}/import-react")
+async def import_and_react(
+    note_id: uuid.UUID,
+    body: ImportReactRequest,
+    user: User = Depends(get_permitted_staff("emoji")),
+    db: AsyncSession = Depends(get_db),
+):
+    """Import a remote custom emoji to local and react with it."""
+    from app.services.emoji_service import (
+        get_custom_emoji,
+        import_remote_emoji_to_local,
+        update_emoji,
+    )
+    from app.services.reaction_service import add_reaction
+
+    # Parse emoji string
+    m = re.match(r"^:([a-zA-Z0-9_]+)@([a-zA-Z0-9.-]+):$", body.emoji)
+    if not m:
+        raise HTTPException(status_code=422, detail="Invalid remote emoji format")
+    shortcode, domain = m.group(1), m.group(2)
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    # Check if already local
+    local_emoji = await get_custom_emoji(db, shortcode, None)
+    if not local_emoji:
+        # Find remote emoji
+        remote_emoji = await get_custom_emoji(db, shortcode, domain)
+        if not remote_emoji:
+            raise HTTPException(status_code=404, detail="Remote emoji not found")
+
+        # Apply metadata overrides before import
+        overrides = {}
+        if body.category is not None:
+            overrides["category"] = body.category
+        if body.author is not None:
+            overrides["author"] = body.author
+        if body.license is not None:
+            overrides["license"] = body.license
+        if body.description is not None:
+            overrides["description"] = body.description
+        if body.is_sensitive is not None:
+            overrides["is_sensitive"] = body.is_sensitive
+        if body.aliases is not None:
+            overrides["aliases"] = body.aliases
+        if overrides:
+            await update_emoji(db, remote_emoji.id, overrides)
+
+        try:
+            local_emoji = await import_remote_emoji_to_local(db, remote_emoji.id)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
+
+        # Apply shortcode override to the new local emoji
+        if body.shortcode and body.shortcode != shortcode:
+            await update_emoji(db, local_emoji.id, {"shortcode": body.shortcode})
+            shortcode = body.shortcode
+
+        await db.commit()
+
+    # React with local emoji
+    local_emoji_str = f":{shortcode}:"
+    try:
+        await add_reaction(db, user, note, local_emoji_str)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    # Notify note author
+    if note.actor.is_local:
+        from app.services.notification_service import (
+            create_notification,
+            publish_notification,
+        )
+
+        notif = await create_notification(
+            db,
+            "reaction",
+            note.actor_id,
+            user.actor_id,
+            note.id,
+            reaction_emoji=local_emoji_str,
         )
         await db.commit()
         if notif:

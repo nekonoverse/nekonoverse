@@ -20,6 +20,7 @@ export interface ReactionSummary {
   count: number;
   me: boolean;
   emoji_url: string | null;
+  importable?: boolean;
 }
 
 export interface MediaAttachment {
@@ -233,6 +234,51 @@ export interface ReactionUser {
 export async function getReactedBy(noteId: string, emoji?: string): Promise<ReactionUser[]> {
   const qs = emoji ? `?emoji=${encodeURIComponent(emoji)}` : "";
   return apiRequest<ReactionUser[]>(`/api/v1/statuses/${noteId}/reacted_by${qs}`);
+}
+
+export interface RemoteEmojiInfo {
+  id: string;
+  shortcode: string;
+  domain: string | null;
+  url: string;
+  static_url: string | null;
+  category: string | null;
+  aliases: string[] | null;
+  license: string | null;
+  is_sensitive: boolean;
+  author: string | null;
+  description: string | null;
+  copy_permission: string | null;
+}
+
+export async function getRemoteEmojiInfo(
+  shortcode: string,
+  domain: string,
+): Promise<RemoteEmojiInfo> {
+  return apiRequest<RemoteEmojiInfo>(
+    `/api/v1/emoji/remote-info?shortcode=${encodeURIComponent(shortcode)}&domain=${encodeURIComponent(domain)}`,
+  );
+}
+
+export interface ImportReactBody {
+  emoji: string;
+  shortcode?: string;
+  category?: string;
+  author?: string;
+  license?: string;
+  description?: string;
+  is_sensitive?: boolean;
+  aliases?: string[];
+}
+
+export async function importAndReact(
+  noteId: string,
+  body: ImportReactBody,
+): Promise<void> {
+  await apiRequest(`/api/v1/statuses/${noteId}/import-react`, {
+    method: "POST",
+    body,
+  });
 }
 
 export async function favouriteNote(noteId: string): Promise<Note> {

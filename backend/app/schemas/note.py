@@ -71,6 +71,7 @@ class ReactionSummary(BaseModel):
     count: int
     me: bool = False
     emoji_url: str | None = None
+    importable: bool = False
 
 
 class EmojiReaction(BaseModel):
@@ -199,6 +200,19 @@ class NoteResponse(BaseModel):
     language: str | None = None
 
     model_config = {"from_attributes": True}
+
+
+class ImportReactRequest(BaseModel):
+    """Request body for import-and-react endpoint."""
+
+    emoji: str  # ":shortcode@domain:" format
+    shortcode: str | None = None
+    category: str | None = None
+    author: str | None = None
+    license: str | None = None
+    description: str | None = None
+    is_sensitive: bool | None = None
+    aliases: list[str] | None = None
 
 
 class ContextResponse(BaseModel):

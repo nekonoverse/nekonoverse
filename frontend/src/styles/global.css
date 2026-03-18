@@ -2230,6 +2230,102 @@ a:hover {
   border-style: dashed;
 }
 
+/* Importable remote emoji: shows import badge for permitted users */
+.reaction-importable {
+  border-style: dashed;
+  border-color: var(--accent);
+  position: relative;
+  cursor: pointer;
+}
+.reaction-importable::after {
+  content: "\2193";
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 9px;
+  line-height: 1;
+  background: var(--accent);
+  color: #fff;
+  border-radius: 50%;
+  width: 14px;
+  height: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+
+/* Remote emoji: disabled for general users */
+.reaction-remote-disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Emoji import modal form */
+.emoji-import-form {
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.emoji-import-preview {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 0;
+}
+.emoji-import-preview img {
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  padding: 4px;
+}
+.emoji-import-domain {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+}
+.emoji-import-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.emoji-import-field span {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+}
+.emoji-import-field input {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text);
+  font-size: 0.9em;
+}
+.emoji-import-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.9em;
+}
+.emoji-import-denied {
+  padding: 8px 12px;
+  background: rgba(233, 69, 96, 0.15);
+  border: 1px solid var(--accent);
+  border-radius: 4px;
+  color: var(--accent);
+  font-size: 0.85em;
+}
+.emoji-import-error {
+  color: var(--accent);
+  font-size: 0.85em;
+}
+.emoji-import-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding-top: 4px;
+}
+
 /* Reaction users modal */
 .reacted-by-list {
   max-height: 400px;

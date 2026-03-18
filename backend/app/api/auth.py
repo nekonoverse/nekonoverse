@@ -383,6 +383,24 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
         },
     }
 
+    # Nekonoverse: effective permissions for frontend feature gating
+    from app.services.role_service import MODERATOR_PERMISSIONS
+
+    if user.is_admin:
+        data["nekonoverse_permissions"] = list(MODERATOR_PERMISSIONS)
+    elif user.is_staff:
+        from app.services.role_service import get_role
+
+        role_obj = await get_role(db, user.role)
+        if role_obj and role_obj.permissions:
+            data["nekonoverse_permissions"] = [
+                k for k, v in role_obj.permissions.items() if v
+            ]
+        else:
+            data["nekonoverse_permissions"] = []
+    else:
+        data["nekonoverse_permissions"] = []
+
     # Resolve custom emoji
     shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
     texts = [data["display_name"] or "", data["note"]]
