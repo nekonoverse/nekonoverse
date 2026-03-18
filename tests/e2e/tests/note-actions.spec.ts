@@ -16,14 +16,17 @@ test.describe("Note Actions", () => {
       .filter({ hasText: `reblog-test-${uid}` })
       .first();
     const boostBtn = noteCard.locator(".note-boost-btn");
+    // ボタンが有効になるまで待つ
+    await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
     await boostBtn.click();
 
-    // boosted クラスが付与される
-    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 5_000 });
+    // boosted クラスが付与される（API応答を待つため余裕を持つ）
+    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 10_000 });
 
-    // もう一度クリックでunboost
+    // ボタンが再度有効になるまで待つ
+    await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
     await boostBtn.click();
-    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 5_000 });
+    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 10_000 });
   });
 
   test("bookmark button toggles bookmarked state", async ({ page }) => {
