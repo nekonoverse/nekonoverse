@@ -2,15 +2,12 @@ import { createSignal, Show, For, onCleanup } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import type { ReactionSummary, ReactionUser } from "@nekonoverse/ui/api/statuses";
 import { reactToNote, unreactToNote, getReactedBy } from "@nekonoverse/ui/api/statuses";
-import { importRemoteEmojiByShortcode } from "@nekonoverse/ui/api/admin";
 import EmojiPicker from "./EmojiPicker";
+import EmojiImportModal from "./EmojiImportModal";
 import Emoji from "../Emoji";
-import { currentUser } from "@nekonoverse/ui/stores/auth";
-import { getRoleName } from "@nekonoverse/ui/api/types/auth";
+import { canManageEmoji } from "@nekonoverse/ui/stores/auth";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
-
-const REMOTE_EMOJI_RE = /^:([a-zA-Z0-9_]+)@([a-zA-Z0-9.-]+):$/;
 
 interface Props {
   noteId: string;
@@ -26,8 +23,7 @@ export default function ReactionBar(props: Props) {
   const [modalEmoji, setModalEmoji] = createSignal<string | null>(null);
   const [modalUsers, setModalUsers] = createSignal<ReactionUser[]>([]);
   const [modalLoading, setModalLoading] = createSignal(false);
-  const [importState, setImportState] = createSignal<"idle" | "loading" | "success" | "error">("idle");
-  const [importError, setImportError] = createSignal("");
+  const [importEmoji, setImportEmoji] = createSignal<string | null>(null);
 
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let didLongPress = false;
@@ -46,37 +42,22 @@ export default function ReactionBar(props: Props) {
     }
   };
 
-  const handleReaction = (emoji: string) => {
+  const handleReaction = (emoji: string, r: ReactionSummary) => {
     if (didLongPress) return;
-    toggleReaction(emoji);
-  };
-
-  const importableEmoji = () => {
-    const emoji = modalEmoji();
-    if (!emoji) return null;
-    const m = REMOTE_EMOJI_RE.exec(emoji);
-    if (!m) return null;
-    return { shortcode: m[1], domain: m[2] };
-  };
-
-  const handleImport = async () => {
-    const parsed = importableEmoji();
-    if (!parsed) return;
-    setImportState("loading");
-    try {
-      await importRemoteEmojiByShortcode(parsed.shortcode, parsed.domain);
-      setImportState("success");
-    } catch (e: any) {
-      setImportState("error");
-      setImportError(e.message || t("reactions.importFailed"));
+    // Importable remote emoji: open import modal for permitted users
+    if (r.importable) {
+      if (canManageEmoji()) {
+        setImportEmoji(emoji);
+      }
+      // General users can't bandwagon with importable emojis (disabled via CSS)
+      return;
     }
+    toggleReaction(emoji);
   };
 
   const openModal = async (emoji: string) => {
     setModalEmoji(emoji);
     setModalLoading(true);
-    setImportState("idle");
-    setImportError("");
     try {
       const users = await getReactedBy(props.noteId, emoji);
       setModalUsers(users);
@@ -111,13 +92,24 @@ export default function ReactionBar(props: Props) {
 
   const ignoresReactions = () => props.serverSoftware === "mastodon";
 
+  const badgeClass = (r: ReactionSummary) => {
+    let cls = "reaction-badge";
+    if (r.me) cls += " reaction-me";
+    if (r.importable) {
+      cls += canManageEmoji()
+        ? " reaction-importable"
+        : " reaction-remote-disabled";
+    }
+    return cls;
+  };
+
   return (
     <>
       <div class="reaction-bar">
         {props.reactions.map((r) => (
           <button
-            class={`reaction-badge ${r.me ? "reaction-me" : ""}`}
-            onClick={() => handleReaction(r.emoji)}
+            class={badgeClass(r)}
+            onClick={() => handleReaction(r.emoji, r)}
             onMouseDown={() => startLongPress(r.emoji)}
             onMouseUp={cancelLongPress}
             onMouseLeave={cancelLongPress}
@@ -149,7 +141,18 @@ export default function ReactionBar(props: Props) {
         </Show>
       </div>
 
-      {/* Reaction users modal */}
+      {/* Emoji import modal */}
+      <Show when={importEmoji()}>
+        <EmojiImportModal
+          emoji={importEmoji()!}
+          emojiUrl={props.reactions.find((r) => r.emoji === importEmoji())?.emoji_url ?? null}
+          noteId={props.noteId}
+          onClose={() => setImportEmoji(null)}
+          onImported={() => props.onUpdate?.()}
+        />
+      </Show>
+
+      {/* Reaction users modal (long press) */}
       <Show when={modalEmoji()}>
         <div class="modal-overlay" onClick={closeModal}>
           <div class="modal-content" style="max-width: 400px" onClick={(e) => e.stopPropagation()}>
@@ -161,29 +164,7 @@ export default function ReactionBar(props: Props) {
                 />
                 {t("reactions.reactedBy")}
               </h3>
-              <div style="display: flex; align-items: center; gap: 8px">
-                <Show when={getRoleName(currentUser()?.role) === "admin" && importableEmoji()}>
-                  <Show when={importState() === "idle"}>
-                    <button class="btn btn-small" onClick={handleImport}>
-                      {t("reactions.importEmoji")}
-                    </button>
-                  </Show>
-                  <Show when={importState() === "loading"}>
-                    <button class="btn btn-small" disabled>
-                      {t("common.loading")}
-                    </button>
-                  </Show>
-                  <Show when={importState() === "success"}>
-                    <span class="import-success">{t("reactions.importSuccess")}</span>
-                  </Show>
-                  <Show when={importState() === "error"}>
-                    <span class="import-error" title={importError()}>
-                      {t("reactions.importFailed")}
-                    </span>
-                  </Show>
-                </Show>
-                <button class="modal-close" onClick={closeModal}>✕</button>
-              </div>
+              <button class="modal-close" onClick={closeModal}>✕</button>
             </div>
             <div class="reacted-by-list">
               <Show when={modalLoading()}>

@@ -3,6 +3,7 @@ import { apiRequest } from "../api/client";
 import { authenticateWithPasskey as _authenticateWithPasskey } from "../api/passkey";
 import { fetchFollowedIds } from "./followedUsers";
 import type { CurrentUser, LoginResponse } from "../api/types/auth";
+import { getRoleName } from "../api/types/auth";
 
 export type { CurrentUser, ProfileField, FocalPoint, LoginResponse } from "../api/types/auth";
 
@@ -90,6 +91,15 @@ export async function logout() {
 export async function loginWithPasskey() {
   await _authenticateWithPasskey();
   await fetchCurrentUser();
+}
+
+/** Check if current user has emoji management permission. */
+export function canManageEmoji(): boolean {
+  const u = currentUser();
+  if (!u) return false;
+  const r = getRoleName(u.role);
+  if (r === "admin") return true;
+  return u.nekonoverse_permissions?.includes("emoji") ?? false;
 }
 
 export async function register(
