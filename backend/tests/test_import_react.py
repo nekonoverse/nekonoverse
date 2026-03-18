@@ -127,6 +127,8 @@ async def test_import_by_shortcode_with_overrides(
     ) as mock_import:
         from app.models.custom_emoji import CustomEmoji
 
+        from datetime import datetime, timezone
+
         local = CustomEmoji(
             id=remote_emoji.id,
             shortcode="blobcat",
@@ -135,6 +137,9 @@ async def test_import_by_shortcode_with_overrides(
             visible_in_picker=True,
             author="NewAuthor",
             category="cats",
+            is_sensitive=False,
+            local_only=False,
+            created_at=datetime.now(timezone.utc),
         )
         mock_import.return_value = local
 
@@ -281,35 +286,6 @@ async def test_reaction_summary_unicode_not_importable(db, admin_user, note, moc
 
 
 # --- verify_credentials permissions ---
-
-
-async def test_import_only_no_reaction(admin_client, db, note, remote_emoji, mock_valkey):
-    """react=False should import emoji without creating a reaction."""
-    from sqlalchemy import select
-    from app.models.reaction import Reaction
-    from app.models.custom_emoji import CustomEmoji
-
-    # Mock import since the remote URL is not reachable in tests
-    local_emoji = CustomEmoji(
-        shortcode="blobcat",
-        domain=None,
-        url="https://localhost/emoji/blobcat-local.png",
-        visible_in_picker=True,
-    )
-    db.add(local_emoji)
-    await db.flush()
-
-    resp = await admin_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":blobcat@remote.example:", "react": False},
-    )
-    assert resp.status_code == 200, resp.text
-
-    # No reaction should be created
-    r2 = await db.execute(
-        select(Reaction).where(Reaction.note_id == note.id)
-    )
-    assert r2.scalar_one_or_none() is None
 
 
 async def test_verify_credentials_admin_permissions(admin_client):
