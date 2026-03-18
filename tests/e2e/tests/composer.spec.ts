@@ -65,7 +65,7 @@ test.describe("Note Composer", () => {
     expect(value).not.toContain(":smi");
   });
 
-  test("emoji button inserts colon and opens suggest", async ({ page }) => {
+  test("emoji button opens full emoji picker", async ({ page }) => {
     const composerForm = page.locator("form.note-composer");
     await expect(composerForm).toBeVisible({ timeout: 10_000 });
 
@@ -73,9 +73,9 @@ test.describe("Note Composer", () => {
     const smileBtn = composerForm.locator("button.composer-attach-btn:has(svg circle[r='10'])");
     await smileBtn.click();
 
-    // Textarea should contain ":" and suggest should be open
-    const value = await composerForm.locator("textarea").inputValue();
-    expect(value).toContain(":");
+    // Full emoji picker should be visible
+    await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".emoji-search")).toBeVisible();
   });
 
   test("post button is disabled while uploading media", async ({ page }) => {
