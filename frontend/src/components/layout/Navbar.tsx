@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
 import { getRoleName } from "@nekonoverse/ui/api/types/auth";
 import { connect, disconnect, unreadCount, pendingFollowRequests, fetchFollowRequestCount } from "@nekonoverse/ui/stores/streaming";
-import { useI18n } from "@nekonoverse/ui/i18n";
+import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import SearchModal from "../SearchModal";
@@ -11,7 +11,7 @@ import ComposeModal from "../notes/ComposeModal";
 import KeyboardShortcuts from "../KeyboardShortcuts";
 
 export default function Navbar() {
-  const { t, locale } = useI18n();
+  const { t, locale, setLocale } = useI18n();
   const location = useLocation();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -200,9 +200,20 @@ export default function Navbar() {
           <Show
             when={currentUser()}
             fallback={
-              <a href="/login" class="navbar-login-btn">
-                {t("common.login")}
-              </a>
+              <>
+                <select
+                  class="navbar-locale-select"
+                  value={locale()}
+                  onChange={(e) => setLocale(e.currentTarget.value as Locale)}
+                >
+                  {locales.map((loc) => (
+                    <option value={loc.code}>{loc.name}</option>
+                  ))}
+                </select>
+                <a href="/login" class="navbar-login-btn">
+                  {t("common.login")}
+                </a>
+              </>
             }
           >
             {(user) => (
