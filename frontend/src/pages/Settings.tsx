@@ -6,8 +6,9 @@ import {
   theme, setTheme, fontSize, setFontSize,
   fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
   timeFormat, setTimeFormat,
+  cursorStyle, setCursorStyle,
   FONT_FAMILY_MAP,
-  type Theme, type FontSize, type FontFamily, type TimeFormat,
+  type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle,
 } from "@nekonoverse/ui/stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
@@ -217,6 +218,7 @@ function AppearanceTab() {
             onInput={(e) => setCustomFontFamily(e.currentTarget.value)}
             style={{ "font-family": customFontFamily() || "inherit" }}
           />
+          <p class="settings-desc" style={{ "margin-top": "4px" }}>{t("settings.fontCustomHint")}</p>
         </Show>
       </div>
 
@@ -232,6 +234,23 @@ function AppearanceTab() {
             <button
               class={`theme-btn${timeFormat() === item.key ? " theme-active" : ""}`}
               onClick={() => setTimeFormat(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.cursorStyle")}</h3>
+        <div class="theme-selector">
+          {([
+            { key: "default" as CursorStyle, label: t("settings.cursorDefault") },
+            { key: "paw" as CursorStyle, label: t("settings.cursorPaw") },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${cursorStyle() === item.key ? " theme-active" : ""}`}
+              onClick={() => setCursorStyle(item.key)}
             >
               {item.label}
             </button>
