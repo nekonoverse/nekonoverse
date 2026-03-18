@@ -72,6 +72,7 @@ class ReactionSummary(BaseModel):
     me: bool = False
     emoji_url: str | None = None
     importable: bool = False
+    import_domain: str | None = None
 
 
 class EmojiReaction(BaseModel):
@@ -213,6 +214,7 @@ class ImportReactRequest(BaseModel):
     description: str | None = None
     is_sensitive: bool | None = None
     aliases: list[str] | None = None
+    react: bool = True  # False = import only, True = import + react
 
 
 class ContextResponse(BaseModel):

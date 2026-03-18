@@ -971,31 +971,32 @@ async def import_and_react(
 
         await db.commit()
 
-    # React with local emoji
-    local_emoji_str = f":{shortcode}:"
-    try:
-        await add_reaction(db, user, note, local_emoji_str)
-    except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+    # React with local emoji (optional)
+    if body.react:
+        local_emoji_str = f":{shortcode}:"
+        try:
+            await add_reaction(db, user, note, local_emoji_str)
+        except ValueError as e:
+            raise HTTPException(status_code=422, detail=str(e))
 
-    # Notify note author
-    if note.actor.is_local:
-        from app.services.notification_service import (
-            create_notification,
-            publish_notification,
-        )
+        # Notify note author
+        if note.actor.is_local:
+            from app.services.notification_service import (
+                create_notification,
+                publish_notification,
+            )
 
-        notif = await create_notification(
-            db,
-            "reaction",
-            note.actor_id,
-            user.actor_id,
-            note.id,
-            reaction_emoji=local_emoji_str,
-        )
-        await db.commit()
-        if notif:
-            await publish_notification(notif)
+            notif = await create_notification(
+                db,
+                "reaction",
+                note.actor_id,
+                user.actor_id,
+                note.id,
+                reaction_emoji=local_emoji_str,
+            )
+            await db.commit()
+            if notif:
+                await publish_notification(notif)
 
     return {"ok": True}
 

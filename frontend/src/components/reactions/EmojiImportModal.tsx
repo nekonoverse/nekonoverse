@@ -4,6 +4,7 @@ import {
   importAndReact,
   type RemoteEmojiInfo,
 } from "@nekonoverse/ui/api/statuses";
+import EmojiEditForm, { type EmojiEditFields } from "./EmojiEditForm";
 import Emoji from "../Emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
 
@@ -25,19 +26,19 @@ export default function EmojiImportModal(props: Props) {
   const [submitting, setSubmitting] = createSignal(false);
   const [error, setError] = createSignal("");
 
-  // Form fields
-  const [shortcode, setShortcode] = createSignal("");
-  const [category, setCategory] = createSignal("");
-  const [author, setAuthor] = createSignal("");
-  const [license, setLicense] = createSignal("");
-  const [description, setDescription] = createSignal("");
-  const [isSensitive, setIsSensitive] = createSignal(false);
-  const [aliases, setAliases] = createSignal("");
+  const [fields, setFields] = createSignal<EmojiEditFields>({
+    shortcode: "",
+    category: "",
+    author: "",
+    license: "",
+    description: "",
+    isSensitive: false,
+    aliases: "",
+  });
 
   const parsed = () => {
     const m = CUSTOM_RE.exec(props.emoji);
     if (!m) return null;
-    // Domain from the emoji string takes priority, otherwise use the prop
     const domain = m[2] || props.domain;
     return domain ? { shortcode: m[1], domain } : null;
   };
@@ -53,43 +54,52 @@ export default function EmojiImportModal(props: Props) {
       return;
     }
     setLoading(true);
+    setError("");
     getRemoteEmojiInfo(p.shortcode, p.domain)
       .then((info) => {
         setMeta(info);
-        setShortcode(info.shortcode);
-        setCategory(info.category || "");
-        setAuthor(info.author || "");
-        setLicense(info.license || "");
-        setDescription(info.description || "");
-        setIsSensitive(info.is_sensitive);
-        setAliases((info.aliases || []).join(", "));
+        setFields({
+          shortcode: info.shortcode,
+          category: info.category || "",
+          author: info.author || "",
+          license: info.license || "",
+          description: info.description || "",
+          isSensitive: info.is_sensitive,
+          aliases: (info.aliases || []).join(", "),
+        });
       })
       .catch(() => setError(t("reactions.importFailed")))
       .finally(() => setLoading(false));
   });
 
-  const handleSubmit = async () => {
+  const buildBody = (react: boolean) => {
+    const p = parsed()!;
+    const f = fields();
+    const emojiWithDomain = `:${p.shortcode}@${p.domain}:`;
+    return {
+      emoji: emojiWithDomain,
+      shortcode: f.shortcode !== p.shortcode ? f.shortcode : undefined,
+      category: f.category || undefined,
+      author: f.author || undefined,
+      license: f.license || undefined,
+      description: f.description || undefined,
+      is_sensitive: f.isSensitive,
+      aliases: f.aliases
+        ? f.aliases
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean)
+        : undefined,
+      react,
+    };
+  };
+
+  const handleSubmit = async (react: boolean) => {
     if (isDenied() || submitting()) return;
     setSubmitting(true);
     setError("");
     try {
-      const p = parsed()!;
-      const emojiWithDomain = `:${p.shortcode}@${p.domain}:`;
-      await importAndReact(props.noteId, {
-        emoji: emojiWithDomain,
-        shortcode: shortcode() !== p.shortcode ? shortcode() : undefined,
-        category: category() || undefined,
-        author: author() || undefined,
-        license: license() || undefined,
-        description: description() || undefined,
-        is_sensitive: isSensitive(),
-        aliases: aliases()
-          ? aliases()
-              .split(",")
-              .map((s) => s.trim())
-              .filter(Boolean)
-          : undefined,
-      });
+      await importAndReact(props.noteId, buildBody(react));
       props.onImported();
       props.onClose();
     } catch (e: any) {
@@ -109,7 +119,7 @@ export default function EmojiImportModal(props: Props) {
         <div class="modal-header">
           <h3 style="display: flex; align-items: center; gap: 8px">
             <Emoji emoji={props.emoji} url={props.emojiUrl} />
-            {t("reactions.importAndReact")}
+            {t("reactions.importEmojiTitle")}
           </h3>
           <button class="modal-close" onClick={props.onClose}>
             ✕
@@ -130,79 +140,12 @@ export default function EmojiImportModal(props: Props) {
               </div>
             </Show>
 
-            <div class="emoji-import-preview">
-              <img
-                src={meta()!.url}
-                alt={`:${meta()!.shortcode}:`}
-                style="height: 64px"
-              />
-              <span class="emoji-import-domain">{meta()!.domain}</span>
-            </div>
-
-            <label class="emoji-import-field">
-              <span>{t("reactions.emojiShortcode")}</span>
-              <input
-                type="text"
-                value={shortcode()}
-                onInput={(e) => setShortcode(e.currentTarget.value)}
-                pattern="[a-zA-Z0-9_]+"
-              />
-            </label>
-
-            <label class="emoji-import-field">
-              <span>{t("reactions.emojiCategory")}</span>
-              <input
-                type="text"
-                value={category()}
-                onInput={(e) => setCategory(e.currentTarget.value)}
-              />
-            </label>
-
-            <label class="emoji-import-field">
-              <span>{t("reactions.emojiAuthor")}</span>
-              <input
-                type="text"
-                value={author()}
-                onInput={(e) => setAuthor(e.currentTarget.value)}
-              />
-            </label>
-
-            <label class="emoji-import-field">
-              <span>{t("reactions.emojiLicense")}</span>
-              <input
-                type="text"
-                value={license()}
-                onInput={(e) => setLicense(e.currentTarget.value)}
-              />
-            </label>
-
-            <label class="emoji-import-field">
-              <span>{t("reactions.emojiDescription")}</span>
-              <input
-                type="text"
-                value={description()}
-                onInput={(e) => setDescription(e.currentTarget.value)}
-              />
-            </label>
-
-            <label class="emoji-import-field">
-              <span>{t("reactions.emojiAliases")}</span>
-              <input
-                type="text"
-                value={aliases()}
-                onInput={(e) => setAliases(e.currentTarget.value)}
-                placeholder="alias1, alias2"
-              />
-            </label>
-
-            <label class="emoji-import-checkbox">
-              <input
-                type="checkbox"
-                checked={isSensitive()}
-                onChange={(e) => setIsSensitive(e.currentTarget.checked)}
-              />
-              {t("reactions.emojiSensitive")}
-            </label>
+            <EmojiEditForm
+              fields={fields()}
+              onChange={setFields}
+              previewUrl={meta()!.url}
+              previewDomain={meta()!.domain}
+            />
 
             <Show when={error()}>
               <div class="emoji-import-error">{error()}</div>
@@ -213,8 +156,17 @@ export default function EmojiImportModal(props: Props) {
                 {t("common.cancel")}
               </button>
               <button
+                class="btn"
+                onClick={() => handleSubmit(false)}
+                disabled={isDenied() || submitting()}
+              >
+                {submitting()
+                  ? t("common.loading")
+                  : t("reactions.importEmoji")}
+              </button>
+              <button
                 class="btn btn-primary"
-                onClick={handleSubmit}
+                onClick={() => handleSubmit(true)}
                 disabled={isDenied() || submitting()}
               >
                 {submitting()

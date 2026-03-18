@@ -2333,6 +2333,20 @@ a:hover {
   color: var(--text);
   font-size: 0.9em;
 }
+.emoji-edit-form-row {
+  display: flex;
+  gap: 10px;
+}
+.emoji-edit-form-row > * {
+  flex: 1;
+}
+.emoji-import-field select {
+  padding: 6px 8px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  color: var(--text);
+}
 .emoji-import-checkbox {
   display: flex;
   align-items: center;

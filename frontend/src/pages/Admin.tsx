@@ -14,6 +14,9 @@ import { currentUser } from "@nekonoverse/ui/stores/auth";
 import { getRoleName } from "@nekonoverse/ui/api/types/auth";
 import { registrationMode } from "@nekonoverse/ui/stores/instance";
 import Breadcrumb from "../components/Breadcrumb";
+import EmojiEditForm, {
+  type EmojiEditFields,
+} from "../components/reactions/EmojiEditForm";
 import {
   getAdminStats,
   getServerSettings,
@@ -1308,14 +1311,16 @@ function EmojiTab() {
   const [remoteSearch, setRemoteSearch] = createSignal("");
   const [remoteMsg, setRemoteMsg] = createSignal("");
   const [importingId, setImportingId] = createSignal("");
-  const [shortcode, setShortcode] = createSignal("");
-  const [category, setCategory] = createSignal("");
-  const [aliases, setAliases] = createSignal("");
-  const [license, setLicense] = createSignal("");
-  const [author, setAuthor] = createSignal("");
-  const [description, setDescription] = createSignal("");
+  const [fields, setFields] = createSignal<EmojiEditFields>({
+    shortcode: "",
+    category: "",
+    aliases: "",
+    license: "",
+    author: "",
+    description: "",
+    isSensitive: false,
+  });
   const [copyPermission, setCopyPermission] = createSignal("");
-  const [isSensitive, setIsSensitive] = createSignal(false);
   const [localOnly, setLocalOnly] = createSignal(false);
   const [adding, setAdding] = createSignal(false);
   let fileInput!: HTMLInputElement;
@@ -1341,38 +1346,41 @@ function EmojiTab() {
 
   const handleAdd = async () => {
     const file = fileInput.files?.[0];
-    if (!file || !shortcode().trim()) return;
+    const f = fields();
+    if (!file || !f.shortcode.trim()) return;
     setAdding(true);
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("shortcode", shortcode().trim());
-    if (category()) fd.append("category", category());
-    if (aliases())
+    fd.append("shortcode", f.shortcode.trim());
+    if (f.category) fd.append("category", f.category);
+    if (f.aliases)
       fd.append(
         "aliases",
         JSON.stringify(
-          aliases()
+          f.aliases
             .split(",")
             .map((a) => a.trim())
             .filter(Boolean),
         ),
       );
-    if (license()) fd.append("license", license());
-    if (author()) fd.append("author", author());
-    if (description()) fd.append("description", description());
+    if (f.license) fd.append("license", f.license);
+    if (f.author) fd.append("author", f.author);
+    if (f.description) fd.append("description", f.description);
     if (copyPermission()) fd.append("copy_permission", copyPermission());
-    fd.append("is_sensitive", String(isSensitive()));
+    fd.append("is_sensitive", String(f.isSensitive));
     fd.append("local_only", String(localOnly()));
     try {
       await addEmoji(fd);
-      setShortcode("");
-      setCategory("");
-      setAliases("");
-      setLicense("");
-      setAuthor("");
-      setDescription("");
+      setFields({
+        shortcode: "",
+        category: "",
+        aliases: "",
+        license: "",
+        author: "",
+        description: "",
+        isSensitive: false,
+      });
       setCopyPermission("");
-      setIsSensitive(false);
       setLocalOnly(false);
       fileInput.value = "";
       setShowForm(false);
@@ -1474,93 +1482,19 @@ function EmojiTab() {
             <label>{t("admin.emojiFile")}</label>
             <input ref={fileInput} type="file" accept="image/*" />
           </div>
-          <div class="settings-form-group">
-            <label>{t("admin.emojiShortcode")}</label>
-            <input
-              type="text"
-              value={shortcode()}
-              onInput={(e) => setShortcode(e.currentTarget.value)}
-              placeholder="neko_smile"
-            />
-          </div>
-          <div class="admin-emoji-form-row">
-            <div class="settings-form-group">
-              <label>{t("admin.emojiCategory")}</label>
-              <input
-                type="text"
-                value={category()}
-                onInput={(e) => setCategory(e.currentTarget.value)}
-              />
-            </div>
-            <div class="settings-form-group">
-              <label>{t("admin.emojiAliases")}</label>
-              <input
-                type="text"
-                value={aliases()}
-                onInput={(e) => setAliases(e.currentTarget.value)}
-              />
-            </div>
-          </div>
-          <div class="admin-emoji-form-row">
-            <div class="settings-form-group">
-              <label>{t("admin.emojiLicense")}</label>
-              <input
-                type="text"
-                value={license()}
-                onInput={(e) => setLicense(e.currentTarget.value)}
-              />
-            </div>
-            <div class="settings-form-group">
-              <label>{t("admin.emojiAuthor")}</label>
-              <input
-                type="text"
-                value={author()}
-                onInput={(e) => setAuthor(e.currentTarget.value)}
-              />
-            </div>
-          </div>
-          <div class="settings-form-group">
-            <label>{t("admin.emojiDescription")}</label>
-            <input
-              type="text"
-              value={description()}
-              onInput={(e) => setDescription(e.currentTarget.value)}
-            />
-          </div>
-          <div class="settings-form-group">
-            <label>{t("admin.emojiCopyPermission")}</label>
-            <select
-              value={copyPermission()}
-              onChange={(e) => setCopyPermission(e.currentTarget.value)}
-            >
-              <option value="">--</option>
-              <option value="allow">allow</option>
-              <option value="deny">deny</option>
-              <option value="conditional">conditional</option>
-            </select>
-          </div>
-          <div class="admin-emoji-form-row">
-            <label class="toggle-label">
-              <input
-                type="checkbox"
-                checked={isSensitive()}
-                onChange={(e) => setIsSensitive(e.currentTarget.checked)}
-              />
-              {t("admin.emojiSensitive")}
-            </label>
-            <label class="toggle-label">
-              <input
-                type="checkbox"
-                checked={localOnly()}
-                onChange={(e) => setLocalOnly(e.currentTarget.checked)}
-              />
-              {t("admin.emojiLocalOnly")}
-            </label>
-          </div>
+          <EmojiEditForm
+            fields={fields()}
+            onChange={setFields}
+            showAdminFields
+            copyPermission={copyPermission()}
+            onCopyPermissionChange={setCopyPermission}
+            localOnly={localOnly()}
+            onLocalOnlyChange={setLocalOnly}
+          />
           <button
             class="btn btn-small"
             onClick={handleAdd}
-            disabled={adding() || !shortcode().trim()}
+            disabled={adding() || !fields().shortcode.trim()}
           >
             {adding() ? t("common.loading") : t("admin.emojiAdd")}
           </button>
