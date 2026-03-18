@@ -274,15 +274,19 @@ class TestReplyFederation:
         note, fb_status = self._wait_for_note_on_fedibird(
             neko, fedibird, f"Reply target FB {time.time()}"
         )
+        # Fedibird (Mastodon fork) requires explicit @mention in reply text
+        # to trigger ActivityPub delivery to the mentioned user's inbox.
         fedibird.create_status(
-            f"Reply from Fedibird {time.time()}", in_reply_to_id=fb_status["id"]
+            f"@alice@{NEKO_DOMAIN} Reply from Fedibird {time.time()}",
+            in_reply_to_id=fb_status["id"],
         )
+        time.sleep(3)
 
         def check_reply():
             ctx = neko.get_context(note["id"])
             return len(ctx.get("descendants", [])) >= 1
 
-        poll_until(check_reply, timeout=120, desc="reply federated to neko")
+        poll_until(check_reply, timeout=60, interval=2, desc="reply federated to neko")
 
     def test_neko_reply_to_fedibird_note(
         self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
@@ -330,7 +334,8 @@ class TestReplyFederation:
             neko, fedibird, f"Thread ctx FB {time.time()}"
         )
         fedibird.create_status(
-            f"Reply in thread FB {time.time()}", in_reply_to_id=fb_status["id"]
+            f"@alice@{NEKO_DOMAIN} Reply in thread FB {time.time()}",
+            in_reply_to_id=fb_status["id"],
         )
 
         def check_context():

@@ -635,12 +635,13 @@ class TestReplyFederation:
             neko, misskey, f"Reply target {time.time()}"
         )
         misskey.create_note(f"Reply from Misskey {time.time()}", replyId=mk_note["id"])
+        time.sleep(3)  # Misskey のジョブキュー処理待ち
 
         def check_reply():
-            n = neko.get_note(note["id"])
-            return n.get("replies_count", 0) >= 1
+            ctx = neko.get_context(note["id"])
+            return len(ctx.get("descendants", [])) >= 1
 
-        poll_until(check_reply, timeout=60, interval=2, desc="reply federated to neko")
+        poll_until(check_reply, timeout=120, interval=3, desc="reply federated to neko")
 
     def test_neko_reply_to_misskey_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """alice@neko replies to bob@misskey's note."""
