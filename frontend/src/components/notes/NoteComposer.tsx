@@ -599,7 +599,10 @@ export default function NoteComposer(props: Props) {
             style="display: none"
           />
           <Show when={showEmojiPicker()}>
-            <div class="composer-emoji-backdrop" onClick={() => setShowEmojiPicker(false)} />
+            <div class="composer-emoji-backdrop" onClick={() => {
+              setShowEmojiPicker(false);
+              requestAnimationFrame(() => textareaRef?.focus());
+            }} />
             <EmojiPicker
               onSelect={(emoji) => {
                 const textarea = textareaRef;
@@ -619,7 +622,10 @@ export default function NoteComposer(props: Props) {
                   }
                 });
               }}
-              onClose={() => setShowEmojiPicker(false)}
+              onClose={() => {
+                setShowEmojiPicker(false);
+                requestAnimationFrame(() => textareaRef?.focus());
+              }}
             />
           </Show>
         </div>
