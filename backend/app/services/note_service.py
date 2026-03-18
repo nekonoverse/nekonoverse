@@ -253,27 +253,12 @@ async def create_note(
 
     pending_notifs = []
 
-    # Mention notifications (local actors only)
-    for m in mention_data:
-        if not m.get("domain"):  # local actor
-            from app.services.actor_service import get_actor_by_username
-
-            mentioned = await get_actor_by_username(db, m["username"], None)
-            if mentioned:
-                notif = await create_notification(
-                    db,
-                    "mention",
-                    mentioned.id,
-                    actor.id,
-                    note_id,
-                )
-                if notif:
-                    pending_notifs.append(notif)
-
-    # Reply notification
+    # Determine reply parent actor to avoid duplicate mention+reply notifications
+    reply_recipient_id = None
     if in_reply_to_id:
         parent = await get_note_by_id(db, in_reply_to_id)
         if parent and parent.actor.is_local:
+            reply_recipient_id = parent.actor_id
             notif = await create_notification(
                 db,
                 "reply",
@@ -283,6 +268,23 @@ async def create_note(
             )
             if notif:
                 pending_notifs.append(notif)
+
+    # Mention notifications (local actors only, skip reply recipient)
+    for m in mention_data:
+        if not m.get("domain"):  # local actor
+            from app.services.actor_service import get_actor_by_username
+
+            mentioned = await get_actor_by_username(db, m["username"], None)
+            if mentioned and mentioned.id != reply_recipient_id:
+                notif = await create_notification(
+                    db,
+                    "mention",
+                    mentioned.id,
+                    actor.id,
+                    note_id,
+                )
+                if notif:
+                    pending_notifs.append(notif)
 
     await db.commit()
 
