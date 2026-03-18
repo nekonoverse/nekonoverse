@@ -6352,6 +6352,15 @@ a:hover {
   text-transform: capitalize;
 }
 
+.note-via-instance-link {
+  color: var(--text-secondary);
+  text-decoration: none;
+}
+
+.note-via-instance-link:hover {
+  color: var(--accent);
+}
+
 @media (max-width: 480px) {
   .note-via-software {
     max-width: 100px;

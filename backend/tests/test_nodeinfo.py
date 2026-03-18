@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock, patch, MagicMock
 
 from app import VERSION as __version__
 from tests.conftest import make_note
@@ -127,3 +128,93 @@ async def test_nodeinfo_registration_open_legacy(app_client, db):
     resp = await app_client.get("/nodeinfo/2.0")
     data = resp.json()
     assert data["openRegistrations"] is True
+
+
+async def test_fetch_software_extracts_instance_name():
+    """_fetch_software should return (name, version, instance_name)."""
+    from app.utils.nodeinfo import _fetch_software
+
+    nodeinfo_resp = {
+        "software": {"name": "Misskey", "version": "2024.5.0"},
+        "metadata": {"nodeName": "ねこのみすきー"},
+    }
+    wellknown_resp = {
+        "links": [
+            {
+                "rel": "http://nodeinfo.diaspora.software/ns/schema/2.0",
+                "href": "https://example.com/nodeinfo/2.0",
+            }
+        ]
+    }
+
+    mock_responses = {}
+
+    class FakeResponse:
+        def __init__(self, data):
+            self.status_code = 200
+            self._data = data
+
+        def json(self):
+            return self._data
+
+    async def fake_get(url, **kwargs):
+        if "well-known" in url:
+            return FakeResponse(wellknown_resp)
+        return FakeResponse(nodeinfo_resp)
+
+    with patch("app.utils.nodeinfo.httpx.AsyncClient") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.get = fake_get
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        name, version, instance_name = await _fetch_software("example.com")
+
+    assert name == "misskey"
+    assert version == "2024.5.0"
+    assert instance_name == "ねこのみすきー"
+
+
+async def test_fetch_software_no_node_name():
+    """_fetch_software returns None for instance_name when not in metadata."""
+    from app.utils.nodeinfo import _fetch_software
+
+    nodeinfo_resp = {
+        "software": {"name": "Mastodon", "version": "4.2.0"},
+        "metadata": {},
+    }
+    wellknown_resp = {
+        "links": [
+            {
+                "rel": "http://nodeinfo.diaspora.software/ns/schema/2.0",
+                "href": "https://example.com/nodeinfo/2.0",
+            }
+        ]
+    }
+
+    class FakeResponse:
+        def __init__(self, data):
+            self.status_code = 200
+            self._data = data
+
+        def json(self):
+            return self._data
+
+    async def fake_get(url, **kwargs):
+        if "well-known" in url:
+            return FakeResponse(wellknown_resp)
+        return FakeResponse(nodeinfo_resp)
+
+    with patch("app.utils.nodeinfo.httpx.AsyncClient") as mock_client_cls:
+        mock_client = MagicMock()
+        mock_client.get = fake_get
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        name, version, instance_name = await _fetch_software("example.com")
+
+    assert name == "mastodon"
+    assert version == "4.2.0"
+    assert instance_name is None
