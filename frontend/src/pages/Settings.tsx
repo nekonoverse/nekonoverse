@@ -906,6 +906,14 @@ function AboutTab() {
       </div>
 
       <div class="settings-section">
+        <p class="legal-links">
+          <a href="/terms" target="_blank">{t("legal.terms")}</a>
+          {" ・ "}
+          <a href="/privacy" target="_blank">{t("legal.privacy")}</a>
+        </p>
+      </div>
+
+      <div class="settings-section">
         <h3>{t("about.clearCache")}</h3>
         <p class="settings-desc">{t("about.clearCacheDesc")}</p>
         <button
