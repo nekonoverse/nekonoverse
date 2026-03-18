@@ -7,6 +7,7 @@ import {
   fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
   timeFormat, setTimeFormat,
   cursorStyle, setCursorStyle,
+  hideNonFollowedReplies, setHideNonFollowedReplies,
   FONT_FAMILY_MAP,
   type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle,
 } from "@nekonoverse/ui/stores/theme";
@@ -280,6 +281,15 @@ function PostingTab() {
           onChange={(e) => setRememberVisibility(e.currentTarget.checked)}
         />
         {t("settings.rememberVisibility")}
+      </label>
+      <h3>{t("settings.timeline")}</h3>
+      <label class="toggle-label">
+        <input
+          type="checkbox"
+          checked={hideNonFollowedReplies()}
+          onChange={(e) => setHideNonFollowedReplies(e.currentTarget.checked)}
+        />
+        {t("settings.hideNonFollowedReplies")}
       </label>
     </div>
   );

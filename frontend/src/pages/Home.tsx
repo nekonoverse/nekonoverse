@@ -19,6 +19,8 @@ import {
   type Note,
 } from "@nekonoverse/ui/api/statuses";
 import { onUpdate, onReaction } from "@nekonoverse/ui/stores/streaming";
+import { followedIds } from "@nekonoverse/ui/stores/followedUsers";
+import { hideNonFollowedReplies } from "@nekonoverse/ui/stores/theme";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteComposer from "../components/notes/NoteComposer";
 import NoteCard from "../components/notes/NoteCard";
@@ -58,12 +60,32 @@ export default function Home() {
     return tl === "home" && !!currentUser();
   };
 
+  const filterHomeTLReplies = (data: Note[]): Note[] => {
+    if (!hideNonFollowedReplies()) return data;
+    const user = currentUser();
+    const followed = followedIds();
+    return data.filter((n) => {
+      // Check the actual note (or reblogged note)
+      const target = n.reblog || n;
+      if (!target.in_reply_to_id) return true;
+      // Self-reply (thread)
+      if (target.in_reply_to_account_id === target.actor.id) return true;
+      // Reply to self
+      if (user && target.in_reply_to_account_id === user.id) return true;
+      // Reply to followed user
+      if (target.in_reply_to_account_id && followed.has(target.in_reply_to_account_id))
+        return true;
+      return false;
+    });
+  };
+
   const loadTimeline = async () => {
     try {
-      const data = untrack(isHomeTL)
+      const isHome = untrack(isHomeTL);
+      const data = isHome
         ? await getHomeTimeline()
         : await getPublicTimeline();
-      setNotes(data);
+      setNotes(isHome ? filterHomeTLReplies(data) : data);
       setHasMore(data.length >= 20);
       setBufferedNotes([]);
       return data;
@@ -80,10 +102,12 @@ export default function Home() {
     const lastId = current[current.length - 1].id;
     setLoadingMore(true);
     try {
-      const data = untrack(isHomeTL)
+      const isHome = untrack(isHomeTL);
+      const raw = isHome
         ? await getHomeTimeline({ max_id: lastId })
         : await getPublicTimeline({ max_id: lastId });
-      if (data.length === 0) {
+      const data = isHome ? filterHomeTLReplies(raw) : raw;
+      if (raw.length === 0) {
         setHasMore(false);
       } else {
         setNotes((prev) => {
@@ -169,6 +193,10 @@ export default function Home() {
       const note = await getNote(id);
       // On public timeline, only show public notes (match REST API filtering)
       if (!isHomeTL() && note.visibility !== "public") {
+        return;
+      }
+      // On home TL, filter replies to non-followed users
+      if (isHomeTL() && filterHomeTLReplies([note]).length === 0) {
         return;
       }
       // If this note already exists (directly, as reblog, or as quote),

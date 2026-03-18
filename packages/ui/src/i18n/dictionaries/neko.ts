@@ -134,6 +134,8 @@ export const neko: Dictionary = {
   "settings.posting": "とうこうにゃ",
   "settings.defaultVisibility": "きほんのこうかいにゃ",
   "settings.rememberVisibility": "まえのをおぼえるにゃ",
+  "settings.timeline": "たいむらいんにゃ",
+  "settings.hideNonFollowedReplies": "ホームTLでフォローしてにゃい人へのリプを隠す",
   "visibility.public": "こうかいにゃ",
   "visibility.unlisted": "ひみつにゃ",
   "visibility.followers": "なかまにゃ",

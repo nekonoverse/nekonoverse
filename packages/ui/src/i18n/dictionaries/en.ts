@@ -134,6 +134,8 @@ export const en: Dictionary = {
   "settings.posting": "Posting",
   "settings.defaultVisibility": "Default Visibility",
   "settings.rememberVisibility": "Remember last visibility",
+  "settings.timeline": "Timeline",
+  "settings.hideNonFollowedReplies": "Hide replies to non-followed users on home TL",
   "visibility.public": "Public",
   "visibility.unlisted": "Unlisted",
   "visibility.followers": "Followers",
