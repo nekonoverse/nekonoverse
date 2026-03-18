@@ -664,7 +664,7 @@ async def get_reaction_summaries(
 
     # 4) Batch-fetch all needed custom emojis in at most 2 queries
     emoji_url_map: dict[str, str | None] = {}  # emoji string -> url
-    importable_emojis: set[str] = set()  # remote-only custom emojis (no local copy)
+    importable_emojis: dict[str, str] = {}  # emoji_str -> remote domain
     if custom_emojis_needed:
         all_shortcodes = set(custom_emojis_needed.keys())
 
@@ -701,7 +701,7 @@ async def get_reaction_summaries(
                     emoji_url_map[emoji_str] = local_emojis[shortcode].url
                 elif shortcode in remote_emojis:
                     emoji_url_map[emoji_str] = remote_emojis[shortcode].url
-                    importable_emojis.add(emoji_str)
+                    importable_emojis[emoji_str] = remote_emojis[shortcode].domain
 
     # 5) Optionally fetch account_ids per (note_id, emoji) for Fedibird compat
     account_ids_map: dict[tuple[uuid.UUID, str], list[str]] = {}
@@ -722,13 +722,16 @@ async def get_reaction_summaries(
     for note_id_val, emoji_str, count in rows:
         me = (note_id_val, emoji_str) in me_set
         emoji_url = emoji_url_map.get(emoji_str)
+        is_importable = emoji_str in importable_emojis
         entry: dict = {
             "emoji": emoji_str,
             "count": count,
             "me": me,
             "emoji_url": media_proxy_url(emoji_url, variant="emoji"),
-            "importable": emoji_str in importable_emojis,
+            "importable": is_importable,
         }
+        if is_importable:
+            entry["import_domain"] = importable_emojis[emoji_str]
         if include_account_ids:
             entry["account_ids"] = account_ids_map.get(
                 (note_id_val, emoji_str), []

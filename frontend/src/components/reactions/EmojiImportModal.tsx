@@ -8,14 +8,15 @@ import Emoji from "../Emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
 
 interface Props {
-  emoji: string; // ":shortcode@domain:"
+  emoji: string; // ":shortcode:" or ":shortcode@domain:"
+  domain: string | null; // remote domain from reaction summary
   emojiUrl: string | null;
   noteId: string;
   onClose: () => void;
   onImported: () => void;
 }
 
-const REMOTE_RE = /^:([a-zA-Z0-9_]+)@([a-zA-Z0-9.-]+):$/;
+const CUSTOM_RE = /^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$/;
 
 export default function EmojiImportModal(props: Props) {
   const { t } = useI18n();
@@ -34,8 +35,11 @@ export default function EmojiImportModal(props: Props) {
   const [aliases, setAliases] = createSignal("");
 
   const parsed = () => {
-    const m = REMOTE_RE.exec(props.emoji);
-    return m ? { shortcode: m[1], domain: m[2] } : null;
+    const m = CUSTOM_RE.exec(props.emoji);
+    if (!m) return null;
+    // Domain from the emoji string takes priority, otherwise use the prop
+    const domain = m[2] || props.domain;
+    return domain ? { shortcode: m[1], domain } : null;
   };
 
   const isDenied = () => meta()?.copy_permission === "deny";
@@ -43,7 +47,11 @@ export default function EmojiImportModal(props: Props) {
   // Fetch metadata on mount
   createEffect(() => {
     const p = parsed();
-    if (!p) return;
+    if (!p) {
+      setLoading(false);
+      setError(t("reactions.importFailed"));
+      return;
+    }
     setLoading(true);
     getRemoteEmojiInfo(p.shortcode, p.domain)
       .then((info) => {
@@ -66,8 +74,9 @@ export default function EmojiImportModal(props: Props) {
     setError("");
     try {
       const p = parsed()!;
+      const emojiWithDomain = `:${p.shortcode}@${p.domain}:`;
       await importAndReact(props.noteId, {
-        emoji: props.emoji,
+        emoji: emojiWithDomain,
         shortcode: shortcode() !== p.shortcode ? shortcode() : undefined,
         category: category() || undefined,
         author: author() || undefined,
