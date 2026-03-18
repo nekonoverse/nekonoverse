@@ -83,16 +83,6 @@ export default function EmojiPicker(props: Props) {
     if (readyTimer !== undefined) clearTimeout(readyTimer);
   });
 
-  // iOS: 検索入力フォーカス時にキーボードの高さ分ピッカーを上に移動
-  const [kbHeight, setKbHeight] = createSignal(0);
-  if (isTouchDevice) {
-    const vv = window.visualViewport;
-    if (vv) {
-      const update = () => setKbHeight(Math.max(0, window.innerHeight - vv.height));
-      vv.addEventListener("resize", update);
-      onCleanup(() => vv.removeEventListener("resize", update));
-    }
-  }
 
   const isUsed = (emoji: string) => props.usedEmojis?.includes(emoji) ?? false;
 
@@ -249,17 +239,7 @@ export default function EmojiPicker(props: Props) {
   );
 
   return (
-    <div class="emoji-picker" ref={ref} style={kbHeight() > 0 ? { bottom: `${kbHeight()}px`, "max-height": `${window.visualViewport!.height - 16}px`, "min-height": "unset" } : undefined}>
-      {/* Search bar — always visible */}
-      <input
-        ref={searchRef}
-        class="emoji-search"
-        type="text"
-        placeholder={t("reactions.searchEmoji")}
-        value={query()}
-        onInput={(e) => setQuery(e.currentTarget.value)}
-      />
-
+    <div class="emoji-picker" ref={ref}>
       <div class="emoji-scroll-area">
         {/* --- Search results mode --- */}
         <Show when={isSearching()}>
@@ -325,6 +305,16 @@ export default function EmojiPicker(props: Props) {
           </For>
         </Show>
       </div>
+
+      {/* Search bar — at bottom so it stays above virtual keyboard */}
+      <input
+        ref={searchRef}
+        class="emoji-search"
+        type="text"
+        placeholder={t("reactions.searchEmoji")}
+        value={query()}
+        onInput={(e) => setQuery(e.currentTarget.value)}
+      />
     </div>
   );
 }

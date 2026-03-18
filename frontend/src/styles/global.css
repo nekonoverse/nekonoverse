@@ -909,6 +909,10 @@ a:hover {
   min-width: 0;
 }
 
+.composer-toolbar {
+  position: relative;
+}
+
 .composer-footer {
   display: flex;
   justify-content: space-between;
@@ -2296,9 +2300,10 @@ a:hover {
   flex-direction: column;
 }
 
-/* Reaction bar emoji picker: mobile bottom sheet */
+/* Emoji picker: mobile bottom sheet (reaction bar & composer) */
 @media (max-width: 600px) {
-  .reaction-bar .emoji-picker {
+  .reaction-bar .emoji-picker,
+  .composer-toolbar .emoji-picker {
     position: fixed;
     bottom: 0;
     left: 0;
@@ -2313,7 +2318,8 @@ a:hover {
     padding-bottom: max(8px, env(safe-area-inset-bottom));
   }
 
-  .reaction-emoji-backdrop {
+  .reaction-emoji-backdrop,
+  .composer-emoji-backdrop {
     position: fixed;
     inset: 0;
     background: rgba(0, 0, 0, 0.4);
@@ -2328,7 +2334,7 @@ a:hover {
 .emoji-search {
   width: 100%;
   padding: 6px 8px;
-  margin-bottom: 6px;
+  margin-top: 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-primary);

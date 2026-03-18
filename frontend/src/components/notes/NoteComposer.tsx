@@ -4,6 +4,7 @@ import { useI18n } from "@nekonoverse/ui/i18n";
 import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
 import EmojiSuggest from "./EmojiSuggest";
+import EmojiPicker from "../reactions/EmojiPicker";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { stripExifFromFile } from "@nekonoverse/ui/utils/stripExif";
@@ -78,6 +79,7 @@ export default function NoteComposer(props: Props) {
   const [sensitive, setSensitive] = createSignal(false);
   const [cwOpen, setCwOpen] = createSignal(false);
   const [spoilerText, setSpoilerText] = createSignal("");
+  const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
 
   let fileInput!: HTMLInputElement;
   let textareaRef!: HTMLTextAreaElement;
@@ -509,7 +511,7 @@ export default function NoteComposer(props: Props) {
         </div>
       </Show>
       <div class="composer-footer">
-        <div class="composer-footer-left">
+        <div class="composer-footer-left composer-toolbar">
           <button
             type="button"
             class="composer-attach-btn"
@@ -539,28 +541,11 @@ export default function NoteComposer(props: Props) {
           </button>
           <button
             type="button"
-            class="composer-attach-btn"
+            class={`composer-attach-btn${showEmojiPicker() ? " active" : ""}`}
             onClick={() => {
-              // Insert ":" at cursor and open suggest
-              const textarea = textareaRef;
-              if (!textarea) return;
-              const start = textarea.selectionStart ?? content().length;
-              const end = textarea.selectionEnd ?? content().length;
-              const before = content().slice(0, start);
-              const after = content().slice(end);
-              // Add space before ":" if cursor is right after a non-space char
-              const needsSpace = before.length > 0 && !/\s$/.test(before);
-              const insert = (needsSpace ? " " : "") + ":";
-              setContent(before + insert + after);
-              const newPos = start + insert.length;
-              setSuggestOpen(true);
-              setSuggestQuery("");
-              setColonPos(newPos - 1);
-              requestAnimationFrame(() => {
-                textarea.selectionStart = newPos;
-                textarea.selectionEnd = newPos;
-                textarea.focus();
-              });
+              const opening = !showEmojiPicker();
+              if (opening) (document.activeElement as HTMLElement)?.blur();
+              setShowEmojiPicker(opening);
             }}
             title={t("composer.emoji" as any)}
           >
@@ -613,6 +598,30 @@ export default function NoteComposer(props: Props) {
             onChange={(e) => handleFiles(e.currentTarget.files)}
             style="display: none"
           />
+          <Show when={showEmojiPicker()}>
+            <div class="composer-emoji-backdrop" onClick={() => setShowEmojiPicker(false)} />
+            <EmojiPicker
+              onSelect={(emoji) => {
+                const textarea = textareaRef;
+                const start = textarea?.selectionStart ?? content().length;
+                const end = textarea?.selectionEnd ?? content().length;
+                const before = content().slice(0, start);
+                const after = content().slice(end);
+                const needsSpace = before.length > 0 && !/\s$/.test(before);
+                const insert = (needsSpace ? " " : "") + emoji;
+                setContent(before + insert + " " + after);
+                const newPos = start + insert.length + 1;
+                requestAnimationFrame(() => {
+                  if (textarea) {
+                    textarea.selectionStart = newPos;
+                    textarea.selectionEnd = newPos;
+                    textarea.focus();
+                  }
+                });
+              }}
+              onClose={() => setShowEmojiPicker(false)}
+            />
+          </Show>
         </div>
         <div class="composer-actions">
           <span class="char-count">{content().length} / 5000</span>
