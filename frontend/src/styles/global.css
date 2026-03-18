@@ -2226,8 +2226,26 @@ a:hover {
 }
 
 .reaction-not-delivered {
-  opacity: 0.45;
-  border-style: dashed;
+  opacity: 0.5;
+  border: 1px solid var(--text-secondary);
+  position: relative;
+}
+
+.reaction-not-delivered::after {
+  content: "✗";
+  position: absolute;
+  top: -6px;
+  right: -6px;
+  font-size: 9px;
+  background: var(--text-secondary);
+  color: var(--bg-primary);
+  border-radius: 50%;
+  width: 13px;
+  height: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
 }
 
 /* Reaction users modal */
@@ -2292,10 +2310,11 @@ a:hover {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   padding: 8px;
-  z-index: 100;
+  z-index: 201;
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   min-width: 280px;
   max-width: min(320px, calc(100vw - 16px));
+  max-height: calc(100dvh - 80px);
   display: flex;
   flex-direction: column;
 }

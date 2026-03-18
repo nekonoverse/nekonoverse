@@ -215,7 +215,7 @@ function PollDisplay(props: { poll: Poll; noteId: string }) {
               ? t("poll.expired")
               : t("poll.expiresAt") +
                 " " +
-                formatTimestamp(poll().expires_at!, t)}
+                formatTimestamp(poll().expires_at!, t, false, true)}
           </Show>
         </span>
       </div>

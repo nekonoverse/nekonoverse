@@ -25,10 +25,14 @@ const mockT = (key: string) => {
     "time.daysAgo": "{n}d ago",
     "time.monthsAgo": "{n}mo ago",
     "time.yearsAgo": "{n}y ago",
-    "time.inSeconds": "in {n}s",
-    "time.inMinutes": "in {n}m",
-    "time.inHours": "in {n}h",
-    "time.inDays": "in {n}d",
+    "time.remainingSeconds": "{n}s left",
+    "time.remainingMinutes": "{n}m left",
+    "time.remainingHours": "{n}h left",
+    "time.remainingDays": "{n}d left",
+    "time.futureSeconds": "in {n}s",
+    "time.futureMinutes": "in {n}m",
+    "time.futureHours": "in {n}h",
+    "time.futureDays": "in {n}d",
   };
   return map[key] ?? key;
 };
@@ -82,9 +86,14 @@ describe("formatTimestamp", () => {
       expect(formatTimestamp(twoYearsAgo, mockT)).toBe("2y ago");
     });
 
-    it("handles future dates (e.g., poll expiry)", () => {
+    it("handles future dates as 'in Xm'", () => {
       const fiveMinFuture = new Date(Date.now() + 5 * 60 * 1000).toISOString();
       expect(formatTimestamp(fiveMinFuture, mockT)).toBe("in 5m");
+    });
+
+    it("handles countdown future dates as 'Xm left'", () => {
+      const fiveMinFuture = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+      expect(formatTimestamp(fiveMinFuture, mockT, false, true)).toBe("5m left");
     });
   });
 
