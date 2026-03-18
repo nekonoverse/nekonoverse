@@ -17,7 +17,12 @@ _s3_client: httpx.AsyncClient | None = None
 def _get_s3_client() -> httpx.AsyncClient:
     global _s3_client
     if _s3_client is None or _s3_client.is_closed:
-        _s3_client = httpx.AsyncClient(base_url=settings.s3_endpoint_url, timeout=30.0)
+        from app.utils.http_client import USER_AGENT
+        _s3_client = httpx.AsyncClient(
+            base_url=settings.s3_endpoint_url,
+            timeout=30.0,
+            headers={"User-Agent": USER_AGENT},
+        )
     return _s3_client
 
 
