@@ -306,7 +306,8 @@ export default function EmojiPicker(props: Props) {
         </Show>
       </div>
 
-      {/* Search bar — at bottom so it stays above virtual keyboard */}
+      {/* Search bar — last in DOM, but shown at top on desktop via column-reverse
+           and at bottom on mobile via column (above virtual keyboard) */}
       <input
         ref={searchRef}
         class="emoji-search"
