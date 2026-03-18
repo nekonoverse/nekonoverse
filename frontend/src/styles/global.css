@@ -2414,7 +2414,7 @@ a:hover {
 /* Emoji Picker */
 .emoji-picker {
   position: absolute;
-  bottom: 36px;
+  top: 100%;
   left: 0;
   background: var(--bg-card);
   border: 1px solid var(--border);
@@ -2426,7 +2426,7 @@ a:hover {
   max-width: min(320px, calc(100vw - 16px));
   max-height: calc(100dvh - 80px);
   display: flex;
-  flex-direction: column;
+  flex-direction: column-reverse;
 }
 
 /* Emoji picker: mobile bottom sheet (reaction bar & composer) */
@@ -2445,6 +2445,13 @@ a:hover {
     border-radius: var(--radius) var(--radius) 0 0;
     z-index: 200;
     padding-bottom: max(8px, env(safe-area-inset-bottom));
+    flex-direction: column;
+  }
+
+  .reaction-bar .emoji-picker .emoji-search,
+  .composer-toolbar .emoji-picker .emoji-search {
+    margin-bottom: 0;
+    margin-top: 6px;
   }
 
   .reaction-emoji-backdrop,
@@ -2463,7 +2470,7 @@ a:hover {
 .emoji-search {
   width: 100%;
   padding: 6px 8px;
-  margin-top: 6px;
+  margin-bottom: 6px;
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--bg-primary);
