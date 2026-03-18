@@ -1,9 +1,10 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import {
   getRemoteEmojiInfo,
-  importAndReact,
+  reactToNote,
   type RemoteEmojiInfo,
 } from "@nekonoverse/ui/api/statuses";
+import { importRemoteEmojiByShortcode } from "@nekonoverse/ui/api/admin";
 import EmojiEditForm, { type EmojiEditFields } from "./EmojiEditForm";
 import Emoji from "../Emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -72,34 +73,36 @@ export default function EmojiImportModal(props: Props) {
       .finally(() => setLoading(false));
   });
 
-  const buildBody = (react: boolean) => {
-    const p = parsed()!;
-    const f = fields();
-    const emojiWithDomain = `:${p.shortcode}@${p.domain}:`;
-    return {
-      emoji: emojiWithDomain,
-      shortcode: f.shortcode !== p.shortcode ? f.shortcode : undefined,
-      category: f.category || undefined,
-      author: f.author || undefined,
-      license: f.license || undefined,
-      description: f.description || undefined,
-      is_sensitive: f.isSensitive,
-      aliases: f.aliases
-        ? f.aliases
-            .split(",")
-            .map((s) => s.trim())
-            .filter(Boolean)
-        : undefined,
-      react,
-    };
-  };
-
   const handleSubmit = async (react: boolean) => {
     if (isDenied() || submitting()) return;
     setSubmitting(true);
     setError("");
     try {
-      await importAndReact(props.noteId, buildBody(react));
+      const p = parsed()!;
+      const f = fields();
+      const parsedAliases = f.aliases
+        ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean)
+        : undefined;
+      const localShortcode = f.shortcode !== p.shortcode ? f.shortcode : p.shortcode;
+
+      // Import via admin API
+      await importRemoteEmojiByShortcode({
+        shortcode: p.shortcode,
+        domain: p.domain,
+        shortcode_override: f.shortcode !== p.shortcode ? f.shortcode : undefined,
+        category: f.category || undefined,
+        author: f.author || undefined,
+        license: f.license || undefined,
+        description: f.description || undefined,
+        is_sensitive: f.isSensitive,
+        aliases: parsedAliases,
+      });
+
+      // React with the local emoji if requested
+      if (react) {
+        await reactToNote(props.noteId, `:${localShortcode}:`);
+      }
+
       props.onImported();
       props.onClose();
     } catch (e: any) {

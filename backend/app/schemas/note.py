@@ -203,18 +203,6 @@ class NoteResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class ImportReactRequest(BaseModel):
-    """Request body for import-and-react endpoint."""
-
-    emoji: str  # ":shortcode@domain:" format
-    shortcode: str | None = None
-    category: str | None = None
-    author: str | None = None
-    license: str | None = None
-    description: str | None = None
-    is_sensitive: bool | None = None
-    aliases: list[str] | None = None
-    react: bool = True  # False = import only, True = import + react
 
 
 class ContextResponse(BaseModel):

@@ -1,4 +1,4 @@
-"""Tests for import-and-react endpoint and importable flag in reaction summaries."""
+"""Tests for emoji import-by-shortcode and importable flag in reaction summaries."""
 
 import uuid
 from unittest.mock import AsyncMock, patch
@@ -78,67 +78,37 @@ async def note(db, admin_user):
     return note
 
 
-# --- import-react endpoint ---
+# --- import-by-shortcode endpoint ---
 
 
-async def test_import_react_no_auth(app_client, note, remote_emoji):
+async def test_import_by_shortcode_no_auth(app_client, remote_emoji):
     resp = await app_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":blobcat@remote.example:"},
+        "/api/v1/admin/emoji/import-by-shortcode",
+        json={"shortcode": "blobcat", "domain": "remote.example"},
     )
     assert resp.status_code == 401 or resp.status_code == 403
 
 
-async def test_import_react_regular_user_forbidden(authed_client, note, remote_emoji):
+async def test_import_by_shortcode_regular_user_forbidden(authed_client, remote_emoji):
     resp = await authed_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":blobcat@remote.example:"},
+        "/api/v1/admin/emoji/import-by-shortcode",
+        json={"shortcode": "blobcat", "domain": "remote.example"},
     )
     assert resp.status_code == 403
 
 
-async def test_import_react_already_exists_reacts(
-    admin_client, db, note, remote_emoji, mock_valkey
-):
-    """When local emoji exists, import is skipped and reaction is created."""
-    from app.models.custom_emoji import CustomEmoji
-
-    local = CustomEmoji(
-        shortcode="blobcat",
-        domain=None,
-        url="https://localhost/emoji/blobcat.png",
-        visible_in_picker=True,
-    )
-    db.add(local)
-    await db.flush()
-
+async def test_import_by_shortcode_not_found(admin_client):
     resp = await admin_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":blobcat@remote.example:"},
-    )
-    assert resp.status_code == 200
-
-
-async def test_import_react_invalid_format(admin_client, note):
-    resp = await admin_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":blobcat:"},
-    )
-    assert resp.status_code == 422
-
-
-async def test_import_react_not_found(admin_client, note):
-    resp = await admin_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":nonexistent@nowhere.example:"},
+        "/api/v1/admin/emoji/import-by-shortcode",
+        json={"shortcode": "nonexistent", "domain": "nowhere.example"},
     )
     assert resp.status_code == 404
 
 
-async def test_import_react_copy_denied(admin_client, note, remote_emoji_denied):
+async def test_import_by_shortcode_copy_denied(admin_client, remote_emoji_denied):
     resp = await admin_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":denied_cat@remote.example:"},
+        "/api/v1/admin/emoji/import-by-shortcode",
+        json={"shortcode": "denied_cat", "domain": "remote.example"},
     )
     assert resp.status_code == 422
     detail = resp.json()["detail"]
@@ -147,24 +117,43 @@ async def test_import_react_copy_denied(admin_client, note, remote_emoji_denied)
     assert "deny" in detail.lower() or "denied" in detail.lower()
 
 
-async def test_import_react_already_local(admin_client, db, note, remote_emoji, mock_valkey):
-    """When a local emoji already exists, skip import and react directly."""
-    from app.models.custom_emoji import CustomEmoji
+async def test_import_by_shortcode_with_overrides(
+    admin_client, db, remote_emoji, mock_valkey
+):
+    """Import with metadata overrides should apply them."""
+    with patch(
+        "app.services.emoji_service.import_remote_emoji_to_local",
+        new_callable=AsyncMock,
+    ) as mock_import:
+        from app.models.custom_emoji import CustomEmoji
 
-    local = CustomEmoji(
-        shortcode="blobcat",
-        domain=None,
-        url="https://localhost/emoji/blobcat.png",
-        visible_in_picker=True,
-    )
-    db.add(local)
-    await db.flush()
+        from datetime import datetime, timezone
 
-    resp = await admin_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":blobcat@remote.example:"},
-    )
-    assert resp.status_code == 200
+        local = CustomEmoji(
+            id=remote_emoji.id,
+            shortcode="blobcat",
+            domain=None,
+            url="https://localhost/emoji/blobcat.png",
+            visible_in_picker=True,
+            author="NewAuthor",
+            category="cats",
+            is_sensitive=False,
+            local_only=False,
+            created_at=datetime.now(timezone.utc),
+        )
+        mock_import.return_value = local
+
+        resp = await admin_client.post(
+            "/api/v1/admin/emoji/import-by-shortcode",
+            json={
+                "shortcode": "blobcat",
+                "domain": "remote.example",
+                "category": "cats",
+                "author": "NewAuthor",
+            },
+        )
+        assert resp.status_code == 200
+        mock_import.assert_called_once()
 
 
 # --- remote-info endpoint ---
@@ -297,35 +286,6 @@ async def test_reaction_summary_unicode_not_importable(db, admin_user, note, moc
 
 
 # --- verify_credentials permissions ---
-
-
-async def test_import_only_no_reaction(admin_client, db, note, remote_emoji, mock_valkey):
-    """react=False should import emoji without creating a reaction."""
-    from sqlalchemy import select
-    from app.models.reaction import Reaction
-    from app.models.custom_emoji import CustomEmoji
-
-    # Mock import since the remote URL is not reachable in tests
-    local_emoji = CustomEmoji(
-        shortcode="blobcat",
-        domain=None,
-        url="https://localhost/emoji/blobcat-local.png",
-        visible_in_picker=True,
-    )
-    db.add(local_emoji)
-    await db.flush()
-
-    resp = await admin_client.post(
-        f"/api/v1/statuses/{note.id}/import-react",
-        json={"emoji": ":blobcat@remote.example:", "react": False},
-    )
-    assert resp.status_code == 200, resp.text
-
-    # No reaction should be created
-    r2 = await db.execute(
-        select(Reaction).where(Reaction.note_id == note.id)
-    )
-    assert r2.scalar_one_or_none() is None
 
 
 async def test_verify_credentials_admin_permissions(admin_client):

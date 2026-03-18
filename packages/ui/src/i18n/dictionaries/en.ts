@@ -214,6 +214,7 @@ export const en: Dictionary = {
   "admin.addDomainBlock": "Add",
   "admin.noDomainBlocks": "No domain blocks",
   "admin.confirmRemoveDomain": "Remove this domain block?",
+  "admin.editEmoji": "Edit",
   "admin.remove": "Remove",
   "admin.allReports": "All",
   "admin.openReports": "Open",

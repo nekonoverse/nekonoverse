@@ -261,27 +261,7 @@ export async function getRemoteEmojiInfo(
   );
 }
 
-export interface ImportReactBody {
-  emoji: string;
-  shortcode?: string;
-  category?: string;
-  author?: string;
-  license?: string;
-  description?: string;
-  is_sensitive?: boolean;
-  aliases?: string[];
-  react?: boolean;
-}
 
-export async function importAndReact(
-  noteId: string,
-  body: ImportReactBody,
-): Promise<void> {
-  await apiRequest(`/api/v1/statuses/${noteId}/import-react`, {
-    method: "POST",
-    body,
-  });
-}
 
 export async function favouriteNote(noteId: string): Promise<Note> {
   return apiRequest<Note>(`/api/v1/statuses/${noteId}/favourite`, {
