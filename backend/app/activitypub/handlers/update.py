@@ -58,28 +58,40 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
         logger.warning("Update note denied: actor %s does not own note %s", actor_ap_id, ap_id)
         return
 
-    # Save current state as edit history before updating
-    from app.models.note_edit import NoteEdit
-
-    edit_record = NoteEdit(
-        note_id=note.id,
-        content=note.content,
-        source=note.source,
-        spoiler_text=note.spoiler_text,
-    )
-    db.add(edit_record)
-
-    content = data.get("content")
-    if content:
-        note.content = sanitize_html(content)
-
+    # Detect content changes
+    new_content = data.get("content")
+    new_sanitized = sanitize_html(new_content) if new_content else None
+    new_source = None
     source_data = data.get("source")
     if isinstance(source_data, dict):
-        note.source = source_data.get("content")
+        new_source = source_data.get("content")
+    new_spoiler = data.get("summary", note.spoiler_text)
 
-    note.sensitive = data.get("sensitive", note.sensitive)
-    note.spoiler_text = data.get("summary", note.spoiler_text)
-    note.updated_at = datetime.now(timezone.utc)
+    content_changed = (
+        (new_sanitized is not None and new_sanitized != note.content)
+        or (new_source is not None and new_source != note.source)
+        or new_spoiler != note.spoiler_text
+    )
+
+    # Only create edit history if actual content changed (not just poll vote updates)
+    if content_changed:
+        from app.models.note_edit import NoteEdit
+
+        edit_record = NoteEdit(
+            note_id=note.id,
+            content=note.content,
+            source=note.source,
+            spoiler_text=note.spoiler_text,
+        )
+        db.add(edit_record)
+
+        if new_sanitized:
+            note.content = new_sanitized
+        if new_source is not None:
+            note.source = new_source
+        note.spoiler_text = new_spoiler
+        note.sensitive = data.get("sensitive", note.sensitive)
+        note.updated_at = datetime.now(timezone.utc)
 
     # Update poll data if Question type
     if data.get("type") == "Question" and note.is_poll:

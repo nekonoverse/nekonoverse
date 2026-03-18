@@ -111,3 +111,74 @@ async def test_update_note_not_owned(db, mock_valkey):
 
     await db.refresh(note)
     assert "Hacked" not in note.content
+
+
+async def test_poll_update_no_edit_record(db, mock_valkey):
+    """Poll vote update (Question type) should NOT create a NoteEdit record."""
+    from app.activitypub.handlers.update import handle_update
+    from app.models.note_edit import NoteEdit
+    from sqlalchemy import select
+
+    remote_actor = await make_remote_actor(db, username="pollauthor", domain="poll.example")
+    note = await make_note(db, remote_actor, content="What color?", local=False)
+    note.is_poll = True
+    note.poll_options = [
+        {"title": "Red", "votes_count": 0},
+        {"title": "Blue", "votes_count": 0},
+    ]
+    note.poll_multiple = False
+    await db.commit()
+
+    # Send poll vote update (same content, different vote counts)
+    activity = {
+        "type": "Update",
+        "actor": remote_actor.ap_id,
+        "object": {
+            "id": note.ap_id,
+            "type": "Question",
+            "content": "<p>What color?</p>",
+            "oneOf": [
+                {"type": "Note", "name": "Red", "replies": {"type": "Collection", "totalItems": 5}},
+                {"type": "Note", "name": "Blue", "replies": {"type": "Collection", "totalItems": 3}},
+            ],
+        },
+    }
+
+    await handle_update(db, activity)
+
+    await db.refresh(note)
+    assert note.poll_options[0]["votes_count"] == 5
+    assert note.poll_options[1]["votes_count"] == 3
+
+    # No edit record should be created
+    result = await db.execute(select(NoteEdit).where(NoteEdit.note_id == note.id))
+    edits = result.scalars().all()
+    assert len(edits) == 0
+
+
+async def test_note_edit_creates_edit_record(db, mock_valkey):
+    """Actual content edit should create a NoteEdit record."""
+    from app.activitypub.handlers.update import handle_update
+    from app.models.note_edit import NoteEdit
+    from sqlalchemy import select
+
+    remote_actor = await make_remote_actor(db, username="editor2", domain="edit2.example")
+    note = await make_note(db, remote_actor, content="<p>Original</p>", local=False)
+    await db.commit()
+
+    activity = {
+        "type": "Update",
+        "actor": remote_actor.ap_id,
+        "object": {
+            "id": note.ap_id,
+            "type": "Note",
+            "content": "<p>Changed content</p>",
+        },
+    }
+
+    await handle_update(db, activity)
+
+    result = await db.execute(select(NoteEdit).where(NoteEdit.note_id == note.id))
+    edits = result.scalars().all()
+    assert len(edits) == 1
+    assert "Original" in edits[0].content
