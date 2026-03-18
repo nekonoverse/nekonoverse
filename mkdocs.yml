@@ -30,6 +30,7 @@ nav:
   - アーキテクチャ: architecture.md
   - 多言語対応: i18n.md
   - 利用規約・プライバシーポリシー: legal-templates.md
+  - マスコット (Nobby): mascot.md
   - 変更履歴: changelog.md
 
 plugins:
