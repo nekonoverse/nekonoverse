@@ -262,6 +262,30 @@ async def test_mark_all_as_read_api(db, app_client, mock_valkey, test_user, test
 
 
 @pytest.mark.anyio
+async def test_reply_with_mention_no_duplicate(db, app_client, mock_valkey, test_user, test_user_b):
+    """Replying to a user's note while mentioning them should only create a reply notification."""
+    note = await make_note(db, test_user.actor, content="Original post")
+
+    client = authed_client_for(app_client, mock_valkey, test_user_b)
+    resp = await client.post(
+        "/api/v1/statuses",
+        json={
+            "status": f"@{test_user.actor.username} replying to you",
+            "in_reply_to_id": str(note.id),
+            "visibility": "public",
+        },
+    )
+    assert resp.status_code in (200, 201)
+
+    from app.services.notification_service import get_notifications
+    notifs = await get_notifications(db, test_user.actor_id)
+    reply_notifs = [n for n in notifs if n.type == "reply"]
+    mention_notifs = [n for n in notifs if n.type == "mention"]
+    assert len(reply_notifs) == 1
+    assert len(mention_notifs) == 0  # no duplicate
+
+
+@pytest.mark.anyio
 async def test_notifications_require_auth(app_client):
     resp = await app_client.get("/api/v1/notifications")
     assert resp.status_code == 401
