@@ -142,5 +142,9 @@ async def change_password(
 
 
 async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
-    result = await db.execute(select(User).where(User.id == user_id))
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(User).where(User.id == user_id).options(selectinload(User.actor))
+    )
     return result.scalar_one_or_none()

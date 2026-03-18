@@ -118,12 +118,11 @@ class PubSubHub:
             channel = msg["channel"]
             data = msg["data"]
 
-            async with self._lock:
-                queues = self._subscribers.get(channel)
-                if not queues:
-                    continue
-                # コピーしてロック外でも安全にイテレートする
-                queues_snapshot = list(queues)
+            # L-9: ロックなしでsubscribersを読み取り (atomic参照読み取り)
+            queues = self._subscribers.get(channel)
+            if not queues:
+                continue
+            queues_snapshot = list(queues)
 
             for q in queues_snapshot:
                 try:

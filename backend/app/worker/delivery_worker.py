@@ -23,8 +23,9 @@ AP_CONTENT_TYPE = 'application/ld+json; profile="https://www.w3.org/ns/activitys
 
 MAX_CONCURRENT = 16
 
-# 署名鍵キャッシュ (actor_id -> (Actor, private_key_pem))
-_signing_key_cache: dict[uuid.UUID, tuple[Actor, str]] = {}
+# L-1: 署名鍵キャッシュ (actor_id -> (Actor, private_key_pem, cached_at))
+_signing_key_cache: dict[uuid.UUID, tuple[Actor, str, float]] = {}
+_SIGNING_KEY_CACHE_TTL = 3600  # 1 hour
 
 # ワーカー用の共有HTTPクライアント
 _http_client: httpx.AsyncClient | None = None
@@ -62,11 +63,30 @@ async def get_pending_jobs(
     return list(result.scalars().all())
 
 
+async def get_next_jobs(db: AsyncSession, limit: int = 20) -> list[DeliveryJob]:
+    """H-1: Get multiple deliverable jobs for concurrent processing."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(DeliveryJob)
+        .where(
+            DeliveryJob.status == "pending",
+            (DeliveryJob.next_retry_at.is_(None)) | (DeliveryJob.next_retry_at <= now),
+        )
+        .order_by(DeliveryJob.created_at)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
+
+
 async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Actor | None, str]:
     """Get actor and its private key for signing. Uses in-memory cache."""
+    import time
+
     cached = _signing_key_cache.get(actor_id)
     if cached:
-        return cached
+        actor, pem, cached_at = cached
+        if time.time() - cached_at < _SIGNING_KEY_CACHE_TTL:
+            return actor, pem
 
     result = await db.execute(
         select(Actor).options(selectinload(Actor.local_user)).where(Actor.id == actor_id)
@@ -75,9 +95,8 @@ async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Act
     if not actor or not actor.local_user:
         return actor, ""
 
-    pair = (actor, actor.local_user.private_key_pem)
-    _signing_key_cache[actor_id] = pair
-    return pair
+    _signing_key_cache[actor_id] = (actor, actor.local_user.private_key_pem, time.time())
+    return actor, actor.local_user.private_key_pem
 
 
 async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:

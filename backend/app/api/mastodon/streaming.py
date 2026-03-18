@@ -2,6 +2,7 @@
 
 import asyncio
 import json
+import re
 
 from fastapi import APIRouter, Depends, Request
 from fastapi.responses import StreamingResponse
@@ -14,32 +15,27 @@ router = APIRouter(prefix="/api/v1/streaming", tags=["streaming"])
 
 KEEPALIVE_INTERVAL = 30  # seconds
 
+_EVENT_TYPE_RE = re.compile(r'^[a-zA-Z0-9_]+$')
+
 
 async def _event_stream(request: Request, channels: list[str]):
     """Generic SSE event stream using the shared PubSubHub."""
     queue = await pubsub_hub.subscribe(channels)
-    keepalive_counter = 0
     try:
         while True:
             if await request.is_disconnected():
                 break
             try:
-                msg = queue.get_nowait()
+                # L-7: ポーリングからイベント駆動に変更
+                msg = await asyncio.wait_for(queue.get(), timeout=KEEPALIVE_INTERVAL)
                 data = json.loads(msg["data"])
                 event_type = data.get("event", "update")
-                # L-9: イベントタイプを英数字とアンダースコアに制限
-                import re
-                if not re.match(r'^[a-zA-Z0-9_]+$', event_type):
+                if not _EVENT_TYPE_RE.match(event_type):
                     event_type = "update"
                 payload = json.dumps(data.get("payload", {}))
                 yield f"event: {event_type}\ndata: {payload}\n\n"
-                keepalive_counter = 0
-            except asyncio.QueueEmpty:
-                keepalive_counter += 1
-                if keepalive_counter >= KEEPALIVE_INTERVAL:
-                    yield ":\n\n"
-                    keepalive_counter = 0
-                await asyncio.sleep(1)
+            except asyncio.TimeoutError:
+                yield ":\n\n"  # keepalive
     finally:
         await pubsub_hub.unsubscribe(queue, channels)
 

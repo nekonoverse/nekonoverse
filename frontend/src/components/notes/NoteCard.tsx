@@ -1,4 +1,4 @@
-import { Show, For, createSignal, onCleanup, batch } from "solid-js";
+import { Show, For, createSignal, createEffect, onCleanup, batch } from "solid-js";
 import type { Note, Poll, MediaAttachment } from "@nekonoverse/ui/api/statuses";
 import {
   reblogNote,
@@ -274,10 +274,15 @@ export default function NoteCard(props: Props) {
     }
   };
 
-  if (typeof document !== "undefined") {
-    document.addEventListener("click", handleDocClick);
-    onCleanup(() => document.removeEventListener("click", handleDocClick));
-  }
+  // M-19: ドロップダウンが開いている時だけリスナーを追加してパフォーマンス改善
+  createEffect(() => {
+    if (moreOpen()) {
+      document.addEventListener("click", handleDocClick);
+    } else {
+      document.removeEventListener("click", handleDocClick);
+    }
+  });
+  onCleanup(() => document.removeEventListener("click", handleDocClick));
 
   const handleBlock = async () => {
     setMoreOpen(false);

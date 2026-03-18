@@ -77,6 +77,10 @@ services:
   app:
     image: ghcr.io/nekonoverse/nekonoverse-backend:latest
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 1G
     user: "0:0"
     command:
       - sh
@@ -130,6 +134,10 @@ services:
   worker:
     image: ghcr.io/nekonoverse/nekonoverse-backend:latest
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     command: python -m app.worker.main
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
