@@ -6885,33 +6885,73 @@ a:hover {
   color: var(--accent);
 }
 
-/* ねこ語選択時の肉球カーソル */
-html[lang="neko"],
-html[lang="neko"] * {
-  cursor: url('/cursors/paw-default.svg') 8 2, auto;
+/* 肉球カーソル (外観設定で選択、テーマ別) */
+/* data-cursor と data-theme は両方 <html> に付くので同一要素セレクタを使用 */
+
+/* Dark theme (default — data-theme 属性なし) */
+html[data-cursor="paw"],
+html[data-cursor="paw"] * {
+  cursor: url('/cursors/dark/paw-default.svg') 8 2, auto;
+}
+html[data-cursor="paw"] a,
+html[data-cursor="paw"] button,
+html[data-cursor="paw"] [role="button"],
+html[data-cursor="paw"] input[type="submit"],
+html[data-cursor="paw"] select,
+html[data-cursor="paw"] label[for],
+html[data-cursor="paw"] summary {
+  cursor: url('/cursors/dark/paw-pointer.svg') 10 4, pointer;
+}
+html[data-cursor="paw"] :active,
+html[data-cursor="paw"] *:active {
+  cursor: url('/cursors/dark/paw-active.svg') 10 4, auto;
 }
 
-html[lang="neko"] a,
-html[lang="neko"] button,
-html[lang="neko"] [role="button"],
-html[lang="neko"] input[type="submit"],
-html[lang="neko"] select,
-html[lang="neko"] label[for],
-html[lang="neko"] summary {
-  cursor: url('/cursors/paw-pointer.svg') 10 4, pointer;
+/* Light theme */
+html[data-cursor="paw"][data-theme="light"],
+html[data-cursor="paw"][data-theme="light"] * {
+  cursor: url('/cursors/light/paw-default.svg') 8 2, auto;
+}
+html[data-cursor="paw"][data-theme="light"] a,
+html[data-cursor="paw"][data-theme="light"] button,
+html[data-cursor="paw"][data-theme="light"] [role="button"],
+html[data-cursor="paw"][data-theme="light"] input[type="submit"],
+html[data-cursor="paw"][data-theme="light"] select,
+html[data-cursor="paw"][data-theme="light"] label[for],
+html[data-cursor="paw"][data-theme="light"] summary {
+  cursor: url('/cursors/light/paw-pointer.svg') 10 4, pointer;
+}
+html[data-cursor="paw"][data-theme="light"] :active,
+html[data-cursor="paw"][data-theme="light"] *:active {
+  cursor: url('/cursors/light/paw-active.svg') 10 4, auto;
 }
 
-html[lang="neko"] :active,
-html[lang="neko"] *:active {
-  cursor: url('/cursors/paw-active.svg') 10 4, auto;
+/* Novel theme */
+html[data-cursor="paw"][data-theme="novel"],
+html[data-cursor="paw"][data-theme="novel"] * {
+  cursor: url('/cursors/novel/paw-default.svg') 8 2, auto;
+}
+html[data-cursor="paw"][data-theme="novel"] a,
+html[data-cursor="paw"][data-theme="novel"] button,
+html[data-cursor="paw"][data-theme="novel"] [role="button"],
+html[data-cursor="paw"][data-theme="novel"] input[type="submit"],
+html[data-cursor="paw"][data-theme="novel"] select,
+html[data-cursor="paw"][data-theme="novel"] label[for],
+html[data-cursor="paw"][data-theme="novel"] summary {
+  cursor: url('/cursors/novel/paw-pointer.svg') 10 4, pointer;
+}
+html[data-cursor="paw"][data-theme="novel"] :active,
+html[data-cursor="paw"][data-theme="novel"] *:active {
+  cursor: url('/cursors/novel/paw-active.svg') 10 4, auto;
 }
 
-html[lang="neko"] input[type="text"],
-html[lang="neko"] input[type="search"],
-html[lang="neko"] input[type="email"],
-html[lang="neko"] input[type="password"],
-html[lang="neko"] input[type="url"],
-html[lang="neko"] textarea,
-html[lang="neko"] [contenteditable="true"] {
+/* Text cursor override (all themes) */
+html[data-cursor="paw"] input[type="text"],
+html[data-cursor="paw"] input[type="search"],
+html[data-cursor="paw"] input[type="email"],
+html[data-cursor="paw"] input[type="password"],
+html[data-cursor="paw"] input[type="url"],
+html[data-cursor="paw"] textarea,
+html[data-cursor="paw"] [contenteditable="true"] {
   cursor: text;
 }

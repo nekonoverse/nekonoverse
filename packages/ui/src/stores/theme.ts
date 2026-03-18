@@ -4,11 +4,13 @@ export type Theme = "dark" | "light" | "novel";
 export type FontSize = "small" | "medium" | "large" | "xlarge" | "xxlarge";
 export type FontFamily = "noto" | "hiragino" | "yu-mac" | "yu-win" | "meiryo" | "ipa" | "system" | "custom";
 export type TimeFormat = "absolute" | "relative" | "combined" | "unixtime";
+export type CursorStyle = "default" | "paw";
 
 const THEMES: Theme[] = ["dark", "light", "novel"];
 const FONT_SIZES: FontSize[] = ["small", "medium", "large", "xlarge", "xxlarge"];
 const FONT_FAMILIES: FontFamily[] = ["noto", "hiragino", "yu-mac", "yu-win", "meiryo", "ipa", "system", "custom"];
 const TIME_FORMATS: TimeFormat[] = ["absolute", "relative", "combined", "unixtime"];
+const CURSOR_STYLES: CursorStyle[] = ["default", "paw"];
 const FONT_SIZE_MAP: Record<FontSize, string> = {
   small: "14px",
   medium: "16px",
@@ -54,6 +56,12 @@ function loadTimeFormat(): TimeFormat {
   return "absolute";
 }
 
+function loadCursorStyle(): CursorStyle {
+  const saved = localStorage.getItem("cursorStyle");
+  if (saved && CURSOR_STYLES.includes(saved as CursorStyle)) return saved as CursorStyle;
+  return "default";
+}
+
 function applyTheme(t: Theme) {
   if (t === "dark") {
     document.documentElement.removeAttribute("data-theme");
@@ -73,13 +81,22 @@ function applyFontFamily(f: FontFamily, custom?: string) {
   document.documentElement.style.setProperty("--font-family", value);
 }
 
+function applyCursorStyle(s: CursorStyle) {
+  if (s === "default") {
+    document.documentElement.removeAttribute("data-cursor");
+  } else {
+    document.documentElement.setAttribute("data-cursor", s);
+  }
+}
+
 const [theme, setThemeSignal] = createSignal<Theme>(loadTheme());
 const [fontSize, setFontSizeSignal] = createSignal<FontSize>(loadFontSize());
 const [fontFamily, setFontFamilySignal] = createSignal<FontFamily>(loadFontFamily());
 const [customFontFamily, setCustomFontFamilySignal] = createSignal<string>(loadCustomFontFamily());
 const [timeFormat, setTimeFormatSignal] = createSignal<TimeFormat>(loadTimeFormat());
+const [cursorStyle, setCursorStyleSignal] = createSignal<CursorStyle>(loadCursorStyle());
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat };
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle };
 
 export function setTheme(t: Theme) {
   setThemeSignal(t);
@@ -112,8 +129,15 @@ export function setTimeFormat(f: TimeFormat) {
   localStorage.setItem("timeFormat", f);
 }
 
+export function setCursorStyle(s: CursorStyle) {
+  setCursorStyleSignal(s);
+  localStorage.setItem("cursorStyle", s);
+  applyCursorStyle(s);
+}
+
 export function initTheme() {
   applyTheme(theme());
   applyFontSize(fontSize());
   applyFontFamily(fontFamily(), customFontFamily());
+  applyCursorStyle(cursorStyle());
 }
