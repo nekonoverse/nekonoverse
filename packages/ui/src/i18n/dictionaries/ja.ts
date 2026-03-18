@@ -95,6 +95,7 @@ export const ja = {
   "settings.themeLight": "ライト",
   "settings.themeNovel": "Novel",
   "settings.fontSize": "文字サイズ",
+  "settings.fontSample": "あ",
   "settings.fontSmall": "小",
   "settings.fontMedium": "中",
   "settings.fontLarge": "大",
