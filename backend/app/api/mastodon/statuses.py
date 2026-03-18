@@ -356,14 +356,15 @@ async def note_to_response(
     # Resolve server software from cache or Valkey
     sw = None
     sw_ver = None
+    sw_name = None
     if actor.domain:
         if software_cache is not None:
             cached = software_cache.get(actor.domain)
             if cached is not None:
-                sw, sw_ver = cached
+                sw, sw_ver, sw_name = cached
         elif db:
             from app.utils.nodeinfo import get_domain_software_info
-            sw, sw_ver = await get_domain_software_info(actor.domain)
+            sw, sw_ver, sw_name = await get_domain_software_info(actor.domain)
 
     actor_resp = NoteActorResponse(
         id=actor.id,
@@ -374,6 +375,7 @@ async def note_to_response(
         domain=actor.domain,
         server_software=sw,
         server_software_version=sw_ver,
+        server_name=sw_name,
         emojis=actor_emojis,
         acct=acct,
         uri=actor.ap_id,
@@ -591,7 +593,7 @@ async def notes_to_responses(
             domains.add(n.renote_of.actor.domain)
         if hasattr(n, "quoted_note") and n.quoted_note and n.quoted_note.actor.domain:
             domains.add(n.quoted_note.actor.domain)
-    software_cache: dict[str, tuple[str | None, str | None]] = {}
+    software_cache: dict[str, tuple[str | None, str | None, str | None]] = {}
     for domain in domains:
         software_cache[domain] = await get_domain_software_info(domain)
 

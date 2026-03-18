@@ -132,6 +132,8 @@ export const ja = {
   "settings.posting": "投稿",
   "settings.defaultVisibility": "デフォルト公開範囲",
   "settings.rememberVisibility": "前回の公開範囲を引き継ぐ",
+  "settings.timeline": "タイムライン",
+  "settings.hideNonFollowedReplies": "ホームTLでフォロー外へのリプライを非表示",
   "visibility.public": "公開",
   "visibility.unlisted": "未収載",
   "visibility.followers": "フォロワー",

@@ -190,7 +190,7 @@ class TestGetDomainSoftwareInfo:
             mock_client.__aexit__ = AsyncMock(return_value=False)
             mock_client_cls.return_value = mock_client
 
-            name, version = await get_domain_software_info("example.com")
+            name, version, _iname = await get_domain_software_info("example.com")
 
         assert name == "misskey"
         assert version == "2026.3.1"
@@ -199,10 +199,10 @@ class TestGetDomainSoftwareInfo:
         from app.utils.nodeinfo import get_domain_software_info
 
         mock_valkey = AsyncMock()
-        mock_valkey.get = AsyncMock(side_effect=[b"sharkey", b"4.0.0"])
+        mock_valkey.get = AsyncMock(side_effect=[b"sharkey", b"4.0.0", b""])
 
         with patch("app.valkey_client.valkey", mock_valkey):
-            name, version = await get_domain_software_info("example.com")
+            name, version, _iname = await get_domain_software_info("example.com")
 
         assert name == "sharkey"
         assert version == "4.0.0"
@@ -211,10 +211,10 @@ class TestGetDomainSoftwareInfo:
         from app.utils.nodeinfo import get_domain_software_info
 
         mock_valkey = AsyncMock()
-        mock_valkey.get = AsyncMock(side_effect=[b"", b""])
+        mock_valkey.get = AsyncMock(side_effect=[b"", b"", b""])
 
         with patch("app.valkey_client.valkey", mock_valkey):
-            name, version = await get_domain_software_info("example.com")
+            name, version, _iname = await get_domain_software_info("example.com")
 
         assert name is None
         assert version is None

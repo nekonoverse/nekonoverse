@@ -96,7 +96,11 @@ const [customFontFamily, setCustomFontFamilySignal] = createSignal<string>(loadC
 const [timeFormat, setTimeFormatSignal] = createSignal<TimeFormat>(loadTimeFormat());
 const [cursorStyle, setCursorStyleSignal] = createSignal<CursorStyle>(loadCursorStyle());
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle };
+const [hideNonFollowedReplies, setHideNonFollowedRepliesSignal] = createSignal<boolean>(
+  localStorage.getItem("nekonoverse:hide-non-followed-replies") !== "false"
+);
+
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, hideNonFollowedReplies };
 
 export function setTheme(t: Theme) {
   setThemeSignal(t);
@@ -133,6 +137,11 @@ export function setCursorStyle(s: CursorStyle) {
   setCursorStyleSignal(s);
   localStorage.setItem("cursorStyle", s);
   applyCursorStyle(s);
+}
+
+export function setHideNonFollowedReplies(v: boolean) {
+  setHideNonFollowedRepliesSignal(v);
+  localStorage.setItem("nekonoverse:hide-non-followed-replies", String(v));
 }
 
 export function initTheme() {
