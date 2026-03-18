@@ -744,17 +744,40 @@ async def import_remote_emoji_by_shortcode(
     user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local
+    from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local, update_emoji
 
     remote = await get_custom_emoji(db, body.shortcode, body.domain)
     if not remote:
         raise HTTPException(status_code=404, detail="Remote emoji not found")
+
+    # Apply metadata overrides to remote emoji before import
+    overrides = {}
+    if body.category is not None:
+        overrides["category"] = body.category
+    if body.author is not None:
+        overrides["author"] = body.author
+    if body.license is not None:
+        overrides["license"] = body.license
+    if body.description is not None:
+        overrides["description"] = body.description
+    if body.is_sensitive is not None:
+        overrides["is_sensitive"] = body.is_sensitive
+    if body.aliases is not None:
+        overrides["aliases"] = body.aliases
+    if overrides:
+        await update_emoji(db, remote.id, overrides)
+
     try:
         emoji = await import_remote_emoji_to_local(db, remote.id)
-        await db.commit()
-        return AdminEmojiResponse.model_validate(emoji)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # Apply shortcode override to the new local emoji
+    if body.shortcode_override and body.shortcode_override != body.shortcode:
+        await update_emoji(db, emoji.id, {"shortcode": body.shortcode_override})
+
+    await db.commit()
+    return AdminEmojiResponse.model_validate(emoji)
 
 
 @router.post("/emoji/add", response_model=AdminEmojiResponse)

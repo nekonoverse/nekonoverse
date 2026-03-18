@@ -214,6 +214,7 @@ export const neko: Dictionary = {
   "admin.addDomainBlock": "ついかにゃ",
   "admin.noDomainBlocks": "ドメインブロックにゃいにゃ",
   "admin.confirmRemoveDomain": "このドメインブロックかいじょするにゃ？",
+  "admin.editEmoji": "へんしゅうにゃ",
   "admin.remove": "かいじょにゃ",
   "admin.allReports": "ぜんぶにゃ",
   "admin.openReports": "みたいおうにゃ",

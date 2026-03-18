@@ -44,6 +44,8 @@ import {
   getRemoteEmojis,
   getRemoteEmojiDomains,
   importRemoteEmoji,
+  updateEmoji,
+  importRemoteEmojiByShortcode,
   getServerFiles,
   uploadServerFile,
   deleteServerFile,
@@ -1303,6 +1305,22 @@ function EmojiTab() {
   const [importing, setImporting] = createSignal(false);
   const [importMsg, setImportMsg] = createSignal("");
 
+  // Edit modal state
+  const [editTarget, setEditTarget] = createSignal<AdminEmoji | null>(null);
+  const [editFields, setEditFields] = createSignal<EmojiEditFields>({
+    shortcode: "", category: "", author: "", license: "", description: "", isSensitive: false, aliases: "",
+  });
+  const [editSaving, setEditSaving] = createSignal(false);
+  const [editError, setEditError] = createSignal("");
+
+  // Remote import modal state
+  const [importTarget, setImportTarget] = createSignal<RemoteEmoji | null>(null);
+  const [impFields, setImpFields] = createSignal<EmojiEditFields>({
+    shortcode: "", category: "", author: "", license: "", description: "", isSensitive: false, aliases: "",
+  });
+  const [impSaving, setImpSaving] = createSignal(false);
+  const [impError, setImpError] = createSignal("");
+
   // Remote emoji state
   const [remoteEmojis, setRemoteEmojis] = createSignal<RemoteEmoji[]>([]);
   const [remoteDomains, setRemoteDomains] = createSignal<string[]>([]);
@@ -1447,6 +1465,92 @@ function EmojiTab() {
     (e.currentTarget as HTMLInputElement).value = "";
   };
 
+  const openEdit = (e: AdminEmoji) => {
+    setEditTarget(e);
+    setEditFields({
+      shortcode: e.shortcode,
+      category: e.category || "",
+      author: e.author || "",
+      license: e.license || "",
+      description: e.description || "",
+      isSensitive: e.is_sensitive,
+      aliases: (e.aliases || []).join(", "),
+    });
+    setEditError("");
+  };
+
+  const handleEditSave = async () => {
+    const target = editTarget();
+    if (!target || editSaving()) return;
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const f = editFields();
+      await updateEmoji(target.id, {
+        shortcode: f.shortcode !== target.shortcode ? f.shortcode : undefined,
+        category: f.category || undefined,
+        author: f.author || undefined,
+        license: f.license || undefined,
+        description: f.description || undefined,
+        is_sensitive: f.isSensitive,
+        aliases: f.aliases
+          ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean)
+          : [],
+      });
+      setEditTarget(null);
+      await load();
+    } catch (e: any) {
+      setEditError(e.message || "Failed to save");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const openImportModal = (e: RemoteEmoji) => {
+    setImportTarget(e);
+    setImpFields({
+      shortcode: e.shortcode,
+      category: e.category || "",
+      author: e.author || "",
+      license: e.license || "",
+      description: e.description || "",
+      isSensitive: e.is_sensitive,
+      aliases: (e.aliases || []).join(", "),
+    });
+    setImpError("");
+  };
+
+  const handleImportSave = async () => {
+    const target = importTarget();
+    if (!target || !target.domain || impSaving()) return;
+    setImpSaving(true);
+    setImpError("");
+    try {
+      const f = impFields();
+      await importRemoteEmojiByShortcode({
+        shortcode: target.shortcode,
+        domain: target.domain,
+        shortcode_override: f.shortcode !== target.shortcode ? f.shortcode : undefined,
+        category: f.category || undefined,
+        author: f.author || undefined,
+        license: f.license || undefined,
+        description: f.description || undefined,
+        is_sensitive: f.isSensitive,
+        aliases: f.aliases
+          ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean)
+          : undefined,
+      });
+      setImportTarget(null);
+      setRemoteMsg(t("admin.importSuccess"));
+      await load();
+      await loadRemote();
+    } catch (e: any) {
+      setImpError(e.message || t("admin.importFailed"));
+    } finally {
+      setImpSaving(false);
+    }
+  };
+
   return (
     <div class="settings-section">
       <h3>{t("admin.tabEmoji")}</h3>
@@ -1529,6 +1633,12 @@ function EmojiTab() {
                     </Show>
                   </div>
                   <button
+                    class="btn btn-small"
+                    onClick={() => openEdit(e)}
+                  >
+                    {t("admin.editEmoji")}
+                  </button>
+                  <button
                     class="btn btn-small btn-danger"
                     onClick={() => handleDelete(e.id)}
                   >
@@ -1594,14 +1704,10 @@ function EmojiTab() {
                 </div>
                 <button
                   class="btn btn-small"
-                  onClick={() => handleImportRemote(e.id)}
-                  disabled={
-                    importingId() === e.id || e.copy_permission === "deny"
-                  }
+                  onClick={() => openImportModal(e)}
+                  disabled={e.copy_permission === "deny"}
                 >
-                  {importingId() === e.id
-                    ? t("common.loading")
-                    : t("admin.importEmoji")}
+                  {t("admin.importEmoji")}
                 </button>
               </div>
             )}
@@ -1616,6 +1722,72 @@ function EmojiTab() {
         }
       >
         <p class="empty">{t("admin.noRemoteEmoji")}</p>
+      </Show>
+
+      {/* Edit local emoji modal */}
+      <Show when={editTarget()}>
+        <div class="modal-overlay" onClick={() => setEditTarget(null)}>
+          <div class="modal-content" style="max-width: 440px" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3 style="display: flex; align-items: center; gap: 8px">
+                <img src={editTarget()!.url} alt={editTarget()!.shortcode} style="height: 32px" />
+                {t("admin.editEmoji")}
+              </h3>
+              <button class="modal-close" onClick={() => setEditTarget(null)}>✕</button>
+            </div>
+            <div class="emoji-import-form">
+              <EmojiEditForm
+                fields={editFields()}
+                onChange={setEditFields}
+              />
+              <Show when={editError()}>
+                <div class="emoji-import-error">{editError()}</div>
+              </Show>
+              <div class="emoji-import-actions">
+                <button class="btn" onClick={() => setEditTarget(null)}>
+                  {t("common.cancel")}
+                </button>
+                <button class="btn btn-primary" onClick={handleEditSave} disabled={editSaving()}>
+                  {editSaving() ? t("common.loading") : t("settings.save")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Import remote emoji modal */}
+      <Show when={importTarget()}>
+        <div class="modal-overlay" onClick={() => setImportTarget(null)}>
+          <div class="modal-content" style="max-width: 440px" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3 style="display: flex; align-items: center; gap: 8px">
+                <img src={importTarget()!.url} alt={importTarget()!.shortcode} style="height: 32px" />
+                {t("admin.importEmoji")}
+              </h3>
+              <button class="modal-close" onClick={() => setImportTarget(null)}>✕</button>
+            </div>
+            <div class="emoji-import-form">
+              <EmojiEditForm
+                fields={impFields()}
+                onChange={setImpFields}
+                previewUrl={importTarget()!.url}
+                previewDomain={importTarget()!.domain}
+              />
+              <Show when={impError()}>
+                <div class="emoji-import-error">{impError()}</div>
+              </Show>
+              <div class="emoji-import-actions">
+                <button class="btn" onClick={() => setImportTarget(null)}>
+                  {t("common.cancel")}
+                </button>
+                <button class="btn btn-primary" onClick={handleImportSave} disabled={impSaving()}>
+                  {impSaving() ? t("common.loading") : t("admin.importEmoji")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </Show>
     </div>
   );

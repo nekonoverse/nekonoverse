@@ -248,10 +248,44 @@ export async function importRemoteEmoji(emojiId: string): Promise<AdminEmoji> {
   return apiRequest<AdminEmoji>(`/api/v1/admin/emoji/import-remote/${emojiId}`, { method: "POST" });
 }
 
-export async function importRemoteEmojiByShortcode(shortcode: string, domain: string): Promise<AdminEmoji> {
+export interface ImportByShortcodeBody {
+  shortcode: string;
+  domain: string;
+  shortcode_override?: string;
+  category?: string;
+  author?: string;
+  license?: string;
+  description?: string;
+  is_sensitive?: boolean;
+  aliases?: string[];
+}
+
+export async function importRemoteEmojiByShortcode(body: ImportByShortcodeBody): Promise<AdminEmoji> {
   return apiRequest<AdminEmoji>("/api/v1/admin/emoji/import-by-shortcode", {
     method: "POST",
-    body: { shortcode, domain },
+    body,
+  });
+}
+
+export interface AdminEmojiUpdate {
+  shortcode?: string;
+  category?: string;
+  visible_in_picker?: boolean;
+  aliases?: string[];
+  license?: string;
+  is_sensitive?: boolean;
+  local_only?: boolean;
+  author?: string;
+  description?: string;
+  copy_permission?: string;
+  usage_info?: string;
+  is_based_on?: string;
+}
+
+export async function updateEmoji(emojiId: string, body: AdminEmojiUpdate): Promise<AdminEmoji> {
+  return apiRequest<AdminEmoji>(`/api/v1/admin/emoji/${emojiId}`, {
+    method: "PATCH",
+    body,
   });
 }
 

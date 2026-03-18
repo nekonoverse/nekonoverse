@@ -160,6 +160,13 @@ class AdminRemoteEmojiResponse(BaseModel):
 class ImportByShortcodeRequest(BaseModel):
     shortcode: str = Field(min_length=1, max_length=100)
     domain: str = Field(min_length=1, max_length=255)
+    shortcode_override: str | None = Field(None, max_length=100, pattern=r"^[a-zA-Z0-9_]+$")
+    category: str | None = None
+    author: str | None = None
+    license: str | None = None
+    description: str | None = None
+    is_sensitive: bool | None = None
+    aliases: list[str] | None = None
 
 
 # --- Federation ---

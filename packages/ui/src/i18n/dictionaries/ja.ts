@@ -212,6 +212,7 @@ export const ja = {
   "admin.addDomainBlock": "追加",
   "admin.noDomainBlocks": "ドメインブロックはありません",
   "admin.confirmRemoveDomain": "このドメインブロックを解除しますか？",
+  "admin.editEmoji": "編集",
   "admin.remove": "解除",
   "admin.allReports": "すべて",
   "admin.openReports": "未対応",
