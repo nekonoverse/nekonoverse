@@ -277,12 +277,13 @@ class TestReplyFederation:
         fedibird.create_status(
             f"Reply from Fedibird {time.time()}", in_reply_to_id=fb_status["id"]
         )
+        time.sleep(5)  # Fedibird の Sidekiq ジョブキュー処理待ち
 
         def check_reply():
             ctx = neko.get_context(note["id"])
             return len(ctx.get("descendants", [])) >= 1
 
-        poll_until(check_reply, timeout=120, desc="reply federated to neko")
+        poll_until(check_reply, timeout=180, interval=3, desc="reply federated to neko")
 
     def test_neko_reply_to_fedibird_note(
         self, neko: NekoClient, fedibird: FedibirdClient, alice, bob
