@@ -230,7 +230,11 @@ export default function Home() {
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
-    if (notes().some((n) => n.id === id || n.reblog?.id === id)) {
+    const inNotes = notes().some((n) => n.id === id || n.reblog?.id === id);
+    const inBuffer = bufferedNotes().some(
+      (n) => n.id === id || n.reblog?.id === id,
+    );
+    if (inNotes || inBuffer) {
       const existing = pendingReactionRefresh.get(id);
       if (existing) clearTimeout(existing);
       pendingReactionRefresh.set(
@@ -299,13 +303,13 @@ export default function Home() {
   const refreshNote = async (noteId: string) => {
     try {
       const updated = await getNote(noteId);
-      setNotes((prev) =>
-        prev.map((n) => {
-          if (n.id === noteId) return updated;
-          if (n.reblog?.id === noteId) return { ...n, reblog: updated };
-          return n;
-        }),
-      );
+      const mapper = (n: Note) => {
+        if (n.id === noteId) return updated;
+        if (n.reblog?.id === noteId) return { ...n, reblog: updated };
+        return n;
+      };
+      setNotes((prev) => prev.map(mapper));
+      setBufferedNotes((prev) => prev.map(mapper));
     } catch {
       // ignore
     }
