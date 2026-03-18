@@ -3,6 +3,9 @@ name: Misskey Federation Test
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   misskey-federation-test:
     runs-on: ubuntu-latest

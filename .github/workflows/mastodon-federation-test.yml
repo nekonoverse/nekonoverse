@@ -3,6 +3,9 @@ name: Mastodon Federation Test
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   mastodon-federation-test:
     runs-on: ubuntu-latest
