@@ -19,24 +19,25 @@ function formatUnixtime(iso: string): string {
   return String(Math.floor(new Date(iso).getTime() / 1000));
 }
 
-function formatRelative(iso: string, t: TranslatorFn): string {
+function formatRelative(iso: string, t: TranslatorFn, countdown = false): string {
   const now = Date.now();
   const then = new Date(iso).getTime();
   const diffSec = Math.floor((now - then) / 1000);
 
-  // Future dates (e.g. poll expiry)
+  // Future dates
   if (diffSec < 0) {
+    const prefix = countdown ? "time.remaining" : "time.future";
     const futureSec = -diffSec;
-    if (futureSec < 60) return t("time.inSeconds").replace("{n}", String(futureSec));
+    if (futureSec < 60) return t(`${prefix}Seconds`).replace("{n}", String(futureSec));
 
     const futureMin = Math.floor(futureSec / 60);
-    if (futureMin < 60) return t("time.inMinutes").replace("{n}", String(futureMin));
+    if (futureMin < 60) return t(`${prefix}Minutes`).replace("{n}", String(futureMin));
 
     const futureHour = Math.floor(futureMin / 60);
-    if (futureHour < 24) return t("time.inHours").replace("{n}", String(futureHour));
+    if (futureHour < 24) return t(`${prefix}Hours`).replace("{n}", String(futureHour));
 
     const futureDay = Math.floor(futureHour / 24);
-    return t("time.inDays").replace("{n}", String(futureDay));
+    return t(`${prefix}Days`).replace("{n}", String(futureDay));
   }
 
   if (diffSec < 60) return t("time.justNow");
@@ -63,7 +64,7 @@ function formatRelative(iso: string, t: TranslatorFn): string {
  * @param t        i18n translation function
  * @param dateOnly If true, use date-only for absolute part (for profile joined dates)
  */
-export function formatTimestamp(iso: string, t: TranslatorFn, dateOnly = false): string {
+export function formatTimestamp(iso: string, t: TranslatorFn, dateOnly = false, countdown = false): string {
   const fmt = timeFormat();
   const abs = dateOnly ? formatAbsoluteDate(iso) : formatAbsolute(iso);
 
@@ -71,9 +72,9 @@ export function formatTimestamp(iso: string, t: TranslatorFn, dateOnly = false):
     case "absolute":
       return abs;
     case "relative":
-      return formatRelative(iso, t);
+      return formatRelative(iso, t, countdown);
     case "combined":
-      return `${abs} (${formatRelative(iso, t)})`;
+      return `${abs} (${formatRelative(iso, t, countdown)})`;
     case "unixtime":
       return formatUnixtime(iso);
   }
