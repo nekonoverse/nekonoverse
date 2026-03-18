@@ -360,7 +360,8 @@ async def _regenerate_icons(args: argparse.Namespace) -> None:
             print(f"Downloading current server icon: {icon_url}")
             import httpx
 
-            async with httpx.AsyncClient() as client:
+            from app.utils.http_client import USER_AGENT
+            async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}) as client:
                 resp = await client.get(icon_url)
                 if resp.status_code != 200:
                     print(f"Error: Failed to download icon (HTTP {resp.status_code})")

@@ -57,7 +57,11 @@ async def get_domain_software_info(domain: str) -> tuple[str | None, str | None]
 async def _fetch_software(domain: str) -> tuple[str | None, str | None]:
     """Fetch software name and version from remote nodeinfo."""
     try:
-        async with httpx.AsyncClient(timeout=5, follow_redirects=True, verify=False) as client:
+        from app.utils.http_client import USER_AGENT
+        async with httpx.AsyncClient(
+            timeout=5, follow_redirects=True, verify=False,
+            headers={"User-Agent": USER_AGENT},
+        ) as client:
             # Step 1: Discover nodeinfo URL
             resp = await client.get(f"https://{domain}/.well-known/nodeinfo")
             if resp.status_code != 200:
