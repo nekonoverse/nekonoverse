@@ -272,6 +272,20 @@ a:hover {
   padding: 0 5px;
 }
 
+.navbar-locale-select {
+  padding: 4px 6px;
+  background: var(--bg-secondary);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 0.8em;
+  cursor: pointer;
+}
+
+.navbar-locale-select:hover {
+  border-color: var(--accent);
+}
+
 .navbar-login-btn {
   padding: 6px 16px;
   background: var(--accent);
