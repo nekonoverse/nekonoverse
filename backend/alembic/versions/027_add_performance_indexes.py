@@ -8,16 +8,16 @@ Indexes added:
 
 Note: H-9 and M-5 are already covered by migration 021.
 
-Revision ID: 026
-Revises: 025
+Revision ID: 027
+Revises: 026
 """
 
 import sqlalchemy as sa
 
 from alembic import op
 
-revision = "026"
-down_revision = "025"
+revision = "027"
+down_revision = "026"
 branch_labels = None
 depends_on = None
 
