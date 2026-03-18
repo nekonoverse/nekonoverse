@@ -21,6 +21,7 @@ export interface ReactionSummary {
   me: boolean;
   emoji_url: string | null;
   importable?: boolean;
+  import_domain?: string;
 }
 
 export interface MediaAttachment {

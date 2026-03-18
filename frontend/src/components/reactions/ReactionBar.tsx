@@ -24,6 +24,7 @@ export default function ReactionBar(props: Props) {
   const [modalUsers, setModalUsers] = createSignal<ReactionUser[]>([]);
   const [modalLoading, setModalLoading] = createSignal(false);
   const [importEmoji, setImportEmoji] = createSignal<string | null>(null);
+  const [importDomain, setImportDomain] = createSignal<string | null>(null);
 
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let didLongPress = false;
@@ -48,6 +49,7 @@ export default function ReactionBar(props: Props) {
     if (r.importable) {
       if (canManageEmoji()) {
         setImportEmoji(emoji);
+        setImportDomain(r.import_domain ?? null);
       }
       // General users can't bandwagon with importable emojis (disabled via CSS)
       return;
@@ -145,9 +147,10 @@ export default function ReactionBar(props: Props) {
       <Show when={importEmoji()}>
         <EmojiImportModal
           emoji={importEmoji()!}
+          domain={importDomain()}
           emojiUrl={props.reactions.find((r) => r.emoji === importEmoji())?.emoji_url ?? null}
           noteId={props.noteId}
-          onClose={() => setImportEmoji(null)}
+          onClose={() => { setImportEmoji(null); setImportDomain(null); }}
           onImported={() => props.onUpdate?.()}
         />
       </Show>

@@ -221,6 +221,7 @@ async def test_reaction_summary_importable_flag(db, admin_user, note, remote_emo
     assert note.id in summaries
     assert len(summaries[note.id]) == 1
     assert summaries[note.id][0]["importable"] is True
+    assert summaries[note.id][0]["import_domain"] == "remote.example"
 
 
 async def test_reaction_summary_local_not_importable(db, admin_user, note, mock_valkey):
@@ -250,6 +251,30 @@ async def test_reaction_summary_local_not_importable(db, admin_user, note, mock_
 
     summaries = await get_reaction_summaries(db, [note.id])
     assert summaries[note.id][0]["importable"] is False
+
+
+async def test_reaction_summary_importable_without_domain(
+    db, admin_user, note, remote_emoji, mock_valkey
+):
+    """Reaction stored as :shortcode: (no @domain) should still be importable with domain."""
+    from app.models.reaction import Reaction
+    from app.services.note_service import get_reaction_summaries
+
+    # Reaction stored without @domain (e.g., local user reacted with :shortcode:)
+    reaction = Reaction(
+        id=uuid.uuid4(),
+        ap_id=f"https://localhost/reactions/{uuid.uuid4()}",
+        actor_id=admin_user.actor_id,
+        note_id=note.id,
+        emoji=":blobcat:",
+    )
+    db.add(reaction)
+    await db.flush()
+
+    summaries = await get_reaction_summaries(db, [note.id])
+    assert len(summaries[note.id]) == 1
+    assert summaries[note.id][0]["importable"] is True
+    assert summaries[note.id][0]["import_domain"] == "remote.example"
 
 
 async def test_reaction_summary_unicode_not_importable(db, admin_user, note, mock_valkey):
