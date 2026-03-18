@@ -270,6 +270,7 @@ export interface ImportReactBody {
   description?: string;
   is_sensitive?: boolean;
   aliases?: string[];
+  react?: boolean;
 }
 
 export async function importAndReact(

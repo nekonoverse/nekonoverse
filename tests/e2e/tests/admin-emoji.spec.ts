@@ -40,12 +40,14 @@ test.describe("Admin Emoji Management", () => {
     });
 
     const uniqueCode = `e2e_emoji_${Date.now()}`;
-    await page.fill('.admin-emoji-form input[placeholder="neko_smile"]', uniqueCode);
+    // Shortcode input (inside EmojiEditForm)
+    const shortcodeInput = page.locator('.admin-emoji-form .emoji-import-field').filter({ hasText: /shortcode/i }).locator("input");
+    await shortcodeInput.fill(uniqueCode);
     // Fill category
-    const categoryInput = page.locator('.admin-emoji-form .settings-form-group').filter({ hasText: "Category" }).locator("input");
+    const categoryInput = page.locator('.admin-emoji-form .emoji-import-field').filter({ hasText: /category/i }).locator("input");
     await categoryInput.fill("e2e_test");
     // Fill license
-    const licenseInput = page.locator('.admin-emoji-form .settings-form-group').filter({ hasText: "License" }).locator("input");
+    const licenseInput = page.locator('.admin-emoji-form .emoji-import-field').filter({ hasText: /license/i }).locator("input");
     await licenseInput.fill("CC0");
 
     // Submit
@@ -69,7 +71,8 @@ test.describe("Admin Emoji Management", () => {
       mimeType: "image/png",
       buffer: png1x1(),
     });
-    await page.fill('.admin-emoji-form input[placeholder="neko_smile"]', "e2e_delete_me");
+    const shortcodeInput = page.locator('.admin-emoji-form .emoji-import-field').filter({ hasText: /shortcode/i }).locator("input");
+    await shortcodeInput.fill("e2e_delete_me");
     await page.click('.admin-emoji-form button:has-text("Add")');
     const emojiItem = page.locator(".admin-emoji-item").filter({ hasText: ":e2e_delete_me:" });
     await expect(emojiItem).toBeVisible({ timeout: 10_000 });
