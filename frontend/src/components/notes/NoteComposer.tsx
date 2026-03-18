@@ -5,6 +5,7 @@ import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
 import EmojiSuggest from "./EmojiSuggest";
 import EmojiPicker from "../reactions/EmojiPicker";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { stripExifFromFile } from "@nekonoverse/ui/utils/stripExif";
@@ -92,13 +93,16 @@ export default function NoteComposer(props: Props) {
       if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
         setVisibility(parentVis);
       }
-      // Auto-prepend @mention for the replied-to user
+      // Auto-prepend @mention for the replied-to user (skip self-mention)
       const actor = props.replyTo.actor;
       if (actor && !content()) {
-        const mention = actor.domain
-          ? `@${actor.username}@${actor.domain} `
-          : `@${actor.username} `;
-        setContent(mention);
+        const isOwnNote = !actor.domain && currentUser()?.username === actor.username;
+        if (!isOwnNote) {
+          const mention = actor.domain
+            ? `@${actor.username}@${actor.domain} `
+            : `@${actor.username} `;
+          setContent(mention);
+        }
       }
     }
   });
