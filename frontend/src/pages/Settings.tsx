@@ -169,18 +169,18 @@ function AppearanceTab() {
         <h3>{t("settings.fontSize")}</h3>
         <div class="theme-selector">
           {([
-            { key: "small" as FontSize, label: t("settings.fontSmall"), size: "14px" },
-            { key: "medium" as FontSize, label: t("settings.fontMedium"), size: "16px" },
-            { key: "large" as FontSize, label: t("settings.fontLarge"), size: "20px" },
-            { key: "xlarge" as FontSize, label: t("settings.fontXLarge"), size: "24px" },
-            { key: "xxlarge" as FontSize, label: t("settings.fontXXLarge"), size: "28px" },
+            { key: "small" as FontSize, size: "14px" },
+            { key: "medium" as FontSize, size: "16px" },
+            { key: "large" as FontSize, size: "20px" },
+            { key: "xlarge" as FontSize, size: "24px" },
+            { key: "xxlarge" as FontSize, size: "28px" },
           ]).map((item) => (
             <button
               class={`theme-btn${fontSize() === item.key ? " theme-active" : ""}`}
               style={{ "font-size": item.size }}
               onClick={() => setFontSize(item.key)}
             >
-              {item.label}
+              {t("settings.fontSample" as any)}
             </button>
           ))}
         </div>

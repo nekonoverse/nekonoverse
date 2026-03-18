@@ -97,6 +97,7 @@ export const neko: Dictionary = {
   "settings.themeLight": "ひるにゃ",
   "settings.themeNovel": "にょべる",
   "settings.fontSize": "もじのおおきさ",
+  "settings.fontSample": "にゃ",
   "settings.fontSmall": "ちっちゃい",
   "settings.fontMedium": "ふつう",
   "settings.fontLarge": "おっきい",

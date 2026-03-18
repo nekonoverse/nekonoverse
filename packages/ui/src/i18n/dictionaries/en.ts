@@ -97,6 +97,7 @@ export const en: Dictionary = {
   "settings.themeLight": "Light",
   "settings.themeNovel": "Novel",
   "settings.fontSize": "Font Size",
+  "settings.fontSample": "A",
   "settings.fontSmall": "Small",
   "settings.fontMedium": "Medium",
   "settings.fontLarge": "Large",
