@@ -1,6 +1,11 @@
 import { test, expect } from "@playwright/test";
 import { loginAsAdmin, createNote } from "./helpers";
 
+/** Strip HTML tags to get plain text for Playwright text matching. */
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]+>/g, "");
+}
+
 test.describe("Thread View", () => {
   test.beforeEach(async ({ page }) => {
     await loginAsAdmin(page);
@@ -34,7 +39,7 @@ test.describe("Thread View", () => {
     // The reply should appear in descendants
     await expect(
       page.locator(".thread-descendant-note .note-card").filter({
-        hasText: reply.content.replace(/<[^>]+>/g, ""),
+        hasText: stripHtml(reply.content),
       }),
     ).toBeVisible({ timeout: 5_000 });
   });
@@ -59,7 +64,7 @@ test.describe("Thread View", () => {
     // The parent should appear in ancestors
     await expect(
       page.locator(".thread-ancestor-note .note-card").filter({
-        hasText: parent.content.replace(/<[^>]+>/g, ""),
+        hasText: stripHtml(parent.content),
       }),
     ).toBeVisible({ timeout: 5_000 });
   });
@@ -73,7 +78,7 @@ test.describe("Thread View", () => {
 
     // Click the timestamp link of the note
     const noteCard = page.locator(".note-card").filter({
-      hasText: note.content.replace(/<[^>]+>/g, ""),
+      hasText: stripHtml(note.content),
     });
     await expect(noteCard).toBeVisible({ timeout: 5_000 });
     await noteCard.locator(".note-time-link").click();

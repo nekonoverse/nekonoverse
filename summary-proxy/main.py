@@ -151,18 +151,37 @@ async def get_summary(url: str = Query(..., min_length=1)):
     try:
         async with httpx.AsyncClient(
             timeout=_REQUEST_TIMEOUT,
-            follow_redirects=True,
-            max_redirects=5,
+            follow_redirects=False,
         ) as client:
-            resp = await client.get(
-                url,
-                headers={
-                    "User-Agent": _USER_AGENT,
-                    "Accept": "text/html,application/xhtml+xml",
-                },
-            )
+            # Manually follow redirects with SSRF validation on each hop
+            current_url = url
+            resp = None
+            for _ in range(5):
+                resp = await client.get(
+                    current_url,
+                    headers={
+                        "User-Agent": _USER_AGENT,
+                        "Accept": "text/html,application/xhtml+xml",
+                    },
+                )
+                if resp.status_code in (301, 302, 303, 307, 308):
+                    location = resp.headers.get("location")
+                    if not location:
+                        return _empty_summary(url)
+                    resolved = urljoin(current_url, location)
+                    rp = urlparse(resolved)
+                    if rp.scheme not in ("http", "https") or not rp.hostname:
+                        return _empty_summary(url)
+                    if _is_private_address(rp.hostname):
+                        logger.warning("Blocked private redirect: %s", rp.hostname)
+                        return _empty_summary(url)
+                    current_url = resolved
+                    continue
+                break
+            else:
+                return _empty_summary(url)
 
-        if resp.status_code != 200:
+        if resp is None or resp.status_code != 200:
             result = _empty_summary(url)
             _cache_set(url, result)
             return result

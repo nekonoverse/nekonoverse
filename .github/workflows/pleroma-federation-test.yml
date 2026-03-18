@@ -3,6 +3,9 @@ name: Pleroma Federation Test
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   pleroma-federation-test:
     runs-on: ubuntu-latest
