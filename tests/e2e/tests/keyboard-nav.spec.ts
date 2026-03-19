@@ -31,6 +31,9 @@ test.describe("Keyboard navigation (j/k/g)", () => {
       const focused = page.locator(".note-card.keyboard-focused");
       await expect(focused).toHaveCount(1, { timeout: 3_000 });
 
+      // Wait for scroll to settle (Firefox may not complete scroll synchronously)
+      await page.waitForTimeout(100);
+
       // The focused card's top must not be hidden behind navbar
       const cardTop = await focused.evaluate(
         (el) => el.getBoundingClientRect().top,
@@ -61,6 +64,9 @@ test.describe("Keyboard navigation (j/k/g)", () => {
 
       const focused = page.locator(".note-card.keyboard-focused");
       await expect(focused).toHaveCount(1, { timeout: 3_000 });
+
+      // Wait for scroll to settle (Firefox may not complete scroll synchronously)
+      await page.waitForTimeout(100);
 
       const cardTop = await focused.evaluate(
         (el) => el.getBoundingClientRect().top,
