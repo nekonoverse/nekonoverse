@@ -639,7 +639,7 @@ async def get_reaction_summary(
             "emoji": emoji,
             "count": count,
             "me": me,
-            "emoji_url": media_proxy_url(emoji_url, variant="emoji"),
+            "emoji_url": media_proxy_url(emoji_url, variant="emoji") if emoji_url else None,
             "importable": is_importable,
         }
         if is_importable:
@@ -765,7 +765,7 @@ async def get_reaction_summaries(
             "emoji": emoji_str,
             "count": count,
             "me": me,
-            "emoji_url": media_proxy_url(emoji_url, variant="emoji"),
+            "emoji_url": media_proxy_url(emoji_url, variant="emoji") if emoji_url else None,
             "importable": is_importable,
         }
         if is_importable:

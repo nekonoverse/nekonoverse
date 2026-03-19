@@ -238,11 +238,8 @@ export default function ReactionBar(props: Props) {
       {/* Reaction users modal (long press) */}
       <Show when={modalEmoji()}>
         <div class="modal-overlay" onClick={closeModal}>
-          <div class="modal-content" style="max-width: 400px" onClick={(e) => e.stopPropagation()}>
-            <div class="modal-header">
-              <h3>{t("reactions.reactedBy")}</h3>
-              <button class="modal-close" onClick={closeModal}>✕</button>
-            </div>
+          <div class="modal-content reacted-by-modal" onClick={(e) => e.stopPropagation()}>
+            <button class="reacted-by-close" onClick={closeModal}>✕</button>
             <div class="reacted-by-emoji-hero">
               <Emoji emoji={modalEmoji()!} url={modalUrl()} class="reacted-by-emoji-large" />
               {modalEmoji()!.startsWith(":") && (
