@@ -10,6 +10,7 @@ import EmojiPicker from "./EmojiPicker";
 import EmojiImportModal from "./EmojiImportModal";
 import Emoji from "../Emoji";
 import { canManageEmoji } from "@nekonoverse/ui/stores/auth";
+import { importedShortcodes } from "@nekonoverse/ui/api/emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
@@ -39,8 +40,20 @@ export default function ReactionBar(props: Props) {
     getAllCachedPhashes(),
   );
 
-  const grouped = (): GroupedReaction[] =>
-    groupReactions(props.reactions, hashMap());
+  const SHORTCODE_RE = /^:([a-zA-Z0-9_]+)(?:@[^:]+)?:$/;
+
+  const grouped = (): GroupedReaction[] => {
+    const groups = groupReactions(props.reactions, hashMap());
+    const imported = importedShortcodes();
+    if (imported.size === 0) return groups;
+    return groups.map((g) => {
+      const m = SHORTCODE_RE.exec(g.displayEmoji);
+      if (m && imported.has(m[1])) {
+        return { ...g, importable: false, importDomain: null };
+      }
+      return g;
+    });
+  };
 
   // Compute pHash for uncached custom emoji URLs
   createEffect(() => {

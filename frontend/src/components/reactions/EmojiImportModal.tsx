@@ -5,6 +5,7 @@ import {
   type RemoteEmojiInfo,
 } from "@nekonoverse/ui/api/statuses";
 import { importRemoteEmojiByShortcode } from "@nekonoverse/ui/api/admin";
+import { markShortcodeImported } from "@nekonoverse/ui/api/emoji";
 import EmojiEditForm, { type EmojiEditFields } from "./EmojiEditForm";
 import Emoji from "../Emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -97,6 +98,9 @@ export default function EmojiImportModal(props: Props) {
         is_sensitive: f.isSensitive,
         aliases: parsedAliases,
       });
+
+      // Mark shortcode as imported so all ReactionBars suppress importable
+      markShortcodeImported(localShortcode);
 
       // React with the local emoji if requested
       if (react) {
