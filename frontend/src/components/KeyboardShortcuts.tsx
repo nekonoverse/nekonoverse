@@ -51,7 +51,20 @@ export default function KeyboardShortcuts(props: Props) {
     if (index >= 0 && index < cards.length) {
       const card = cards[index];
       card.classList.add("keyboard-focused");
-      card.scrollIntoView({ block: "nearest" });
+
+      // scrollIntoView({ block: "nearest" }) doesn't account for sticky navbar
+      // when the element is partially visible. Manual scroll ensures the card
+      // is fully below the navbar.
+      const navbar = document.querySelector<HTMLElement>(".navbar");
+      const navH = navbar ? navbar.getBoundingClientRect().height : 0;
+      const rect = card.getBoundingClientRect();
+      if (rect.top < navH) {
+        // Card is behind navbar — scroll it into view with margin
+        window.scrollBy({ top: rect.top - navH - 4 });
+      } else if (rect.bottom > window.innerHeight) {
+        // Card is below viewport — scroll minimum to show it
+        card.scrollIntoView({ block: "nearest" });
+      }
     }
   };
 

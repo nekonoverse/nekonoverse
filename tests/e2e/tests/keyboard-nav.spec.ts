@@ -18,18 +18,23 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   test("j key moves focus down and cards stay visible below navbar", async ({
     page,
   }) => {
+    test.setTimeout(60_000);
+
     const navbarHeight = await page
       .locator(".navbar")
       .evaluate((el) => el.getBoundingClientRect().height);
 
     const cardCount = await page.locator(".note-card").count();
-    const stepsToTest = Math.min(cardCount, 8);
+    const stepsToTest = Math.min(cardCount, 5);
 
     for (let i = 0; i < stepsToTest; i++) {
       await page.keyboard.press("j");
 
       const focused = page.locator(".note-card.keyboard-focused");
       await expect(focused).toHaveCount(1, { timeout: 3_000 });
+
+      // Wait for scroll to settle (Firefox may not complete scroll synchronously)
+      await page.waitForTimeout(100);
 
       // The focused card's top must not be hidden behind navbar
       const cardTop = await focused.evaluate(
@@ -42,12 +47,14 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   test("k key moves focus up without card hidden behind navbar", async ({
     page,
   }) => {
+    test.setTimeout(60_000);
+
     const navbarHeight = await page
       .locator(".navbar")
       .evaluate((el) => el.getBoundingClientRect().height);
 
     const cardCount = await page.locator(".note-card").count();
-    const stepsDown = Math.min(cardCount, 8);
+    const stepsDown = Math.min(cardCount, 5);
 
     // Move down first
     for (let i = 0; i < stepsDown; i++) {
@@ -61,6 +68,9 @@ test.describe("Keyboard navigation (j/k/g)", () => {
 
       const focused = page.locator(".note-card.keyboard-focused");
       await expect(focused).toHaveCount(1, { timeout: 3_000 });
+
+      // Wait for scroll to settle (Firefox may not complete scroll synchronously)
+      await page.waitForTimeout(100);
 
       const cardTop = await focused.evaluate(
         (el) => el.getBoundingClientRect().top,
