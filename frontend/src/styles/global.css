@@ -2410,10 +2410,12 @@ a:hover {
 }
 
 .reacted-by-emoji-large {
-  width: 48px;
   height: 48px;
+  width: auto;
+  max-width: 120px;
   font-size: 48px;
   line-height: 1;
+  object-fit: contain;
 }
 
 .reacted-by-emoji-caption {
