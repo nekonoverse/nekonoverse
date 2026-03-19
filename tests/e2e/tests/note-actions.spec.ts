@@ -19,17 +19,35 @@ test.describe("Note Actions", () => {
     await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
     // Ensure not boosted before clicking
     await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 5_000 });
-    await boostBtn.click();
+    // Scroll into view and let Firefox settle before clicking
+    await boostBtn.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+
+    // Click and verify the API call actually fires (Firefox sometimes swallows clicks)
+    await Promise.all([
+      page.waitForResponse(
+        (resp) => resp.url().includes("/reblog") && resp.status() === 200,
+        { timeout: 15_000 },
+      ),
+      boostBtn.click(),
+    ]);
 
     // Wait for boosted class (API round-trip)
-    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 15_000 });
+    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 10_000 });
 
     // Wait for button to become enabled and stable before un-boosting
     await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
     // Small delay for Firefox to settle DOM state after re-render
     await page.waitForTimeout(500);
-    await boostBtn.click();
-    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 15_000 });
+
+    await Promise.all([
+      page.waitForResponse(
+        (resp) => resp.url().includes("/unreblog") && resp.status() === 200,
+        { timeout: 15_000 },
+      ),
+      boostBtn.click(),
+    ]);
+    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 10_000 });
   });
 
   test("bookmark button toggles bookmarked state", async ({ page }) => {
