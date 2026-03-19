@@ -599,19 +599,26 @@ export default function NoteCard(props: Props) {
                 }}
                 title={nyaizeSuppressed() ? t("note.nyaizeOff") : t("note.nyaizeOn")}
               >
-                <svg
-                  width="14"
-                  height="14"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <path d="M12 5c-1.2-3-4-4-7-3 0 3 1 6 3 8-1 2-1.5 4-1 6h3c0-1 .5-2 1-3h4c.5 1 1 2 1 3h3c.5-2 0-4-1-6 2-2 3-5 3-8-3-1-5.8 0-7 3z" />
-                  {nyaizeSuppressed() && (
-                    <line x1="2" y1="2" x2="22" y2="22" />
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  {/* ears */}
+                  <path d="M3 11 L5 2 L10 8" />
+                  <path d="M21 11 L19 2 L14 8" />
+                  {/* face */}
+                  <ellipse cx="12" cy="14" rx="9" ry="8" />
+                  {nyaizeSuppressed() ? (
+                    <>
+                      <line x1="7" y1="11" x2="10" y2="14" />
+                      <line x1="10" y1="11" x2="7" y2="14" />
+                      <line x1="14" y1="11" x2="17" y2="14" />
+                      <line x1="17" y1="11" x2="14" y2="14" />
+                    </>
+                  ) : (
+                    <>
+                      <circle cx="8.5" cy="12.5" r="1.2" fill="currentColor" stroke="none" />
+                      <circle cx="15.5" cy="12.5" r="1.2" fill="currentColor" stroke="none" />
+                      <path d="M12 15 L11 16.5 L13 16.5 Z" fill="currentColor" stroke="none" />
+                      <path d="M9 17.5 Q12 20 15 17.5" />
+                    </>
                   )}
                 </svg>
               </button>
