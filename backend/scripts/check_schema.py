@@ -12,9 +12,11 @@ Exit codes:
     1 — missing tables detected
 """
 
+import asyncio
 import sys
 
-from sqlalchemy import create_engine, inspect
+from sqlalchemy import inspect
+from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.config import settings
 from app.models.base import Base
@@ -24,11 +26,16 @@ from app.models.base import Base
 import app.models  # noqa: F401
 
 
+async def _get_db_tables() -> set[str]:
+    engine = create_async_engine(settings.database_url)
+    async with engine.connect() as conn:
+        db_tables = await conn.run_sync(lambda sync_conn: set(inspect(sync_conn).get_table_names()))
+    await engine.dispose()
+    return db_tables
+
+
 def main() -> int:
-    url = settings.database_url.replace("+asyncpg", "")
-    engine = create_engine(url)
-    inspector = inspect(engine)
-    db_tables = set(inspector.get_table_names())
+    db_tables = asyncio.run(_get_db_tables())
     model_tables = set(Base.metadata.tables.keys())
 
     missing = model_tables - db_tables
