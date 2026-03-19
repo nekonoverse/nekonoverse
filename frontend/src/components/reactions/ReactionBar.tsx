@@ -1,7 +1,11 @@
-import { createSignal, Show, For, onCleanup } from "solid-js";
+import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import type { ReactionSummary, ReactionUser } from "@nekonoverse/ui/api/statuses";
+import type { ReactionUser } from "@nekonoverse/ui/api/statuses";
 import { reactToNote, unreactToNote, getReactedBy } from "@nekonoverse/ui/api/statuses";
+import type { ReactionSummary } from "@nekonoverse/ui/api/statuses";
+import { computePhash } from "@nekonoverse/ui/utils/phash";
+import { groupReactions, type GroupedReaction } from "@nekonoverse/ui/utils/groupReactions";
+import { getAllCachedPhashes, setCachedPhash } from "@nekonoverse/ui/utils/phashCache";
 import EmojiPicker from "./EmojiPicker";
 import EmojiImportModal from "./EmojiImportModal";
 import Emoji from "../Emoji";
@@ -21,6 +25,7 @@ export default function ReactionBar(props: Props) {
   const navigate = useNavigate();
   const [showPicker, setShowPicker] = createSignal(false);
   const [modalEmoji, setModalEmoji] = createSignal<string | null>(null);
+  const [modalUrl, setModalUrl] = createSignal<string | null>(null);
   const [modalUsers, setModalUsers] = createSignal<ReactionUser[]>([]);
   const [modalLoading, setModalLoading] = createSignal(false);
   const [importEmoji, setImportEmoji] = createSignal<string | null>(null);
@@ -28,6 +33,49 @@ export default function ReactionBar(props: Props) {
 
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let didLongPress = false;
+
+  // pHash-based grouping
+  const [hashMap, setHashMap] = createSignal<Map<string, string>>(
+    getAllCachedPhashes(),
+  );
+
+  const grouped = (): GroupedReaction[] =>
+    groupReactions(props.reactions, hashMap());
+
+  // Compute pHash for uncached custom emoji URLs
+  createEffect(() => {
+    const currentMap = hashMap();
+    const urlsToHash: string[] = [];
+
+    for (const r of props.reactions) {
+      if (r.emoji_url && !currentMap.has(r.emoji_url)) {
+        urlsToHash.push(r.emoji_url);
+      }
+    }
+
+    if (urlsToHash.length === 0) return;
+
+    Promise.all(
+      urlsToHash.map(async (url) => {
+        const hash = await computePhash(url);
+        return hash ? { url, hash } : null;
+      }),
+    ).then((results) => {
+      const newEntries = results.filter(
+        (r): r is { url: string; hash: string } => r !== null,
+      );
+      if (newEntries.length === 0) return;
+
+      setHashMap((prev) => {
+        const next = new Map(prev);
+        for (const { url, hash } of newEntries) {
+          next.set(url, hash);
+          setCachedPhash(url, hash);
+        }
+        return next;
+      });
+    });
+  });
 
   const toggleReaction = async (emoji: string) => {
     const existing = props.reactions.find((r) => r.emoji === emoji && r.me);
@@ -43,26 +91,39 @@ export default function ReactionBar(props: Props) {
     }
   };
 
-  const handleReaction = (emoji: string, r: ReactionSummary) => {
+  const handleReaction = (group: GroupedReaction) => {
     if (didLongPress) return;
-    // Importable remote emoji: open import modal for permitted users
-    if (r.importable) {
+    if (group.importable) {
       if (canManageEmoji()) {
-        setImportEmoji(emoji);
-        setImportDomain(r.import_domain ?? null);
+        setImportEmoji(group.displayEmoji);
+        setImportDomain(group.importDomain);
       }
-      // General users can't bandwagon with importable emojis (disabled via CSS)
       return;
     }
-    toggleReaction(emoji);
+    const emojiToUse =
+      group.me && group.myEmoji ? group.myEmoji : group.displayEmoji;
+    toggleReaction(emojiToUse);
   };
 
-  const openModal = async (emoji: string) => {
-    setModalEmoji(emoji);
+  const openModal = async (group: GroupedReaction) => {
+    setModalEmoji(group.displayEmoji);
+    setModalUrl(group.displayUrl);
     setModalLoading(true);
     try {
-      const users = await getReactedBy(props.noteId, emoji);
-      setModalUsers(users);
+      const allUsers = await Promise.all(
+        group.members.map((m) => getReactedBy(props.noteId, m.emoji)),
+      );
+      const seen = new Set<string>();
+      const uniqueUsers: ReactionUser[] = [];
+      for (const users of allUsers) {
+        for (const u of users) {
+          if (!seen.has(u.actor.id)) {
+            seen.add(u.actor.id);
+            uniqueUsers.push(u);
+          }
+        }
+      }
+      setModalUsers(uniqueUsers);
     } catch {
       setModalUsers([]);
     }
@@ -71,15 +132,16 @@ export default function ReactionBar(props: Props) {
 
   const closeModal = () => {
     setModalEmoji(null);
+    setModalUrl(null);
     setModalUsers([]);
     didLongPress = false;
   };
 
-  const startLongPress = (emoji: string) => {
+  const startLongPress = (group: GroupedReaction) => {
     didLongPress = false;
     longPressTimer = setTimeout(() => {
       didLongPress = true;
-      openModal(emoji);
+      openModal(group);
     }, 500);
   };
 
@@ -94,10 +156,10 @@ export default function ReactionBar(props: Props) {
 
   const ignoresReactions = () => props.serverSoftware === "mastodon";
 
-  const badgeClass = (r: ReactionSummary) => {
+  const badgeClass = (group: GroupedReaction) => {
     let cls = "reaction-badge";
-    if (r.me) cls += " reaction-me";
-    if (r.importable) {
+    if (group.me) cls += " reaction-me";
+    if (group.importable) {
       cls += canManageEmoji()
         ? " reaction-importable"
         : " reaction-remote-disabled";
@@ -108,18 +170,18 @@ export default function ReactionBar(props: Props) {
   return (
     <>
       <div class="reaction-bar">
-        {props.reactions.map((r) => (
+        {grouped().map((g) => (
           <button
-            class={badgeClass(r)}
-            onClick={() => handleReaction(r.emoji, r)}
-            onMouseDown={() => startLongPress(r.emoji)}
+            class={badgeClass(g)}
+            onClick={() => handleReaction(g)}
+            onMouseDown={() => startLongPress(g)}
             onMouseUp={cancelLongPress}
             onMouseLeave={cancelLongPress}
-            onTouchStart={() => startLongPress(r.emoji)}
+            onTouchStart={() => startLongPress(g)}
             onTouchEnd={(e) => { cancelLongPress(); if (didLongPress) { e.preventDefault(); } }}
             onContextMenu={(e) => e.preventDefault()}
           >
-            <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
+            <Emoji emoji={g.displayEmoji} url={g.displayUrl} /> {g.count}
           </button>
         ))}
         <button
@@ -163,7 +225,7 @@ export default function ReactionBar(props: Props) {
               <h3 style="display: flex; align-items: center; gap: 8px">
                 <Emoji
                   emoji={modalEmoji()!}
-                  url={props.reactions.find((r) => r.emoji === modalEmoji())?.emoji_url ?? null}
+                  url={modalUrl()}
                 />
                 {t("reactions.reactedBy")}
               </h3>

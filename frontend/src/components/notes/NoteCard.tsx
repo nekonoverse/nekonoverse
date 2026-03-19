@@ -16,6 +16,8 @@ import {
 import { blockAccount, muteAccount } from "@nekonoverse/ui/api/accounts";
 import LinkPreviewCard from "./LinkPreviewCard";
 import ReactionBar from "../reactions/ReactionBar";
+import { groupReactions } from "@nekonoverse/ui/utils/groupReactions";
+import { getAllCachedPhashes } from "@nekonoverse/ui/utils/phashCache";
 import Emoji from "../Emoji";
 import ImageLightbox from "../ImageLightbox";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
@@ -921,9 +923,9 @@ export default function NoteCard(props: Props) {
         </Show>
         <Show when={!currentUser() && note().reactions.length > 0}>
           <div class="note-reactions">
-            {note().reactions.map((r) => (
+            {groupReactions(note().reactions, getAllCachedPhashes()).map((g) => (
               <span class="reaction-badge reaction-badge-static">
-                <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
+                <Emoji emoji={g.displayEmoji} url={g.displayUrl} /> {g.count}
               </span>
             ))}
           </div>

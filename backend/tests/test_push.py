@@ -2,8 +2,6 @@
 
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
 
@@ -44,7 +42,7 @@ def test_vapid_key_deterministic():
 # ── Subscription CRUD (Service) ──────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_create_subscription(db, test_user):
     from app.services.push_service import create_subscription, get_subscription_by_session
 
@@ -67,7 +65,7 @@ async def test_create_subscription(db, test_user):
     assert fetched.id == sub.id
 
 
-@pytest.mark.anyio
+
 async def test_create_replaces_existing(db, test_user):
     from app.services.push_service import create_subscription, get_subscription_by_session
 
@@ -96,7 +94,7 @@ async def test_create_replaces_existing(db, test_user):
     assert fetched.id == sub2.id
 
 
-@pytest.mark.anyio
+
 async def test_update_subscription_alerts(db, test_user):
     from app.services.push_service import create_subscription, update_subscription_alerts
 
@@ -119,7 +117,7 @@ async def test_update_subscription_alerts(db, test_user):
     assert updated.alerts["reblog"] is True  # unchanged
 
 
-@pytest.mark.anyio
+
 async def test_delete_subscription(db, test_user):
     from app.services.push_service import (
         create_subscription,
@@ -147,7 +145,7 @@ async def test_delete_subscription(db, test_user):
 # ── Push API Endpoints ───────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_create_push_subscription_api(app_client, test_user, mock_valkey):
     client = authed_client_for(app_client, mock_valkey, test_user)
     resp = await client.post(
@@ -170,7 +168,7 @@ async def test_create_push_subscription_api(app_client, test_user, mock_valkey):
     assert "server_key" in data
 
 
-@pytest.mark.anyio
+
 async def test_get_push_subscription_api(app_client, test_user, mock_valkey):
     client = authed_client_for(app_client, mock_valkey, test_user, "sess-get-api")
     # Create first
@@ -189,14 +187,14 @@ async def test_get_push_subscription_api(app_client, test_user, mock_valkey):
     assert resp.json()["endpoint"] == "https://push.example.com/get"
 
 
-@pytest.mark.anyio
+
 async def test_get_push_subscription_404(app_client, test_user, mock_valkey):
     client = authed_client_for(app_client, mock_valkey, test_user, "sess-no-sub")
     resp = await client.get("/api/v1/push/subscription")
     assert resp.status_code == 404
 
 
-@pytest.mark.anyio
+
 async def test_update_push_subscription_api(app_client, test_user, mock_valkey):
     client = authed_client_for(app_client, mock_valkey, test_user, "sess-put-api")
     await client.post(
@@ -218,7 +216,7 @@ async def test_update_push_subscription_api(app_client, test_user, mock_valkey):
     assert data["policy"] == "followed"
 
 
-@pytest.mark.anyio
+
 async def test_delete_push_subscription_api(app_client, test_user, mock_valkey):
     client = authed_client_for(app_client, mock_valkey, test_user, "sess-del-api")
     await client.post(
@@ -239,7 +237,7 @@ async def test_delete_push_subscription_api(app_client, test_user, mock_valkey):
     assert resp.status_code == 404
 
 
-@pytest.mark.anyio
+
 async def test_push_requires_auth(app_client, mock_valkey):
     resp = await app_client.get("/api/v1/push/subscription")
     assert resp.status_code == 401
@@ -248,7 +246,7 @@ async def test_push_requires_auth(app_client, mock_valkey):
 # ── Push Delivery ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_send_web_push_filters_alerts(db, test_user):
     """Push should not be sent if alert type is disabled."""
     from app.services.push_service import create_subscription, send_web_push
@@ -278,7 +276,7 @@ async def test_send_web_push_filters_alerts(db, test_user):
         mock_wp.assert_not_called()
 
 
-@pytest.mark.anyio
+
 async def test_send_web_push_calls_webpush(db, test_user):
     """Push should call pywebpush when alert is enabled."""
     from app.services.push_service import create_subscription, send_web_push
@@ -309,7 +307,7 @@ async def test_send_web_push_calls_webpush(db, test_user):
         assert call_kwargs[1]["subscription_info"]["endpoint"] == "https://push.example.com/push"
 
 
-@pytest.mark.anyio
+
 async def test_send_web_push_removes_stale_410(db, test_user):
     """410 Gone should trigger automatic subscription removal."""
     from pywebpush import WebPushException
@@ -349,7 +347,7 @@ async def test_send_web_push_removes_stale_410(db, test_user):
     assert fetched is None
 
 
-@pytest.mark.anyio
+
 async def test_send_web_push_policy_filter(db, test_user, test_user_b):
     """Push with policy='followed' should only send if recipient follows sender."""
     from app.services.push_service import create_subscription, send_web_push
