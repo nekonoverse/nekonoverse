@@ -113,6 +113,9 @@ services:
       # SKIP_SSL_VERIFY: ${SKIP_SSL_VERIFY:-false}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
+      # media-proxy-rs (optional — set in .env)
+      MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
+      MEDIA_PROXY_TRANSFORM_UDS: ${MEDIA_PROXY_TRANSFORM_UDS:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
@@ -123,6 +126,8 @@ services:
       - valkey_sock:/var/run/valkey
       # face-detect UDS 使用時はコメント解除
       # - face_detect_sock:/var/run/nekonoverse-face-detect:ro
+      # media-proxy-rs UDS 使用時はコメント解除
+      # - media_proxy_rs_sock:/var/run/media-proxy-rs:ro
     depends_on:
       postgresql:
         condition: service_healthy
@@ -152,6 +157,9 @@ services:
       # VALKEY_MAX_CONNECTIONS: ${VALKEY_MAX_CONNECTIONS:-1000}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
+      # media-proxy-rs (optional — set in .env)
+      MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
+      MEDIA_PROXY_TRANSFORM_UDS: ${MEDIA_PROXY_TRANSFORM_UDS:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
