@@ -477,7 +477,17 @@ export default function NoteCard(props: Props) {
       </Show>
       <Show when={replyToDisplay()}>
         {(actor) => (
-          <div class="note-reply-indicator">
+          <a
+            class="note-reply-indicator"
+            href={note().in_reply_to_id ? `/notes/${note().in_reply_to_id}` : undefined}
+            onClick={(e) => {
+              const parentId = note().in_reply_to_id;
+              if (parentId && props.onThreadOpen) {
+                e.preventDefault();
+                props.onThreadOpen(parentId);
+              }
+            }}
+          >
             <svg
               width="12"
               height="12"
@@ -493,7 +503,7 @@ export default function NoteCard(props: Props) {
             </svg>
             {t("reply.replyingTo")} @{actor().username}
             {actor().domain ? `@${actor().domain}` : ""}
-          </div>
+          </a>
         )}
       </Show>
       <a href={profileUrl(note().actor)} class="note-avatar-link">
