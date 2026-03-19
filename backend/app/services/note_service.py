@@ -611,14 +611,40 @@ async def get_reaction_summary(
 
         from app.utils.media_proxy import media_proxy_url
 
-        summaries.append(
-            {
-                "emoji": emoji,
-                "count": count,
-                "me": me,
-                "emoji_url": media_proxy_url(emoji_url, variant="emoji"),
-            }
-        )
+        is_importable = False
+        import_domain: str | None = None
+        if m and not local:
+            # Custom emoji without a local copy → importable
+            shortcode_val = m.group(1)
+            domain_val = m.group(2)
+            if domain_val:
+                is_importable = True
+                import_domain = domain_val
+            elif emoji_url:
+                # No domain in reaction string but found a remote emoji
+                remote_q = await db.execute(
+                    select(CustomEmoji.domain)
+                    .where(
+                        CustomEmoji.shortcode == shortcode_val,
+                        CustomEmoji.domain.isnot(None),
+                    )
+                    .limit(1)
+                )
+                remote_domain = remote_q.scalar_one_or_none()
+                if remote_domain:
+                    is_importable = True
+                    import_domain = remote_domain
+
+        entry: dict = {
+            "emoji": emoji,
+            "count": count,
+            "me": me,
+            "emoji_url": media_proxy_url(emoji_url, variant="emoji"),
+            "importable": is_importable,
+        }
+        if is_importable:
+            entry["import_domain"] = import_domain
+        summaries.append(entry)
     return summaries
 
 
