@@ -19,3 +19,7 @@ export {
   unsubscribeFromPush,
   isSubscribedToPush,
 } from "./utils/pushNotification";
+export { computePhash, hammingDistance, PHASH_THRESHOLD } from "./utils/phash";
+export { getCachedPhash, setCachedPhash, getAllCachedPhashes } from "./utils/phashCache";
+export { groupReactions } from "./utils/groupReactions";
+export type { GroupedReaction } from "./utils/groupReactions";

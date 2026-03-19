@@ -48,7 +48,7 @@ def authed_client_for(app_client, mock_valkey, user):
 # ── Server Settings ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_get_server_settings_admin(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -60,7 +60,7 @@ async def test_get_server_settings_admin(db, app_client, mock_valkey):
     assert "registration_open" in data
 
 
-@pytest.mark.anyio
+
 async def test_get_server_settings_forbidden_for_regular_user(
     db, app_client, mock_valkey, test_user
 ):
@@ -69,7 +69,7 @@ async def test_get_server_settings_forbidden_for_regular_user(
     assert resp.status_code == 403
 
 
-@pytest.mark.anyio
+
 async def test_update_server_settings(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -87,7 +87,7 @@ async def test_update_server_settings(db, app_client, mock_valkey):
     assert data["server_description"] == "A test server"
 
 
-@pytest.mark.anyio
+
 async def test_update_server_settings_forbidden_moderator(db, app_client, mock_valkey):
     mod = await make_moderator_user(db)
     client = authed_client_for(app_client, mock_valkey, mod)
@@ -99,7 +99,7 @@ async def test_update_server_settings_forbidden_moderator(db, app_client, mock_v
 # ── Stats ────────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_admin_stats(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -113,7 +113,7 @@ async def test_admin_stats(db, app_client, mock_valkey):
     assert data["user_count"] >= 1  # at least the admin user
 
 
-@pytest.mark.anyio
+
 async def test_admin_stats_note_count_local_only(db, app_client, mock_valkey):
     """note_count should only include local notes, not remote ones."""
     admin = await make_admin_user(db)
@@ -134,7 +134,7 @@ async def test_admin_stats_note_count_local_only(db, app_client, mock_valkey):
     assert data["note_count"] == 2
 
 
-@pytest.mark.anyio
+
 async def test_admin_stats_domain_count_active_only(db, app_client, mock_valkey):
     """domain_count should only include domains with active delivery or follow relationships."""
     from app.models.delivery import DeliveryJob
@@ -199,7 +199,7 @@ async def test_admin_stats_domain_count_active_only(db, app_client, mock_valkey)
     assert data["domain_count"] == 3
 
 
-@pytest.mark.anyio
+
 async def test_admin_stats_moderator_allowed(db, app_client, mock_valkey):
     mod = await make_moderator_user(db)
     client = authed_client_for(app_client, mock_valkey, mod)
@@ -208,7 +208,7 @@ async def test_admin_stats_moderator_allowed(db, app_client, mock_valkey):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_admin_stats_forbidden_regular_user(db, app_client, mock_valkey, test_user):
     client = authed_client_for(app_client, mock_valkey, test_user)
     resp = await client.get("/api/v1/admin/stats")
@@ -218,7 +218,7 @@ async def test_admin_stats_forbidden_regular_user(db, app_client, mock_valkey, t
 # ── User Management ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_list_users(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -231,7 +231,7 @@ async def test_list_users(db, app_client, mock_valkey, test_user):
     assert all("role" in u for u in users)
 
 
-@pytest.mark.anyio
+
 async def test_change_user_role(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -243,7 +243,7 @@ async def test_change_user_role(db, app_client, mock_valkey, test_user):
     assert resp.json()["role"] == "moderator"
 
 
-@pytest.mark.anyio
+
 async def test_change_own_role_forbidden(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -253,7 +253,7 @@ async def test_change_own_role_forbidden(db, app_client, mock_valkey):
     assert "own role" in resp.json()["detail"].lower()
 
 
-@pytest.mark.anyio
+
 async def test_change_role_moderator_forbidden(db, app_client, mock_valkey, test_user):
     mod = await make_moderator_user(db)
     client = authed_client_for(app_client, mock_valkey, mod)
@@ -262,7 +262,7 @@ async def test_change_role_moderator_forbidden(db, app_client, mock_valkey, test
     assert resp.status_code == 403
 
 
-@pytest.mark.anyio
+
 async def test_invalid_role_rejected(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -276,7 +276,7 @@ async def test_invalid_role_rejected(db, app_client, mock_valkey, test_user):
 # ── Suspend / Unsuspend ──────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_suspend_user(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -288,7 +288,7 @@ async def test_suspend_user(db, app_client, mock_valkey, test_user):
     assert test_user.actor.is_suspended
 
 
-@pytest.mark.anyio
+
 async def test_suspend_already_suspended(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -300,7 +300,7 @@ async def test_suspend_already_suspended(db, app_client, mock_valkey, test_user)
     assert resp.status_code == 422
 
 
-@pytest.mark.anyio
+
 async def test_suspend_self_forbidden(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -309,7 +309,7 @@ async def test_suspend_self_forbidden(db, app_client, mock_valkey):
     assert resp.status_code == 422
 
 
-@pytest.mark.anyio
+
 async def test_unsuspend_user(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -323,7 +323,7 @@ async def test_unsuspend_user(db, app_client, mock_valkey, test_user):
     assert not test_user.actor.is_suspended
 
 
-@pytest.mark.anyio
+
 async def test_unsuspend_not_suspended(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -335,7 +335,7 @@ async def test_unsuspend_not_suspended(db, app_client, mock_valkey, test_user):
 # ── Silence / Unsilence ──────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_silence_user(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -349,7 +349,7 @@ async def test_silence_user(db, app_client, mock_valkey, test_user):
     assert test_user.actor.is_silenced
 
 
-@pytest.mark.anyio
+
 async def test_silence_already_silenced(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -359,7 +359,7 @@ async def test_silence_already_silenced(db, app_client, mock_valkey, test_user):
     assert resp.status_code == 422
 
 
-@pytest.mark.anyio
+
 async def test_unsilence_user(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -375,7 +375,7 @@ async def test_unsilence_user(db, app_client, mock_valkey, test_user):
 # ── Reports ──────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_create_and_list_reports(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -394,7 +394,7 @@ async def test_create_and_list_reports(db, app_client, mock_valkey, test_user):
     assert reports[0]["comment"] == "spammer"
 
 
-@pytest.mark.anyio
+
 async def test_list_reports_filter_status(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -410,7 +410,7 @@ async def test_list_reports_filter_status(db, app_client, mock_valkey, test_user
     assert len(resp.json()) == 0
 
 
-@pytest.mark.anyio
+
 async def test_resolve_report(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -424,7 +424,7 @@ async def test_resolve_report(db, app_client, mock_valkey, test_user):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_reject_report(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -438,7 +438,7 @@ async def test_reject_report(db, app_client, mock_valkey, test_user):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_resolve_already_resolved_report(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -453,7 +453,7 @@ async def test_resolve_already_resolved_report(db, app_client, mock_valkey, test
     assert resp.status_code == 422
 
 
-@pytest.mark.anyio
+
 async def test_resolve_nonexistent_report(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -465,7 +465,7 @@ async def test_resolve_nonexistent_report(db, app_client, mock_valkey):
 # ── Post Moderation ──────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_admin_delete_note(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -482,7 +482,7 @@ async def test_admin_delete_note(db, app_client, mock_valkey, test_user):
     assert note.deleted_at is not None
 
 
-@pytest.mark.anyio
+
 async def test_admin_delete_nonexistent_note(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -491,7 +491,7 @@ async def test_admin_delete_nonexistent_note(db, app_client, mock_valkey):
     assert resp.status_code == 404
 
 
-@pytest.mark.anyio
+
 async def test_force_sensitive(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -509,7 +509,7 @@ async def test_force_sensitive(db, app_client, mock_valkey, test_user):
 # ── Moderation Log ───────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_moderation_log(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -524,7 +524,7 @@ async def test_moderation_log(db, app_client, mock_valkey, test_user):
     assert any(e["action"] == "silence" for e in log)
 
 
-@pytest.mark.anyio
+
 async def test_moderation_log_forbidden_regular_user(db, app_client, mock_valkey, test_user):
     client = authed_client_for(app_client, mock_valkey, test_user)
     resp = await client.get("/api/v1/admin/log")
@@ -534,7 +534,7 @@ async def test_moderation_log_forbidden_regular_user(db, app_client, mock_valkey
 # ── Role Hierarchy ──────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_moderator_cannot_suspend_admin(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     mod = await make_moderator_user(db)
@@ -545,7 +545,7 @@ async def test_moderator_cannot_suspend_admin(db, app_client, mock_valkey):
     assert "staff" in resp.json()["detail"].lower()
 
 
-@pytest.mark.anyio
+
 async def test_moderator_cannot_silence_admin(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     mod = await make_moderator_user(db)
@@ -555,7 +555,7 @@ async def test_moderator_cannot_silence_admin(db, app_client, mock_valkey):
     assert resp.status_code == 403
 
 
-@pytest.mark.anyio
+
 async def test_moderator_cannot_suspend_moderator(db, app_client, mock_valkey):
     mod1 = await make_moderator_user(db)
 
@@ -572,7 +572,7 @@ async def test_moderator_cannot_suspend_moderator(db, app_client, mock_valkey):
     assert resp.status_code == 403
 
 
-@pytest.mark.anyio
+
 async def test_admin_can_suspend_moderator(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     mod = await make_moderator_user(db)
@@ -582,7 +582,7 @@ async def test_admin_can_suspend_moderator(db, app_client, mock_valkey):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_moderator_cannot_delete_admin_note(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     mod = await make_moderator_user(db)
@@ -594,7 +594,7 @@ async def test_moderator_cannot_delete_admin_note(db, app_client, mock_valkey):
     assert resp.status_code == 403
 
 
-@pytest.mark.anyio
+
 async def test_moderator_cannot_force_sensitive_admin_note(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     mod = await make_moderator_user(db)
@@ -606,7 +606,7 @@ async def test_moderator_cannot_force_sensitive_admin_note(db, app_client, mock_
     assert resp.status_code == 403
 
 
-@pytest.mark.anyio
+
 async def test_moderator_can_suspend_regular_user(db, app_client, mock_valkey, test_user):
     mod = await make_moderator_user(db)
     client = authed_client_for(app_client, mock_valkey, mod)
@@ -615,7 +615,7 @@ async def test_moderator_can_suspend_regular_user(db, app_client, mock_valkey, t
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_moderator_can_delete_regular_user_note(db, app_client, mock_valkey, test_user):
     mod = await make_moderator_user(db)
     note = await make_note(db, test_user.actor, content="regular post")
@@ -628,7 +628,7 @@ async def test_moderator_can_delete_regular_user_note(db, app_client, mock_valke
 # ── Unauthenticated access ──────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_admin_endpoints_require_auth(app_client):
     endpoints = [
         ("GET", "/api/v1/admin/settings"),
@@ -646,7 +646,7 @@ async def test_admin_endpoints_require_auth(app_client):
 # ── Suspended user session invalidation ──────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_suspend_user_invalidates_sessions(db, app_client, mock_valkey, test_user):
     """Suspending a user should call valkey.scan to find and delete their sessions."""
     admin = await make_admin_user(db)
@@ -675,7 +675,7 @@ async def test_suspend_user_invalidates_sessions(db, app_client, mock_valkey, te
     mock_valkey.delete.assert_any_call(target_session_key)
 
 
-@pytest.mark.anyio
+
 async def test_suspended_user_gets_403(db, app_client, mock_valkey, test_user):
     """A suspended user should get 403 when trying to access authenticated endpoints."""
     admin = await make_admin_user(db)

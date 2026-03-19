@@ -2,8 +2,6 @@
 
 from unittest.mock import AsyncMock
 
-import pytest
-
 from app.models.delivery import DeliveryJob
 from tests.conftest import make_note, make_remote_actor
 
@@ -27,7 +25,7 @@ def authed_client_for(app_client, mock_valkey, user):
     return app_client
 
 
-@pytest.mark.anyio
+
 async def test_federation_list_empty(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -39,7 +37,7 @@ async def test_federation_list_empty(db, app_client, mock_valkey):
     assert data["total"] == 0
 
 
-@pytest.mark.anyio
+
 async def test_federation_list_with_remote_actors(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -72,7 +70,7 @@ async def test_federation_list_with_remote_actors(db, app_client, mock_valkey):
     assert misskey["delivery_stats"]["success"] == 0
 
 
-@pytest.mark.anyio
+
 async def test_federation_list_search(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -88,7 +86,7 @@ async def test_federation_list_search(db, app_client, mock_valkey):
     assert data["servers"][0]["domain"] == "misskey.io"
 
 
-@pytest.mark.anyio
+
 async def test_federation_list_status_filter(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -118,7 +116,7 @@ async def test_federation_list_status_filter(db, app_client, mock_valkey):
     assert data["servers"][0]["status"] == "suspended"
 
 
-@pytest.mark.anyio
+
 async def test_federation_detail(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -138,7 +136,7 @@ async def test_federation_detail(db, app_client, mock_valkey):
     assert data["recent_actors"][0]["username"] == "testuser"
 
 
-@pytest.mark.anyio
+
 async def test_federation_detail_not_found(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -147,7 +145,7 @@ async def test_federation_detail_not_found(db, app_client, mock_valkey):
     assert resp.status_code == 404
 
 
-@pytest.mark.anyio
+
 async def test_federation_forbidden_for_regular_user(
     db, app_client, mock_valkey, test_user,
 ):
@@ -156,7 +154,7 @@ async def test_federation_forbidden_for_regular_user(
     assert resp.status_code == 403
 
 
-@pytest.mark.anyio
+
 async def test_federation_list_sort_domain_asc(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -177,7 +175,7 @@ async def test_federation_list_sort_domain_asc(db, app_client, mock_valkey):
     assert domains_desc == ["gamma.example", "beta.example", "alpha.example"]
 
 
-@pytest.mark.anyio
+
 async def test_federation_list_pagination(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -217,7 +215,7 @@ async def test_federation_list_pagination(db, app_client, mock_valkey):
     assert len(data["servers"]) == 1
 
 
-@pytest.mark.anyio
+
 async def test_federation_list_delivery_stats(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -246,7 +244,7 @@ async def test_federation_list_delivery_stats(db, app_client, mock_valkey):
     assert srv["delivery_stats"]["pending"] == 2
 
 
-@pytest.mark.anyio
+
 async def test_federation_detail_with_block_info(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -268,7 +266,7 @@ async def test_federation_detail_with_block_info(db, app_client, mock_valkey):
     assert data["block_reason"] == "spam server"
 
 
-@pytest.mark.anyio
+
 async def test_federation_list_silenced_filter(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)

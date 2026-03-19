@@ -4,8 +4,6 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock
 
-import pytest
-
 from tests.conftest import make_note, make_remote_actor
 
 
@@ -30,7 +28,7 @@ def authed_client_for(app_client, mock_valkey, user):
 # ── Domain Block CRUD API ────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_create_domain_block(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -47,7 +45,7 @@ async def test_create_domain_block(db, app_client, mock_valkey):
     assert data["reason"] == "spam server"
 
 
-@pytest.mark.anyio
+
 async def test_list_domain_blocks(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -63,7 +61,7 @@ async def test_list_domain_blocks(db, app_client, mock_valkey):
     assert any(b["domain"] == "blocked1.example" for b in blocks)
 
 
-@pytest.mark.anyio
+
 async def test_remove_domain_block(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -81,7 +79,7 @@ async def test_remove_domain_block(db, app_client, mock_valkey):
     assert "removeme.example" not in domains
 
 
-@pytest.mark.anyio
+
 async def test_remove_nonexistent_domain_block(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -90,7 +88,7 @@ async def test_remove_nonexistent_domain_block(db, app_client, mock_valkey):
     assert resp.status_code == 404
 
 
-@pytest.mark.anyio
+
 async def test_duplicate_domain_block(db, app_client, mock_valkey):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -107,7 +105,7 @@ async def test_duplicate_domain_block(db, app_client, mock_valkey):
 # ── Domain Block Service ─────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_is_domain_blocked_service(db, mock_valkey):
     admin = await make_admin_user(db)
     from app.services.domain_block_service import create_domain_block, is_domain_blocked
@@ -119,7 +117,7 @@ async def test_is_domain_blocked_service(db, mock_valkey):
     assert not await is_domain_blocked(db, "safe.test")
 
 
-@pytest.mark.anyio
+
 async def test_is_domain_blocked_empty_domain(db, mock_valkey):
     from app.services.domain_block_service import is_domain_blocked
 
@@ -130,7 +128,7 @@ async def test_is_domain_blocked_empty_domain(db, mock_valkey):
 # ── Inbox Domain Block Filter ───────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_inbox_rejects_blocked_domain(db, mock_valkey):
     """process_inbox_activity should silently drop activities from blocked domains."""
     admin = await make_admin_user(db)
@@ -152,7 +150,7 @@ async def test_inbox_rejects_blocked_domain(db, mock_valkey):
     await process_inbox_activity(db, activity)
 
 
-@pytest.mark.anyio
+
 async def test_inbox_allows_non_blocked_domain(db, mock_valkey):
     """Activities from non-blocked domains should not be rejected at domain check."""
     from app.activitypub.routes import process_inbox_activity
@@ -170,7 +168,7 @@ async def test_inbox_allows_non_blocked_domain(db, mock_valkey):
 # ── Delivery Domain Block Filter ─────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_delivery_skips_blocked_domain(db, mock_valkey):
     """enqueue_delivery should return None for blocked domains."""
     admin = await make_admin_user(db)
@@ -189,7 +187,7 @@ async def test_delivery_skips_blocked_domain(db, mock_valkey):
     assert result is None
 
 
-@pytest.mark.anyio
+
 async def test_delivery_allows_non_blocked_domain(db, mock_valkey):
     """enqueue_delivery should succeed for non-blocked domains."""
     admin = await make_admin_user(db)
@@ -208,7 +206,7 @@ async def test_delivery_allows_non_blocked_domain(db, mock_valkey):
 # ── Suspended Actor 410 Gone ─────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_suspended_actor_returns_410(db, app_client, mock_valkey, test_user):
     admin = await make_admin_user(db)
     client = authed_client_for(app_client, mock_valkey, admin)
@@ -224,7 +222,7 @@ async def test_suspended_actor_returns_410(db, app_client, mock_valkey, test_use
     assert resp.status_code == 410
 
 
-@pytest.mark.anyio
+
 async def test_non_suspended_actor_returns_200(db, app_client, mock_valkey, test_user):
     resp = await app_client.get(
         f"/users/{test_user.actor.username}",
@@ -236,7 +234,7 @@ async def test_non_suspended_actor_returns_200(db, app_client, mock_valkey, test
 # ── Silence Filter on Public Timeline ────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_silenced_user_excluded_from_public_timeline(db, mock_valkey, test_user, test_user_b):
     """Silenced user's notes should not appear in public timeline."""
     # Create notes for both users
@@ -257,7 +255,7 @@ async def test_silenced_user_excluded_from_public_timeline(db, mock_valkey, test
     assert note_b.id not in note_ids, "Silenced user's note should be excluded"
 
 
-@pytest.mark.anyio
+
 async def test_unsilenced_user_reappears_in_public_timeline(db, mock_valkey, test_user):
     """After unsilencing, user's notes should appear in public timeline again."""
     note = await make_note(db, test_user.actor, content="Test post")
@@ -282,7 +280,7 @@ async def test_unsilenced_user_reappears_in_public_timeline(db, mock_valkey, tes
 # ── Suspend Soft-deletes Notes ───────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_suspend_soft_deletes_notes(db, mock_valkey, test_user):
     """Suspending an actor should soft-delete all their notes."""
     note1 = await make_note(db, test_user.actor, content="Post 1")
@@ -304,7 +302,7 @@ async def test_suspend_soft_deletes_notes(db, mock_valkey, test_user):
 # ── Flag Handler ─────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_flag_handler_creates_report(db, mock_valkey, test_user):
     """Incoming Flag activity should create a Report."""
     remote = await make_remote_actor(db, username="reporter", domain="other.example")
@@ -329,7 +327,7 @@ async def test_flag_handler_creates_report(db, mock_valkey, test_user):
     assert reports[0].target_actor_id == test_user.actor.id
 
 
-@pytest.mark.anyio
+
 async def test_flag_handler_with_note(db, mock_valkey, test_user):
     """Flag with actor + note objects should link to the target note."""
     remote = await make_remote_actor(db, username="reporter2", domain="other2.example")
@@ -357,7 +355,7 @@ async def test_flag_handler_with_note(db, mock_valkey, test_user):
 # ── Renderer ─────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_render_flag_activity():
     from app.activitypub.renderer import render_flag_activity
 
@@ -376,7 +374,7 @@ async def test_render_flag_activity():
     assert result["content"] == "spam"
 
 
-@pytest.mark.anyio
+
 async def test_render_flag_activity_no_notes():
     from app.activitypub.renderer import render_flag_activity
 
@@ -393,7 +391,7 @@ async def test_render_flag_activity_no_notes():
 # ── Server Settings Service ──────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_server_settings_service(db, mock_valkey):
     from app.services.server_settings_service import get_all_settings, get_setting, set_setting
 
@@ -410,7 +408,7 @@ async def test_server_settings_service(db, mock_valkey):
     assert all_settings["server_name"] == "Test Server"
 
 
-@pytest.mark.anyio
+
 async def test_server_settings_null(db, mock_valkey):
     from app.services.server_settings_service import get_setting
 
@@ -422,7 +420,7 @@ async def test_server_settings_null(db, mock_valkey):
 # ── Instance Info uses Server Settings ────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_instance_info_uses_settings(db, app_client, mock_valkey):
     from app.services.server_settings_service import set_setting
 
@@ -440,7 +438,7 @@ async def test_instance_info_uses_settings(db, app_client, mock_valkey):
 # ── NodeInfo uses Server Settings ─────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_nodeinfo_uses_settings(db, app_client, mock_valkey):
     from app.services.server_settings_service import set_setting
 
@@ -458,7 +456,7 @@ async def test_nodeinfo_uses_settings(db, app_client, mock_valkey):
 # ── Moderation Service Unit Tests ─────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_log_action(db, mock_valkey):
     admin = await make_admin_user(db)
     from app.services.moderation_service import log_action
@@ -473,7 +471,7 @@ async def test_log_action(db, mock_valkey):
     assert entry.moderator_id == admin.id
 
 
-@pytest.mark.anyio
+
 async def test_force_sensitive_service(db, mock_valkey, test_user):
     admin = await make_admin_user(db)
     note = await make_note(db, test_user.actor, content="nsfw")

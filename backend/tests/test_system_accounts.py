@@ -118,7 +118,7 @@ async def _make_admin_client(db, app_client, mock_valkey):
     return app_client
 
 
-@pytest.mark.anyio
+
 async def test_admin_cannot_suspend_system_account(db, app_client, mock_valkey):
     sys_user = await ensure_system_account(db, "instance.actor", "Instance Actor")
     client = await _make_admin_client(db, app_client, mock_valkey)
@@ -127,7 +127,7 @@ async def test_admin_cannot_suspend_system_account(db, app_client, mock_valkey):
     assert "system account" in response.json()["detail"].lower()
 
 
-@pytest.mark.anyio
+
 async def test_admin_cannot_silence_system_account(db, app_client, mock_valkey):
     sys_user = await ensure_system_account(db, "instance.actor", "Instance Actor")
     client = await _make_admin_client(db, app_client, mock_valkey)
@@ -136,7 +136,7 @@ async def test_admin_cannot_silence_system_account(db, app_client, mock_valkey):
     assert "system account" in response.json()["detail"].lower()
 
 
-@pytest.mark.anyio
+
 async def test_admin_cannot_change_system_account_role(db, app_client, mock_valkey):
     sys_user = await ensure_system_account(db, "instance.actor", "Instance Actor")
     client = await _make_admin_client(db, app_client, mock_valkey)
@@ -148,7 +148,7 @@ async def test_admin_cannot_change_system_account_role(db, app_client, mock_valk
     assert "system account" in response.json()["detail"].lower()
 
 
-@pytest.mark.anyio
+
 async def test_admin_user_list_includes_is_system_field(db, app_client, mock_valkey):
     await ensure_system_account(db, "instance.actor", "Instance Actor")
     client = await _make_admin_client(db, app_client, mock_valkey)
