@@ -2373,6 +2373,26 @@ a:hover {
 }
 
 /* Reaction users modal */
+.reacted-by-emoji-hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 16px 0 8px;
+}
+
+.reacted-by-emoji-large {
+  width: 48px;
+  height: 48px;
+  font-size: 48px;
+  line-height: 1;
+}
+
+.reacted-by-emoji-caption {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+}
+
 .reacted-by-list {
   max-height: 400px;
   overflow-y: auto;

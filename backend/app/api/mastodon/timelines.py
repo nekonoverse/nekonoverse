@@ -16,6 +16,22 @@ from .statuses import notes_to_responses
 
 router = APIRouter(prefix="/api/v1/timelines", tags=["timelines"])
 
+# Absolute upper bound (prevent abuse regardless of admin config)
+_HARD_MAX_LIMIT = 200
+
+
+async def _resolve_limit(db: AsyncSession, requested: int | None) -> int:
+    """Clamp requested limit to admin-configured bounds."""
+    from app.services.server_settings_service import get_setting
+
+    default_s = await get_setting(db, "timeline_default_limit")
+    max_s = await get_setting(db, "timeline_max_limit")
+    default_limit = int(default_s) if default_s else 20
+    max_limit = min(int(max_s) if max_s else 40, _HARD_MAX_LIMIT)
+    if requested is None:
+        return default_limit
+    return max(1, min(requested, max_limit))
+
 
 def _deduplicate_timeline(responses: list[NoteResponse]) -> list[NoteResponse]:
     """Remove standalone notes that already appear as a reblog in the same timeline."""
@@ -69,37 +85,40 @@ async def _home_tl_deduped(
 async def public_timeline(
     local: bool = Query(False),
     max_id: uuid.UUID | None = Query(None),
-    limit: int = Query(20, ge=1, le=40),
+    limit: int | None = Query(None, ge=1),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
+    actual_limit = await _resolve_limit(db, limit)
     actor_id = user.actor_id if user else None
-    return await _public_tl_deduped(db, limit, max_id, local, actor_id)
+    return await _public_tl_deduped(db, actual_limit, max_id, local, actor_id)
 
 
 @router.get("/home", response_model=list[NoteResponse])
 async def home_timeline(
     max_id: uuid.UUID | None = Query(None),
-    limit: int = Query(20, ge=1, le=40),
+    limit: int | None = Query(None, ge=1),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    return await _home_tl_deduped(db, user, limit, max_id)
+    actual_limit = await _resolve_limit(db, limit)
+    return await _home_tl_deduped(db, user, actual_limit, max_id)
 
 
 @router.get("/tag/{tag}", response_model=list[NoteResponse])
 async def tag_timeline(
     tag: str,
     max_id: uuid.UUID | None = Query(None),
-    limit: int = Query(20, ge=1, le=40),
+    limit: int | None = Query(None, ge=1),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.hashtag_service import get_notes_by_hashtag
 
+    actual_limit = await _resolve_limit(db, limit)
     actor_id = user.actor_id if user else None
     notes = await get_notes_by_hashtag(
-        db, tag_name=tag, limit=limit, max_id=max_id, current_actor_id=actor_id
+        db, tag_name=tag, limit=actual_limit, max_id=max_id, current_actor_id=actor_id
     )
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(db, note_ids, actor_id)

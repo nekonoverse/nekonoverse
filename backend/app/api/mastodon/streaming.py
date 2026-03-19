@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api/v1/streaming", tags=["streaming"])
 
 KEEPALIVE_INTERVAL = 30  # seconds
 
-_EVENT_TYPE_RE = re.compile(r'^[a-zA-Z0-9_]+$')
+_EVENT_TYPE_RE = re.compile(r'^[a-zA-Z0-9_.]+$')
 
 
 async def _event_stream(request: Request, channels: list[str]):

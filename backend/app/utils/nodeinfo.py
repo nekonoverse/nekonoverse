@@ -13,6 +13,7 @@ _EMOJI_REACT_SOFTWARE = {"pleroma", "akkoma", "fedibird", "nekonoverse"}
 _EMOJI_REACTION_SOFTWARE = _EMOJI_REACT_SOFTWARE | {"misskey", "calckey", "firefish", "sharkey"}
 
 _CACHE_TTL = 86400  # 24 hours
+_CACHE_TTL_FAIL = 3600  # 1 hour for failed fetches
 
 
 async def get_domain_software(domain: str) -> str | None:
@@ -61,9 +62,11 @@ async def get_domain_software_info(
 
     name, version, instance_name = await _fetch_software(domain)
 
-    await valkey.set(name_key, name or "", ex=_CACHE_TTL)
-    await valkey.set(ver_key, version or "", ex=_CACHE_TTL)
-    await valkey.set(iname_key, instance_name or "", ex=_CACHE_TTL)
+    # Use shorter TTL for failed fetches so we retry sooner
+    ttl = _CACHE_TTL if (name or instance_name) else _CACHE_TTL_FAIL
+    await valkey.set(name_key, name or "", ex=ttl)
+    await valkey.set(ver_key, version or "", ex=ttl)
+    await valkey.set(iname_key, instance_name or "", ex=ttl)
     return name, version, instance_name
 
 
@@ -108,6 +111,11 @@ async def _fetch_software(
                 or metadata.get("name")
                 or ""
             )
+
+            # Fallback: fetch instance name from Mastodon-compatible API
+            if not instance_name:
+                instance_name = await _fetch_instance_name(client, domain)
+
             return (
                 name.lower() if name else None,
                 version if version else None,
@@ -116,6 +124,24 @@ async def _fetch_software(
     except Exception:
         logger.debug("Failed to fetch nodeinfo for %s", domain, exc_info=True)
         return None, None, None
+
+
+async def _fetch_instance_name(
+    client: httpx.AsyncClient, domain: str
+) -> str | None:
+    """Fallback: fetch instance title from Mastodon-compatible instance API."""
+    for path in ("/api/v2/instance", "/api/v1/instance"):
+        try:
+            resp = await client.get(f"https://{domain}{path}")
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            title = data.get("title") or ""
+            if title:
+                return title
+        except Exception:
+            continue
+    return None
 
 
 async def uses_emoji_react(domain: str) -> bool:
