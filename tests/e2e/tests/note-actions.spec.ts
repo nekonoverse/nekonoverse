@@ -16,17 +16,20 @@ test.describe("Note Actions", () => {
       .filter({ hasText: `reblog-test-${uid}` })
       .first();
     const boostBtn = noteCard.locator(".note-boost-btn");
-    // ボタンが有効になるまで待つ
     await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
+    // Ensure not boosted before clicking
+    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 5_000 });
     await boostBtn.click();
 
-    // boosted クラスが付与される（API応答を待つため余裕を持つ）
-    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 10_000 });
+    // Wait for boosted class (API round-trip)
+    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 15_000 });
 
-    // ボタンが再度有効になるまで待つ
+    // Wait for button to become enabled and stable before un-boosting
     await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
+    // Small delay for Firefox to settle DOM state after re-render
+    await page.waitForTimeout(500);
     await boostBtn.click();
-    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 10_000 });
+    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 15_000 });
   });
 
   test("bookmark button toggles bookmarked state", async ({ page }) => {
