@@ -407,8 +407,15 @@ export default function NoteCard(props: Props) {
   const note = displayNote;
 
   // Determine the reply-to actor display
-  const replyToDisplay = () => {
+  const replyToDisplay = (): { username: string; domain: string | null } | null => {
     if (props.inReplyToActor) return props.inReplyToActor;
+    // Fallback: use mentions from API response (first mention = reply target)
+    const n = note();
+    if (n.in_reply_to_id && n.mentions?.length > 0) {
+      const m = n.mentions[0];
+      const parts = m.acct.split("@");
+      return { username: m.username, domain: parts.length > 1 ? parts[1] : null };
+    }
     return null;
   };
 

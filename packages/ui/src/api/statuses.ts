@@ -105,6 +105,14 @@ export interface Note {
   emojis: CustomEmoji[];
   tags: TagInfo[];
   card: PreviewCard | null;
+  mentions: Mention[];
+}
+
+export interface Mention {
+  id: string;
+  username: string;
+  acct: string;
+  url: string;
 }
 
 export interface NoteContext {
