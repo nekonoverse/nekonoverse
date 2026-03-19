@@ -47,8 +47,13 @@ export default function ReactionBar(props: Props) {
     const imported = importedShortcodes();
     if (imported.size === 0) return groups;
     return groups.map((g) => {
-      const m = SHORTCODE_RE.exec(g.displayEmoji);
-      if (m && imported.has(m[1])) {
+      // Check all members (pHash grouped) — if any shortcode was imported,
+      // the whole group is no longer importable
+      const anyImported = g.members.some((r) => {
+        const m = SHORTCODE_RE.exec(r.emoji);
+        return m ? imported.has(m[1]) : false;
+      });
+      if (anyImported) {
         return { ...g, importable: false, importDomain: null };
       }
       return g;
