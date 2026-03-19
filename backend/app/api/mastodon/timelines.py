@@ -24,10 +24,14 @@ async def _resolve_limit(db: AsyncSession, requested: int | None) -> int:
     """Clamp requested limit to admin-configured bounds."""
     from app.services.server_settings_service import get_setting
 
-    default_s = await get_setting(db, "timeline_default_limit")
-    max_s = await get_setting(db, "timeline_max_limit")
-    default_limit = int(default_s) if default_s else 20
-    max_limit = min(int(max_s) if max_s else 40, _HARD_MAX_LIMIT)
+    try:
+        default_s = await get_setting(db, "timeline_default_limit")
+        max_s = await get_setting(db, "timeline_max_limit")
+        default_limit = int(default_s) if default_s else 20
+        max_limit = min(int(max_s) if max_s else 40, _HARD_MAX_LIMIT)
+    except (ValueError, TypeError):
+        default_limit = 20
+        max_limit = 40
     if requested is None:
         return default_limit
     return max(1, min(requested, max_limit))

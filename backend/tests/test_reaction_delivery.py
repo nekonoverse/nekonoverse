@@ -148,12 +148,12 @@ class TestGetDomainSoftware:
             result = await get_domain_software("unreachable.example")
 
         assert result is None
-        # Should cache the failure as empty string
+        # Should cache the failure with shorter TTL (1 hour)
         mock_valkey.set.assert_any_call(
-            "nodeinfo:software:unreachable.example", "", ex=86400
+            "nodeinfo:software:unreachable.example", "", ex=3600
         )
         mock_valkey.set.assert_any_call(
-            "nodeinfo:software_version:unreachable.example", "", ex=86400
+            "nodeinfo:software_version:unreachable.example", "", ex=3600
         )
 
 
