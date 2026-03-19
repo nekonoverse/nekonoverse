@@ -14,9 +14,9 @@ test.describe("Admin Push Notification Settings", () => {
       page.locator(".settings-section h3").first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Should have at least 3 settings sections (server settings, icon, push)
+    // Should have at least 4 settings sections (server settings, timeline, icon, push)
     const headings = page.locator(".settings-section h3");
-    await expect(headings).toHaveCount(3, { timeout: 10_000 });
+    await expect(headings).toHaveCount(4, { timeout: 10_000 });
   });
 
   test("push enabled checkbox is present and checked by default", async ({
