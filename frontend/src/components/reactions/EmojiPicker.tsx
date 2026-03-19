@@ -315,6 +315,15 @@ export default function EmojiPicker(props: Props) {
         placeholder={t("reactions.searchEmoji")}
         value={query()}
         onInput={(e) => setQuery(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Tab" && !e.shiftKey) {
+            const btn = ref?.querySelector<HTMLButtonElement>(".emoji-btn:not(:disabled)");
+            if (btn) {
+              e.preventDefault();
+              btn.focus();
+            }
+          }
+        }}
       />
     </div>
   );

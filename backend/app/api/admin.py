@@ -121,6 +121,8 @@ async def get_server_settings(
         server_theme_color=settings.get("server_theme_color"),
         push_enabled=settings.get("push_enabled", "true") == "true",
         vapid_public_key=vapid_key,
+        timeline_default_limit=int(settings.get("timeline_default_limit", "20")),
+        timeline_max_limit=int(settings.get("timeline_max_limit", "40")),
     )
 
 
@@ -148,6 +150,8 @@ async def update_server_settings(
             await set_setting(db, key, value)
         elif key == "push_enabled":
             await set_setting(db, key, "true" if value else "false")
+        elif key in ("timeline_default_limit", "timeline_max_limit"):
+            await set_setting(db, key, str(int(value)))
         else:
             await set_setting(db, key, value)
     await db.commit()
@@ -189,6 +193,8 @@ async def update_server_settings(
         server_theme_color=settings.get("server_theme_color"),
         push_enabled=settings.get("push_enabled", "true") == "true",
         vapid_public_key=vapid_key,
+        timeline_default_limit=int(settings.get("timeline_default_limit", "20")),
+        timeline_max_limit=int(settings.get("timeline_max_limit", "40")),
     )
 
 

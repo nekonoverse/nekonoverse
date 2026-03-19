@@ -394,6 +394,8 @@ function ServerSettingsTab() {
   const [pushEnabled, setPushEnabled] = createSignal(true);
   const [vapidKey, setVapidKey] = createSignal<string | null>(null);
   const [generatingKey, setGeneratingKey] = createSignal(false);
+  const [tlDefault, setTlDefault] = createSignal(20);
+  const [tlMax, setTlMax] = createSignal(40);
   let iconInput!: HTMLInputElement;
 
   // Use createEffect for reliable initialization inside Switch/Match
@@ -416,6 +418,8 @@ function ServerSettingsTab() {
           setPrivacyContent(s.privacy_policy || "");
           setPushEnabled(s.push_enabled ?? true);
           setVapidKey(s.vapid_public_key ?? null);
+          setTlDefault(s.timeline_default_limit ?? 20);
+          setTlMax(s.timeline_max_limit ?? 40);
         } catch (e) {
           console.error("Failed to load server settings:", e);
         }
@@ -437,6 +441,8 @@ function ServerSettingsTab() {
         terms_of_service: termsContent() || null,
         privacy_policy: privacyContent() || null,
         push_enabled: pushEnabled(),
+        timeline_default_limit: tlDefault(),
+        timeline_max_limit: tlMax(),
       } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
@@ -621,6 +627,35 @@ function ServerSettingsTab() {
         <p style={{ "font-size": "0.85em", color: "var(--text-muted)", "margin-top": "8px" }}>
           {t("admin.vapidGenerateWarning")}
         </p>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("admin.timelineSettings")}</h3>
+        <div class="settings-form-group">
+          <label>{t("admin.timelineDefaultLimit")}</label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={tlDefault()}
+            onInput={(e) => setTlDefault(parseInt(e.currentTarget.value) || 20)}
+            style={{ "max-width": "120px" }}
+          />
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.timelineMaxLimit")}</label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={tlMax()}
+            onInput={(e) => setTlMax(parseInt(e.currentTarget.value) || 40)}
+            style={{ "max-width": "120px" }}
+          />
+        </div>
+        <button class="btn btn-small" onClick={handleSave} disabled={saving()}>
+          {saving() ? t("profile.saving") : t("settings.save")}
+        </button>
       </div>
     </Show>
   );

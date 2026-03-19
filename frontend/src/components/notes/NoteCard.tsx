@@ -42,6 +42,7 @@ interface Props {
   onQuote?: (note: Note) => void;
   onDelete?: (noteId: string) => void;
   onReply?: (note: Note) => void;
+  onThreadOpen?: (noteId: string) => void;
   inReplyToActor?: { username: string; domain: string | null } | null;
 }
 
@@ -957,7 +958,16 @@ export default function NoteCard(props: Props) {
               </a>
             </span>
           </Show>
-          <a href={`/notes/${note().id}`} class="note-time-link">
+          <a
+            href={`/notes/${note().id}`}
+            class="note-time-link"
+            onClick={(e) => {
+              if (props.onThreadOpen) {
+                e.preventDefault();
+                props.onThreadOpen(note().id);
+              }
+            }}
+          >
             <span class="note-time">
               <Show when={timeFormat() === "unixtime"}>
                 <svg

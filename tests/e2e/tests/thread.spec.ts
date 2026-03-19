@@ -69,7 +69,7 @@ test.describe("Thread View", () => {
     ).toBeVisible({ timeout: 5_000 });
   });
 
-  test("clicking timestamp navigates to thread view", async ({ page }) => {
+  test("clicking timestamp opens thread modal on timeline", async ({ page }) => {
     const note = await createNote(page, `Timestamp link ${Date.now()}`);
 
     // Go to timeline
@@ -83,8 +83,19 @@ test.describe("Thread View", () => {
     await expect(noteCard).toBeVisible({ timeout: 5_000 });
     await noteCard.locator(".note-time-link").click();
 
-    // Should navigate to thread view
-    await expect(page).toHaveURL(`/notes/${note.id}`, { timeout: 10_000 });
+    // Should open thread modal (not navigate)
+    await expect(page.locator(".thread-modal")).toBeVisible({ timeout: 10_000 });
+    await expect(page.locator(".thread-modal .thread-view")).toBeVisible({ timeout: 10_000 });
+
+    // URL should stay on timeline
+    await expect(page).toHaveURL("/", { timeout: 5_000 });
+  });
+
+  test("direct navigation to /notes/:id still works", async ({ page }) => {
+    const note = await createNote(page, `Direct nav ${Date.now()}`);
+
+    // Navigate directly to thread view
+    await page.goto(`/notes/${note.id}`);
     await expect(page.locator(".thread-view")).toBeVisible({ timeout: 10_000 });
   });
 });

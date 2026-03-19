@@ -19,6 +19,8 @@ export interface ServerSettings {
   server_theme_color: string | null;
   push_enabled: boolean;
   vapid_public_key: string | null;
+  timeline_default_limit: number;
+  timeline_max_limit: number;
 }
 
 export interface AdminUser {
