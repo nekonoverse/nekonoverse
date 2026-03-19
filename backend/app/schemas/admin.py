@@ -34,8 +34,8 @@ class ServerSettingsUpdate(BaseModel):
         None, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$"
     )
     push_enabled: bool | None = None
-    timeline_default_limit: int | None = Field(None, ge=1, le=200)
-    timeline_max_limit: int | None = Field(None, ge=1, le=200)
+    timeline_default_limit: int | None = Field(None, ge=1, le=1000)
+    timeline_max_limit: int | None = Field(None, ge=1, le=1000)
 
 
 class PendingRegistrationResponse(BaseModel):

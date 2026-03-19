@@ -2373,6 +2373,34 @@ a:hover {
 }
 
 /* Reaction users modal */
+.reacted-by-modal {
+  max-width: 400px;
+  position: relative;
+}
+
+.reacted-by-close {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--bg-primary);
+  border-radius: 50%;
+  cursor: pointer;
+  font-size: 14px;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1;
+}
+
+.reacted-by-close:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+
 .reacted-by-emoji-hero {
   display: flex;
   flex-direction: column;
