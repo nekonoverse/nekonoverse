@@ -13,6 +13,35 @@ _MAX_SIZE = 20 * 1024 * 1024  # 20 MB
 _ALLOWED_CONTENT_PREFIXES = ("image/", "video/", "audio/")
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
+# Magic byte signatures for image detection when Content-Type is unreliable
+_IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
+    (b"\x89PNG\r\n\x1a\n", "image/png"),   # PNG / APNG
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"RIFF", "image/webp"),  # RIFF....WEBP (check WEBP at offset 8)
+    (b"BM", "image/bmp"),
+    (b"II\x2a\x00", "image/tiff"),
+    (b"MM\x00\x2a", "image/tiff"),
+    (b"\xff\x0a", "image/jxl"),             # JPEG XL codestream
+    (b"\x00\x00\x00\x0c\x4a\x58\x4c\x20", "image/jxl"),  # JPEG XL container
+]
+
+
+def _detect_image_type(head: bytes) -> str | None:
+    """Detect image MIME type from magic bytes. Returns None if unknown."""
+    for sig, mime in _IMAGE_SIGNATURES:
+        if head[:len(sig)] == sig:
+            if sig == b"RIFF" and head[8:12] != b"WEBP":
+                continue
+            return mime
+    # AVIF/HEIF: ftyp box at offset 4
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in (b"avif", b"avis", b"mif1", b"heic", b"heix"):
+            return "image/avif"
+    return None
+
 
 async def _transform_image(body: bytes, **params) -> tuple[bytes, str]:
     """Send image to external transform service. Falls back to original on error."""
@@ -89,10 +118,15 @@ async def proxy_media(
             raise HTTPException(status_code=502, detail="Upstream returned non-200")
 
         content_type = resp.headers.get("content-type", "")
-        if not any(content_type.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
-            raise HTTPException(status_code=403, detail="Disallowed content type")
-
         body = resp.content
+
+        if not any(content_type.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
+            # application/octet-stream 等の場合、先頭バイトで画像判定
+            detected = _detect_image_type(body[:12]) if body else None
+            if detected:
+                content_type = detected
+            else:
+                raise HTTPException(status_code=403, detail="Disallowed content type")
         if len(body) > _MAX_SIZE:
             raise HTTPException(status_code=413, detail="Response too large")
 
