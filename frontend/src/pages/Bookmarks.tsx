@@ -3,12 +3,14 @@ import { getBookmarks, getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import { onReaction } from "@nekonoverse/ui/stores/streaming";
 import NoteCard from "../components/notes/NoteCard";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
 import { useI18n } from "@nekonoverse/ui/i18n";
 
 export default function Bookmarks() {
   const { t } = useI18n();
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [hasMore, setHasMore] = createSignal(false);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
   const LIMIT = 20;
 
@@ -67,6 +69,7 @@ export default function Bookmarks() {
                     note={note}
                     onReactionUpdate={() => refreshNote(note.id)}
                     onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
+                    onThreadOpen={(id) => setThreadNoteId(id)}
                   />
                 )}
               </For>
@@ -78,6 +81,14 @@ export default function Bookmarks() {
             </Show>
           </Show>
         </Show>
+      </Show>
+
+      {/* Thread modal */}
+      <Show when={threadNoteId()}>
+        <NoteThreadModal
+          noteId={threadNoteId()!}
+          onClose={() => setThreadNoteId(null)}
+        />
       </Show>
     </div>
   );

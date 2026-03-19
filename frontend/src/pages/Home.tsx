@@ -24,6 +24,7 @@ import { hideNonFollowedReplies } from "@nekonoverse/ui/stores/theme";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteComposer from "../components/notes/NoteComposer";
 import NoteCard from "../components/notes/NoteCard";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
 
 export default function Home() {
   const { t } = useI18n();
@@ -31,6 +32,8 @@ export default function Home() {
   const [searchParams] = useSearchParams();
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
+  const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
   const [newNoteIds, setNewNoteIds] = createSignal<Set<string>>(new Set());
 
   // Infinite scroll state
@@ -348,9 +351,10 @@ export default function Home() {
       <Show when={!authLoading()} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<EntrancePage />}>
           <NoteComposer
-            onPost={handleNewNote}
+            onPost={(n) => { setReplyTarget(null); handleNewNote(n); }}
             quoteNote={quoteTarget()}
             onClearQuote={() => setQuoteTarget(null)}
+            replyTo={replyTarget()}
           />
 
           <div class="timeline">
@@ -386,9 +390,14 @@ export default function Home() {
                           setQuoteTarget(n);
                           window.scrollTo({ top: 0, behavior: "smooth" });
                         }}
+                        onReply={(n) => {
+                          setReplyTarget(n);
+                          window.scrollTo({ top: 0, behavior: "smooth" });
+                        }}
                         onDelete={(id) =>
                           setNotes((prev) => prev.filter((n) => n.id !== id))
                         }
+                        onThreadOpen={(id) => setThreadNoteId(id)}
                       />
                     </div>
                   )}
@@ -429,6 +438,24 @@ export default function Home() {
                 <path d="M10 3L3 10h4v7h6v-7h4L10 3z" fill="currentColor" />
               </svg>
             </button>
+          </Show>
+
+          {/* Thread modal */}
+          <Show when={threadNoteId()}>
+            <NoteThreadModal
+              noteId={threadNoteId()!}
+              onClose={() => setThreadNoteId(null)}
+              onReply={(n) => {
+                setThreadNoteId(null);
+                setReplyTarget(n);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+              onQuote={(n) => {
+                setThreadNoteId(null);
+                setQuoteTarget(n);
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }}
+            />
           </Show>
         </Show>
       </Show>

@@ -7,6 +7,7 @@ import { focalPointToObjectPosition } from "@nekonoverse/ui/utils/focalPoint";
 import type { Note } from "@nekonoverse/ui/api/statuses";
 import { getNote } from "@nekonoverse/ui/api/statuses";
 import NoteCard from "../components/notes/NoteCard";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
 import ComposeModal from "../components/notes/ComposeModal";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { currentUser, fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
@@ -56,6 +57,7 @@ export default function Profile() {
   // Compose modal state
   const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
   const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
   // Inline edit state
   const [editing, setEditing] = createSignal(false);
@@ -764,6 +766,7 @@ export default function Profile() {
                           onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
                           onReply={(n) => setReplyTarget(n)}
                           onQuote={(n) => setQuoteTarget(n)}
+                          onThreadOpen={(id) => setThreadNoteId(id)}
                         />
                       )}
                     </For>
@@ -783,6 +786,7 @@ export default function Profile() {
                           onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
                           onReply={(n) => setReplyTarget(n)}
                           onQuote={(n) => setQuoteTarget(n)}
+                          onThreadOpen={(id) => setThreadNoteId(id)}
                         />
                       )}
                     </For>
@@ -871,6 +875,22 @@ export default function Profile() {
             </div>
           </div>
         </div>
+      </Show>
+
+      {/* Thread modal */}
+      <Show when={threadNoteId()}>
+        <NoteThreadModal
+          noteId={threadNoteId()!}
+          onClose={() => setThreadNoteId(null)}
+          onReply={(n) => {
+            setThreadNoteId(null);
+            setReplyTarget(n);
+          }}
+          onQuote={(n) => {
+            setThreadNoteId(null);
+            setQuoteTarget(n);
+          }}
+        />
       </Show>
 
       {/* Header crop picker */}

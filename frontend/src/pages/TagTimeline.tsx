@@ -3,12 +3,14 @@ import { useParams } from "@solidjs/router";
 import { getTagTimeline, getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteCard from "../components/notes/NoteCard";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
 
 export default function TagTimeline() {
   const { t } = useI18n();
   const params = useParams<{ tag: string }>();
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [loadingMore, setLoadingMore] = createSignal(false);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
   const [initialData] = createResource(
     () => params.tag,
@@ -66,6 +68,7 @@ export default function TagTimeline() {
                   onDelete={(id) =>
                     setNotes((prev) => prev.filter((n) => n.id !== id))
                   }
+                  onThreadOpen={(id) => setThreadNoteId(id)}
                 />
               )}
             </For>
@@ -81,6 +84,14 @@ export default function TagTimeline() {
           </Show>
         </Show>
       </div>
+
+      {/* Thread modal */}
+      <Show when={threadNoteId()}>
+        <NoteThreadModal
+          noteId={threadNoteId()!}
+          onClose={() => setThreadNoteId(null)}
+        />
+      </Show>
     </div>
   );
 }

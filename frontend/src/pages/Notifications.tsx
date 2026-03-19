@@ -1,6 +1,7 @@
 import { createSignal, createResource, createEffect, onCleanup, Show, For } from "solid-js";
 import { getNotifications, dismissNotification, clearNotifications, markAllNotificationsAsRead, type Notification } from "@nekonoverse/ui/api/notifications";
 import NoteCard from "../components/notes/NoteCard";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
 import Emoji from "../components/Emoji";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
@@ -32,6 +33,7 @@ export default function Notifications() {
   const [hasMore, setHasMore] = createSignal(true);
   const [pushSubscribed, setPushSubscribed] = createSignal(false);
   const [pushToggling, setPushToggling] = createSignal(false);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
   createEffect(async () => {
     if (currentUser() && isPushSupported()) {
@@ -306,6 +308,7 @@ export default function Notifications() {
                           <NoteCard
                             note={notif.status!}
                             onReactionUpdate={() => refreshNote(notif.status!.id)}
+                            onThreadOpen={(id) => setThreadNoteId(id)}
                           />
                         </div>
                       </Show>
@@ -327,6 +330,14 @@ export default function Notifications() {
             </Show>
           </Show>
         </Show>
+      </Show>
+
+      {/* Thread modal */}
+      <Show when={threadNoteId()}>
+        <NoteThreadModal
+          noteId={threadNoteId()!}
+          onClose={() => setThreadNoteId(null)}
+        />
       </Show>
     </div>
   );
