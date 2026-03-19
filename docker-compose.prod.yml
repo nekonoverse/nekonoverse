@@ -237,7 +237,7 @@ services:
   #     - -c
   #     - |
   #       chown 852:852 /var/run/media-proxy-rs &&
-  #       exec setpriv --reuid=852 --regid=852 --clear-groups ./media-proxy-rs
+  #       exec su -s /bin/sh proxy -c './media-proxy-rs'
   #   deploy:
   #     resources:
   #       limits:
