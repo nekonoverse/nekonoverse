@@ -312,15 +312,31 @@ async def note_to_response(
 
         tags = [TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}") for tn in tag_names]
 
-    # Resolve in_reply_to_account_id (prefer eager-loaded relationship)
+    # Resolve in_reply_to_account_id and mention (prefer eager-loaded relationship)
     in_reply_to_account_id = None
+    reply_mention: dict | None = None
     if note.in_reply_to_id:
+        parent_actor = None
         if hasattr(note, "in_reply_to") and note.in_reply_to:
             in_reply_to_account_id = note.in_reply_to.actor_id
+            parent_actor = note.in_reply_to.actor
         elif db:
             parent_note = await get_note_by_id(db, note.in_reply_to_id)
             if parent_note:
                 in_reply_to_account_id = parent_note.actor_id
+                parent_actor = parent_note.actor
+        if parent_actor:
+            acct = (
+                parent_actor.username
+                if not parent_actor.domain
+                else f"{parent_actor.username}@{parent_actor.domain}"
+            )
+            reply_mention = {
+                "id": str(parent_actor.id),
+                "username": parent_actor.username,
+                "acct": acct,
+                "url": parent_actor.ap_id,
+            }
 
     edited_at = None
     if note.updated_at:
@@ -445,6 +461,7 @@ async def note_to_response(
         emojis=emojis,
         tags=tags,
         card=card_resp,
+        mentions=[reply_mention] if reply_mention else [],
         # Mastodon Status compat
         uri=note.ap_id,
         url=f"{app_settings.server_url}/notes/{note.id}",
