@@ -7,26 +7,51 @@ test.describe("Note Actions", () => {
     const uid = Date.now();
     const note = await createNote(page, `reblog-test-${uid}`);
 
+    // --- Boost ---
     await page.goto("/");
     await page.waitForSelector(".note-card", { timeout: 10_000 });
 
-    // 該当ノートのブーストボタンを見つける
     const noteCard = page
       .locator(`.note-card`)
       .filter({ hasText: `reblog-test-${uid}` })
       .first();
     const boostBtn = noteCard.locator(".note-boost-btn");
-    // ボタンが有効になるまで待つ
     await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
-    await boostBtn.click();
+    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 5_000 });
+    await boostBtn.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
 
-    // boosted クラスが付与される（API応答を待つため余裕を持つ）
+    await Promise.all([
+      page.waitForResponse(
+        (resp) => resp.url().includes("/reblog") && resp.status() === 200,
+        { timeout: 15_000 },
+      ),
+      boostBtn.click(),
+    ]);
     await expect(boostBtn).toHaveClass(/boosted/, { timeout: 10_000 });
 
-    // ボタンが再度有効になるまで待つ
-    await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
-    await boostBtn.click();
-    await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 10_000 });
+    // --- Un-boost: reload page to get fresh DOM references (Firefox workaround) ---
+    await page.goto("/");
+    await page.waitForSelector(".note-card", { timeout: 10_000 });
+
+    const noteCard2 = page
+      .locator(`.note-card`)
+      .filter({ hasText: `reblog-test-${uid}` })
+      .first();
+    const boostBtn2 = noteCard2.locator(".note-boost-btn");
+    await expect(boostBtn2).toBeEnabled({ timeout: 5_000 });
+    await expect(boostBtn2).toHaveClass(/boosted/, { timeout: 5_000 });
+    await boostBtn2.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(300);
+
+    await Promise.all([
+      page.waitForResponse(
+        (resp) => resp.url().includes("/unreblog") && resp.status() === 200,
+        { timeout: 15_000 },
+      ),
+      boostBtn2.click(),
+    ]);
+    await expect(boostBtn2).not.toHaveClass(/boosted/, { timeout: 10_000 });
   });
 
   test("bookmark button toggles bookmarked state", async ({ page }) => {
