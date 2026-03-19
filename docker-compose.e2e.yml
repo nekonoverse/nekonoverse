@@ -140,6 +140,16 @@ services:
     networks:
       - e2e
 
+  media-proxy-rs:
+    image: ghcr.io/nekonoverse/media-proxy-rs:main
+    environment:
+      MEDIA_PROXY_CONFIG_PATH: /config/config.json
+      MEDIA_PROXY_ALLOWED_NETWORKS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    volumes:
+      - ./media-proxy-rs/config.json:/config/config.json:ro
+    networks:
+      - e2e
+
 volumes:
   s3proxy_sock:
 

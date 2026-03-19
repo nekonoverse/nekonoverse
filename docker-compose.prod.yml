@@ -218,6 +218,28 @@ services:
   #             count: 1
   #             capabilities: [gpu]
 
+  # Optional: media-proxy-rs (uncomment to use)
+  # 高性能リモートメディアプロキシ。画像を WebP に自動変換。UDS で通信。
+  # media-proxy-rs:
+  #   image: ghcr.io/nekonoverse/media-proxy-rs:main
+  #   restart: unless-stopped
+  #   user: "0:0"
+  #   command:
+  #     - sh
+  #     - -c
+  #     - |
+  #       chown 852:852 /var/run/media-proxy-rs &&
+  #       exec setpriv --reuid=852 --regid=852 --clear-groups ./media-proxy-rs
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         memory: 512M
+  #   environment:
+  #     MEDIA_PROXY_CONFIG_PATH: /config/config.json
+  #   volumes:
+  #     - ./media-proxy-rs/config.prod.json:/config/config.json:ro
+  #     - media_proxy_rs_sock:/var/run/media-proxy-rs
+
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cp .env.cloudflared.example .env.cloudflared してトークンを設定
   # cloudflared:
@@ -260,6 +282,8 @@ volumes:
   frontend_dist:
   # face-detect UDS 使用時はコメント解除
   # face_detect_sock:
+  # media-proxy-rs UDS 使用時はコメント解除
+  # media_proxy_rs_sock:
 
 # Optional: Tailscale 使用時はコメント解除
 # networks:
