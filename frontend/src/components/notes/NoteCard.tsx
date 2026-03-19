@@ -670,36 +670,34 @@ export default function NoteCard(props: Props) {
         <Show when={!note().spoiler_text || cwExpanded()}>
           <Show
             when={editing()}
-            fallback={
-              {(() => {
-                let contentEl: HTMLDivElement | undefined;
-                const renderContent = () => {
-                  if (!contentEl) return;
-                  const el = contentEl;
-                  const src = noteSource();
-                  if (src !== null && src !== undefined) {
-                    renderMfm(el, src, note().emojis, navigate, note().actor.domain);
-                  } else {
-                    el.innerHTML = sanitizeHtml(noteContent());
-                    mentionify(el, navigate);
-                    emojify(el, note().emojis);
-                    twemojify(el);
-                    externalLinksNewTab(el);
-                  }
-                  if (note().actor.is_cat && nyaizeEnabled() && !nyaizeSuppressed()) {
-                    nyaizeElement(el);
-                  }
-                };
-                // Re-render when nyaize suppression toggles
-                createEffect(() => {
-                  nyaizeSuppressed();
-                  renderContent();
-                });
-                return (
-                  <div class="note-content" ref={(el) => { contentEl = el; renderContent(); }} />
-                );
-              })()}
-            }
+            fallback={(() => {
+              let contentEl: HTMLDivElement | undefined;
+              const renderContent = () => {
+                if (!contentEl) return;
+                const el = contentEl;
+                const src = noteSource();
+                if (src !== null && src !== undefined) {
+                  renderMfm(el, src, note().emojis, navigate, note().actor.domain);
+                } else {
+                  el.innerHTML = sanitizeHtml(noteContent());
+                  mentionify(el, navigate);
+                  emojify(el, note().emojis);
+                  twemojify(el);
+                  externalLinksNewTab(el);
+                }
+                if (note().actor.is_cat && nyaizeEnabled() && !nyaizeSuppressed()) {
+                  nyaizeElement(el);
+                }
+              };
+              // Re-render when nyaize suppression toggles
+              createEffect(() => {
+                nyaizeSuppressed();
+                renderContent();
+              });
+              return (
+                <div class="note-content" ref={(el) => { contentEl = el; renderContent(); }} />
+              );
+            })()}
           >
             <div class="note-edit-form">
               <textarea
