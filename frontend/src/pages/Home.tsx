@@ -47,6 +47,9 @@ export default function Home() {
   // Scroll-to-top button state
   const [showScrollTop, setShowScrollTop] = createSignal(false);
 
+  // Suppress auto-scroll while emoji picker or other popover is open
+  const isPopoverOpen = () => !!document.querySelector(".emoji-picker, .thread-modal");
+
   let sentinelRef: HTMLDivElement | undefined;
   let observer: IntersectionObserver | undefined;
 
@@ -173,9 +176,9 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // When user scrolls back to top, auto-flush buffer
+  // When user scrolls back to top, auto-flush buffer (unless popover is open)
   createEffect(() => {
-    if (isAtTop() && bufferedNotes().length > 0) {
+    if (isAtTop() && bufferedNotes().length > 0 && !isPopoverOpen()) {
       flushBuffer();
     }
   });
@@ -225,8 +228,8 @@ export default function Home() {
       )
         return;
 
-      if (isAtTop()) {
-        // User is at top: insert directly with animation
+      if (isAtTop() && !isPopoverOpen()) {
+        // User is at top and no popover: insert directly with animation
         setNotes((prev) => {
           if (prev.some((n) => n.id === id)) return prev;
           return [note, ...prev];
