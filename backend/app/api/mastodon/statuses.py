@@ -385,6 +385,7 @@ async def note_to_response(
         header=header,
         header_static=header,
         note=actor.summary or "",
+        is_cat=actor.is_cat,
         bot=actor.is_bot,
         group=actor.type == "Group",
         created_at=_to_mastodon_datetime(actor.created_at),

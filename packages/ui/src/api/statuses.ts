@@ -13,6 +13,7 @@ export interface NoteActor {
   server_software: string | null;
   server_software_version: string | null;
   server_name: string | null;
+  is_cat: boolean;
   emojis: CustomEmoji[];
 }
 
