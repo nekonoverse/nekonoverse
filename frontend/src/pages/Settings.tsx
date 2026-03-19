@@ -8,6 +8,7 @@ import {
   timeFormat, setTimeFormat,
   cursorStyle, setCursorStyle,
   hideNonFollowedReplies, setHideNonFollowedReplies,
+  nyaizeEnabled, setNyaizeEnabled,
   FONT_FAMILY_MAP,
   type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle,
 } from "@nekonoverse/ui/stores/theme";
@@ -290,6 +291,14 @@ function PostingTab() {
           onChange={(e) => setHideNonFollowedReplies(e.currentTarget.checked)}
         />
         {t("settings.hideNonFollowedReplies")}
+      </label>
+      <label class="toggle-label">
+        <input
+          type="checkbox"
+          checked={nyaizeEnabled()}
+          onChange={(e) => setNyaizeEnabled(e.currentTarget.checked)}
+        />
+        {t("settings.nyaize")}
       </label>
     </div>
   );

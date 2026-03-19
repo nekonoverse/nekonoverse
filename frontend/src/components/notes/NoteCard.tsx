@@ -27,10 +27,11 @@ import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "@nekonoverse/ui/utils/mentionify";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
-import { timeFormat } from "@nekonoverse/ui/stores/theme";
+import { timeFormat, nyaizeEnabled } from "@nekonoverse/ui/stores/theme";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { renderMfm } from "@nekonoverse/ui/utils/mfm";
+import { nyaizeElement } from "@nekonoverse/ui/utils/nyaize";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 interface Props {
@@ -227,6 +228,7 @@ export default function NoteCard(props: Props) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = createSignal(false);
+  const [nyaizeSuppressed, setNyaizeSuppressed] = createSignal(false);
   const [boosted, setBoosted] = createSignal(props.note.reblogged || (props.note.reblog?.reblogged ?? false));
   const [boostLoading, setBoostLoading] = createSignal(false);
   const [boostCount, setBoostCount] = createSignal(0);
@@ -586,6 +588,32 @@ export default function NoteCard(props: Props) {
                 </svg>
               )}
             </span>
+            <Show when={note().actor.is_cat && nyaizeEnabled()}>
+              <button
+                class={`note-cat-btn${nyaizeSuppressed() ? " note-cat-suppressed" : ""}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setNyaizeSuppressed(!nyaizeSuppressed());
+                }}
+                title={nyaizeSuppressed() ? t("note.nyaizeOff") : t("note.nyaizeOn")}
+              >
+                <svg
+                  width="14"
+                  height="14"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <path d="M12 5c-1.2-3-4-4-7-3 0 3 1 6 3 8-1 2-1.5 4-1 6h3c0-1 .5-2 1-3h4c.5 1 1 2 1 3h3c.5-2 0-4-1-6 2-2 3-5 3-8-3-1-5.8 0-7 3z" />
+                  {nyaizeSuppressed() && (
+                    <line x1="2" y1="2" x2="22" y2="22" />
+                  )}
+                </svg>
+              </button>
+            </Show>
             <Show when={currentUser()}>
               <div class="note-more-menu">
                 <button
@@ -649,29 +677,34 @@ export default function NoteCard(props: Props) {
         <Show when={!note().spoiler_text || cwExpanded()}>
           <Show
             when={editing()}
-            fallback={
-              <div
-                class="note-content"
-                ref={(el) => {
-                  const src = noteSource();
-                  if (src !== null && src !== undefined) {
-                    renderMfm(
-                      el,
-                      src,
-                      note().emojis,
-                      navigate,
-                      note().actor.domain,
-                    );
-                  } else {
-                    el.innerHTML = sanitizeHtml(noteContent());
-                    mentionify(el, navigate);
-                    emojify(el, note().emojis);
-                    twemojify(el);
-                    externalLinksNewTab(el);
-                  }
-                }}
-              />
-            }
+            fallback={(() => {
+              let contentEl: HTMLDivElement | undefined;
+              const renderContent = () => {
+                if (!contentEl) return;
+                const el = contentEl;
+                const src = noteSource();
+                if (src !== null && src !== undefined) {
+                  renderMfm(el, src, note().emojis, navigate, note().actor.domain);
+                } else {
+                  el.innerHTML = sanitizeHtml(noteContent());
+                  mentionify(el, navigate);
+                  emojify(el, note().emojis);
+                  twemojify(el);
+                  externalLinksNewTab(el);
+                }
+                if (note().actor.is_cat && nyaizeEnabled() && !nyaizeSuppressed()) {
+                  nyaizeElement(el);
+                }
+              };
+              // Re-render when nyaize suppression toggles
+              createEffect(() => {
+                nyaizeSuppressed();
+                renderContent();
+              });
+              return (
+                <div class="note-content" ref={(el) => { contentEl = el; renderContent(); }} />
+              );
+            })()}
           >
             <div class="note-edit-form">
               <textarea

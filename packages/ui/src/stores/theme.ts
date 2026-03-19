@@ -100,7 +100,11 @@ const [hideNonFollowedReplies, setHideNonFollowedRepliesSignal] = createSignal<b
   localStorage.getItem("nekonoverse:hide-non-followed-replies") !== "false"
 );
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, hideNonFollowedReplies };
+const [nyaizeEnabled, setNyaizeEnabledSignal] = createSignal<boolean>(
+  localStorage.getItem("nekonoverse:nyaize") !== "false"
+);
+
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, hideNonFollowedReplies, nyaizeEnabled };
 
 export function setTheme(t: Theme) {
   setThemeSignal(t);
@@ -142,6 +146,11 @@ export function setCursorStyle(s: CursorStyle) {
 export function setHideNonFollowedReplies(v: boolean) {
   setHideNonFollowedRepliesSignal(v);
   localStorage.setItem("nekonoverse:hide-non-followed-replies", String(v));
+}
+
+export function setNyaizeEnabled(v: boolean) {
+  setNyaizeEnabledSignal(v);
+  localStorage.setItem("nekonoverse:nyaize", String(v));
 }
 
 export function initTheme() {

@@ -53,6 +53,7 @@ class NoteActorResponse(BaseModel):
     header: str = ""
     header_static: str = ""
     note: str = ""
+    is_cat: bool = False
     bot: bool = False
     group: bool = False
     created_at: str = ""

@@ -2794,6 +2794,31 @@ a:hover {
   position: relative;
 }
 
+.note-cat-btn {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 2px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.6;
+  transition: opacity 0.15s;
+}
+
+.note-cat-btn:hover {
+  opacity: 1;
+}
+
+.note-cat-suppressed {
+  opacity: 0.3;
+}
+
+.note-cat-suppressed:hover {
+  opacity: 0.6;
+}
+
 .note-more-btn {
   background: none;
   border: none;
