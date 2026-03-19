@@ -23,6 +23,7 @@ import { followedIds } from "@nekonoverse/ui/stores/followedUsers";
 import { hideNonFollowedReplies } from "@nekonoverse/ui/stores/theme";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteComposer from "../components/notes/NoteComposer";
+import ComposeModal from "../components/notes/ComposeModal";
 import NoteCard from "../components/notes/NoteCard";
 import NoteThreadModal from "../components/notes/NoteThreadModal";
 
@@ -354,10 +355,9 @@ export default function Home() {
       <Show when={!authLoading()} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<EntrancePage />}>
           <NoteComposer
-            onPost={(n) => { setReplyTarget(null); handleNewNote(n); }}
+            onPost={handleNewNote}
             quoteNote={quoteTarget()}
             onClearQuote={() => setQuoteTarget(null)}
-            replyTo={replyTarget()}
           />
 
           <div class="timeline">
@@ -389,14 +389,8 @@ export default function Home() {
                       <NoteCard
                         note={note}
                         onReactionUpdate={() => refreshNote(note.id)}
-                        onQuote={(n) => {
-                          setQuoteTarget(n);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
-                        onReply={(n) => {
-                          setReplyTarget(n);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
+                        onQuote={(n) => setQuoteTarget(n)}
+                        onReply={(n) => setReplyTarget(n)}
                         onDelete={(id) =>
                           setNotes((prev) => prev.filter((n) => n.id !== id))
                         }
@@ -451,15 +445,22 @@ export default function Home() {
               onReply={(n) => {
                 setThreadNoteId(null);
                 setReplyTarget(n);
-                window.scrollTo({ top: 0, behavior: "smooth" });
               }}
               onQuote={(n) => {
                 setThreadNoteId(null);
                 setQuoteTarget(n);
-                window.scrollTo({ top: 0, behavior: "smooth" });
               }}
             />
           </Show>
+
+          {/* Compose modal (reply / quote) */}
+          <ComposeModal
+            open={!!replyTarget() || !!quoteTarget()}
+            onClose={() => { setReplyTarget(null); setQuoteTarget(null); }}
+            onPost={(n) => { setReplyTarget(null); setQuoteTarget(null); handleNewNote(n); }}
+            replyTo={replyTarget()}
+            quoteNote={quoteTarget()}
+          />
         </Show>
       </Show>
     </div>
