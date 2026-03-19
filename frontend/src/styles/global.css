@@ -3757,6 +3757,7 @@ a:hover {
 
 .profile-edit-field-input {
   flex: 1;
+  min-width: 0;
   padding: 6px 10px;
   background: var(--bg-primary);
   color: var(--text-primary);
