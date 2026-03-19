@@ -17,7 +17,7 @@ from .statuses import notes_to_responses
 router = APIRouter(prefix="/api/v1/timelines", tags=["timelines"])
 
 # Absolute upper bound (prevent abuse regardless of admin config)
-_HARD_MAX_LIMIT = 200
+_HARD_MAX_LIMIT = 1000
 
 
 async def _resolve_limit(db: AsyncSession, requested: int | None) -> int:
