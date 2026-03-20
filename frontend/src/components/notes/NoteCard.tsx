@@ -91,6 +91,12 @@ function QuoteEmbed(props: { note: Note }) {
           />
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
+        <span class="note-quote-time">
+          {(() => {
+            useTimeTick();
+            return formatTimestamp(props.note.published, t);
+          })()}
+        </span>
       </div>
       <div
         class="note-quote-content"
@@ -121,13 +127,21 @@ function QuoteEmbed(props: { note: Note }) {
           </div>
         </Show>
         <Show when={!props.note.sensitive || quoteRevealed()}>
-          <div class="note-quote-media">
-            <For each={props.note.media_attachments.slice(0, 2)}>
+          <div class={`note-quote-media note-quote-media-${Math.min(props.note.media_attachments.length, 4)}`}>
+            <For each={props.note.media_attachments.slice(0, 4)}>
               {(media) => (
-                <img
-                  src={media.preview_url || media.url}
-                  alt={media.description || ""}
-                />
+                <div class="note-quote-media-item">
+                  <img
+                    src={media.preview_url || media.url}
+                    alt={media.description || ""}
+                    loading="lazy"
+                    style={{
+                      "object-position": focalPointToObjectPosition(
+                        media.meta?.focus,
+                      ),
+                    }}
+                  />
+                </div>
               )}
             </For>
           </div>
@@ -777,9 +791,6 @@ export default function NoteCard(props: Props) {
           <Show when={note().poll}>
             <PollDisplay poll={note().poll!} noteId={note().id} />
           </Show>
-          <Show when={note().quote}>
-            <QuoteEmbed note={note().quote!} />
-          </Show>
           <Show when={note().media_attachments?.length > 0}>
             <Show when={note().sensitive && !note().spoiler_text && !sensitiveRevealed()}>
               <div class="sensitive-overlay" onClick={() => setSensitiveRevealed(true)}>
@@ -803,7 +814,7 @@ export default function NoteCard(props: Props) {
               <div
                 class={`note-media note-media-${Math.min(note().media_attachments.length, 4)}`}
               >
-                <For each={note().media_attachments}>
+                <For each={note().media_attachments.slice(0, 4)}>
                   {(media, i) => (
                     <button
                       class="note-media-item"
@@ -835,6 +846,11 @@ export default function NoteCard(props: Props) {
                           }
                         }}
                       />
+                      <Show when={i() === 3 && note().media_attachments.length > 4}>
+                        <div class="note-media-more">
+                          +{note().media_attachments.length - 4}
+                        </div>
+                      </Show>
                     </button>
                   )}
                 </For>
@@ -847,6 +863,9 @@ export default function NoteCard(props: Props) {
                 />
               </Show>
             </Show>
+          </Show>
+          <Show when={note().quote}>
+            <QuoteEmbed note={note().quote!} />
           </Show>
           <Show when={note().card && !note().media_attachments?.length}>
             <LinkPreviewCard card={note().card!} />

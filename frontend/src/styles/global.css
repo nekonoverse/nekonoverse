@@ -1602,6 +1602,19 @@ a:hover {
   max-height: 200px;
 }
 
+.note-media-more {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.5);
+  color: #fff;
+  font-size: 1.5rem;
+  font-weight: 700;
+  pointer-events: none;
+}
+
 /* Image Lightbox */
 .lightbox-overlay {
   position: fixed;
@@ -1939,15 +1952,44 @@ a:hover {
   color: var(--text-primary);
   word-break: break-word;
 }
-.note-quote-media {
-  display: flex;
-  gap: 6px;
-  margin-top: 8px;
+.note-quote-time {
+  margin-left: auto;
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  white-space: nowrap;
 }
-.note-quote-media img {
-  max-height: 80px;
+.note-quote-media {
+  display: grid;
+  gap: 3px;
+  margin-top: 8px;
   border-radius: 4px;
+  overflow: hidden;
+}
+.note-quote-media-1 {
+  grid-template-columns: 1fr;
+}
+.note-quote-media-2 {
+  grid-template-columns: 1fr 1fr;
+}
+.note-quote-media-3 {
+  grid-template-columns: 1fr 1fr;
+}
+.note-quote-media-3 .note-quote-media-item:first-child {
+  grid-column: 1 / -1;
+}
+.note-quote-media-4 {
+  grid-template-columns: 1fr 1fr;
+}
+.note-quote-media-item {
+  overflow: hidden;
+  border-radius: 4px;
+}
+.note-quote-media-item img {
+  width: 100%;
+  height: 100%;
   object-fit: cover;
+  max-height: 120px;
+  display: block;
 }
 
 /* Link preview card */

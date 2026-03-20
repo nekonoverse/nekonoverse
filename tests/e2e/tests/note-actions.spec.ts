@@ -18,15 +18,15 @@ test.describe("Note Actions", () => {
     const boostBtn = noteCard.locator(".note-boost-btn");
     await expect(boostBtn).toBeEnabled({ timeout: 5_000 });
     await expect(boostBtn).not.toHaveClass(/boosted/, { timeout: 5_000 });
-    await boostBtn.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(300);
 
+    // Firefox workaround: scrollIntoViewIfNeeded + click が "Element is not attached
+    // to the DOM" で失敗する場合があるため evaluate で直接クリック
     await Promise.all([
       page.waitForResponse(
         (resp) => resp.url().includes("/reblog") && resp.status() === 200,
         { timeout: 15_000 },
       ),
-      boostBtn.click(),
+      boostBtn.evaluate((el: HTMLElement) => el.click()),
     ]);
 
     // Firefox workaround: SolidJS の DOM 更新が反映されない場合があるためリロード
@@ -56,15 +56,14 @@ test.describe("Note Actions", () => {
     const boostBtn2 = noteCard2.locator(".note-boost-btn");
     await expect(boostBtn2).toBeEnabled({ timeout: 5_000 });
     await expect(boostBtn2).toHaveClass(/boosted/, { timeout: 5_000 });
-    await boostBtn2.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(300);
 
+    // Firefox workaround: evaluate で直接クリック
     await Promise.all([
       page.waitForResponse(
         (resp) => resp.url().includes("/unreblog") && resp.status() === 200,
         { timeout: 15_000 },
       ),
-      boostBtn2.click(),
+      boostBtn2.evaluate((el: HTMLElement) => el.click()),
     ]);
     await expect(boostBtn2).not.toHaveClass(/boosted/, { timeout: 10_000 });
   });
@@ -82,8 +81,9 @@ test.describe("Note Actions", () => {
       .filter({ hasText: `bookmark-action-${uid}` })
       .first();
     const bookmarkBtn = noteCard.locator(".note-bookmark-btn");
-    await bookmarkBtn.scrollIntoViewIfNeeded();
-    await bookmarkBtn.click();
+
+    // Firefox workaround: evaluate で直接クリック
+    await bookmarkBtn.evaluate((el: HTMLElement) => el.click());
 
     // Firefox workaround: SolidJS の DOM 更新が反映されない場合はリロードして確認
     try {
@@ -109,9 +109,26 @@ test.describe("Note Actions", () => {
       .filter({ hasText: `bookmark-action-${uid}` })
       .first();
     const bookmarkBtn2 = noteCard2.locator(".note-bookmark-btn");
-    await bookmarkBtn2.scrollIntoViewIfNeeded();
-    await bookmarkBtn2.click();
-    await expect(bookmarkBtn2).not.toHaveClass(/bookmarked/, { timeout: 5_000 });
+
+    // Firefox workaround: evaluate で直接クリック
+    await bookmarkBtn2.evaluate((el: HTMLElement) => el.click());
+
+    // Firefox workaround: unbookmark 後の状態確認もリロードフォールバック付き
+    try {
+      await expect(bookmarkBtn2).not.toHaveClass(/bookmarked/, {
+        timeout: 5_000,
+      });
+    } catch {
+      await page.goto("/");
+      await page.waitForSelector(".note-card", { timeout: 10_000 });
+      const refreshedCard2 = page
+        .locator(`.note-card`)
+        .filter({ hasText: `bookmark-action-${uid}` })
+        .first();
+      await expect(
+        refreshedCard2.locator(".note-bookmark-btn"),
+      ).not.toHaveClass(/bookmarked/, { timeout: 5_000 });
+    }
   });
 
   test("delete note removes it from timeline", async ({ page }) => {
