@@ -376,7 +376,6 @@ export const neko: Dictionary = {
   "settings.isCat": "にゃんこモードにゃ",
   "settings.isBot": "Botにゃ",
   "settings.locked": "フォローしょうにんにゃ",
-  "settings.discoverable": "みつけられるにゃ",
   "settings.profileSaved": "ほぞんしたにゃ！",
   "settings.maxFields": "さいだい4つにゃ",
   "pwa.updateAvailable": "あたらしいのがあるにゃ",
