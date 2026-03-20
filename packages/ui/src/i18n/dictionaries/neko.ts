@@ -265,6 +265,8 @@ export const neko: Dictionary = {
   "boost.boostedBy": "ブーストしたにゃんこにゃ",
   "note.delete": "けすにゃ",
   "note.confirmDelete": "このとうこうけすにゃ？",
+  "note.modDelete": "けすにゃ（もでれーしょん）",
+  "note.confirmModDelete": "もでれーしょんけんげんでけすにゃ？",
   "note.edit": "へんしゅうにゃ",
   "note.editing": "ほぞんちゅうにゃ...",
   "note.edited": "へんしゅうずみにゃ",

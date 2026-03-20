@@ -23,7 +23,8 @@ import { groupReactions } from "@nekonoverse/ui/utils/groupReactions";
 import { getAllCachedPhashes } from "@nekonoverse/ui/utils/phashCache";
 import Emoji from "../Emoji";
 import ImageLightbox from "../ImageLightbox";
-import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { currentUser, canModerateContent } from "@nekonoverse/ui/stores/auth";
+import { adminDeleteNote } from "@nekonoverse/ui/api/admin";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { focalPointToObjectPosition } from "@nekonoverse/ui/utils/focalPoint";
@@ -342,9 +343,14 @@ export default function NoteCard(props: Props) {
 
   const handleDelete = async () => {
     setMoreOpen(false);
-    if (!confirm(t("note.confirmDelete"))) return;
+    const msg = isOwnNote() ? t("note.confirmDelete") : t("note.confirmModDelete" as any);
+    if (!confirm(msg)) return;
     try {
-      await deleteNote(displayNote().id);
+      if (isOwnNote()) {
+        await deleteNote(displayNote().id);
+      } else {
+        await adminDeleteNote(displayNote().id);
+      }
       props.onDelete?.(displayNote().id);
     } catch {}
   };
@@ -773,6 +779,14 @@ export default function NoteCard(props: Props) {
                       >
                         {t("block.block")} {actorHandle(note().actor)}
                       </button>
+                      <Show when={canModerateContent()}>
+                        <button
+                          class="note-more-item note-more-danger"
+                          onClick={handleDelete}
+                        >
+                          {t("note.modDelete" as any)}
+                        </button>
+                      </Show>
                     </Show>
                   </div>
                 </Show>

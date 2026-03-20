@@ -263,6 +263,8 @@ export const ja = {
   "boost.boostedBy": "ブーストしたユーザー",
   "note.delete": "削除",
   "note.confirmDelete": "この投稿を削除しますか？",
+  "note.modDelete": "削除（モデレーション）",
+  "note.confirmModDelete": "モデレーション権限でこの投稿を削除しますか？",
   "note.edit": "編集",
   "note.editing": "保存中...",
   "note.edited": "編集済み",
