@@ -352,6 +352,7 @@ export const ja = {
   "admin.emojiFile": "画像ファイル",
   "admin.confirmDeleteEmoji": "この絵文字を削除しますか？",
   "admin.importResult": "インポート: {imported}件, スキップ: {skipped}件",
+  "admin.importingEmoji": "絵文字をインポート中…",
   "admin.remoteEmoji": "リモート絵文字",
   "admin.importEmoji": "インポート",
   "admin.importSuccess": "インポートしました",
