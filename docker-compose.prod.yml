@@ -100,7 +100,7 @@ services:
               sleep 3
             done &&
             python -m scripts.check_schema &&
-            uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --uds-perms 666 --workers 4
+            umask 0111 && uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4
           '
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
