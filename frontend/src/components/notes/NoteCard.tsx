@@ -61,6 +61,9 @@ function profileUrl(actor: Note["actor"]): string {
     : `/@${actor.username}`;
 }
 
+// CW展開状態をコンポーネント再マウント後も保持するためのモジュールレベル Set
+const expandedCwNoteIds = new Set<string>();
+
 function QuoteEmbed(props: { note: Note }) {
   const { t } = useI18n();
   const navigate = useNavigate();
@@ -257,7 +260,12 @@ export default function NoteCard(props: Props) {
   const [favCount, setFavCount] = createSignal(0);
   const [pinned, setPinned] = createSignal(false);
   const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
-  const [cwExpanded, setCwExpanded] = createSignal(false);
+  const [cwExpanded, setCwExpandedRaw] = createSignal(expandedCwNoteIds.has(displayNote().id));
+  const setCwExpanded = (v: boolean) => {
+    setCwExpandedRaw(v);
+    if (v) expandedCwNoteIds.add(displayNote().id);
+    else expandedCwNoteIds.delete(displayNote().id);
+  };
   const [contentCollapsed, setContentCollapsed] = createSignal(true);
   const [contentOverflows, setContentOverflows] = createSignal(false);
   const [sensitiveRevealed, setSensitiveRevealed] = createSignal(false);
