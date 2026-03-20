@@ -40,6 +40,8 @@ export default function Home() {
   // Infinite scroll state
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
+  // Track raw pagination cursor separately (for when filtering removes all items)
+  let rawPaginationCursor: string | null = null;
 
   // New post buffering state
   const [bufferedNotes, setBufferedNotes] = createSignal<Note[]>([]);
@@ -95,6 +97,7 @@ export default function Home() {
       setNotes(isHome ? filterHomeTLReplies(data) : data);
       setHasMore(data.length >= 20);
       setBufferedNotes([]);
+      rawPaginationCursor = null;
       return data;
     } catch {
       return [];
@@ -106,7 +109,9 @@ export default function Home() {
     if (loadingMore() || !hasMore()) return;
     const current = notes();
     if (current.length === 0) return;
-    const lastId = current[current.length - 1].id;
+    // Use raw cursor when filtering removed all items from previous page
+    const lastId = rawPaginationCursor || current[current.length - 1].id;
+    rawPaginationCursor = null;
     setLoadingMore(true);
     try {
       const isHome = untrack(isHomeTL);
@@ -122,8 +127,11 @@ export default function Home() {
           const unique = data.filter((n) => !existingIds.has(n.id));
           return [...prev, ...unique];
         });
-        if (data.length < 20) {
+        if (raw.length < 20) {
           setHasMore(false);
+        } else if (data.length === 0) {
+          // All items filtered — advance cursor using last raw item
+          rawPaginationCursor = raw[raw.length - 1].id;
         }
       }
     } catch {
