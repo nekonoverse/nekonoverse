@@ -191,6 +191,7 @@ export default function ReactionBar(props: Props) {
   const badgeClass = (group: GroupedReaction) => {
     let cls = "reaction-badge";
     if (group.me) cls += " reaction-me";
+    if (ignoresReactions()) cls += " reaction-unsupported";
     if (group.importable) {
       cls += canManageEmoji()
         ? " reaction-importable"
