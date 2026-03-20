@@ -81,6 +81,31 @@ async def test_unfavourite_not_found(authed_client, mock_valkey):
 # --- favourited_by ---
 
 
+async def test_favourites_count_excludes_emoji_reactions(authed_client, mock_valkey):
+    """favourites_count should only count ⭐ (Like), not emoji reactions."""
+    create = await authed_client.post(
+        "/api/v1/statuses", json={"content": "count test", "visibility": "public"}
+    )
+    note_id = create.json()["id"]
+
+    # Add emoji reaction (not a favourite)
+    await authed_client.put(f"/api/v1/statuses/{note_id}/emoji_reactions/❤")
+
+    resp = await authed_client.get(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["favourites_count"] == 0  # ❤ is not ⭐
+    assert body["reactions_count"] == 1
+
+    # Now add a favourite (⭐)
+    await authed_client.post(f"/api/v1/statuses/{note_id}/favourite")
+
+    resp = await authed_client.get(f"/api/v1/statuses/{note_id}")
+    body = resp.json()
+    assert body["favourites_count"] == 1  # only ⭐
+    assert body["reactions_count"] == 2   # ⭐ + ❤
+
+
 async def test_favourited_by(authed_client, mock_valkey):
     """GET /api/v1/statuses/{id}/favourited_by returns accounts that favourited."""
     create = await authed_client.post(

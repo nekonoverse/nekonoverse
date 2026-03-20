@@ -351,12 +351,15 @@ async def note_to_response(
         if poll_data:
             poll_response = PollResponse(**poll_data)
 
-    # favourited判定: リアクション一覧から⭐のmeフラグを確認
+    # favourited判定 + favourites_count: ⭐のみ集計
     favourited = False
+    favourites_count = 0
     if reactions:
         for r in reactions:
-            if r.get("emoji") == "\u2b50" and r.get("me"):
-                favourited = True
+            if r.get("emoji") == "\u2b50":
+                favourites_count = r.get("count", 0)
+                if r.get("me"):
+                    favourited = True
                 break
 
     from app.config import settings as app_settings
@@ -469,7 +472,7 @@ async def note_to_response(
         account=actor_resp,
         created_at=_to_mastodon_datetime(note.published),
         reblogs_count=note.renotes_count,
-        favourites_count=note.reactions_count,
+        favourites_count=favourites_count,
     )
 
 
