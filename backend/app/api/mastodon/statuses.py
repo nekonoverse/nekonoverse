@@ -1153,6 +1153,39 @@ async def favourited_by(
     return [await _actor_to_account(r.actor, db=db) for r in reactions]
 
 
+@router.get("/{note_id}/reblogged_by")
+async def reblogged_by(
+    note_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List accounts that reblogged (renoted) a status."""
+    from app.api.mastodon.accounts import _actor_to_account
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    actor_id = user.actor_id if user else None
+    if not await check_note_visible(db, note, actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    result = await db.execute(
+        select(Note)
+        .options(selectinload(Note.actor))
+        .where(
+            Note.renote_of_id == note.id,
+            Note.content == "",
+            Note.deleted_at.is_(None),
+        )
+        .order_by(Note.published.desc())
+        .limit(80)
+    )
+    renotes = result.scalars().all()
+
+    return [await _actor_to_account(r.actor, db=db) for r in renotes]
+
+
 @router.get("/{note_id}/reacted_by")
 async def reacted_by(
     note_id: uuid.UUID,
