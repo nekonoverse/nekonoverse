@@ -3,6 +3,7 @@
 # =============================================================================
 # 全サービス間通信を Unix Domain Socket で統一。
 # フロントエンドはビルド済み静的ファイルを nginx が直接配信。
+# 外部アクセス不要なサービスは network_mode: "none" で TCP を無効化。
 #
 # 使い方:
 #   cp .env.example .env  # 環境変数を設定
@@ -13,6 +14,7 @@ services:
   postgresql:
     image: postgres:18-alpine
     restart: unless-stopped
+    network_mode: "none"
     environment:
       POSTGRES_DB: nekonoverse
       POSTGRES_USER: nekonoverse
@@ -29,6 +31,7 @@ services:
   valkey:
     image: valkey/valkey:8-alpine
     restart: unless-stopped
+    network_mode: "none"
     command: >
       valkey-server
         --unixsocket /var/run/valkey/valkey.sock
@@ -65,6 +68,7 @@ services:
   s3proxy-deliverer:
     image: ghcr.io/nananek/s3proxy-deliverer:latest
     restart: unless-stopped
+    network_mode: "none"
     environment:
       STORAGE_ROOT: /data
     volumes:
@@ -178,6 +182,7 @@ services:
   frontend:
     image: ghcr.io/nekonoverse/nekonoverse-frontend:latest
     restart: "no"
+    network_mode: "none"
     command:
       - sh
       - -c
@@ -193,6 +198,8 @@ services:
       - s3proxy_sock:/var/run/s3proxy-deliverer
       - app_sock:/var/run/nekonoverse-app
       - frontend_dist:/var/www/frontend:ro
+    # Cloudflare Tunnel 使用時は ports を削除し networks: [internal] のみにして
+    # nginx を外部ネットワークから隔離する
     ports:
       - "80:80"
     depends_on:
@@ -206,6 +213,7 @@ services:
   # face-detect:
   #   build: ./face-detect
   #   restart: unless-stopped
+  #   network_mode: "none"
   #   user: "0:0"
   #   command:
   #     - sh
@@ -227,10 +235,12 @@ services:
   #             capabilities: [gpu]
 
   # Optional: media-proxy-rs (uncomment to use)
-  # 高性能リモートメディアプロキシ。画像を WebP に自動変換。UDS で通信。
+  # 画像変換専用。/transform POST のみ使用するため外部アクセス不要。
+  # network_mode: "none" で TCP を無効化し UDS のみで通信。
   # media-proxy-rs:
   #   image: ghcr.io/nekonoverse/media-proxy-rs:main
   #   restart: unless-stopped
+  #   network_mode: "none"
   #   user: "0:0"
   #   command:
   #     - sh
@@ -250,6 +260,8 @@ services:
 
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cp .env.cloudflared.example .env.cloudflared してトークンを設定
+  # 使用時は nginx の ports を削除し networks: [internal] のみにする。
+  # cloudflared は external (Cloudflare エッジ接続) + internal (nginx 接続) が必要。
   # cloudflared:
   #   image: cloudflare/cloudflared:latest
   #   restart: unless-stopped
@@ -257,6 +269,9 @@ services:
   #   env_file: .env.cloudflared
   #   environment:
   #     TUNNEL_TRANSPORT_PROTOCOL: http2
+  #   networks:
+  #     - default
+  #     - internal
 
   # Optional: Tailscale (uncomment to use)
   # app/worker で network_mode: "service:tailscale" を使う場合、
@@ -293,7 +308,9 @@ volumes:
   # media-proxy-rs UDS 使用時はコメント解除
   # media_proxy_rs_sock:
 
-# Optional: Tailscale 使用時はコメント解除
+# Optional: Cloudflare Tunnel / Tailscale 使用時はコメント解除
 # networks:
+#   internal:
+#     internal: true
 #   tailscale_net:
 #     driver: bridge
