@@ -2481,6 +2481,48 @@ a:hover {
   position: relative;
 }
 
+/* Reaction confirmation dialog */
+.reaction-confirm-modal {
+  max-width: 360px;
+  padding: 20px;
+  text-align: center;
+}
+.reaction-confirm-message {
+  margin: 0 0 16px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+.reaction-confirm-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 16px;
+  font-size: 0.9em;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+.reaction-confirm-buttons {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.reaction-confirm-cancel,
+.reaction-confirm-ok {
+  padding: 6px 16px;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.9em;
+}
+.reaction-confirm-cancel {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
+.reaction-confirm-ok {
+  background: var(--accent);
+  color: white;
+}
+
 .reacted-by-close {
   position: absolute;
   top: 8px;

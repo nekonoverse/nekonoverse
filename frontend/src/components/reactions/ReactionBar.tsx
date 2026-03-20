@@ -109,7 +109,11 @@ export default function ReactionBar(props: Props) {
     });
   });
 
-  const toggleReaction = async (emoji: string) => {
+  // Reaction confirmation dialog for unsupported servers
+  const [pendingReactionEmoji, setPendingReactionEmoji] = createSignal<string | null>(null);
+  const [confirmDontShow, setConfirmDontShow] = createSignal(false);
+
+  const doReaction = async (emoji: string) => {
     const existing = props.reactions.find((r) => r.emoji === emoji && r.me);
     try {
       if (existing) {
@@ -121,6 +125,35 @@ export default function ReactionBar(props: Props) {
     } catch {
       // ignore
     }
+  };
+
+  const toggleReaction = async (emoji: string) => {
+    // Unreacting always works — no confirmation needed
+    const existing = props.reactions.find((r) => r.emoji === emoji && r.me);
+    if (existing) {
+      return doReaction(emoji);
+    }
+    // New reaction: check if server ignores reactions and confirmation isn't suppressed
+    if (ignoresReactions() && localStorage.getItem("hideReactionConfirm") !== "1") {
+      setPendingReactionEmoji(emoji);
+      setConfirmDontShow(false);
+      return;
+    }
+    return doReaction(emoji);
+  };
+
+  const confirmReaction = () => {
+    const emoji = pendingReactionEmoji();
+    if (!emoji) return;
+    if (confirmDontShow()) {
+      localStorage.setItem("hideReactionConfirm", "1");
+    }
+    setPendingReactionEmoji(null);
+    doReaction(emoji);
+  };
+
+  const cancelReaction = () => {
+    setPendingReactionEmoji(null);
   };
 
   const handleReaction = (group: GroupedReaction) => {
@@ -295,6 +328,31 @@ export default function ReactionBar(props: Props) {
                   );
                 }}
               </For>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Reaction confirmation dialog for unsupported servers */}
+      <Show when={pendingReactionEmoji()}>
+        <div class="modal-overlay" onClick={cancelReaction}>
+          <div class="modal-content reaction-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <p class="reaction-confirm-message">{t("reactions.confirmUnsupported" as any)}</p>
+            <label class="reaction-confirm-checkbox">
+              <input
+                type="checkbox"
+                checked={confirmDontShow()}
+                onChange={(e) => setConfirmDontShow(e.currentTarget.checked)}
+              />
+              {t("reactions.dontShowAgain" as any)}
+            </label>
+            <div class="reaction-confirm-buttons">
+              <button class="reaction-confirm-cancel" onClick={cancelReaction}>
+                {t("note.cancel")}
+              </button>
+              <button class="reaction-confirm-ok" onClick={confirmReaction}>
+                {t("reactions.sendReaction" as any)}
+              </button>
             </div>
           </div>
         </div>

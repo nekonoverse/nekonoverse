@@ -279,6 +279,21 @@ function AppearanceTab() {
         </div>
       </div>
 
+      <div class="settings-section">
+        <h3>{t("settings.reactionConfirm" as any)}</h3>
+        <p style="color: var(--text-secondary); font-size: 0.9em; margin: 0 0 8px">
+          {t("settings.reactionConfirmDesc" as any)}
+        </p>
+        <button
+          class="theme-btn"
+          onClick={() => {
+            localStorage.removeItem("hideReactionConfirm");
+          }}
+        >
+          {t("settings.reactionConfirmReset" as any)}
+        </button>
+      </div>
+
     </>
   );
 }
