@@ -191,7 +191,7 @@ function AppearanceTab() {
 
       <div class="settings-section">
         <h3>{t("settings.fontFamily")}</h3>
-        <div class="theme-selector" style={{ "flex-wrap": "wrap" }}>
+        <div class="theme-selector">
           {([
             { key: "noto" as FontFamily, label: t("settings.fontNoto"), css: FONT_FAMILY_MAP.noto },
             { key: "hiragino" as FontFamily, label: t("settings.fontHiragino"), css: FONT_FAMILY_MAP.hiragino },

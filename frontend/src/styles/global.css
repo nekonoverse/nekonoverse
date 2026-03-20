@@ -3159,12 +3159,13 @@ a:hover {
 /* Theme Selector */
 .theme-selector {
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin-top: 8px;
 }
 
 .theme-btn {
-  flex: 1;
+  flex: 1 1 auto;
   padding: 10px 16px;
   background: var(--bg-primary);
   border: 1px solid var(--border);
