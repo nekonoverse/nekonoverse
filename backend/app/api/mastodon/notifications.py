@@ -112,6 +112,7 @@ async def _notification_to_response(
     emoji_url_map: dict | None = None,
     emoji_cache: dict | None = None,
     actor_id=None,
+    reactions_map: dict | None = None,
 ) -> NotificationResponse:
     account = None
     if notif.sender:
@@ -158,8 +159,10 @@ async def _notification_to_response(
     if notif.note:
         from app.api.mastodon.statuses import note_to_response
 
+        reactions = (reactions_map or {}).get(notif.note.id)
         status = await note_to_response(
-            notif.note, db=db, emoji_cache=emoji_cache, actor_id=actor_id
+            notif.note, reactions=reactions, db=db,
+            emoji_cache=emoji_cache, actor_id=actor_id,
         )
 
     emoji_url = None
@@ -205,13 +208,19 @@ async def get_notifications(
     emoji_strings = [n.reaction_emoji for n in notifications]
     emoji_url_map = await _batch_resolve_emoji_urls(db, emoji_strings)
 
-    # Note用の絵文字キャッシュもバッチ構築
+    # Note用の絵文字キャッシュ + リアクションをバッチ構築
     notes_with_content = [n.note for n in notifications if n.note]
     emoji_cache: dict | None = None
+    reactions_map: dict = {}
     if notes_with_content:
         from app.api.mastodon.statuses import _build_emoji_cache
 
         emoji_cache = await _build_emoji_cache(db, notes_with_content)
+
+        from app.services.note_service import get_reaction_summaries
+
+        note_ids = [note.id for note in notes_with_content]
+        reactions_map = await get_reaction_summaries(db, note_ids, user.actor_id)
 
     result = []
     for n in notifications:
@@ -222,6 +231,7 @@ async def get_notifications(
                 emoji_url_map=emoji_url_map,
                 emoji_cache=emoji_cache,
                 actor_id=user.actor_id,
+                reactions_map=reactions_map,
             )
         )
     return result
