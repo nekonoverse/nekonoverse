@@ -6528,7 +6528,7 @@ a:hover {
   white-space: nowrap;
   text-transform: capitalize;
   flex-shrink: 1;
-  min-width: 0;
+  min-width: 2em;
 }
 
 .note-via-instance-link {
@@ -6537,7 +6537,7 @@ a:hover {
   white-space: nowrap;
   color: var(--text-secondary);
   text-decoration: none;
-  flex-shrink: 1;
+  flex-shrink: 100;
   min-width: 0;
 }
 
