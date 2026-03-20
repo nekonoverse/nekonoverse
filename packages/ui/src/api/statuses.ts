@@ -273,6 +273,23 @@ export async function getRemoteEmojiInfo(
 
 
 
+export interface ActionByUser {
+  id: string;
+  username: string;
+  acct: string;
+  display_name: string | null;
+  avatar: string;
+  url: string;
+}
+
+export async function getRebloggedBy(noteId: string): Promise<ActionByUser[]> {
+  return apiRequest<ActionByUser[]>(`/api/v1/statuses/${noteId}/reblogged_by`);
+}
+
+export async function getFavouritedBy(noteId: string): Promise<ActionByUser[]> {
+  return apiRequest<ActionByUser[]>(`/api/v1/statuses/${noteId}/favourited_by`);
+}
+
 export async function favouriteNote(noteId: string): Promise<Note> {
   return apiRequest<Note>(`/api/v1/statuses/${noteId}/favourite`, {
     method: "POST",

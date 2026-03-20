@@ -12,7 +12,10 @@ import {
   unpinNote,
   votePoll,
   editNote,
+  getRebloggedBy,
+  getFavouritedBy,
 } from "@nekonoverse/ui/api/statuses";
+import type { ActionByUser } from "@nekonoverse/ui/api/statuses";
 import { blockAccount, muteAccount } from "@nekonoverse/ui/api/accounts";
 import LinkPreviewCard from "./LinkPreviewCard";
 import ReactionBar from "../reactions/ReactionBar";
@@ -265,6 +268,13 @@ export default function NoteCard(props: Props) {
   const [noteSource, setNoteSource] = createSignal(props.note.source);
   const [noteEditedAt, setNoteEditedAt] = createSignal(props.note.edited_at);
 
+  // Long-press modal for boost/fav "who did this"
+  const [actionModalTitle, setActionModalTitle] = createSignal<string | null>(null);
+  const [actionModalUsers, setActionModalUsers] = createSignal<ActionByUser[]>([]);
+  const [actionModalLoading, setActionModalLoading] = createSignal(false);
+  let actionLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let actionDidLongPress = false;
+
   // If this is a reblog, the displayed note is the inner one
   const isReblog = () => !!props.note.reblog;
   const displayNote = () => props.note.reblog || props.note;
@@ -382,6 +392,7 @@ export default function NoteCard(props: Props) {
   };
 
   const handleFavourite = async () => {
+    if (actionDidLongPress) return;
     try {
       if (favourited()) {
         await unfavouriteNote(displayNote().id);
@@ -397,6 +408,7 @@ export default function NoteCard(props: Props) {
   };
 
   const handleBoost = async () => {
+    if (actionDidLongPress) return;
     if (boostLoading()) return;
     setBoostLoading(true);
     try {
@@ -416,6 +428,48 @@ export default function NoteCard(props: Props) {
   const handleQuote = () => {
     props.onQuote?.(displayNote());
   };
+
+  // Long press on boost/fav to show who did it
+  const openActionModal = async (
+    title: string,
+    fetcher: () => Promise<ActionByUser[]>,
+  ) => {
+    setActionModalTitle(title);
+    setActionModalLoading(true);
+    setActionModalUsers([]);
+    try {
+      setActionModalUsers(await fetcher());
+    } catch {
+      setActionModalUsers([]);
+    }
+    setActionModalLoading(false);
+  };
+
+  const closeActionModal = () => {
+    setActionModalTitle(null);
+    setActionModalUsers([]);
+    actionDidLongPress = false;
+  };
+
+  const startActionLongPress = (
+    title: string,
+    fetcher: () => Promise<ActionByUser[]>,
+  ) => {
+    actionDidLongPress = false;
+    actionLongPressTimer = setTimeout(() => {
+      actionDidLongPress = true;
+      openActionModal(title, fetcher);
+    }, 500);
+  };
+
+  const cancelActionLongPress = () => {
+    if (actionLongPressTimer) {
+      clearTimeout(actionLongPressTimer);
+      actionLongPressTimer = null;
+    }
+  };
+
+  onCleanup(() => cancelActionLongPress());
 
   const handleReply = () => {
     if (props.onReply) {
@@ -441,6 +495,7 @@ export default function NoteCard(props: Props) {
   };
 
   return (
+    <>
     <div class={`note-card${pinned() ? " note-pinned" : ""}`} data-note-id={note().id}>
       <Show when={pinned() && !isReblog()}>
         <div class="note-pin-indicator">
@@ -897,6 +952,12 @@ export default function NoteCard(props: Props) {
             <button
               class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${note().visibility === "private" || note().visibility === "direct" ? " disabled" : ""}`}
               onClick={handleBoost}
+              onMouseDown={() => startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id))}
+              onMouseUp={cancelActionLongPress}
+              onMouseLeave={cancelActionLongPress}
+              onTouchStart={() => startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id))}
+              onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
+              onContextMenu={(e) => e.preventDefault()}
               disabled={boostLoading() || note().visibility === "private" || note().visibility === "direct"}
               title={
                 note().visibility === "private" || note().visibility === "direct"
@@ -951,6 +1012,12 @@ export default function NoteCard(props: Props) {
             <button
               class={`note-action-btn note-fav-btn${favourited() ? " favourited" : ""}`}
               onClick={handleFavourite}
+              onMouseDown={() => startActionLongPress(t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id))}
+              onMouseUp={cancelActionLongPress}
+              onMouseLeave={cancelActionLongPress}
+              onTouchStart={() => startActionLongPress(t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id))}
+              onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
+              onContextMenu={(e) => e.preventDefault()}
               title={t(favourited() ? "favourite.remove" : "favourite.add")}
             >
               <svg
@@ -1060,5 +1127,51 @@ export default function NoteCard(props: Props) {
         </div>
       </div>
     </div>
+
+    {/* Boost/Favourite users modal (long press) */}
+    <Show when={actionModalTitle()}>
+      <div class="modal-overlay" onClick={closeActionModal}>
+        <div class="modal-content reacted-by-modal" onClick={(e) => e.stopPropagation()}>
+          <button class="reacted-by-close" onClick={closeActionModal}>✕</button>
+          <div class="reacted-by-emoji-hero">
+            <span style="font-size: 1.5rem; font-weight: 600">{actionModalTitle()}</span>
+          </div>
+          <div class="reacted-by-list">
+            <Show when={actionModalLoading()}>
+              <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
+                {t("common.loading")}
+              </div>
+            </Show>
+            <Show when={!actionModalLoading() && actionModalUsers().length === 0}>
+              <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
+                —
+              </div>
+            </Show>
+            <For each={actionModalUsers()}>
+              {(u) => {
+                const handle = u.acct.includes("@") ? `@${u.acct}` : `@${u.acct}`;
+                return (
+                  <button
+                    class="reacted-by-item"
+                    onClick={() => { closeActionModal(); navigate(`/@${u.acct}`); }}
+                  >
+                    <img
+                      class="reacted-by-avatar"
+                      src={u.avatar || defaultAvatar()}
+                      alt=""
+                    />
+                    <div class="reacted-by-names">
+                      <span class="reacted-by-display">{u.display_name || u.username}</span>
+                      <span class="reacted-by-handle">{handle}</span>
+                    </div>
+                  </button>
+                );
+              }}
+            </For>
+          </div>
+        </div>
+      </div>
+    </Show>
+    </>
   );
 }
