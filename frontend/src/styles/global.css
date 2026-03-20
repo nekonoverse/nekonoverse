@@ -2730,6 +2730,10 @@ a:hover {
   flex-shrink: 1;
   object-fit: cover;
   object-position: left center;
+}
+
+/* ぼかしマスクは実際にはみ出す場合のみ適用 */
+[data-wide-emoji="blur"] .reaction-badge.emoji-overflow .custom-emoji {
   -webkit-mask-image: linear-gradient(to right, black 70%, transparent 100%);
   mask-image: linear-gradient(to right, black 70%, transparent 100%);
 }

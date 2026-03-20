@@ -200,12 +200,27 @@ export default function ReactionBar(props: Props) {
     return cls;
   };
 
+  const checkEmojiOverflow = (badge: HTMLElement) => {
+    const img = badge.querySelector("img.custom-emoji") as HTMLImageElement | null;
+    if (!img) return;
+    const check = () => {
+      if (img.naturalWidth > img.clientWidth * 1.1) {
+        badge.classList.add("emoji-overflow");
+      } else {
+        badge.classList.remove("emoji-overflow");
+      }
+    };
+    if (img.complete) check();
+    else img.addEventListener("load", check, { once: true });
+  };
+
   return (
     <>
       <div class="reaction-bar">
         {grouped().map((g) => (
           <button
             class={badgeClass(g)}
+            ref={checkEmojiOverflow}
             onClick={() => handleReaction(g)}
             onMouseDown={() => startLongPress(g)}
             onMouseUp={cancelLongPress}
