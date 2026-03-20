@@ -38,7 +38,6 @@ export interface UpdateProfileParams {
   is_cat?: boolean;
   is_bot?: boolean;
   locked?: boolean;
-  discoverable?: boolean;
 }
 
 export async function updateProfile(params: UpdateProfileParams): Promise<CurrentUser> {

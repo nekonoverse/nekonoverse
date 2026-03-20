@@ -305,7 +305,6 @@ async def _user_response(user: User, db: AsyncSession) -> UserResponse:
         is_cat=actor.is_cat,
         is_bot=actor.is_bot,
         locked=actor.manually_approves_followers,
-        discoverable=actor.discoverable,
         role=user.role,
         created_at=user.created_at,
     )
@@ -437,7 +436,6 @@ async def update_credentials(
     is_cat: bool | None = Form(None),
     is_bot: bool | None = Form(None),
     locked: bool | None = Form(None),
-    discoverable: bool | None = Form(None),
     avatar: UploadFile | None = File(None),
     header: UploadFile | None = File(None),
     avatar_delete: str | None = Form(None),
@@ -551,10 +549,6 @@ async def update_credentials(
                     accept_id = f"{user.actor.ap_id}#accepts/follows/{pf.follower.id}"
                     accept_act = render_accept_activity(accept_id, user.actor.ap_id, follow_act)
                     await enqueue_delivery(db, user.actor_id, pf.follower.inbox_url, accept_act)
-
-    if discoverable is not None:
-        user.actor.discoverable = discoverable
-        changed = True
 
     if also_known_as is not None:
         import json as _json2
