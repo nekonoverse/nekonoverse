@@ -1330,6 +1330,7 @@ a:hover {
   font-size: 1em;
   line-height: 1.5;
   word-break: break-word;
+  overflow: hidden;
 }
 
 .note-content-collapsed {
@@ -1754,6 +1755,8 @@ a:hover {
   gap: 6px;
   margin-top: 10px;
   flex-wrap: wrap;
+  position: relative;
+  z-index: 1;
 }
 
 .reaction-badge {
@@ -1854,6 +1857,8 @@ a:hover {
   display: flex;
   gap: 4px;
   margin-top: 8px;
+  position: relative;
+  z-index: 1;
 }
 
 .note-action-btn {
