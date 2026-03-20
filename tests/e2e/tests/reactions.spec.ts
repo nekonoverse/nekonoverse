@@ -3,6 +3,7 @@ import { loginAsAdmin, createNote } from "./helpers";
 
 test.describe("Reactions", () => {
   test("add reaction via emoji picker", async ({ page }) => {
+    test.setTimeout(60_000);
     await loginAsAdmin(page);
     const uid = Date.now();
     await createNote(page, `reaction-test-${uid}`);
@@ -17,14 +18,26 @@ test.describe("Reactions", () => {
 
     // リアクション追加ボタンをクリック
     const addBtn = noteCard.locator(".reaction-add-btn");
+    await addBtn.waitFor({ state: "visible", timeout: 10_000 });
+    await addBtn.scrollIntoViewIfNeeded();
     await addBtn.click();
 
     // Emoji Picker が表示される
-    await page.waitForSelector(".emoji-picker", { timeout: 5_000 });
+    await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
 
-    // 最初の絵文字ボタンをクリック
+    // カスタム絵文字の非同期読み込みで DOM が再構築されるのを待つ
+    await page.waitForFunction(
+      () => {
+        const btns = document.querySelectorAll(".emoji-picker .emoji-btn");
+        return btns.length > 0;
+      },
+      { timeout: 10_000 },
+    );
+
+    // 最初の絵文字ボタンをクリック (Firefox の再レンダリング安定を待つ)
     const emoji = page.locator(".emoji-picker .emoji-btn").first();
-    await emoji.waitFor({ timeout: 10_000 });
+    await expect(emoji).toBeVisible({ timeout: 5_000 });
+    await emoji.scrollIntoViewIfNeeded();
     await emoji.click();
 
     // リアクションバッジが表示される
