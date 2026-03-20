@@ -68,7 +68,6 @@ export default function Profile() {
   const [editIsCat, setEditIsCat] = createSignal(false);
   const [editIsBot, setEditIsBot] = createSignal(false);
   const [editLocked, setEditLocked] = createSignal(false);
-  const [editDiscoverable, setEditDiscoverable] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
   const [uploadingAvatar, setUploadingAvatar] = createSignal(false);
   const [uploadingHeader, setUploadingHeader] = createSignal(false);
@@ -210,7 +209,6 @@ export default function Profile() {
     setEditIsCat(user?.is_cat || false);
     setEditIsBot(user?.is_bot || false);
     setEditLocked(user?.locked || false);
-    setEditDiscoverable(user?.discoverable ?? true);
     setEditing(true);
   };
 
@@ -250,7 +248,6 @@ export default function Profile() {
         is_cat: editIsCat(),
         is_bot: editIsBot(),
         locked: editLocked(),
-        discoverable: editDiscoverable(),
       });
       await refreshAccount();
       setEditing(false);
@@ -713,10 +710,6 @@ export default function Profile() {
                         <label class="profile-edit-checkbox">
                           <input type="checkbox" checked={editLocked()} onChange={(e) => setEditLocked(e.currentTarget.checked)} />
                           {t("settings.locked")}
-                        </label>
-                        <label class="profile-edit-checkbox">
-                          <input type="checkbox" checked={editDiscoverable()} onChange={(e) => setEditDiscoverable(e.currentTarget.checked)} />
-                          {t("settings.discoverable")}
                         </label>
                       </div>
                     </div>
