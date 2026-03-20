@@ -35,7 +35,7 @@ services:
     command: >
       valkey-server
         --unixsocket /var/run/valkey/valkey.sock
-        --unixsocketperm 770
+        --unixsocketperm 666
         --port 0
         --save 60 1
         --loglevel warning
@@ -71,6 +71,7 @@ services:
     network_mode: "none"
     environment:
       STORAGE_ROOT: /data
+      UDS_PATH: /var/run/s3proxy-deliverer/uvicorn.sock
     volumes:
       - ./volumes/nekono3s:/data:ro
       - s3proxy_sock:/var/run/s3proxy-deliverer
@@ -99,7 +100,7 @@ services:
               sleep 3
             done &&
             python -m scripts.check_schema &&
-            uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4
+            uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --uds-perms 666 --workers 4
           '
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
