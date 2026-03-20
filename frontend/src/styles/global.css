@@ -6412,6 +6412,10 @@ a:hover {
   }
 }
 
+[data-reduce-mfm-motion] .mfm-fn {
+  animation: none !important;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .mfm-fn {
     animation: none !important;

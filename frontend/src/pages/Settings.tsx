@@ -10,6 +10,7 @@ import {
   wideEmojiStyle, setWideEmojiStyle,
   hideNonFollowedReplies, setHideNonFollowedReplies,
   nyaizeEnabled, setNyaizeEnabled,
+  reduceMfmMotion, setReduceMfmMotion,
   FONT_FAMILY_MAP,
   type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle, type WideEmojiStyle,
 } from "@nekonoverse/ui/stores/theme";
@@ -292,6 +293,18 @@ function AppearanceTab() {
         >
           {t("settings.reactionConfirmReset" as any)}
         </button>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.mfmMotion" as any)}</h3>
+        <label class="toggle-label">
+          <input
+            type="checkbox"
+            checked={reduceMfmMotion()}
+            onChange={(e) => setReduceMfmMotion(e.currentTarget.checked)}
+          />
+          {t("settings.reduceMfmMotion" as any)}
+        </label>
       </div>
 
     </>

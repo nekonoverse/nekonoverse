@@ -610,6 +610,8 @@ export const neko: Dictionary = {
   "settings.reactionConfirm": "りあくしょんかくにんにゃ",
   "settings.reactionConfirmDesc": "りあくしょんがとどかないさーばーのとうこうにりあくしょんするときかくにんするにゃ。「つぎからひょうじしない」をえらんだらここでりせっとできるにゃ。",
   "settings.reactionConfirmReset": "かくにんをまたひょうじするにゃ",
+  "settings.mfmMotion": "MFMアニメーションにゃ",
+  "settings.reduceMfmMotion": "うごくMFMをとめるにゃ",
   "time.justNow": "たったいまにゃ",
   "time.minutesAgo": "{n}ふんまえにゃ",
   "time.hoursAgo": "{n}じかんまえにゃ",

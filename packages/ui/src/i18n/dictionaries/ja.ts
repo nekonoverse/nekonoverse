@@ -608,6 +608,8 @@ export const ja = {
   "settings.reactionConfirm": "リアクション確認ダイアログ",
   "settings.reactionConfirmDesc": "リアクション非対応サーバーへのリアクション時に確認ダイアログを表示します。「次回から表示しない」を選択した場合、ここでリセットできます。",
   "settings.reactionConfirmReset": "確認ダイアログを再表示する",
+  "settings.mfmMotion": "MFMアニメーション",
+  "settings.reduceMfmMotion": "動きのあるMFMを無効にする",
   "time.justNow": "たった今",
   "time.minutesAgo": "{n}分前",
   "time.hoursAgo": "{n}時間前",

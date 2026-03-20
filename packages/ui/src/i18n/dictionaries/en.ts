@@ -612,6 +612,8 @@ export const en: Dictionary = {
   "settings.reactionConfirm": "Reaction Confirmation",
   "settings.reactionConfirmDesc": "Shows a confirmation dialog when reacting to a post from a server that doesn't support emoji reactions. If you chose \"Don't show again\", you can reset it here.",
   "settings.reactionConfirmReset": "Re-enable confirmation dialog",
+  "settings.mfmMotion": "MFM Animation",
+  "settings.reduceMfmMotion": "Disable animated MFM",
   "time.justNow": "just now",
   "time.minutesAgo": "{n}m ago",
   "time.hoursAgo": "{n}h ago",
