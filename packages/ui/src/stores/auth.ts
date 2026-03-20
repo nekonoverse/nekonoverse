@@ -102,6 +102,15 @@ export function canManageEmoji(): boolean {
   return u.nekonoverse_permissions?.includes("emoji") ?? false;
 }
 
+/** Check if current user has content moderation permission. */
+export function canModerateContent(): boolean {
+  const u = currentUser();
+  if (!u) return false;
+  const r = getRoleName(u.role);
+  if (r === "admin") return true;
+  return u.nekonoverse_permissions?.includes("content") ?? false;
+}
+
 export async function register(
   username: string,
   email: string,

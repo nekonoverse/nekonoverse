@@ -168,6 +168,11 @@ export async function markNoteSensitive(noteId: string): Promise<void> {
   await apiRequest(`/api/v1/admin/notes/${noteId}/sensitive`, { method: "POST" });
 }
 
+// Moderator note deletion
+export async function adminDeleteNote(noteId: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/notes/${noteId}`, { method: "DELETE" });
+}
+
 // Custom Emoji
 export interface AdminEmoji {
   id: string;

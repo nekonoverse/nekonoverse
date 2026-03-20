@@ -265,6 +265,8 @@ export const en: Dictionary = {
   "boost.boostedBy": "Boosted by",
   "note.delete": "Delete",
   "note.confirmDelete": "Delete this post?",
+  "note.modDelete": "Delete (moderation)",
+  "note.confirmModDelete": "Delete this post as a moderator?",
   "note.edit": "Edit",
   "note.editing": "Saving...",
   "note.edited": "edited",
