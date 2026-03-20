@@ -94,12 +94,6 @@ function QuoteEmbed(props: { note: Note }) {
           />
           <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
         </a>
-        <span class="note-quote-time">
-          {(() => {
-            useTimeTick();
-            return formatTimestamp(props.note.published, t);
-          })()}
-        </span>
       </div>
       <div
         class="note-quote-content"
@@ -150,6 +144,12 @@ function QuoteEmbed(props: { note: Note }) {
           </div>
         </Show>
       </Show>
+      <span class="note-quote-time">
+        {(() => {
+          useTimeTick();
+          return formatTimestamp(props.note.published, t);
+        })()}
+      </span>
     </div>
   );
 }

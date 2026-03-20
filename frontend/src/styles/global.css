@@ -1923,6 +1923,7 @@ a:hover {
   height: 20px;
   border-radius: 50%;
   object-fit: cover;
+  margin-top: 2px;
 }
 .note-quote-name {
   display: flex;
@@ -1936,7 +1937,7 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 160px;
+  max-width: 200px;
   display: inline-block;
   vertical-align: bottom;
 }
@@ -1947,16 +1948,21 @@ a:hover {
   color: var(--text-secondary);
   font-size: 0.9em;
   font-weight: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .note-quote-content {
   color: var(--text-primary);
   word-break: break-word;
 }
 .note-quote-time {
-  margin-left: auto;
+  display: block;
   color: var(--text-secondary);
-  font-size: 0.85em;
+  font-size: 0.8em;
   white-space: nowrap;
+  margin-top: 4px;
+  text-align: right;
 }
 .note-quote-media {
   display: grid;
