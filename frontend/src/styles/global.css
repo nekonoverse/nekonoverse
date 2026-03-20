@@ -6516,27 +6516,31 @@ a:hover {
   font-size: 0.75em;
   color: var(--text-secondary);
   margin-right: 4px;
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  flex: 1 1 0;
+  justify-content: flex-end;
   white-space: nowrap;
 }
 
 .note-via-software {
-  display: inline-block;
-  max-width: 160px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  vertical-align: bottom;
   text-transform: capitalize;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .note-via-instance-link {
   display: inline-flex;
   align-items: baseline;
-  max-width: 200px;
   white-space: nowrap;
-  vertical-align: bottom;
   color: var(--text-secondary);
   text-decoration: none;
+  flex-shrink: 1;
+  min-width: 0;
 }
 
 .note-via-instance-name {
@@ -6550,12 +6554,6 @@ a:hover {
 }
 
 @media (max-width: 480px) {
-  .note-via-software {
-    max-width: 100px;
-  }
-  .note-via-instance-link {
-    max-width: 140px;
-  }
   .remote-domain-label {
     max-width: 100px;
   }
