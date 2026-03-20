@@ -36,7 +36,10 @@ TOTP_MAX_ATTEMPTS = 5
 TOTP_LOCKOUT_TTL = 300  # 5 minutes
 LOGIN_MAX_ATTEMPTS = 10
 LOGIN_LOCKOUT_TTL = 300  # 5 minutes
-REGISTER_MAX_ATTEMPTS = 20
+def _register_max_attempts() -> int:
+    from app.config import settings
+    return 10000 if settings.debug else 20
+
 REGISTER_LOCKOUT_TTL = 3600  # 1 hour
 
 
@@ -93,7 +96,7 @@ async def register(
     client_ip = request.client.host if request.client else "unknown"
     reg_key = f"register_attempts:{client_ip}"
     reg_attempts = await valkey.get(reg_key)
-    if reg_attempts is not None and int(reg_attempts) >= REGISTER_MAX_ATTEMPTS:
+    if reg_attempts is not None and int(reg_attempts) >= _register_max_attempts():
         raise HTTPException(
             status_code=429,
             detail="Too many registration attempts. Please try again later.",

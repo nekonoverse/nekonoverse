@@ -71,13 +71,33 @@ test.describe("Note Actions", () => {
     }
 
     // Firefox workaround: evaluate で直接クリック
-    await Promise.all([
-      page.waitForResponse(
-        (resp) => resp.url().includes("/unreblog") && resp.status() === 200,
-        { timeout: 15_000 },
-      ),
-      boostBtn2.evaluate((el: HTMLElement) => el.click()),
-    ]);
+    // catch パスでリロードした場合、SolidJS のハンドラが未アタッチでAPIコールが
+    // 発火しないことがあるため、タイムアウト時はリロードしてリトライする
+    try {
+      await Promise.all([
+        page.waitForResponse(
+          (resp) => resp.url().includes("/unreblog") && resp.status() === 200,
+          { timeout: 15_000 },
+        ),
+        boostBtn2.evaluate((el: HTMLElement) => el.click()),
+      ]);
+    } catch {
+      await page.goto("/");
+      await page.waitForSelector(".note-card", { timeout: 10_000 });
+      const retryCard = page
+        .locator(`.note-card`)
+        .filter({ hasText: `reblog-test-${uid}` })
+        .first();
+      boostBtn2 = retryCard.locator(".note-boost-btn");
+      await expect(boostBtn2).toHaveClass(/boosted/, { timeout: 5_000 });
+      await Promise.all([
+        page.waitForResponse(
+          (resp) => resp.url().includes("/unreblog") && resp.status() === 200,
+          { timeout: 15_000 },
+        ),
+        boostBtn2.evaluate((el: HTMLElement) => el.click()),
+      ]);
+    }
 
     // Firefox workaround: アンブースト後の状態確認もリロードフォールバック付き
     try {
@@ -111,9 +131,8 @@ test.describe("Note Actions", () => {
     const bookmarkBtn = noteCard.locator(".note-bookmark-btn");
 
     // Firefox workaround: evaluate で直接クリック + API完了を待つ
-    await bookmarkBtn.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(200);
-    const [bookmarkResp] = await Promise.all([
+    await expect(bookmarkBtn).toBeEnabled({ timeout: 5_000 });
+    await Promise.all([
       page.waitForResponse((r) => r.url().includes("/bookmark") && r.status() === 200, { timeout: 10_000 }),
       bookmarkBtn.evaluate((el: HTMLElement) => el.click()),
     ]);
