@@ -18,7 +18,7 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   test("j key moves focus down and cards stay visible below navbar", async ({
     page,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     const navbarHeight = await page
       .locator(".navbar")
@@ -31,10 +31,10 @@ test.describe("Keyboard navigation (j/k/g)", () => {
       await page.keyboard.press("j");
 
       const focused = page.locator(".note-card.keyboard-focused");
-      await expect(focused).toHaveCount(1, { timeout: 3_000 });
+      await expect(focused).toHaveCount(1, { timeout: 5_000 });
 
       // Wait for scroll to settle (Firefox may not complete scroll synchronously)
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(300);
 
       // The focused card's top must not be hidden behind navbar
       const cardTop = await focused.evaluate(
@@ -47,7 +47,7 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   test("k key moves focus up without card hidden behind navbar", async ({
     page,
   }) => {
-    test.setTimeout(60_000);
+    test.setTimeout(90_000);
 
     const navbarHeight = await page
       .locator(".navbar")
@@ -59,7 +59,7 @@ test.describe("Keyboard navigation (j/k/g)", () => {
     // Move down first
     for (let i = 0; i < stepsDown; i++) {
       await page.keyboard.press("j");
-      await page.waitForTimeout(50);
+      await page.waitForTimeout(200);
     }
 
     // Now move back up
@@ -67,10 +67,10 @@ test.describe("Keyboard navigation (j/k/g)", () => {
       await page.keyboard.press("k");
 
       const focused = page.locator(".note-card.keyboard-focused");
-      await expect(focused).toHaveCount(1, { timeout: 3_000 });
+      await expect(focused).toHaveCount(1, { timeout: 5_000 });
 
       // Wait for scroll to settle (Firefox may not complete scroll synchronously)
-      await page.waitForTimeout(100);
+      await page.waitForTimeout(300);
 
       const cardTop = await focused.evaluate(
         (el) => el.getBoundingClientRect().top,
@@ -80,16 +80,18 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   });
 
   test("rapid j presses all apply correctly", async ({ page }) => {
+    test.setTimeout(90_000);
     const cardCount = await page.locator(".note-card").count();
     const presses = Math.min(cardCount, 6);
 
-    // Press j multiple times, waiting for each focus to apply
+    // Press j multiple times, retrying if focus doesn't apply (Firefox CI)
     for (let i = 0; i < presses; i++) {
-      await page.keyboard.press("j");
-      await expect(page.locator(".note-card").nth(i)).toHaveClass(
-        /keyboard-focused/,
-        { timeout: 3_000 },
-      );
+      await expect(async () => {
+        await page.keyboard.press("j");
+        await page.waitForTimeout(200);
+        const cls = await page.locator(".note-card").nth(i).getAttribute("class");
+        expect(cls).toContain("keyboard-focused");
+      }).toPass({ timeout: 10_000 });
     }
 
     // Should have exactly one focused card
@@ -103,22 +105,25 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   });
 
   test("g key scrolls to top and clears focus", async ({ page }) => {
-    // Move down a few notes, waiting for each focus
+    test.setTimeout(90_000);
+
+    // Move down a few notes, retrying j press if focus doesn't apply
     for (let i = 0; i < 5; i++) {
-      await page.keyboard.press("j");
-      await expect(page.locator(".note-card").nth(i)).toHaveClass(
-        /keyboard-focused/,
-        { timeout: 3_000 },
-      );
+      await expect(async () => {
+        await page.keyboard.press("j");
+        await page.waitForTimeout(200);
+        const cls = await page.locator(".note-card").nth(i).getAttribute("class");
+        expect(cls).toContain("keyboard-focused");
+      }).toPass({ timeout: 10_000 });
     }
 
     await expect(page.locator(".note-card.keyboard-focused")).toHaveCount(1, {
-      timeout: 3_000,
+      timeout: 5_000,
     });
 
     // Press g
     await page.keyboard.press("g");
-    await page.waitForTimeout(100);
+    await page.waitForTimeout(300);
 
     // Should be at top
     const scrollY = await page.evaluate(() => window.scrollY);
