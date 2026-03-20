@@ -6524,14 +6524,19 @@ a:hover {
 }
 
 .note-via-instance-link {
-  display: inline-block;
+  display: inline-flex;
+  align-items: baseline;
   max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
   white-space: nowrap;
   vertical-align: bottom;
   color: var(--text-secondary);
   text-decoration: none;
+}
+
+.note-via-instance-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
 }
 
 .note-via-instance-link:hover {
@@ -6543,7 +6548,7 @@ a:hover {
     max-width: 100px;
   }
   .note-via-instance-link {
-    max-width: 120px;
+    max-width: 140px;
   }
   .remote-domain-label {
     max-width: 100px;
