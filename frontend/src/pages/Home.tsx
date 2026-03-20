@@ -1,5 +1,6 @@
 import {
   createSignal,
+  createResource,
   createEffect,
   on,
   onMount,
@@ -8,31 +9,39 @@ import {
   For,
   untrack,
 } from "solid-js";
-import { useSearchParams } from "@solidjs/router";
-import { currentUser, authLoading } from "../stores/auth";
+import { useSearchParams, useNavigate } from "@solidjs/router";
+import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import EntrancePage from "../components/entrance/EntrancePage";
 import {
   getPublicTimeline,
   getHomeTimeline,
   getNote,
   type Note,
-} from "../api/statuses";
-import { onUpdate, onReaction } from "../stores/streaming";
-import { useI18n } from "../i18n";
+} from "@nekonoverse/ui/api/statuses";
+import { onUpdate, onReaction } from "@nekonoverse/ui/stores/streaming";
+import { followedIds } from "@nekonoverse/ui/stores/followedUsers";
+import { hideNonFollowedReplies } from "@nekonoverse/ui/stores/theme";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteComposer from "../components/notes/NoteComposer";
+import ComposeModal from "../components/notes/ComposeModal";
 import NoteCard from "../components/notes/NoteCard";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
 
 export default function Home() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [notes, setNotes] = createSignal<Note[]>([]);
-  const [initialLoading, setInitialLoading] = createSignal(true);
   const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
+  const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
   const [newNoteIds, setNewNoteIds] = createSignal<Set<string>>(new Set());
 
   // Infinite scroll state
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
+  // Track raw pagination cursor separately (for when filtering removes all items)
+  let rawPaginationCursor: string | null = null;
 
   // New post buffering state
   const [bufferedNotes, setBufferedNotes] = createSignal<Note[]>([]);
@@ -40,6 +49,9 @@ export default function Home() {
 
   // Scroll-to-top button state
   const [showScrollTop, setShowScrollTop] = createSignal(false);
+
+  // Suppress auto-scroll while emoji picker or other popover is open
+  const isPopoverOpen = () => !!document.querySelector(".emoji-picker, .thread-modal");
 
   let sentinelRef: HTMLDivElement | undefined;
   let observer: IntersectionObserver | undefined;
@@ -52,20 +64,43 @@ export default function Home() {
     }
   };
 
-  const isHomeTL = () => searchParams.tl === "home" && !!currentUser();
+  const isHomeTL = () => {
+    const tl = searchParams.tl ?? localStorage.getItem("nekonoverse:tl");
+    return tl === "home" && !!currentUser();
+  };
+
+  const filterHomeTLReplies = (data: Note[]): Note[] => {
+    if (!hideNonFollowedReplies()) return data;
+    const user = currentUser();
+    const followed = followedIds();
+    return data.filter((n) => {
+      // Check the actual note (or reblogged note)
+      const target = n.reblog || n;
+      if (!target.in_reply_to_id) return true;
+      // Self-reply (thread)
+      if (target.in_reply_to_account_id === target.actor.id) return true;
+      // Reply to self
+      if (user && target.in_reply_to_account_id === user.id) return true;
+      // Reply to followed user
+      if (target.in_reply_to_account_id && followed.has(target.in_reply_to_account_id))
+        return true;
+      return false;
+    });
+  };
 
   const loadTimeline = async () => {
     try {
-      const data = untrack(isHomeTL)
+      const isHome = untrack(isHomeTL);
+      const data = isHome
         ? await getHomeTimeline()
         : await getPublicTimeline();
-      setNotes(data);
+      setNotes(isHome ? filterHomeTLReplies(data) : data);
       setHasMore(data.length >= 20);
       setBufferedNotes([]);
+      rawPaginationCursor = null;
+      return data;
     } catch {
-      // ignore
-    } finally {
-      setInitialLoading(false);
+      return [];
     }
   };
 
@@ -74,13 +109,17 @@ export default function Home() {
     if (loadingMore() || !hasMore()) return;
     const current = notes();
     if (current.length === 0) return;
-    const lastId = current[current.length - 1].id;
+    // Use raw cursor when filtering removed all items from previous page
+    const lastId = rawPaginationCursor || current[current.length - 1].id;
+    rawPaginationCursor = null;
     setLoadingMore(true);
     try {
-      const data = untrack(isHomeTL)
+      const isHome = untrack(isHomeTL);
+      const raw = isHome
         ? await getHomeTimeline({ max_id: lastId })
         : await getPublicTimeline({ max_id: lastId });
-      if (data.length === 0) {
+      const data = isHome ? filterHomeTLReplies(raw) : raw;
+      if (raw.length === 0) {
         setHasMore(false);
       } else {
         setNotes((prev) => {
@@ -88,8 +127,11 @@ export default function Home() {
           const unique = data.filter((n) => !existingIds.has(n.id));
           return [...prev, ...unique];
         });
-        if (data.length < 20) {
+        if (raw.length < 20) {
           setHasMore(false);
+        } else if (data.length === 0) {
+          // All items filtered — advance cursor using last raw item
+          rawPaginationCursor = raw[raw.length - 1].id;
         }
       }
     } catch {
@@ -143,21 +185,20 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // When user scrolls back to top, auto-flush buffer
+  // When user scrolls back to top, auto-flush buffer (unless popover is open)
   createEffect(() => {
-    if (isAtTop() && bufferedNotes().length > 0) {
+    if (isAtTop() && bufferedNotes().length > 0 && !isPopoverOpen()) {
       flushBuffer();
     }
   });
 
   // Initial load: wait for auth to settle (App.tsx Layout handles fetchCurrentUser)
-  let loaded = false;
-  createEffect(() => {
-    if (!authLoading() && !loaded) {
-      loaded = true;
-      loadTimeline();
-    }
-  });
+  const [initialData] = createResource(
+    () => (!authLoading() ? true : false),
+    () => loadTimeline(),
+  );
+  // Track whether initial load completed for tl switch effect
+  const loaded = () => initialData.state === "ready";
 
   // Subscribe to real-time timeline updates from global stream
   const unsub = onUpdate(async (data) => {
@@ -169,16 +210,35 @@ export default function Home() {
       if (!isHomeTL() && note.visibility !== "public") {
         return;
       }
-      // If this note already exists, update it in-place
-      // (handles focal point updates, edits, reaction changes, etc.)
-      if (notes().some((n) => n.id === id)) {
-        setNotes((prev) => prev.map((n) => (n.id === id ? note : n)));
+      // On home TL, filter replies to non-followed users
+      if (isHomeTL() && filterHomeTLReplies([note]).length === 0) {
         return;
       }
-      if (bufferedNotes().some((n) => n.id === id)) return;
+      // If this note already exists (directly, as reblog, or as quote),
+      // update it in-place (handles focal point updates, edits, etc.)
+      const inTimeline = notes().some(
+        (n) => n.id === id || n.reblog?.id === id || n.quote?.id === id,
+      );
+      if (inTimeline) {
+        setNotes((prev) =>
+          prev.map((n) => {
+            if (n.id === id) return note;
+            if (n.reblog?.id === id) return { ...n, reblog: note };
+            if (n.quote?.id === id) return { ...n, quote: note };
+            return n;
+          }),
+        );
+        return;
+      }
+      if (
+        bufferedNotes().some(
+          (n) => n.id === id || n.reblog?.id === id || n.quote?.id === id,
+        )
+      )
+        return;
 
-      if (isAtTop()) {
-        // User is at top: insert directly with animation
+      if (isAtTop() && !isPopoverOpen()) {
+        // User is at top and no popover: insert directly with animation
         setNotes((prev) => {
           if (prev.some((n) => n.id === id)) return prev;
           return [note, ...prev];
@@ -213,7 +273,11 @@ export default function Home() {
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
-    if (notes().some((n) => n.id === id || n.reblog?.id === id)) {
+    const inNotes = notes().some((n) => n.id === id || n.reblog?.id === id);
+    const inBuffer = bufferedNotes().some(
+      (n) => n.id === id || n.reblog?.id === id,
+    );
+    if (inNotes || inBuffer) {
       const existing = pendingReactionRefresh.get(id);
       if (existing) clearTimeout(existing);
       pendingReactionRefresh.set(
@@ -260,7 +324,7 @@ export default function Home() {
     on(
       () => searchParams.tl,
       () => {
-        if (loaded) {
+        if (loaded()) {
           setHasMore(true);
           setBufferedNotes([]);
           loadTimeline();
@@ -271,19 +335,24 @@ export default function Home() {
   );
 
   const handleNewNote = (note: Note) => {
+    if (!isHomeTL() && note.visibility !== "public") {
+      // 公開TL表示中にunlisted等を投稿した場合はホームTLに遷移
+      navigate("/?tl=home");
+      return;
+    }
     setNotes((prev) => [note, ...prev]);
   };
 
   const refreshNote = async (noteId: string) => {
     try {
       const updated = await getNote(noteId);
-      setNotes((prev) =>
-        prev.map((n) => {
-          if (n.id === noteId) return updated;
-          if (n.reblog?.id === noteId) return { ...n, reblog: updated };
-          return n;
-        }),
-      );
+      const mapper = (n: Note) => {
+        if (n.id === noteId) return updated;
+        if (n.reblog?.id === noteId) return { ...n, reblog: updated };
+        return n;
+      };
+      setNotes((prev) => prev.map(mapper));
+      setBufferedNotes((prev) => prev.map(mapper));
     } catch {
       // ignore
     }
@@ -313,14 +382,14 @@ export default function Home() {
             </Show>
 
             <Show
-              when={!initialLoading()}
+              when={loaded()}
               fallback={<p>{t("timeline.loading")}</p>}
             >
               <Show
                 when={notes().length > 0}
                 fallback={<p class="empty">{t("timeline.empty")}</p>}
               >
-                <For each={notes()}>
+                <For each={notes().slice(0, 200)}>
                   {(note) => (
                     <div
                       class={newNoteIds().has(note.id) ? "note-slide-in" : ""}
@@ -328,13 +397,12 @@ export default function Home() {
                       <NoteCard
                         note={note}
                         onReactionUpdate={() => refreshNote(note.id)}
-                        onQuote={(n) => {
-                          setQuoteTarget(n);
-                          window.scrollTo({ top: 0, behavior: "smooth" });
-                        }}
+                        onQuote={(n) => setQuoteTarget(n)}
+                        onReply={(n) => setReplyTarget(n)}
                         onDelete={(id) =>
                           setNotes((prev) => prev.filter((n) => n.id !== id))
                         }
+                        onThreadOpen={(id) => setThreadNoteId(id)}
                       />
                     </div>
                   )}
@@ -376,6 +444,31 @@ export default function Home() {
               </svg>
             </button>
           </Show>
+
+          {/* Thread modal */}
+          <Show when={threadNoteId()}>
+            <NoteThreadModal
+              noteId={threadNoteId()!}
+              onClose={() => setThreadNoteId(null)}
+              onReply={(n) => {
+                setThreadNoteId(null);
+                setReplyTarget(n);
+              }}
+              onQuote={(n) => {
+                setThreadNoteId(null);
+                setQuoteTarget(n);
+              }}
+            />
+          </Show>
+
+          {/* Compose modal (reply / quote) */}
+          <ComposeModal
+            open={!!replyTarget() || !!quoteTarget()}
+            onClose={() => { setReplyTarget(null); setQuoteTarget(null); }}
+            onPost={(n) => { setReplyTarget(null); setQuoteTarget(null); handleNewNote(n); }}
+            replyTo={replyTarget()}
+            quoteNote={quoteTarget()}
+          />
         </Show>
       </Show>
     </div>

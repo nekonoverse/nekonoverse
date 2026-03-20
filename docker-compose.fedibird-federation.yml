@@ -1,0 +1,375 @@
+# Fedibird federation test
+#
+# Usage:
+#   # 初回のみ: Fedibirdイメージのビルド（5-10分かかる）
+#   docker compose -f docker-compose.fedibird-federation.yml build fedibird-web
+#
+#   # テスト実行
+#   docker compose -f docker-compose.fedibird-federation.yml up -d --build --wait
+#   docker compose -f docker-compose.fedibird-federation.yml run --rm test-runner
+#   docker compose -f docker-compose.fedibird-federation.yml down -v
+
+services:
+  # ── Certificate Generator ──────────────────────────────────
+  certs:
+    image: alpine:3.21
+    command: >
+      sh -c "apk add --no-cache openssl >/dev/null 2>&1 && /gen-certs.sh"
+    volumes:
+      - certs:/certs
+      - ./tests/fedibird-federation/gen-certs.sh:/gen-certs.sh:ro
+
+  # ── Nekonoverse Instance ───────────────────────────────────
+  postgres-neko:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fedibird-fed
+
+  valkey-neko:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fedibird-fed
+
+  app-neko:
+    build: ./backend
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
+    depends_on:
+      postgres-neko:
+        condition: service_healthy
+      valkey-neko:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - fedibird-fed
+
+  worker-neko:
+    build: ./backend
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
+    depends_on:
+      app-neko:
+        condition: service_healthy
+    networks:
+      - fedibird-fed
+
+  nginx-neko:
+    image: nginx:alpine
+    volumes:
+      - ./tests/fedibird-federation/nginx-neko-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      app-neko:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+    networks:
+      fedibird-fed:
+        aliases:
+          - nekonoverse
+
+  # ── Fedibird Instance ──────────────────────────────────────
+  postgres-fb:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: fedibird
+      POSTGRES_USER: fedibird
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U fedibird
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fedibird-fed
+
+  redis-fb:
+    image: redis:7-alpine
+    healthcheck:
+      test: redis-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - fedibird-fed
+
+  fedibird-web:
+    build:
+      context: https://github.com/fedibird/mastodon.git#fedibird
+      dockerfile_inline: |
+        FROM docker.io/ruby:3.2.8-slim-bookworm AS build
+        ENV DEBIAN_FRONTEND=noninteractive RAILS_ENV=production NODE_ENV=production BIND=0.0.0.0
+        SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl ca-certificates gnupg && \
+          mkdir -p /etc/apt/keyrings && \
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+          apt-get update && apt-get install -y --no-install-recommends \
+            nodejs autoconf automake build-essential cmake git \
+            libgdbm-dev libglib2.0-dev libgmp-dev libicu-dev libidn-dev \
+            libpq-dev libssl-dev libtool libyaml-dev pkg-config shared-mime-info \
+            imagemagick ffmpeg && \
+          npm install -g yarn && rm -rf /var/lib/apt/lists/*
+        WORKDIR /opt/mastodon
+        COPY Gemfile Gemfile.lock /opt/mastodon/
+        RUN bundle config set --global frozen "true" && \
+          bundle config set --local without "development test" && \
+          bundle config set silence_root_warning "true" && \
+          bundle install -j"$(nproc)"
+        COPY package.json yarn.lock /opt/mastodon/
+        RUN yarn install --frozen-lockfile --production
+        COPY . /opt/mastodon/
+        RUN SECRET_KEY_BASE=precompile_placeholder OTP_SECRET=precompile_placeholder \
+          bundle exec rails assets:precompile && rm -rf /opt/mastodon/tmp
+
+        FROM docker.io/ruby:3.2.8-slim-bookworm
+        ENV DEBIAN_FRONTEND=noninteractive RAILS_ENV=production NODE_ENV=production \
+          BIND=0.0.0.0 RAILS_SERVE_STATIC_FILES=true
+        SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl ca-certificates gnupg tini && \
+          mkdir -p /etc/apt/keyrings && \
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+          apt-get update && apt-get install -y --no-install-recommends \
+            nodejs file imagemagick ffmpeg libjemalloc2 \
+            libexpat1 libglib2.0-0 libicu72 libidn12 libpq5 \
+            libreadline8 libssl3 libyaml-0-2 tzdata procps && \
+          rm -rf /var/lib/apt/lists/*
+        RUN groupadd -g 991 mastodon && \
+          useradd -l -u 991 -g 991 -m -d /opt/mastodon mastodon && \
+          ln -s /opt/mastodon /mastodon
+        WORKDIR /opt/mastodon
+        COPY --from=build /opt/mastodon /opt/mastodon
+        COPY --from=build /usr/local/bundle /usr/local/bundle
+        RUN mkdir -p /opt/mastodon/public/system && \
+          chown mastodon:mastodon /opt/mastodon/public/system && \
+          chown -R mastodon:mastodon /opt/mastodon/tmp || true
+        EXPOSE 3000 4000
+        ENTRYPOINT ["/usr/bin/tini", "--"]
+    user: root
+    entrypoint: ["/custom-entrypoint.sh"]
+    environment:
+      LOCAL_DOMAIN: fedibird
+      RAILS_ENV: production
+      SECRET_KEY_BASE: test-secret-key-base-not-for-production-use-only-for-fedibird-testing-1234567890
+      OTP_SECRET: test-otp-secret-not-for-production-use-only-for-fedibird-testing-1234567890abcdef
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: test-deterministic-key-not-for-production-00000002
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: test-key-derivation-salt-not-for-production-00002
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: test-primary-key-not-for-production-use-only-00000002
+      DB_HOST: postgres-fb
+      DB_PORT: "5432"
+      DB_NAME: fedibird
+      DB_USER: fedibird
+      DB_PASS: testpass
+      REDIS_HOST: redis-fb
+      REDIS_PORT: "6379"
+      SINGLE_USER_MODE: "false"
+      ALLOWED_PRIVATE_ADDRESSES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      # Disable email requirements for testing
+      SMTP_SERVER: localhost
+      SMTP_PORT: "25"
+      SMTP_FROM_ADDRESS: "fedibird@fedibird"
+    volumes:
+      - ./tests/fedibird-federation/fedibird-entrypoint.sh:/custom-entrypoint.sh:ro
+      - certs:/certs:ro
+      - fedibird_system:/opt/mastodon/public/system
+      - fedibird_tokens:/tokens
+    depends_on:
+      postgres-fb:
+        condition: service_healthy
+      redis-fb:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf -H 'Host: fedibird' http://localhost:3000/api/v1/instance || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 60
+      start_period: 30s
+    networks:
+      - fedibird-fed
+
+  fedibird-sidekiq:
+    build:
+      context: https://github.com/fedibird/mastodon.git#fedibird
+      dockerfile_inline: |
+        FROM docker.io/ruby:3.2.8-slim-bookworm AS build
+        ENV DEBIAN_FRONTEND=noninteractive RAILS_ENV=production NODE_ENV=production BIND=0.0.0.0
+        SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl ca-certificates gnupg && \
+          mkdir -p /etc/apt/keyrings && \
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+          apt-get update && apt-get install -y --no-install-recommends \
+            nodejs autoconf automake build-essential cmake git \
+            libgdbm-dev libglib2.0-dev libgmp-dev libicu-dev libidn-dev \
+            libpq-dev libssl-dev libtool libyaml-dev pkg-config shared-mime-info \
+            imagemagick ffmpeg && \
+          npm install -g yarn && rm -rf /var/lib/apt/lists/*
+        WORKDIR /opt/mastodon
+        COPY Gemfile Gemfile.lock /opt/mastodon/
+        RUN bundle config set --global frozen "true" && \
+          bundle config set --local without "development test" && \
+          bundle config set silence_root_warning "true" && \
+          bundle install -j"$(nproc)"
+        COPY package.json yarn.lock /opt/mastodon/
+        RUN yarn install --frozen-lockfile --production
+        COPY . /opt/mastodon/
+        RUN SECRET_KEY_BASE=precompile_placeholder OTP_SECRET=precompile_placeholder \
+          bundle exec rails assets:precompile && rm -rf /opt/mastodon/tmp
+
+        FROM docker.io/ruby:3.2.8-slim-bookworm
+        ENV DEBIAN_FRONTEND=noninteractive RAILS_ENV=production NODE_ENV=production \
+          BIND=0.0.0.0 RAILS_SERVE_STATIC_FILES=true
+        SHELL ["/bin/bash", "-o", "pipefail", "-o", "errexit", "-c"]
+        RUN apt-get update && apt-get install -y --no-install-recommends \
+            curl ca-certificates gnupg tini && \
+          mkdir -p /etc/apt/keyrings && \
+          curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
+            | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg && \
+          echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_20.x nodistro main" \
+            > /etc/apt/sources.list.d/nodesource.list && \
+          apt-get update && apt-get install -y --no-install-recommends \
+            nodejs file imagemagick ffmpeg libjemalloc2 \
+            libexpat1 libglib2.0-0 libicu72 libidn12 libpq5 \
+            libreadline8 libssl3 libyaml-0-2 tzdata procps && \
+          rm -rf /var/lib/apt/lists/*
+        RUN groupadd -g 991 mastodon && \
+          useradd -l -u 991 -g 991 -m -d /opt/mastodon mastodon && \
+          ln -s /opt/mastodon /mastodon
+        WORKDIR /opt/mastodon
+        COPY --from=build /opt/mastodon /opt/mastodon
+        COPY --from=build /usr/local/bundle /usr/local/bundle
+        RUN mkdir -p /opt/mastodon/public/system && \
+          chown mastodon:mastodon /opt/mastodon/public/system && \
+          chown -R mastodon:mastodon /opt/mastodon/tmp || true
+        EXPOSE 3000 4000
+        ENTRYPOINT ["/usr/bin/tini", "--"]
+    user: root
+    command: >
+      bash -c "
+        if [ -f /certs/ca.crt ]; then
+          cp /certs/ca.crt /usr/local/share/ca-certificates/test-ca.crt;
+          update-ca-certificates 2>/dev/null || true;
+        fi;
+        exec bundle exec sidekiq
+      "
+    environment:
+      LOCAL_DOMAIN: fedibird
+      RAILS_ENV: production
+      SECRET_KEY_BASE: test-secret-key-base-not-for-production-use-only-for-fedibird-testing-1234567890
+      OTP_SECRET: test-otp-secret-not-for-production-use-only-for-fedibird-testing-1234567890abcdef
+      ACTIVE_RECORD_ENCRYPTION_DETERMINISTIC_KEY: test-deterministic-key-not-for-production-00000002
+      ACTIVE_RECORD_ENCRYPTION_KEY_DERIVATION_SALT: test-key-derivation-salt-not-for-production-00002
+      ACTIVE_RECORD_ENCRYPTION_PRIMARY_KEY: test-primary-key-not-for-production-use-only-00000002
+      DB_HOST: postgres-fb
+      DB_PORT: "5432"
+      DB_NAME: fedibird
+      DB_USER: fedibird
+      DB_PASS: testpass
+      REDIS_HOST: redis-fb
+      REDIS_PORT: "6379"
+      ALLOWED_PRIVATE_ADDRESSES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+    volumes:
+      - certs:/certs:ro
+      - fedibird_system:/opt/mastodon/public/system
+    depends_on:
+      fedibird-web:
+        condition: service_healthy
+    networks:
+      - fedibird-fed
+
+  nginx-fb:
+    image: nginx:alpine
+    volumes:
+      - ./tests/fedibird-federation/nginx-fedibird-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      fedibird-web:
+        condition: service_started
+      certs:
+        condition: service_completed_successfully
+    networks:
+      fedibird-fed:
+        aliases:
+          - fedibird
+
+  # ── Test Runner ────────────────────────────────────────────
+  test-runner:
+    profiles: ["test"]
+    build: ./tests/fedibird-federation
+    environment:
+      NEKO_URL: https://nekonoverse
+      FEDIBIRD_URL: https://fedibird
+      NEKO_DOMAIN: nekonoverse
+      FEDIBIRD_DOMAIN: fedibird
+      FEDIBIRD_BOB_TOKEN_FILE: /tokens/bob_token.txt
+    volumes:
+      - fedibird_tokens:/tokens:ro
+    depends_on:
+      nginx-neko:
+        condition: service_started
+      nginx-fb:
+        condition: service_started
+      worker-neko:
+        condition: service_started
+      fedibird-sidekiq:
+        condition: service_started
+    networks:
+      - fedibird-fed
+
+volumes:
+  certs:
+  fedibird_system:
+  fedibird_tokens:
+
+networks:
+  fedibird-fed:
+    driver: bridge

@@ -15,8 +15,11 @@ from app.models.notification import Notification
 from app.models.oauth import OAuthApplication, OAuthAuthorizationCode, OAuthToken
 from app.models.passkey import PasskeyCredential
 from app.models.pinned_note import PinnedNote
+from app.models.preview_card import PreviewCard
+from app.models.push_subscription import PushSubscription
 from app.models.poll_vote import PollVote
 from app.models.reaction import Reaction
+from app.models.role import Role
 from app.models.report import Report
 from app.models.server_setting import ServerSetting
 from app.models.user import User
@@ -40,12 +43,15 @@ __all__ = [
     "NoteHashtag",
     "Notification",
     "PinnedNote",
+    "PreviewCard",
+    "PushSubscription",
     "PollVote",
     "OAuthApplication",
     "OAuthAuthorizationCode",
     "OAuthToken",
     "PasskeyCredential",
     "Reaction",
+    "Role",
     "Report",
     "ServerSetting",
     "User",

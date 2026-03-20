@@ -306,6 +306,59 @@ async def test_announce_unknown_user_note_fetched_successfully(
     )
 
 
+async def test_handle_announce_existing_note_enqueues_focal(db, mock_valkey):
+    """When the original note already exists in DB, handle_announce should
+    enqueue focal detection for attachments without focal point."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.activitypub.handlers.announce import handle_announce
+    from app.models.note_attachment import NoteAttachment
+
+    remote_actor = await make_remote_actor(
+        db, username="focal_booster", domain="focal.example"
+    )
+    from app.services.user_service import create_user
+
+    user = await create_user(db, "focalannounce", "focalann@test.com", "password1234")
+    note = await make_note(db, user.actor, content="Image post")
+
+    # Add an attachment without focal point
+    att = NoteAttachment(
+        note_id=note.id,
+        remote_url="http://remote.example/image.jpg",
+        remote_mime_type="image/jpeg",
+        remote_focal_x=None,
+        remote_focal_y=None,
+    )
+    db.add(att)
+    await db.commit()
+    await db.refresh(att)
+
+    activity = {
+        "id": "http://focal.example/activities/announce-focal",
+        "type": "Announce",
+        "actor": remote_actor.ap_id,
+        "object": note.ap_id,
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "cc": [],
+    }
+
+    mock_enqueue = AsyncMock()
+    with (
+        patch("app.config.settings") as mock_settings,
+        patch(
+            "app.activitypub.handlers.announce.enqueue_remote",
+            mock_enqueue,
+            create=True,
+        ),
+        patch("app.services.face_detect_queue.enqueue_remote", mock_enqueue),
+    ):
+        mock_settings.face_detect_url = "http://face-detect.example"
+        await handle_announce(db, activity)
+
+    mock_enqueue.assert_called_once_with(note.id, [att.id])
+
+
 async def test_fetch_remote_note_integrity_error_fallback(db, mock_valkey):
     """When fetch_remote_note hits IntegrityError (duplicate ap_id from concurrent
     Create+Announce), it falls back to the existing note instead of crashing."""

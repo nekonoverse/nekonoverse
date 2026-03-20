@@ -1,5 +1,5 @@
-import type { Visibility } from "../../stores/composer";
-import { useI18n } from "../../i18n";
+import type { Visibility } from "@nekonoverse/ui/stores/composer";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 const OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] = [
   { key: "public", emoji: "\u{1F310}", i18nKey: "visibility.public" },
@@ -11,10 +11,16 @@ const OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] = [
 interface Props {
   value: Visibility;
   onChange: (v: Visibility) => void;
+  /** Visibility keys to exclude from the selector */
+  exclude?: Visibility[];
 }
 
 export default function VisibilitySelector(props: Props) {
   const { t } = useI18n();
+  const filtered = () => {
+    const ex = props.exclude;
+    return ex ? OPTIONS.filter((o) => !ex.includes(o.key)) : OPTIONS;
+  };
 
   return (
     <select
@@ -22,7 +28,7 @@ export default function VisibilitySelector(props: Props) {
       value={props.value}
       onChange={(e) => props.onChange(e.currentTarget.value as Visibility)}
     >
-      {OPTIONS.map((opt) => (
+      {filtered().map((opt) => (
         <option value={opt.key}>
           {opt.emoji} {t(opt.i18nKey as any)}
         </option>

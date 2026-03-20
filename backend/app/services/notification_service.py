@@ -33,6 +33,21 @@ async def create_notification(
         if await is_muting(db, recipient_id, sender_id):
             return None
 
+    # Deduplicate: skip if identical notification already exists (read or unread)
+    dedup_filters = [
+        Notification.type == type,
+        Notification.recipient_id == recipient_id,
+    ]
+    if sender_id:
+        dedup_filters.append(Notification.sender_id == sender_id)
+    if note_id:
+        dedup_filters.append(Notification.note_id == note_id)
+    if reaction_emoji:
+        dedup_filters.append(Notification.reaction_emoji == reaction_emoji)
+    existing = await db.execute(select(Notification).where(*dedup_filters).limit(1))
+    if existing.scalar_one_or_none():
+        return None
+
     notification = Notification(
         type=type,
         recipient_id=recipient_id,
@@ -43,7 +58,37 @@ async def create_notification(
     db.add(notification)
     await db.flush()
 
-    # Publish real-time notification event
+    # Web Push通知を送信 (flush後で問題ない — push通知はDBクエリしない)
+    try:
+        from app.services.push_service import send_web_push
+
+        sender_name = None
+        if sender_id:
+            from app.models.actor import Actor
+
+            result = await db.execute(
+                select(Actor).where(Actor.id == sender_id)
+            )
+            sender = result.scalar_one_or_none()
+            if sender:
+                sender_name = sender.display_name or sender.preferred_username
+
+        await send_web_push(
+            db=db,
+            recipient_id=recipient_id,
+            notification_type=type,
+            sender_display_name=sender_name,
+            notification_id=str(notification.id),
+            sender_id=sender_id,
+        )
+    except Exception:
+        pass  # Don't fail notification creation if push fails
+
+    return notification
+
+
+async def publish_notification(notification: Notification) -> None:
+    """Publish notification event to Valkey. Call AFTER db.commit()."""
     try:
         import json
 
@@ -58,11 +103,9 @@ async def create_notification(
                 },
             }
         )
-        await valkey.publish(f"notifications:{recipient_id}", event)
+        await valkey.publish(f"notifications:{notification.recipient_id}", event)
     except Exception:
-        pass  # Don't fail notification creation if pub/sub fails
-
-    return notification
+        pass
 
 
 async def get_notifications(
@@ -70,6 +113,7 @@ async def get_notifications(
     actor_id: uuid.UUID,
     limit: int = 20,
     max_id: uuid.UUID | None = None,
+    types: list[str] | None = None,
 ) -> list[Notification]:
     query = (
         select(Notification)
@@ -79,6 +123,8 @@ async def get_notifications(
         )
         .where(Notification.recipient_id == actor_id)
     )
+    if types:
+        query = query.where(Notification.type.in_(types))
     if max_id:
         sub = select(Notification.created_at).where(Notification.id == max_id).scalar_subquery()
         query = query.where(Notification.created_at < sub)

@@ -1,7 +1,7 @@
 import { createSignal, createEffect, Show, For } from "solid-js";
-import { instance, registrationMode } from "../../stores/instance";
-import { getPublicTimeline, type Note } from "../../api/statuses";
-import { useI18n } from "../../i18n";
+import { instance, registrationMode } from "@nekonoverse/ui/stores/instance";
+import { getPublicTimeline, type Note } from "@nekonoverse/ui/api/statuses";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteCard from "../notes/NoteCard";
 
 export default function EntrancePage() {

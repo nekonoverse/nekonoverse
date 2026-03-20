@@ -8,37 +8,34 @@ class ServerSettingsResponse(BaseModel):
     server_name: str | None = None
     server_description: str | None = None
     tos_url: str | None = None
+    terms_of_service: str | None = None
+    privacy_policy: str | None = None
     registration_open: bool = True
     registration_mode: str = "open"
     invite_create_role: str = "admin"
     server_icon_url: str | None = None
     server_theme_color: str | None = None
+    push_enabled: bool = True
+    vapid_public_key: str | None = None
+    timeline_default_limit: int = 20
+    timeline_max_limit: int = 40
 
 
 class ServerSettingsUpdate(BaseModel):
     server_name: str | None = Field(None, max_length=255)
     server_description: str | None = Field(None, max_length=2000)
     tos_url: str | None = Field(None, max_length=2048)
+    terms_of_service: str | None = Field(None, max_length=50000)
+    privacy_policy: str | None = Field(None, max_length=50000)
     registration_open: bool | None = None
     registration_mode: str | None = Field(None, pattern=r"^(open|invite|closed|approval)$")
     invite_create_role: str | None = Field(None, pattern=r"^(admin|moderator|user)$")
     server_theme_color: str | None = Field(
         None, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$"
     )
-
-
-class AdminUserResponse(BaseModel):
-    id: uuid.UUID
-    username: str
-    email: str
-    display_name: str | None
-    role: str
-    is_active: bool
-    suspended: bool = False
-    silenced: bool = False
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
+    push_enabled: bool | None = None
+    timeline_default_limit: int | None = Field(None, ge=1, le=1000)
+    timeline_max_limit: int | None = Field(None, ge=1, le=1000)
 
 
 class PendingRegistrationResponse(BaseModel):
@@ -54,7 +51,7 @@ class PendingRegistrationResponse(BaseModel):
 
 
 class RoleChangeRequest(BaseModel):
-    role: str = Field(pattern=r"^(user|moderator|admin)$")
+    role: str = Field(min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
 
 
 class ModerationActionRequest(BaseModel):
@@ -86,6 +83,22 @@ class ReportResponse(BaseModel):
     status: str
     created_at: datetime
     resolved_at: datetime | None
+
+    model_config = {"from_attributes": True}
+
+
+class AdminUserResponse(BaseModel):
+    id: uuid.UUID
+    username: str
+    email: str
+    display_name: str | None
+    role: str
+    is_active: bool
+    is_system: bool = False
+    suspended: bool = False
+    silenced: bool = False
+    storage_usage_bytes: int = 0
+    created_at: datetime
 
     model_config = {"from_attributes": True}
 
@@ -151,6 +164,13 @@ class AdminRemoteEmojiResponse(BaseModel):
 class ImportByShortcodeRequest(BaseModel):
     shortcode: str = Field(min_length=1, max_length=100)
     domain: str = Field(min_length=1, max_length=255)
+    shortcode_override: str | None = Field(None, max_length=100, pattern=r"^[a-zA-Z0-9_]+$")
+    category: str | None = None
+    author: str | None = None
+    license: str | None = None
+    description: str | None = None
+    is_sensitive: bool | None = None
+    aliases: list[str] | None = None
 
 
 # --- Federation ---
@@ -280,3 +300,41 @@ class SystemStatsResponse(BaseModel):
     # Worker
     worker_alive: bool = False
     worker_last_heartbeat: str | None = None
+
+
+# --- Roles ---
+
+
+class RoleResponse(BaseModel):
+    name: str
+    display_name: str
+    permissions: dict = {}
+    is_admin: bool = False
+    quota_bytes: int = 1073741824
+    priority: int = 0
+    is_system: bool = False
+    created_at: datetime
+
+    model_config = {"from_attributes": True}
+
+
+class RoleCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=50, pattern=r"^[a-z][a-z0-9_]*$")
+    display_name: str = Field(min_length=1, max_length=100)
+    copy_from: str | None = None
+
+
+class RoleUpdateRequest(BaseModel):
+    display_name: str | None = Field(None, min_length=1, max_length=100)
+    permissions: dict | None = None
+    quota_bytes: int | None = Field(None, ge=0)
+    priority: int | None = None
+
+
+# --- Storage ---
+
+
+class StorageResponse(BaseModel):
+    usage_bytes: int
+    quota_bytes: int
+    usage_percent: float

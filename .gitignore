@@ -14,6 +14,7 @@ frontend/dist/
 
 # Environment
 .env
+.env.cloudflared
 *.env.local
 
 # IDE
@@ -47,6 +48,7 @@ tests/e2e/test-results/
 tests/e2e/playwright-report/
 
 volumes/
+backups/
 
 # MkDocs
 site/

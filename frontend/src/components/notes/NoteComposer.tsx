@@ -1,18 +1,22 @@
 import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
-import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment, type PollCreate } from "../../api/statuses";
-import { useI18n } from "../../i18n";
+import { createNote, uploadMedia, updateMedia, type Note, type MediaAttachment, type PollCreate } from "@nekonoverse/ui/api/statuses";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import DrivePicker from "../DrivePicker";
 import FocalPointPicker from "../FocalPointPicker";
+import EmojiSuggest from "./EmojiSuggest";
 import EmojiPicker from "../reactions/EmojiPicker";
-import { sanitizeHtml } from "../../utils/sanitize";
-import type { DriveFile } from "../../api/drive";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
+import { stripExifFromFile } from "@nekonoverse/ui/utils/stripExif";
+import type { DriveFile } from "@nekonoverse/ui/api/drive";
 import {
   getInitialVisibility,
   rememberVisibility,
   defaultVisibility,
   setLastVisibility,
   type Visibility,
-} from "../../stores/composer";
+} from "@nekonoverse/ui/stores/composer";
 
 const VISIBILITY_OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] = [
   { key: "public", emoji: "\u{1F310}", i18nKey: "visibility.public" },
@@ -40,12 +44,24 @@ interface Props {
   onClearQuote?: () => void;
   replyTo?: Note | null;
   onClearReply?: () => void;
+  /** Increment to reset the form */
+  key?: number;
+  /** Called when content or visibility changes */
+  onContentChange?: (content: string, visibility: Visibility) => void;
+  /** Initial content for draft restore */
+  initialContent?: string;
+  /** Initial visibility for draft restore */
+  initialVisibility?: Visibility;
+  /** Called when upload state changes */
+  onUploadingChange?: (uploading: boolean) => void;
+  /** External files dropped on parent (e.g. modal) */
+  externalFiles?: FileList | null;
 }
 
 export default function NoteComposer(props: Props) {
   const { t } = useI18n();
-  const [content, setContent] = createSignal("");
-  const [visibility, setVisibility] = createSignal<Visibility>(getInitialVisibility());
+  const [content, setContent] = createSignal(props.initialContent || "");
+  const [visibility, setVisibility] = createSignal<Visibility>(props.initialVisibility || getInitialVisibility());
   const [loading, setLoading] = createSignal(false);
   const [error, setError] = createSignal("");
   const [attachments, setAttachments] = createSignal<MediaAttachment[]>([]);
@@ -53,22 +69,77 @@ export default function NoteComposer(props: Props) {
   const [visMenuOpen, setVisMenuOpen] = createSignal(false);
   const [drivePickerOpen, setDrivePickerOpen] = createSignal(false);
   const [focalPickerMedia, setFocalPickerMedia] = createSignal<MediaAttachment | null>(null);
-  const [emojiPickerOpen, setEmojiPickerOpen] = createSignal(false);
+  const [suggestOpen, setSuggestOpen] = createSignal(false);
+  const [suggestQuery, setSuggestQuery] = createSignal("");
+  const [colonPos, setColonPos] = createSignal(0);
+  const [dragging, setDragging] = createSignal(false);
   const [pollOpen, setPollOpen] = createSignal(false);
   const [pollOptions, setPollOptions] = createSignal<string[]>(["", ""]);
   const [pollMultiple, setPollMultiple] = createSignal(false);
   const [pollExpiresIn, setPollExpiresIn] = createSignal(86400);
+  const [sensitive, setSensitive] = createSignal(false);
+  const [cwOpen, setCwOpen] = createSignal(false);
+  const [spoilerText, setSpoilerText] = createSignal("");
+  const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
 
   let fileInput!: HTMLInputElement;
   let textareaRef!: HTMLTextAreaElement;
+  let suggestKeyHandler: ((e: KeyboardEvent) => boolean) | undefined;
 
-  // Auto-set visibility to match parent note when replying
+  // Auto-set visibility and prepend @mention when replying
   createEffect(() => {
     if (props.replyTo) {
       const parentVis = props.replyTo.visibility as Visibility;
       if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
         setVisibility(parentVis);
       }
+      // Auto-prepend @mention for the replied-to user (skip self-mention)
+      const actor = props.replyTo.actor;
+      if (actor && !content()) {
+        const isOwnNote = !actor.domain && currentUser()?.username === actor.username;
+        if (!isOwnNote) {
+          const mention = actor.domain
+            ? `@${actor.username}@${actor.domain} `
+            : `@${actor.username} `;
+          setContent(mention);
+        }
+      }
+    }
+  });
+
+  // Reset form when key changes (modal re-opened)
+  createEffect(() => {
+    const _key = props.key;
+    if (_key !== undefined && _key > 0) {
+      setContent(props.initialContent || "");
+      setVisibility(props.initialVisibility || getInitialVisibility());
+      setAttachments([]);
+      setError("");
+      setPollOpen(false);
+      setPollOptions(["", ""]);
+      setPollMultiple(false);
+      setPollExpiresIn(86400);
+      setSensitive(false);
+      setCwOpen(false);
+      setSpoilerText("");
+    }
+  });
+
+  // Report content changes to parent
+  createEffect(() => {
+    props.onContentChange?.(content(), visibility());
+  });
+
+  // Report upload state to parent
+  createEffect(() => {
+    props.onUploadingChange?.(uploading());
+  });
+
+  // Handle files dropped on parent (e.g. modal wrapper)
+  createEffect(() => {
+    const files = props.externalFiles;
+    if (files && files.length > 0) {
+      handleFiles(files);
     }
   });
 
@@ -96,7 +167,9 @@ export default function NoteComposer(props: Props) {
 
     for (const file of toUpload) {
       try {
-        const media = await uploadMedia(file);
+        // Strip EXIF metadata (GPS, camera info, etc.) from images before upload
+        const processed = await stripExifFromFile(file);
+        const media = await uploadMedia(processed);
         setAttachments((prev) => [...prev, media]);
       } catch (err) {
         setError(err instanceof Error ? err.message : t("composer.uploadFailed"));
@@ -169,6 +242,9 @@ export default function NoteComposer(props: Props) {
           };
         }
       }
+      // CWテキストがある場合はsensitiveを自動的にtrueにする
+      const isSensitive = sensitive() || !!spoilerText().trim();
+      const cwText = cwOpen() && spoilerText().trim() ? spoilerText().trim() : undefined;
       const note = await createNote(
         content(),
         visibility(),
@@ -176,6 +252,8 @@ export default function NoteComposer(props: Props) {
         quoteId,
         replyToId,
         pollData,
+        isSensitive || undefined,
+        cwText,
       );
       setContent("");
       setAttachments([]);
@@ -183,6 +261,9 @@ export default function NoteComposer(props: Props) {
       setPollOptions(["", ""]);
       setPollMultiple(false);
       setPollExpiresIn(86400);
+      setSensitive(false);
+      setCwOpen(false);
+      setSpoilerText("");
       props.onClearQuote?.();
       props.onClearReply?.();
 
@@ -218,21 +299,18 @@ export default function NoteComposer(props: Props) {
     }
   };
 
-  const handleEmojiSelect = (emoji: string) => {
-    const textarea = textareaRef;
-    const start = textarea?.selectionStart ?? content().length;
-    const end = textarea?.selectionEnd ?? content().length;
-    const before = content().slice(0, start);
-    const after = content().slice(end);
-    setContent(before + emoji + after);
-    setEmojiPickerOpen(false);
-    // カーソルを挿入した絵文字の後ろに移動
+  const handleSuggestSelect = (emojiText: string) => {
+    // Replace from colonPos to current cursor with emojiText + space
+    const before = content().slice(0, colonPos());
+    const after = content().slice(textareaRef?.selectionStart ?? content().length);
+    setContent(before + emojiText + " " + after);
+    setSuggestOpen(false);
     requestAnimationFrame(() => {
-      if (textarea) {
-        const pos = start + emoji.length;
-        textarea.selectionStart = pos;
-        textarea.selectionEnd = pos;
-        textarea.focus();
+      if (textareaRef) {
+        const pos = colonPos() + emojiText.length + 1;
+        textareaRef.selectionStart = pos;
+        textareaRef.selectionEnd = pos;
+        textareaRef.focus();
       }
     });
   };
@@ -244,7 +322,19 @@ export default function NoteComposer(props: Props) {
   };
 
   return (
-    <form onSubmit={handleSubmit} class="note-composer">
+    <form
+      onSubmit={handleSubmit}
+      class={`note-composer${dragging() ? " drag-over" : ""}`}
+      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragLeave={(e) => {
+        if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
+      }}
+      onDrop={(e) => {
+        e.preventDefault();
+        setDragging(false);
+        if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files);
+      }}
+    >
       {error() && <div class="error">{error()}</div>}
       <Show when={replyToActor()}>
         {(actor) => (
@@ -269,25 +359,65 @@ export default function NoteComposer(props: Props) {
             </div>
             <div class="composer-quote-body">
               <strong>{qn().actor.display_name || qn().actor.username}</strong>
-              <div class="composer-quote-text" innerHTML={sanitizeHtml(qn().content)} />
+              <div class="composer-quote-text" ref={(el) => {
+                el.innerHTML = sanitizeHtml(qn().content);
+                externalLinksNewTab(el);
+              }} />
             </div>
           </div>
         )}
       </Show>
-      <textarea
-        ref={textareaRef}
-        value={content()}
-        onInput={(e) => setContent(e.currentTarget.value)}
-        onKeyDown={(e) => {
-          if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !uploading()) {
-            handleSubmit(e);
-          }
-        }}
-        onPaste={handlePaste}
-        placeholder={props.replyTo ? t("reply.reply") + "..." : t("composer.placeholder")}
-        rows={3}
-        maxLength={5000}
-      />
+      <Show when={cwOpen()}>
+        <input
+          type="text"
+          class="composer-cw-input"
+          value={spoilerText()}
+          onInput={(e) => setSpoilerText(e.currentTarget.value)}
+          placeholder={t("composer.cwPlaceholder" as any)}
+          maxLength={500}
+        />
+      </Show>
+      <div class="composer-textarea-wrap">
+        <textarea
+          ref={textareaRef}
+          value={content()}
+          onInput={(e) => {
+            const textarea = e.currentTarget;
+            setContent(textarea.value);
+            // Detect :query pattern before cursor
+            const before = textarea.value.slice(0, textarea.selectionStart);
+            const match = before.match(/(?:^|\s):([a-zA-Z0-9_]*)$/);
+            if (match) {
+              setSuggestOpen(true);
+              setSuggestQuery(match[1]);
+              setColonPos(textarea.selectionStart - match[1].length - 1);
+            } else {
+              setSuggestOpen(false);
+            }
+          }}
+          onKeyDown={(e) => {
+            // Forward to emoji suggest if open
+            if (suggestOpen() && suggestKeyHandler?.(e)) {
+              return;
+            }
+            if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !uploading()) {
+              handleSubmit(e);
+            }
+          }}
+          onPaste={handlePaste}
+          placeholder={props.replyTo ? t("reply.reply") + "..." : t("composer.placeholder")}
+          rows={3}
+          maxLength={5000}
+        />
+        <Show when={suggestOpen()}>
+          <EmojiSuggest
+            query={suggestQuery()}
+            onSelect={handleSuggestSelect}
+            onClose={() => setSuggestOpen(false)}
+            bindKeyHandler={(h) => { suggestKeyHandler = h; }}
+          />
+        </Show>
+      </div>
       <Show when={attachments().length > 0}>
         <div class="composer-media-preview">
           <For each={attachments()}>
@@ -385,7 +515,7 @@ export default function NoteComposer(props: Props) {
         </div>
       </Show>
       <div class="composer-footer">
-        <div class="composer-footer-left">
+        <div class="composer-footer-left composer-toolbar">
           <button
             type="button"
             class="composer-attach-btn"
@@ -413,32 +543,23 @@ export default function NoteComposer(props: Props) {
               <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z" />
             </svg>
           </button>
-          <div class="composer-emoji-wrap">
-            <button
-              type="button"
-              class="composer-attach-btn"
-              onClick={() => {
-                const opening = !emojiPickerOpen();
-                if (opening) textareaRef?.blur();
-                setEmojiPickerOpen(opening);
-              }}
-              title={t("composer.emoji" as any)}
-            >
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <circle cx="12" cy="12" r="10" />
-                <path d="M8 14s1.5 2 4 2 4-2 4-2" />
-                <line x1="9" y1="9" x2="9.01" y2="9" />
-                <line x1="15" y1="9" x2="15.01" y2="9" />
-              </svg>
-            </button>
-            <Show when={emojiPickerOpen()}>
-              <div class="composer-emoji-backdrop" onClick={() => setEmojiPickerOpen(false)} />
-              <EmojiPicker
-                onSelect={handleEmojiSelect}
-                onClose={() => setEmojiPickerOpen(false)}
-              />
-            </Show>
-          </div>
+          <button
+            type="button"
+            class={`composer-attach-btn${showEmojiPicker() ? " active" : ""}`}
+            onClick={() => {
+              const opening = !showEmojiPicker();
+              if (opening) (document.activeElement as HTMLElement)?.blur();
+              setShowEmojiPicker(opening);
+            }}
+            title={t("composer.emoji" as any)}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10" />
+              <path d="M8 14s1.5 2 4 2 4-2 4-2" />
+              <line x1="9" y1="9" x2="9.01" y2="9" />
+              <line x1="15" y1="9" x2="15.01" y2="9" />
+            </svg>
+          </button>
           <button
             type="button"
             class={`composer-attach-btn${pollOpen() ? " active" : ""}`}
@@ -451,14 +572,66 @@ export default function NoteComposer(props: Props) {
               <rect x="3" y="17" width="15" height="4" rx="1" />
             </svg>
           </button>
+          <button
+            type="button"
+            class={`composer-attach-btn${cwOpen() ? " active" : ""}`}
+            onClick={() => setCwOpen(!cwOpen())}
+            title={t("composer.cw" as any)}
+          >
+            <span style="font-size: 13px; font-weight: 700">CW</span>
+          </button>
+          <Show when={attachments().length > 0}>
+            <button
+              type="button"
+              class={`composer-attach-btn${sensitive() ? " active" : ""}`}
+              onClick={() => setSensitive(!sensitive())}
+              title={t("composer.sensitive" as any)}
+            >
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94" />
+                <path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19" />
+                <line x1="1" y1="1" x2="23" y2="23" />
+              </svg>
+            </button>
+          </Show>
           <input
             ref={fileInput}
             type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng"
             multiple
             onChange={(e) => handleFiles(e.currentTarget.files)}
             style="display: none"
           />
+          <Show when={showEmojiPicker()}>
+            <div class="composer-emoji-backdrop" onClick={() => {
+              setShowEmojiPicker(false);
+              requestAnimationFrame(() => textareaRef?.focus());
+            }} />
+            <EmojiPicker
+              onSelect={(emoji) => {
+                const textarea = textareaRef;
+                const start = textarea?.selectionStart ?? content().length;
+                const end = textarea?.selectionEnd ?? content().length;
+                const before = content().slice(0, start);
+                const after = content().slice(end);
+                const needsSpace = before.length > 0 && !/\s$/.test(before);
+                const insert = (needsSpace ? " " : "") + emoji;
+                setContent(before + insert + " " + after);
+                const newPos = start + insert.length + 1;
+                requestAnimationFrame(() => {
+                  if (textarea) {
+                    textarea.selectionStart = newPos;
+                    textarea.selectionEnd = newPos;
+                    textarea.focus();
+                  }
+                });
+              }}
+              onClose={() => {
+                setShowEmojiPicker(false);
+                requestAnimationFrame(() => textareaRef?.focus());
+              }}
+            />
+          </Show>
         </div>
         <div class="composer-actions">
           <span class="char-count">{content().length} / 5000</span>

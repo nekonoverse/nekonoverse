@@ -7,7 +7,7 @@ import {
   For,
   type JSX,
 } from "solid-js";
-import { getCustomEmojis, type CustomEmoji } from "../../api/emoji";
+import { getCustomEmojis, type CustomEmoji } from "@nekonoverse/ui/api/emoji";
 import {
   UNICODE_EMOJIS,
   EMOJI_CATEGORIES,
@@ -18,9 +18,9 @@ import {
   getRecentEmojis,
   addRecentEmoji,
   type RecentEmoji,
-} from "../../utils/recentEmojis";
+} from "@nekonoverse/ui/utils/recentEmojis";
 import Emoji from "../Emoji";
-import { useI18n } from "../../i18n";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 // スクロールで近づいた時だけ中身をレンダリングするコンポーネント
 function LazyCategory(props: {
@@ -83,6 +83,7 @@ export default function EmojiPicker(props: Props) {
     if (readyTimer !== undefined) clearTimeout(readyTimer);
   });
 
+
   const isUsed = (emoji: string) => props.usedEmojis?.includes(emoji) ?? false;
 
   onMount(() => {
@@ -108,7 +109,10 @@ export default function EmojiPicker(props: Props) {
       .then((emojis) => setCustomEmojis(emojis))
       .catch(() => {});
 
-    setTimeout(() => searchRef?.focus(), 0);
+    const isTouch = "ontouchstart" in window || navigator.maxTouchPoints > 0;
+    if (!isTouch) {
+      setTimeout(() => searchRef?.focus(), 0);
+    }
   });
 
   // --- Searching ---
@@ -236,16 +240,6 @@ export default function EmojiPicker(props: Props) {
 
   return (
     <div class="emoji-picker" ref={ref}>
-      {/* Search bar — always visible */}
-      <input
-        ref={searchRef}
-        class="emoji-search"
-        type="text"
-        placeholder={t("reactions.searchEmoji")}
-        value={query()}
-        onInput={(e) => setQuery(e.currentTarget.value)}
-      />
-
       <div class="emoji-scroll-area">
         {/* --- Search results mode --- */}
         <Show when={isSearching()}>
@@ -311,6 +305,26 @@ export default function EmojiPicker(props: Props) {
           </For>
         </Show>
       </div>
+
+      {/* Search bar — last in DOM, but shown at top on desktop via column-reverse
+           and at bottom on mobile via column (above virtual keyboard) */}
+      <input
+        ref={searchRef}
+        class="emoji-search"
+        type="text"
+        placeholder={t("reactions.searchEmoji")}
+        value={query()}
+        onInput={(e) => setQuery(e.currentTarget.value)}
+        onKeyDown={(e) => {
+          if (e.key === "Tab" && !e.shiftKey) {
+            const btn = ref?.querySelector<HTMLButtonElement>(".emoji-btn:not(:disabled)");
+            if (btn) {
+              e.preventDefault();
+              btn.focus();
+            }
+          }
+        }}
+      />
     </div>
   );
 }

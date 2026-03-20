@@ -26,6 +26,22 @@ def actor_uri(actor: Actor) -> str:
 AP_ACCEPT = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
 AP_CONTENT_TYPES = {"application/activity+json", "application/ld+json"}
 
+# H-2: リモートフェッチ用の共有HTTPクライアント
+_shared_http_client: httpx.AsyncClient | None = None
+
+
+def _get_shared_http_client() -> httpx.AsyncClient:
+    global _shared_http_client
+    if _shared_http_client is None or _shared_http_client.is_closed:
+        from app.utils.http_client import make_async_client
+
+        _shared_http_client = make_async_client(
+            timeout=10.0,
+            verify=not settings.skip_ssl_verify,
+            limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
+        )
+    return _shared_http_client
+
 
 async def get_actor_by_ap_id(db: AsyncSession, ap_id: str) -> Actor | None:
     result = await db.execute(select(Actor).where(Actor.ap_id == ap_id))
@@ -82,6 +98,12 @@ async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
 
 async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
     """Perform a signed HTTP GET (Authorized Fetch / Secure Mode)."""
+    from app.utils.network import is_safe_url
+
+    if not is_safe_url(url):
+        logger.debug("Blocked signed fetch to unsafe URL: %s", url)
+        return None
+
     from app.activitypub.http_signature import sign_request
 
     signing = await _get_signing_key(db)
@@ -98,13 +120,8 @@ async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
         )
         headers.update(sig_headers)
 
-    from app.config import settings
-    from app.utils.http_client import make_async_client
-
-    async with make_async_client(
-        timeout=10.0, verify=not settings.skip_ssl_verify,
-    ) as client:
-        return await client.get(url, headers=headers, follow_redirects=True)
+    client = _get_shared_http_client()
+    return await client.get(url, headers=headers, follow_redirects=True)
 
 
 async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
@@ -130,6 +147,19 @@ async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
     except Exception:
         logger.exception("Error fetching remote actor %s", ap_id)
         return existing
+
+    # M-12: リクエストURLとレスポンスのidのドメインが一致するか検証
+    from urllib.parse import urlparse as _urlparse
+
+    response_id = data.get("id", "")
+    if response_id:
+        req_domain = _urlparse(ap_id).hostname
+        res_domain = _urlparse(response_id).hostname
+        if req_domain and res_domain and req_domain != res_domain:
+            logger.warning(
+                "Domain mismatch: requested %s but got id %s", ap_id, response_id
+            )
+            return existing
 
     return await upsert_remote_actor(db, data)
 
@@ -320,10 +350,31 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
     if existing:
         return existing
 
-    webfinger_url = f"https://{domain}/.well-known/webfinger?resource=acct:{username}@{domain}"
+    from app.utils.network import is_private_host
+
+    if is_private_host(domain):
+        logger.debug("Blocked WebFinger to private host: %s", domain)
+        return None
+
+    resource = f"acct:{username}@{domain}"
     try:
-        async with httpx.AsyncClient(timeout=10.0, verify=not settings.skip_ssl_verify) as client:
-            resp = await client.get(webfinger_url, follow_redirects=True)
+        resp = None
+        client = _get_shared_http_client()
+        # HTTPS → HTTPフォールバック (RFC 7033ではHTTPSが必須)
+        # M-13: 本番環境ではHTTPフォールバックを無効化
+        try:
+            resp = await client.get(
+                f"https://{domain}/.well-known/webfinger?resource={resource}",
+                follow_redirects=True,
+            )
+        except Exception:
+            pass
+        if (resp is None or resp.status_code != 200) and settings.allow_private_networks:
+            # テスト/開発環境のみHTTPフォールバック
+            resp = await client.get(
+                f"http://{domain}/.well-known/webfinger?resource={resource}",
+                follow_redirects=True,
+            )
         if resp.status_code != 200:
             logger.warning(
                 "WebFinger failed for %s@%s: HTTP %s",

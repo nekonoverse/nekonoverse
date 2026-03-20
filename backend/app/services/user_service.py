@@ -27,11 +27,11 @@ async def create_user(
         select(Actor).where(Actor.username == username, Actor.domain.is_(None))
     )
     if existing_actor.scalar_one_or_none():
-        raise ValueError("Username already taken")
+        raise ValueError("Username or email is already in use")
 
     existing_email = await db.execute(select(User).where(User.email == email))
     if existing_email.scalar_one_or_none():
-        raise ValueError("Email already registered")
+        raise ValueError("Username or email is already in use")
 
     # Generate RSA key pair
     private_pem, public_pem = generate_rsa_keypair()
@@ -76,16 +76,20 @@ async def create_user(
 
 
 async def authenticate_user(db: AsyncSession, username: str, password: str) -> User | None:
+    # タイミング差によるユーザー列挙を防ぐためのダミーハッシュ
+    _dummy_hash = b"$2b$12$LJ3m4ys3Lg2VEqGOAOPMb.5Q9MQhRr0vIIfSCpOIYXJDkJp0wqvN6"
     result = await db.execute(
         select(Actor).where(Actor.username == username.lower(), Actor.domain.is_(None))
     )
     actor = result.scalar_one_or_none()
     if actor is None or actor.local_user is None:
-        # タイミング差によるユーザー列挙を防ぐためダミーbcrypt比較を実行
-        _dummy_hash = b"$2b$12$LJ3m4ys3Lg2VEqGOAOPMb.5Q9MQhRr0vIIfSCpOIYXJDkJp0wqvN6"
         await asyncio.to_thread(_bcrypt.checkpw, password.encode(), _dummy_hash)
         return None
     user = actor.local_user
+    # システムアカウントはログイン不可
+    if user.is_system:
+        await asyncio.to_thread(_bcrypt.checkpw, password.encode(), _dummy_hash)
+        return None
     valid = await asyncio.to_thread(_bcrypt.checkpw, password.encode(), user.password_hash.encode())
     if not valid:
         return None
@@ -100,6 +104,9 @@ async def reset_password(db: AsyncSession, username: str, new_password: str) -> 
     if actor is None or actor.local_user is None:
         raise ValueError(f"User not found: {username}")
     user = actor.local_user
+    # システムアカウントのパスワードリセットを拒否
+    if user.is_system:
+        raise ValueError("Cannot reset password for system account")
     user.password_hash = (
         await asyncio.to_thread(_bcrypt.hashpw, new_password.encode(), _bcrypt.gensalt())
     ).decode()
@@ -135,5 +142,9 @@ async def change_password(
 
 
 async def get_user_by_id(db: AsyncSession, user_id: uuid.UUID) -> User | None:
-    result = await db.execute(select(User).where(User.id == user_id))
+    from sqlalchemy.orm import selectinload
+
+    result = await db.execute(
+        select(User).where(User.id == user_id).options(selectinload(User.actor))
+    )
     return result.scalar_one_or_none()

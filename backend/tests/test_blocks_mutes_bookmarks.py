@@ -20,7 +20,7 @@ def authed_client_for(app_client, mock_valkey, user):
 # ── Block Service ────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_block_actor_service(db, mock_valkey, test_user, test_user_b):
     from app.services.block_service import block_actor, is_blocking
 
@@ -31,7 +31,7 @@ async def test_block_actor_service(db, mock_valkey, test_user, test_user_b):
     assert not await is_blocking(db, test_user_b.actor_id, test_user.actor_id)
 
 
-@pytest.mark.anyio
+
 async def test_block_removes_follows(db, mock_valkey, test_user, test_user_b):
     """Blocking should remove follows in both directions."""
     from app.services.block_service import block_actor
@@ -57,7 +57,7 @@ async def test_block_removes_follows(db, mock_valkey, test_user, test_user_b):
     assert result.scalar_one_or_none() is None
 
 
-@pytest.mark.anyio
+
 async def test_block_already_blocking(db, mock_valkey, test_user, test_user_b):
     from app.services.block_service import block_actor
 
@@ -68,7 +68,7 @@ async def test_block_already_blocking(db, mock_valkey, test_user, test_user_b):
         await block_actor(db, test_user, test_user_b.actor)
 
 
-@pytest.mark.anyio
+
 async def test_unblock_actor_service(db, mock_valkey, test_user, test_user_b):
     from app.services.block_service import block_actor, is_blocking, unblock_actor
 
@@ -81,7 +81,7 @@ async def test_unblock_actor_service(db, mock_valkey, test_user, test_user_b):
     assert not await is_blocking(db, test_user.actor_id, test_user_b.actor_id)
 
 
-@pytest.mark.anyio
+
 async def test_unblock_not_blocking(db, mock_valkey, test_user, test_user_b):
     from app.services.block_service import unblock_actor
 
@@ -89,7 +89,7 @@ async def test_unblock_not_blocking(db, mock_valkey, test_user, test_user_b):
         await unblock_actor(db, test_user, test_user_b.actor)
 
 
-@pytest.mark.anyio
+
 async def test_get_blocked_ids(db, mock_valkey, test_user, test_user_b):
     from app.services.block_service import block_actor, get_blocked_ids
 
@@ -103,7 +103,7 @@ async def test_get_blocked_ids(db, mock_valkey, test_user, test_user_b):
 # ── Block API ────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_block_api(db, app_client, mock_valkey, test_user, test_user_b):
     client = authed_client_for(app_client, mock_valkey, test_user)
 
@@ -111,7 +111,7 @@ async def test_block_api(db, app_client, mock_valkey, test_user, test_user_b):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_block_self_forbidden(db, app_client, mock_valkey, test_user):
     client = authed_client_for(app_client, mock_valkey, test_user)
 
@@ -119,7 +119,7 @@ async def test_block_self_forbidden(db, app_client, mock_valkey, test_user):
     assert resp.status_code == 422
 
 
-@pytest.mark.anyio
+
 async def test_unblock_api(db, app_client, mock_valkey, test_user, test_user_b):
     client = authed_client_for(app_client, mock_valkey, test_user)
 
@@ -128,7 +128,7 @@ async def test_unblock_api(db, app_client, mock_valkey, test_user, test_user_b):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_list_blocks_api(db, app_client, mock_valkey, test_user, test_user_b):
     client = authed_client_for(app_client, mock_valkey, test_user)
 
@@ -144,7 +144,7 @@ async def test_list_blocks_api(db, app_client, mock_valkey, test_user, test_user
 # ── Mute Service ─────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_mute_actor_service(db, mock_valkey, test_user, test_user_b):
     from app.services.mute_service import is_muting, mute_actor
 
@@ -154,7 +154,7 @@ async def test_mute_actor_service(db, mock_valkey, test_user, test_user_b):
     assert await is_muting(db, test_user.actor_id, test_user_b.actor_id)
 
 
-@pytest.mark.anyio
+
 async def test_mute_already_muting(db, mock_valkey, test_user, test_user_b):
     from app.services.mute_service import mute_actor
 
@@ -165,7 +165,7 @@ async def test_mute_already_muting(db, mock_valkey, test_user, test_user_b):
         await mute_actor(db, test_user, test_user_b.actor)
 
 
-@pytest.mark.anyio
+
 async def test_unmute_actor_service(db, mock_valkey, test_user, test_user_b):
     from app.services.mute_service import is_muting, mute_actor, unmute_actor
 
@@ -178,7 +178,7 @@ async def test_unmute_actor_service(db, mock_valkey, test_user, test_user_b):
     assert not await is_muting(db, test_user.actor_id, test_user_b.actor_id)
 
 
-@pytest.mark.anyio
+
 async def test_get_muted_ids(db, mock_valkey, test_user, test_user_b):
     from app.services.mute_service import get_muted_ids, mute_actor
 
@@ -192,7 +192,7 @@ async def test_get_muted_ids(db, mock_valkey, test_user, test_user_b):
 # ── Mute API ─────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_mute_api(db, app_client, mock_valkey, test_user, test_user_b):
     client = authed_client_for(app_client, mock_valkey, test_user)
 
@@ -200,7 +200,7 @@ async def test_mute_api(db, app_client, mock_valkey, test_user, test_user_b):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_mute_self_forbidden(db, app_client, mock_valkey, test_user):
     client = authed_client_for(app_client, mock_valkey, test_user)
 
@@ -208,7 +208,7 @@ async def test_mute_self_forbidden(db, app_client, mock_valkey, test_user):
     assert resp.status_code == 422
 
 
-@pytest.mark.anyio
+
 async def test_unmute_api(db, app_client, mock_valkey, test_user, test_user_b):
     client = authed_client_for(app_client, mock_valkey, test_user)
 
@@ -217,7 +217,7 @@ async def test_unmute_api(db, app_client, mock_valkey, test_user, test_user_b):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_list_mutes_api(db, app_client, mock_valkey, test_user, test_user_b):
     client = authed_client_for(app_client, mock_valkey, test_user)
 
@@ -233,7 +233,7 @@ async def test_list_mutes_api(db, app_client, mock_valkey, test_user, test_user_
 # ── Bookmark Service ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_create_bookmark(db, mock_valkey, test_user):
     from app.services.bookmark_service import create_bookmark, is_bookmarked
 
@@ -245,7 +245,7 @@ async def test_create_bookmark(db, mock_valkey, test_user):
     assert await is_bookmarked(db, test_user.actor_id, note.id)
 
 
-@pytest.mark.anyio
+
 async def test_create_bookmark_duplicate(db, mock_valkey, test_user):
     from app.services.bookmark_service import create_bookmark
 
@@ -258,7 +258,7 @@ async def test_create_bookmark_duplicate(db, mock_valkey, test_user):
         await create_bookmark(db, test_user.actor_id, note.id)
 
 
-@pytest.mark.anyio
+
 async def test_remove_bookmark(db, mock_valkey, test_user):
     from app.services.bookmark_service import create_bookmark, is_bookmarked, remove_bookmark
 
@@ -273,7 +273,7 @@ async def test_remove_bookmark(db, mock_valkey, test_user):
     assert not await is_bookmarked(db, test_user.actor_id, note.id)
 
 
-@pytest.mark.anyio
+
 async def test_remove_bookmark_not_bookmarked(db, mock_valkey, test_user):
     from app.services.bookmark_service import remove_bookmark
 
@@ -283,7 +283,7 @@ async def test_remove_bookmark_not_bookmarked(db, mock_valkey, test_user):
         await remove_bookmark(db, test_user.actor_id, note.id)
 
 
-@pytest.mark.anyio
+
 async def test_get_bookmarks(db, mock_valkey, test_user):
     from app.services.bookmark_service import create_bookmark, get_bookmarks
 
@@ -301,7 +301,7 @@ async def test_get_bookmarks(db, mock_valkey, test_user):
 # ── Bookmark API ─────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_bookmark_api(db, app_client, mock_valkey, test_user):
     client = authed_client_for(app_client, mock_valkey, test_user)
     note = await make_note(db, test_user.actor, content="Bookmark via API")
@@ -310,7 +310,7 @@ async def test_bookmark_api(db, app_client, mock_valkey, test_user):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_unbookmark_api(db, app_client, mock_valkey, test_user):
     client = authed_client_for(app_client, mock_valkey, test_user)
     note = await make_note(db, test_user.actor, content="Unbookmark via API")
@@ -320,14 +320,14 @@ async def test_unbookmark_api(db, app_client, mock_valkey, test_user):
     assert resp.status_code == 200
 
 
-@pytest.mark.anyio
+
 async def test_bookmark_nonexistent_note(db, app_client, mock_valkey, test_user):
     client = authed_client_for(app_client, mock_valkey, test_user)
     resp = await client.post(f"/api/v1/statuses/{uuid.uuid4()}/bookmark")
     assert resp.status_code == 404
 
 
-@pytest.mark.anyio
+
 async def test_list_bookmarks_api(db, app_client, mock_valkey, test_user):
     client = authed_client_for(app_client, mock_valkey, test_user)
     note = await make_note(db, test_user.actor, content="Bookmarked note")
@@ -343,7 +343,7 @@ async def test_list_bookmarks_api(db, app_client, mock_valkey, test_user):
 # ── Timeline Block/Mute Filters ──────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_blocked_user_excluded_from_home_timeline(db, mock_valkey, test_user, test_user_b):
     """Blocked user's notes should not appear in home timeline."""
     from app.services.block_service import block_actor
@@ -366,7 +366,7 @@ async def test_blocked_user_excluded_from_home_timeline(db, mock_valkey, test_us
     assert note_b.id not in note_ids
 
 
-@pytest.mark.anyio
+
 async def test_muted_user_excluded_from_public_timeline(db, mock_valkey, test_user, test_user_b):
     """Muted user's notes should not appear in public timeline for the muting user."""
     from app.services.mute_service import mute_actor
@@ -387,7 +387,7 @@ async def test_muted_user_excluded_from_public_timeline(db, mock_valkey, test_us
 # ── AP Block Handler ─────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_handle_block(db, mock_valkey, test_user):
     """Incoming Block activity should create a UserBlock."""
     remote = await make_remote_actor(db, username="blocker", domain="other.example")
@@ -405,7 +405,7 @@ async def test_handle_block(db, mock_valkey, test_user):
     assert await is_blocking(db, remote.id, test_user.actor_id)
 
 
-@pytest.mark.anyio
+
 async def test_handle_undo_block(db, mock_valkey, test_user):
     """Undo(Block) should remove the UserBlock."""
     remote = await make_remote_actor(db, username="unblocker", domain="unblock.example")
@@ -439,7 +439,7 @@ async def test_handle_undo_block(db, mock_valkey, test_user):
 # ── Renderer ─────────────────────────────────────────────────────────────────
 
 
-@pytest.mark.anyio
+
 async def test_render_block_activity():
     from app.activitypub.renderer import render_block_activity
 

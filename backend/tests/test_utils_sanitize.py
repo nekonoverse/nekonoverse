@@ -54,6 +54,13 @@ def test_sanitize_allows_a_href():
     assert 'href="https://example.com"' in result
 
 
+def test_sanitize_preserves_target_blank():
+    html = '<a href="https://example.com" target="_blank" rel="noopener noreferrer">link</a>'
+    result = sanitize_html(html)
+    assert 'target="_blank"' in result
+    assert 'rel="noopener noreferrer"' in result
+
+
 # --- sanitize_html: emoji <img> → :shortcode: preservation ---
 
 

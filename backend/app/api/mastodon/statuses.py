@@ -1,11 +1,23 @@
+import logging
 import re
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
+
+logger = logging.getLogger(__name__)
+
+
+def _to_mastodon_datetime(dt: datetime | None) -> str:
+    """Format datetime to Mastodon-compatible ISO 8601 string (with Z suffix)."""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.note import Note
@@ -13,6 +25,7 @@ from app.models.user import User
 from app.schemas.note import (
     ContextResponse,
     CustomEmojiInfo,
+    EmojiReaction,
     NoteActorResponse,
     NoteCreateRequest,
     NoteEditHistoryEntry,
@@ -20,6 +33,7 @@ from app.schemas.note import (
     NoteMediaAttachment,
     NoteResponse,
     PollResponse,
+    PreviewCardResponse,
     ReactionSummary,
     TagInfo,
 )
@@ -39,6 +53,31 @@ _SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
 router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
 
 
+def _preview_card_to_response(card) -> PreviewCardResponse:
+    """Convert a PreviewCard model to a Mastodon-compatible PreviewCardResponse."""
+    return PreviewCardResponse(
+        url=card.url,
+        title=card.title or "",
+        description=card.description or "",
+        image=card.image,
+        type=card.card_type or "link",
+        provider_name=card.site_name or "",
+    )
+
+
+def _mime_to_media_type(mime: str) -> str:
+    """Convert a MIME type to Mastodon media type string."""
+    if mime.startswith("image/gif"):
+        return "gifv"
+    if mime.startswith("image/"):
+        return "image"
+    if mime.startswith("video/"):
+        return "video"
+    if mime.startswith("audio/"):
+        return "audio"
+    return "unknown"
+
+
 def _attachment_to_media(att) -> NoteMediaAttachment:
     """Convert a NoteAttachment to NoteMediaAttachment for API response."""
     if att.drive_file:
@@ -55,7 +94,7 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
             meta["focus"] = {"x": att.drive_file.focal_x, "y": att.drive_file.focal_y}
         return NoteMediaAttachment(
             id=str(att.id),
-            type="image" if mime.startswith("image/") else "unknown",
+            type=_mime_to_media_type(mime),
             url=url,
             preview_url=url,
             description=att.drive_file.description,
@@ -72,11 +111,13 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
             meta = {}
         meta["focus"] = {"x": att.remote_focal_x, "y": att.remote_focal_y}
     proxied = media_proxy_url(att.remote_url)
+    preview = media_proxy_url(att.remote_url, variant="preview")
     return NoteMediaAttachment(
         id=str(att.id),
-        type="image" if mime.startswith("image/") else "unknown",
+        type=_mime_to_media_type(mime),
         url=proxied,
-        preview_url=proxied,
+        preview_url=preview,
+        remote_url=att.remote_url,
         description=att.remote_description,
         blurhash=att.remote_blurhash,
         meta=meta,
@@ -92,6 +133,9 @@ async def note_to_response(
     hashtags_cache: dict | None = None,
     actor_id=None,
     reactions_map: dict | None = None,
+    reblogged_set: set | None = None,
+    software_cache: dict | None = None,
+    cards_cache: dict | None = None,
 ) -> NoteResponse:
     """Convert a Note model to a NoteResponse.
 
@@ -99,6 +143,7 @@ async def note_to_response(
         emoji_cache: Optional pre-resolved emoji cache mapping
             (shortcode, domain) -> CustomEmoji. When provided, skips per-note
             emoji DB queries.
+        software_cache: Optional mapping domain -> (software_name, version) tuple.
     """
     actor = note.actor
     reblog = None
@@ -135,6 +180,9 @@ async def note_to_response(
             hashtags_cache=hashtags_cache,
             actor_id=actor_id,
             reactions_map=reactions_map,
+            reblogged_set=reblogged_set,
+            software_cache=software_cache,
+            cards_cache=cards_cache,
         )
 
     # Build media attachments
@@ -153,6 +201,8 @@ async def note_to_response(
             hashtags_cache=hashtags_cache,
             actor_id=actor_id,
             reactions_map=reactions_map,
+            software_cache=software_cache,
+            cards_cache=cards_cache,
         )
     # Fallback: quoted_note not loaded but quote_id is set
     if not quote and db and note.quote_id:
@@ -164,6 +214,8 @@ async def note_to_response(
                 emoji_cache=emoji_cache,
                 actor_id=actor_id,
                 reactions_map=reactions_map,
+                software_cache=software_cache,
+                cards_cache=cards_cache,
             )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
     if not quote and db and note.quote_ap_id:
@@ -182,6 +234,8 @@ async def note_to_response(
                     hashtags_cache=hashtags_cache,
                     actor_id=actor_id,
                     reactions_map=reactions_map,
+                    software_cache=software_cache,
+                    cards_cache=cards_cache,
                 )
 
     # Resolve custom emoji from content and display_name
@@ -228,8 +282,12 @@ async def note_to_response(
             emoji_list = []
         emoji_map: dict[str, CustomEmojiInfo] = {}
         for emoji in emoji_list:
-            url = media_proxy_url(emoji.url)
-            static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+            url = media_proxy_url(emoji.url, variant="emoji")
+            static = (
+                media_proxy_url(emoji.static_url, variant="emoji", static=True)
+                if emoji.static_url
+                else media_proxy_url(emoji.url, variant="emoji", static=True)
+            )
             info = CustomEmojiInfo(
                 shortcode=emoji.shortcode,
                 url=url,
@@ -254,19 +312,35 @@ async def note_to_response(
 
         tags = [TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}") for tn in tag_names]
 
-    # Resolve in_reply_to_account_id (prefer eager-loaded relationship)
+    # Resolve in_reply_to_account_id and mention (prefer eager-loaded relationship)
     in_reply_to_account_id = None
+    reply_mention: dict | None = None
     if note.in_reply_to_id:
+        parent_actor = None
         if hasattr(note, "in_reply_to") and note.in_reply_to:
             in_reply_to_account_id = note.in_reply_to.actor_id
+            parent_actor = note.in_reply_to.actor
         elif db:
             parent_note = await get_note_by_id(db, note.in_reply_to_id)
             if parent_note:
                 in_reply_to_account_id = parent_note.actor_id
+                parent_actor = parent_note.actor
+        if parent_actor:
+            acct = (
+                parent_actor.username
+                if not parent_actor.domain
+                else f"{parent_actor.username}@{parent_actor.domain}"
+            )
+            reply_mention = {
+                "id": str(parent_actor.id),
+                "username": parent_actor.username,
+                "acct": acct,
+                "url": parent_actor.ap_id,
+            }
 
     edited_at = None
     if note.updated_at:
-        edited_at = note.updated_at.isoformat()
+        edited_at = _to_mastodon_datetime(note.updated_at)
 
     # Build poll response
     poll_response = None
@@ -277,37 +351,128 @@ async def note_to_response(
         if poll_data:
             poll_response = PollResponse(**poll_data)
 
+    # favourited判定 + favourites_count: ⭐のみ集計
+    favourited = False
+    favourites_count = 0
+    if reactions:
+        for r in reactions:
+            if r.get("emoji") == "\u2b50":
+                favourites_count = r.get("count", 0)
+                if r.get("me"):
+                    favourited = True
+                break
+
+    from app.config import settings as app_settings
+
+    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or "/default-avatar.svg"
+    header = media_proxy_url(actor.header_url) or ""
+    acct = actor.username if not actor.domain else f"{actor.username}@{actor.domain}"
+    actor_url = (
+        f"{app_settings.server_url}/@{actor.username}"
+        if not actor.domain
+        else f"{app_settings.server_url}/@{acct}"
+    )
+    # Resolve server software from cache or Valkey
+    sw = None
+    sw_ver = None
+    sw_name = None
+    if actor.domain:
+        if software_cache is not None:
+            cached = software_cache.get(actor.domain)
+            if cached is not None:
+                sw, sw_ver, sw_name = cached
+        elif db:
+            from app.utils.nodeinfo import get_domain_software_info
+            sw, sw_ver, sw_name = await get_domain_software_info(actor.domain)
+
+    actor_resp = NoteActorResponse(
+        id=actor.id,
+        username=actor.username,
+        display_name=actor.display_name or "",
+        avatar_url=avatar,
+        ap_id=actor.ap_id,
+        domain=actor.domain,
+        server_software=sw,
+        server_software_version=sw_ver,
+        server_name=sw_name,
+        emojis=actor_emojis,
+        acct=acct,
+        uri=actor.ap_id,
+        url=actor_url,
+        avatar=avatar,
+        avatar_static=avatar,
+        header=header,
+        header_static=header,
+        note=actor.summary or "",
+        is_cat=actor.is_cat,
+        bot=actor.is_bot,
+        group=actor.type == "Group",
+        created_at=_to_mastodon_datetime(actor.created_at),
+        locked=actor.manually_approves_followers,
+        discoverable=actor.discoverable,
+    )
+
+    # Resolve preview card
+    card_resp = None
+    if cards_cache is not None:
+        card_obj = cards_cache.get(note.id)
+        if card_obj:
+            card_resp = _preview_card_to_response(card_obj)
+    elif db:
+        from app.models.preview_card import PreviewCard
+
+        card_result = await db.execute(
+            select(PreviewCard).where(PreviewCard.note_id == note.id)
+        )
+        card_obj = card_result.scalar_one_or_none()
+        if card_obj:
+            card_resp = _preview_card_to_response(card_obj)
+
     return NoteResponse(
         id=note.id,
         ap_id=note.ap_id,
         content=note.content,
         source=note.source,
-        visibility=note.visibility,
+        visibility="private" if note.visibility == "followers" else note.visibility,
         sensitive=note.sensitive,
-        spoiler_text=note.spoiler_text,
-        published=note.published,
+        spoiler_text=note.spoiler_text or "",
+        published=_to_mastodon_datetime(note.published),
         edited_at=edited_at,
         replies_count=note.replies_count,
         reactions_count=note.reactions_count,
         renotes_count=note.renotes_count,
         in_reply_to_id=note.in_reply_to_id,
         in_reply_to_account_id=in_reply_to_account_id,
-        actor=NoteActorResponse(
-            id=actor.id,
-            username=actor.username,
-            display_name=actor.display_name,
-            avatar_url=media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
-            ap_id=actor.ap_id,
-            domain=actor.domain,
-            emojis=actor_emojis,
-        ),
+        actor=actor_resp,
         reactions=[ReactionSummary(**r) for r in (reactions or [])],
+        emoji_reactions=[
+            EmojiReaction(
+                name=r["emoji"],
+                count=r["count"],
+                me=r.get("me", False),
+                url=r.get("emoji_url"),
+                static_url=r.get("emoji_url"),
+                account_ids=r.get("account_ids", []),
+            )
+            for r in (reactions or [])
+        ],
+        favourited=favourited,
+        reblogged=bool(reblogged_set and note.id in reblogged_set),
         reblog=reblog,
         media_attachments=media_attachments,
         quote=quote,
         poll=poll_response,
         emojis=emojis,
         tags=tags,
+        card=card_resp,
+        mentions=[reply_mention] if reply_mention else [],
+        # Mastodon Status compat
+        uri=note.ap_id,
+        url=f"{app_settings.server_url}/notes/{note.id}",
+        account=actor_resp,
+        created_at=_to_mastodon_datetime(note.published),
+        reblogs_count=note.renotes_count,
+        favourites_count=favourites_count,
     )
 
 
@@ -424,6 +589,43 @@ async def notes_to_responses(
         inner_reactions = await get_reaction_summaries(db, inner_ids, actor_id)
         reactions_map.update(inner_reactions)
 
+    # Batch-check which notes the current user has reblogged
+    reblogged_set: set = set()
+    if actor_id:
+        from app.models.note import Note as NoteModel
+
+        reblog_result = await db.execute(
+            select(NoteModel.renote_of_id).where(
+                NoteModel.actor_id == actor_id,
+                NoteModel.renote_of_id.in_(unique_ids),
+                NoteModel.deleted_at.is_(None),
+            )
+        )
+        reblogged_set = {row[0] for row in reblog_result.all()}
+
+    # Batch-fetch server software for all unique remote domains
+    from app.utils.nodeinfo import get_domain_software_info
+
+    domains: set[str] = set()
+    for n in notes:
+        if n.actor.domain:
+            domains.add(n.actor.domain)
+        if hasattr(n, "renote_of") and n.renote_of and n.renote_of.actor.domain:
+            domains.add(n.renote_of.actor.domain)
+        if hasattr(n, "quoted_note") and n.quoted_note and n.quoted_note.actor.domain:
+            domains.add(n.quoted_note.actor.domain)
+    software_cache: dict[str, tuple[str | None, str | None, str | None]] = {}
+    for domain in domains:
+        software_cache[domain] = await get_domain_software_info(domain)
+
+    # Batch-fetch preview cards for all notes
+    from app.models.preview_card import PreviewCard
+
+    cards_result = await db.execute(
+        select(PreviewCard).where(PreviewCard.note_id.in_(unique_ids))
+    )
+    cards_cache: dict = {c.note_id: c for c in cards_result.scalars().all()}
+
     result = []
     for n in notes:
         reactions = reactions_map.get(n.id, [])
@@ -435,6 +637,9 @@ async def notes_to_responses(
             hashtags_cache=hashtags_cache,
             actor_id=actor_id,
             reactions_map=reactions_map,
+            reblogged_set=reblogged_set,
+            software_cache=software_cache,
+            cards_cache=cards_cache,
         )
         result.append(resp)
     return result
@@ -446,6 +651,12 @@ async def create_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # Validate in_reply_to_id exists
+    if body.in_reply_to_id:
+        parent = await get_note_by_id(db, body.in_reply_to_id)
+        if not parent:
+            raise HTTPException(status_code=404, detail="Reply target not found")
+
     poll_options = None
     poll_expires_in = None
     poll_multiple = False
@@ -454,20 +665,24 @@ async def create_status(
         poll_expires_in = body.poll.expires_in
         poll_multiple = body.poll.multiple
 
-    note = await create_note(
-        db=db,
-        user=user,
-        content=body.content,
-        visibility=body.visibility,
-        sensitive=body.sensitive,
-        spoiler_text=body.spoiler_text,
-        in_reply_to_id=body.in_reply_to_id,
-        media_ids=body.media_ids or None,
-        quote_id=body.quote_id,
-        poll_options=poll_options,
-        poll_expires_in=poll_expires_in,
-        poll_multiple=poll_multiple,
-    )
+    try:
+        note = await create_note(
+            db=db,
+            user=user,
+            content=body.content,
+            visibility="followers" if body.visibility == "private" else body.visibility,
+            sensitive=body.sensitive,
+            spoiler_text=body.spoiler_text,
+            in_reply_to_id=body.in_reply_to_id,
+            media_ids=body.media_ids or None,
+            quote_id=body.quote_id,
+            poll_options=poll_options,
+            poll_expires_in=poll_expires_in,
+            poll_multiple=poll_multiple,
+        )
+    except Exception as e:
+        logger.exception("Failed to create note")
+        raise HTTPException(status_code=422, detail=str(e))
     return await note_to_response(note, db=db)
 
 
@@ -510,7 +725,7 @@ async def edit_status(
         note_id=note.id,
         content=note.content,
         source=note.source,
-        spoiler_text=note.spoiler_text,
+        spoiler_text=note.spoiler_text or "",
     )
     db.add(edit_record)
 
@@ -580,11 +795,49 @@ async def get_status_history(
         NoteEditHistoryEntry(
             content=note.content,
             source=note.source,
-            spoiler_text=note.spoiler_text,
+            spoiler_text=note.spoiler_text or "",
             created_at=note.updated_at or note.published,
         )
     )
     return history
+
+
+async def _batch_filter_visible(
+    db: AsyncSession, notes: list, actor_id: uuid.UUID | None,
+) -> list:
+    """C-2: ノートリストの可視性をバッチチェックしてフィルタ。"""
+    if not notes or actor_id is None:
+        return [n for n in notes if n.visibility in ("public", "unlisted")]
+
+    # followers可視性のノートのactor_idを収集し、フォロー状態を一括チェック
+    followers_actor_ids = {
+        n.actor_id for n in notes
+        if n.visibility == "followers" and n.actor_id != actor_id
+    }
+    followed_ids: set = set()
+    if followers_actor_ids:
+        from app.models.follow import Follow
+
+        follow_result = await db.execute(
+            select(Follow.following_id).where(
+                Follow.follower_id == actor_id,
+                Follow.following_id.in_(followers_actor_ids),
+                Follow.accepted.is_(True),
+            )
+        )
+        followed_ids = {row[0] for row in follow_result.all()}
+
+    visible = []
+    for n in notes:
+        if n.visibility in ("public", "unlisted"):
+            visible.append(n)
+        elif n.visibility == "followers":
+            if n.actor_id == actor_id or n.actor_id in followed_ids:
+                visible.append(n)
+        elif n.visibility == "direct":
+            if n.actor_id == actor_id:
+                visible.append(n)
+    return visible
 
 
 @router.get("/{note_id}/context", response_model=ContextResponse)
@@ -601,28 +854,23 @@ async def get_status_context(
     if not await check_note_visible(db, note, actor_id):
         raise HTTPException(status_code=404, detail="Note not found")
 
-    # 祖先ノードのIDを先に収集してバッチ取得
+    # C-1: 祖先ノードのIDを軽量クエリで収集してからバッチ取得
     MAX_ANCESTORS = 40
     MAX_DESCENDANTS = 200
     ancestor_ids: list[uuid.UUID] = []
-    current = note
+    current_id = note.in_reply_to_id
     seen_ids: set[uuid.UUID] = {note.id}
-    while (
-        current.in_reply_to_id
-        and current.in_reply_to_id not in seen_ids
-        and len(ancestor_ids) < MAX_ANCESTORS
-    ):
-        parent = await get_note_by_id(db, current.in_reply_to_id)
-        if not parent:
-            break
-        if not await check_note_visible(db, parent, actor_id):
-            break
-        seen_ids.add(parent.id)
-        ancestor_ids.append(parent.id)
-        current = parent
+    while current_id and current_id not in seen_ids and len(ancestor_ids) < MAX_ANCESTORS:
+        seen_ids.add(current_id)
+        ancestor_ids.append(current_id)
+        row = await db.execute(
+            select(Note.in_reply_to_id).where(
+                Note.id == current_id, Note.deleted_at.is_(None)
+            )
+        )
+        current_id = row.scalar_one_or_none()
     ancestor_ids.reverse()
 
-    # バッチ取得した祖先をID順で復元
     ancestors = []
     if ancestor_ids:
         result = await db.execute(
@@ -632,6 +880,8 @@ async def get_status_context(
         )
         ancestor_map = {n.id: n for n in result.scalars().all()}
         ancestors = [ancestor_map[aid] for aid in ancestor_ids if aid in ancestor_map]
+        # バッチ可視性チェック
+        ancestors = await _batch_filter_visible(db, ancestors, actor_id)
 
     # 子孫ノードをBFSで取得(深さ/件数制限付き)
     descendants = []
@@ -656,9 +906,11 @@ async def get_status_context(
             visited.add(child.id)
             if len(descendants) >= MAX_DESCENDANTS:
                 break
-            if await check_note_visible(db, child, actor_id):
-                descendants.append(child)
-                queue.append(child.id)
+            descendants.append(child)
+            queue.append(child.id)
+
+    # C-2: 子孫の可視性をバッチチェック
+    descendants = await _batch_filter_visible(db, descendants, actor_id)
 
     # バッチで絵文字キャッシュを構築
     all_context_notes = ancestors + descendants
@@ -699,9 +951,9 @@ async def react_to_note(
 
     # Notify note author
     if note.actor.is_local:
-        from app.services.notification_service import create_notification
+        from app.services.notification_service import create_notification, publish_notification
 
-        await create_notification(
+        notif = await create_notification(
             db,
             "reaction",
             note.actor_id,
@@ -710,8 +962,12 @@ async def react_to_note(
             reaction_emoji=emoji,
         )
         await db.commit()
+        if notif:
+            await publish_notification(notif)
 
     return {"ok": True}
+
+
 
 
 @router.post("/{note_id}/unreact/{emoji}")
@@ -735,10 +991,209 @@ async def unreact_to_note(
     return {"ok": True}
 
 
+@router.put("/{note_id}/emoji_reactions/{emoji}", response_model=NoteResponse)
+async def fedibird_react(
+    note_id: uuid.UUID,
+    emoji: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fedibird-compatible: add emoji reaction and return updated status."""
+    from app.services.reaction_service import add_reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await add_reaction(db, user, note, emoji)
+    except ValueError:
+        pass  # Already reacted — return current status
+
+    if note.actor.is_local and note.actor_id != user.actor_id:
+        from app.services.notification_service import create_notification, publish_notification
+
+        notif = await create_notification(
+            db, "reaction", note.actor_id, user.actor_id, note.id, reaction_emoji=emoji
+        )
+        await db.commit()
+        if notif:
+            await publish_notification(notif)
+
+    note = await get_note_by_id(db, note_id)
+    reactions_map = await get_reaction_summaries(
+        db, [note.id], user.actor_id, include_account_ids=True
+    )
+    return await note_to_response(
+        note, reactions_map.get(note.id, []), db=db, actor_id=user.actor_id
+    )
+
+
+@router.delete("/{note_id}/emoji_reactions/{emoji}", response_model=NoteResponse)
+async def fedibird_unreact(
+    note_id: uuid.UUID,
+    emoji: str,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fedibird-compatible: remove emoji reaction and return updated status."""
+    from app.services.reaction_service import remove_reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await remove_reaction(db, user, note, emoji)
+    except ValueError:
+        pass  # Not reacted — return current status
+
+    note = await get_note_by_id(db, note_id)
+    reactions_map = await get_reaction_summaries(
+        db, [note.id], user.actor_id, include_account_ids=True
+    )
+    return await note_to_response(
+        note, reactions_map.get(note.id, []), db=db, actor_id=user.actor_id
+    )
+
+
+@router.post("/{note_id}/favourite", response_model=NoteResponse)
+async def favourite_status(
+    note_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Favourite a status (alias for ⭐ reaction)."""
+    from app.services.reaction_service import add_reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await add_reaction(db, user, note, "\u2b50")
+    except ValueError:
+        pass  # 既にリアクション済みの場合は無視（通知は作成しない）
+    else:
+        # 通知作成 (新規リアクション成功時、ローカルユーザーの場合のみ)
+        if note.actor.is_local and note.actor_id != user.actor_id:
+            from app.services.notification_service import create_notification, publish_notification
+
+            notif = await create_notification(
+                db, "reaction", note.actor_id, user.actor_id, note.id, reaction_emoji="\u2b50"
+            )
+            await db.commit()
+            if notif:
+                await publish_notification(notif)
+
+    note = await get_note_by_id(db, note_id)
+    reactions = await get_reaction_summary(db, note.id, user.actor_id)
+    return await note_to_response(note, reactions, db=db, actor_id=user.actor_id)
+
+
+@router.post("/{note_id}/unfavourite", response_model=NoteResponse)
+async def unfavourite_status(
+    note_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Unfavourite a status (remove ⭐ reaction)."""
+    from app.services.reaction_service import remove_reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    if not await check_note_visible(db, note, user.actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    try:
+        await remove_reaction(db, user, note, "\u2b50")
+    except ValueError:
+        pass  # リアクションが存在しない場合は無視
+
+    note = await get_note_by_id(db, note_id)
+    reactions = await get_reaction_summary(db, note.id, user.actor_id)
+    return await note_to_response(note, reactions, db=db, actor_id=user.actor_id)
+
+
+@router.get("/{note_id}/favourited_by")
+async def favourited_by(
+    note_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List accounts that favourited (⭐ reacted) a status."""
+    from app.api.mastodon.accounts import _actor_to_account
+    from app.models.reaction import Reaction
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    actor_id = user.actor_id if user else None
+    if not await check_note_visible(db, note, actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    result = await db.execute(
+        select(Reaction)
+        .options(selectinload(Reaction.actor))
+        .where(Reaction.note_id == note.id, Reaction.emoji == "\u2b50")
+        .order_by(Reaction.created_at.desc())
+        .limit(80)
+    )
+    reactions = result.scalars().all()
+
+    return [await _actor_to_account(r.actor, db=db) for r in reactions]
+
+
+@router.get("/{note_id}/reblogged_by")
+async def reblogged_by(
+    note_id: uuid.UUID,
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List accounts that reblogged (renoted) a status."""
+    from app.api.mastodon.accounts import _actor_to_account
+
+    note = await get_note_by_id(db, note_id)
+    if not note:
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    actor_id = user.actor_id if user else None
+    if not await check_note_visible(db, note, actor_id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
+    result = await db.execute(
+        select(Note)
+        .options(selectinload(Note.actor))
+        .where(
+            Note.renote_of_id == note.id,
+            Note.content == "",
+            Note.deleted_at.is_(None),
+        )
+        .order_by(Note.published.desc())
+        .limit(80)
+    )
+    renotes = result.scalars().all()
+
+    return [await _actor_to_account(r.actor, db=db) for r in renotes]
+
+
 @router.get("/{note_id}/reacted_by")
 async def reacted_by(
     note_id: uuid.UUID,
     emoji: str | None = None,
+    limit: int = Query(40, le=80),
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -760,6 +1215,7 @@ async def reacted_by(
     )
     if emoji:
         query = query.where(Reaction.emoji == emoji)
+    query = query.limit(limit)
 
     result = await db.execute(query)
     reactions = result.scalars().all()
@@ -792,8 +1248,12 @@ async def reacted_by(
             for sc in scs:
                 emoji = emoji_cache.get((sc, r.actor.domain)) or emoji_cache.get((sc, None))
                 if emoji:
-                    url = media_proxy_url(emoji.url)
-                    static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+                    url = media_proxy_url(emoji.url, variant="emoji")
+                    static = (
+                        media_proxy_url(emoji.static_url, variant="emoji", static=True)
+                        if emoji.static_url
+                        else media_proxy_url(emoji.url, variant="emoji", static=True)
+                    )
                     actor_emojis.append(
                         CustomEmojiInfo(shortcode=emoji.shortcode, url=url, static_url=static)
                     )
@@ -803,7 +1263,7 @@ async def reacted_by(
                 id=r.actor.id,
                 username=r.actor.username,
                 display_name=r.actor.display_name,
-                avatar_url=media_proxy_url(r.actor.avatar_url) or "/default-avatar.svg",
+                avatar_url=media_proxy_url(r.actor.avatar_url, variant="avatar") or "/default-avatar.svg",
                 ap_id=r.actor.ap_id,
                 domain=r.actor.domain,
                 emojis=actor_emojis,
@@ -822,6 +1282,13 @@ async def reblog_status(
     original = await get_note_by_id(db, note_id)
     if not original:
         raise HTTPException(status_code=404, detail="Note not found")
+
+    # Reject reblog for non-public/unlisted notes (followers-only, direct)
+    if original.visibility in ("followers", "direct"):
+        raise HTTPException(
+            status_code=422,
+            detail="Cannot reblog a private post",
+        )
 
     actor = user.actor
 
@@ -863,9 +1330,9 @@ async def reblog_status(
 
     # Notify original note author
     if original.actor.is_local:
-        from app.services.notification_service import create_notification
+        from app.services.notification_service import create_notification, publish_notification
 
-        await create_notification(
+        notif = await create_notification(
             db,
             "renote",
             original.actor_id,
@@ -873,6 +1340,8 @@ async def reblog_status(
             original.id,
         )
         await db.commit()
+        if notif:
+            await publish_notification(notif)
 
     await db.refresh(reblog_note, ["actor", "attachments"])
 
@@ -887,11 +1356,27 @@ async def reblog_status(
         note_ap_id=original.ap_id,
         to=to_list,
         cc=cc_list,
-        published=reblog_note.published.isoformat() + "Z",
+        published=_to_mastodon_datetime(reblog_note.published),
     )
     inboxes = await get_follower_inboxes(db, actor.id)
     for inbox_url in inboxes:
         await enqueue_delivery(db, actor.id, inbox_url, activity)
+
+    # Publish streaming events so followers see the reblog in real-time
+    try:
+        import json as _json
+
+        from app.services.follow_service import get_follower_ids
+        from app.valkey_client import valkey as valkey_client
+
+        event = _json.dumps({"event": "update", "payload": {"id": str(reblog_note.id)}})
+        await valkey_client.publish("timeline:public", event)
+        follower_ids = await get_follower_ids(db, actor.id)
+        for fid in follower_ids:
+            await valkey_client.publish(f"timeline:home:{fid}", event)
+        await valkey_client.publish(f"timeline:home:{actor.id}", event)
+    except Exception:
+        pass  # Don't fail reblog if pub/sub fails
 
     # Re-refresh after delivery commits expired the session
     await db.refresh(reblog_note, ["actor", "attachments"])
@@ -939,7 +1424,7 @@ async def unreblog_status(
         note_ap_id=original.ap_id,
         to=reblog_note.to,
         cc=reblog_note.cc,
-        published=reblog_note.published.isoformat() + "Z",
+        published=_to_mastodon_datetime(reblog_note.published),
     )
     undo_id = f"{reblog_note.ap_id}/undo"
     undo_activity = render_undo_activity(undo_id, actor_uri(actor), announce_activity)

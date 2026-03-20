@@ -1,36 +1,130 @@
-import { createSignal, Show, For, onCleanup } from "solid-js";
+import { createSignal, createEffect, Show, For, onCleanup } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import type { ReactionSummary, ReactionUser } from "../../api/statuses";
-import { reactToNote, unreactToNote, getReactedBy } from "../../api/statuses";
-import { importRemoteEmojiByShortcode } from "../../api/admin";
+import type { ReactionUser } from "@nekonoverse/ui/api/statuses";
+import { reactToNote, unreactToNote, getReactedBy } from "@nekonoverse/ui/api/statuses";
+import type { ReactionSummary } from "@nekonoverse/ui/api/statuses";
+import { computePhash } from "@nekonoverse/ui/utils/phash";
+import { groupReactions, extractShortcode, type GroupedReaction } from "@nekonoverse/ui/utils/groupReactions";
+import { getAllCachedPhashes, setCachedPhash } from "@nekonoverse/ui/utils/phashCache";
 import EmojiPicker from "./EmojiPicker";
+import EmojiImportModal from "./EmojiImportModal";
 import Emoji from "../Emoji";
-import { currentUser } from "../../stores/auth";
-import { useI18n } from "../../i18n";
-import { defaultAvatar } from "../../stores/instance";
-
-const REMOTE_EMOJI_RE = /^:([a-zA-Z0-9_]+)@([a-zA-Z0-9.-]+):$/;
+import { canManageEmoji } from "@nekonoverse/ui/stores/auth";
+import { importedShortcodes } from "@nekonoverse/ui/api/emoji";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 interface Props {
   noteId: string;
   reactions: ReactionSummary[];
   onUpdate?: () => void;
+  serverSoftware?: string | null;
 }
+
+// Track in-flight phash computations to prevent duplicate work
+const inFlightUrls = new Set<string>();
+
+// Module-level state: preserve picker open/close across <For> re-creations
+// (When a streaming reaction event replaces the note object, <For> destroys
+//  and re-creates the component, resetting local signals.)
+const openPickerNoteIds = new Set<string>();
 
 export default function ReactionBar(props: Props) {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const [showPicker, setShowPicker] = createSignal(false);
+  const [showPicker, _setShowPicker] = createSignal(openPickerNoteIds.has(props.noteId));
+
+  const setShowPicker = (v: boolean) => {
+    if (v) openPickerNoteIds.add(props.noteId);
+    else openPickerNoteIds.delete(props.noteId);
+    _setShowPicker(v);
+  };
   const [modalEmoji, setModalEmoji] = createSignal<string | null>(null);
+  const [modalUrl, setModalUrl] = createSignal<string | null>(null);
   const [modalUsers, setModalUsers] = createSignal<ReactionUser[]>([]);
   const [modalLoading, setModalLoading] = createSignal(false);
-  const [importState, setImportState] = createSignal<"idle" | "loading" | "success" | "error">("idle");
-  const [importError, setImportError] = createSignal("");
+  const [importEmoji, setImportEmoji] = createSignal<string | null>(null);
+  const [importDomain, setImportDomain] = createSignal<string | null>(null);
 
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let didLongPress = false;
 
-  const toggleReaction = async (emoji: string) => {
+  // pHash-based grouping
+  const [hashMap, setHashMap] = createSignal<Map<string, string>>(
+    getAllCachedPhashes(),
+  );
+
+  const SHORTCODE_RE = /^:([a-zA-Z0-9_]+)(?:@[^:]+)?:$/;
+
+  const grouped = (): GroupedReaction[] => {
+    const groups = groupReactions(props.reactions, hashMap());
+    const imported = importedShortcodes();
+    if (imported.size === 0) return groups;
+    return groups.map((g) => {
+      const anyImported = g.members.some((r) => {
+        const sc = extractShortcode(r.emoji);
+        return sc ? imported.has(sc) : false;
+      });
+      if (anyImported) {
+        return { ...g, importable: false, importDomain: null };
+      }
+      return g;
+    });
+  };
+
+  // Compute pHash only for custom emoji with unique shortcodes
+  // (same-shortcode emoji are already grouped in Phase 1 of groupReactions)
+  createEffect(() => {
+    const currentMap = hashMap();
+
+    // Count shortcode occurrences — multi-occurrence shortcodes don't need phash
+    const scCounts = new Map<string, number>();
+    for (const r of props.reactions) {
+      if (!r.emoji_url) continue;
+      const sc = extractShortcode(r.emoji);
+      if (sc) scCounts.set(sc, (scCounts.get(sc) ?? 0) + 1);
+    }
+
+    const urlsToHash: string[] = [];
+    for (const r of props.reactions) {
+      if (!r.emoji_url || currentMap.has(r.emoji_url)) continue;
+      if (inFlightUrls.has(r.emoji_url)) continue;
+      const sc = extractShortcode(r.emoji);
+      if (sc && (scCounts.get(sc) ?? 0) > 1) continue;
+      urlsToHash.push(r.emoji_url);
+    }
+
+    if (urlsToHash.length === 0) return;
+    for (const url of urlsToHash) inFlightUrls.add(url);
+
+    Promise.all(
+      urlsToHash.map(async (url) => {
+        const hash = await computePhash(url);
+        return hash ? { url, hash } : null;
+      }),
+    ).then((results) => {
+      for (const url of urlsToHash) inFlightUrls.delete(url);
+      const newEntries = results.filter(
+        (r): r is { url: string; hash: string } => r !== null,
+      );
+      if (newEntries.length === 0) return;
+
+      setHashMap((prev) => {
+        const next = new Map(prev);
+        for (const { url, hash } of newEntries) {
+          next.set(url, hash);
+          setCachedPhash(url, hash);
+        }
+        return next;
+      });
+    });
+  });
+
+  // Reaction confirmation dialog for unsupported servers
+  const [pendingReactionEmoji, setPendingReactionEmoji] = createSignal<string | null>(null);
+  const [confirmDontShow, setConfirmDontShow] = createSignal(false);
+
+  const doReaction = async (emoji: string) => {
     const existing = props.reactions.find((r) => r.emoji === emoji && r.me);
     try {
       if (existing) {
@@ -44,40 +138,68 @@ export default function ReactionBar(props: Props) {
     }
   };
 
-  const handleReaction = (emoji: string) => {
-    if (didLongPress) return;
-    toggleReaction(emoji);
-  };
-
-  const importableEmoji = () => {
-    const emoji = modalEmoji();
-    if (!emoji) return null;
-    const m = REMOTE_EMOJI_RE.exec(emoji);
-    if (!m) return null;
-    return { shortcode: m[1], domain: m[2] };
-  };
-
-  const handleImport = async () => {
-    const parsed = importableEmoji();
-    if (!parsed) return;
-    setImportState("loading");
-    try {
-      await importRemoteEmojiByShortcode(parsed.shortcode, parsed.domain);
-      setImportState("success");
-    } catch (e: any) {
-      setImportState("error");
-      setImportError(e.message || t("reactions.importFailed"));
+  const toggleReaction = async (emoji: string) => {
+    // Unreacting always works — no confirmation needed
+    const existing = props.reactions.find((r) => r.emoji === emoji && r.me);
+    if (existing) {
+      return doReaction(emoji);
     }
+    // New reaction: check if server ignores reactions and confirmation isn't suppressed
+    if (ignoresReactions() && localStorage.getItem("hideReactionConfirm") !== "1") {
+      setPendingReactionEmoji(emoji);
+      setConfirmDontShow(false);
+      return;
+    }
+    return doReaction(emoji);
   };
 
-  const openModal = async (emoji: string) => {
-    setModalEmoji(emoji);
+  const confirmReaction = () => {
+    const emoji = pendingReactionEmoji();
+    if (!emoji) return;
+    if (confirmDontShow()) {
+      localStorage.setItem("hideReactionConfirm", "1");
+    }
+    setPendingReactionEmoji(null);
+    doReaction(emoji);
+  };
+
+  const cancelReaction = () => {
+    setPendingReactionEmoji(null);
+  };
+
+  const handleReaction = (group: GroupedReaction) => {
+    if (didLongPress) return;
+    if (group.importable) {
+      if (canManageEmoji()) {
+        setImportEmoji(group.displayEmoji);
+        setImportDomain(group.importDomain);
+      }
+      return;
+    }
+    const emojiToUse =
+      group.me && group.myEmoji ? group.myEmoji : group.displayEmoji;
+    toggleReaction(emojiToUse);
+  };
+
+  const openModal = async (group: GroupedReaction) => {
+    setModalEmoji(group.displayEmoji);
+    setModalUrl(group.displayUrl);
     setModalLoading(true);
-    setImportState("idle");
-    setImportError("");
     try {
-      const users = await getReactedBy(props.noteId, emoji);
-      setModalUsers(users);
+      const allUsers = await Promise.all(
+        group.members.map((m) => getReactedBy(props.noteId, m.emoji)),
+      );
+      const seen = new Set<string>();
+      const uniqueUsers: ReactionUser[] = [];
+      for (const users of allUsers) {
+        for (const u of users) {
+          if (!seen.has(u.actor.id)) {
+            seen.add(u.actor.id);
+            uniqueUsers.push(u);
+          }
+        }
+      }
+      setModalUsers(uniqueUsers);
     } catch {
       setModalUsers([]);
     }
@@ -86,15 +208,16 @@ export default function ReactionBar(props: Props) {
 
   const closeModal = () => {
     setModalEmoji(null);
+    setModalUrl(null);
     setModalUsers([]);
     didLongPress = false;
   };
 
-  const startLongPress = (emoji: string) => {
+  const startLongPress = (group: GroupedReaction) => {
     didLongPress = false;
     longPressTimer = setTimeout(() => {
       didLongPress = true;
-      openModal(emoji);
+      openModal(group);
     }, 500);
   };
 
@@ -107,28 +230,61 @@ export default function ReactionBar(props: Props) {
 
   onCleanup(() => cancelLongPress());
 
+  const ignoresReactions = () => props.serverSoftware === "mastodon";
+
+  const badgeClass = (group: GroupedReaction) => {
+    let cls = "reaction-badge";
+    if (group.me) cls += " reaction-me";
+    if (ignoresReactions()) cls += " reaction-unsupported";
+    if (group.importable) {
+      cls += canManageEmoji()
+        ? " reaction-importable"
+        : " reaction-remote-disabled";
+    }
+    return cls;
+  };
+
+  const checkEmojiOverflow = (badge: HTMLElement) => {
+    const img = badge.querySelector("img.custom-emoji") as HTMLImageElement | null;
+    if (!img) return;
+    const check = () => {
+      if (img.naturalWidth > img.clientWidth * 1.1) {
+        badge.classList.add("emoji-overflow");
+      } else {
+        badge.classList.remove("emoji-overflow");
+      }
+    };
+    if (img.complete) check();
+    else img.addEventListener("load", check, { once: true });
+  };
+
   return (
     <>
       <div class="reaction-bar">
-        {props.reactions.map((r) => (
+        {grouped().map((g) => (
           <button
-            class={`reaction-badge ${r.me ? "reaction-me" : ""}`}
-            onClick={() => handleReaction(r.emoji)}
-            onMouseDown={() => startLongPress(r.emoji)}
+            class={badgeClass(g)}
+            ref={checkEmojiOverflow}
+            onClick={() => handleReaction(g)}
+            onMouseDown={() => startLongPress(g)}
             onMouseUp={cancelLongPress}
             onMouseLeave={cancelLongPress}
-            onTouchStart={() => startLongPress(r.emoji)}
+            onTouchStart={() => startLongPress(g)}
             onTouchEnd={(e) => { cancelLongPress(); if (didLongPress) { e.preventDefault(); } }}
             onContextMenu={(e) => e.preventDefault()}
           >
-            <Emoji emoji={r.emoji} url={r.emoji_url} /> {r.count}
+            <Emoji emoji={g.displayEmoji} url={g.displayUrl} /> {g.count}
           </button>
         ))}
-        <button class="reaction-add-btn" onClick={() => {
-          const opening = !showPicker();
-          if (opening) (document.activeElement as HTMLElement)?.blur();
-          setShowPicker(opening);
-        }}>
+        <button
+          class={`reaction-add-btn${ignoresReactions() ? " reaction-not-delivered" : ""}`}
+          onClick={() => {
+            const opening = !showPicker();
+            if (opening) (document.activeElement as HTMLElement)?.blur();
+            setShowPicker(opening);
+          }}
+          title={ignoresReactions() ? t("reactions.notDelivered" as any) : undefined}
+        >
           +
         </button>
         <Show when={showPicker()}>
@@ -141,41 +297,28 @@ export default function ReactionBar(props: Props) {
         </Show>
       </div>
 
-      {/* Reaction users modal */}
+      {/* Emoji import modal */}
+      <Show when={importEmoji()}>
+        <EmojiImportModal
+          emoji={importEmoji()!}
+          domain={importDomain()}
+          emojiUrl={props.reactions.find((r) => r.emoji === importEmoji())?.emoji_url ?? null}
+          noteId={props.noteId}
+          onClose={() => { setImportEmoji(null); setImportDomain(null); }}
+          onImported={() => props.onUpdate?.()}
+        />
+      </Show>
+
+      {/* Reaction users modal (long press) */}
       <Show when={modalEmoji()}>
         <div class="modal-overlay" onClick={closeModal}>
-          <div class="modal-content" style="max-width: 400px" onClick={(e) => e.stopPropagation()}>
-            <div class="modal-header">
-              <h3 style="display: flex; align-items: center; gap: 8px">
-                <Emoji
-                  emoji={modalEmoji()!}
-                  url={props.reactions.find((r) => r.emoji === modalEmoji())?.emoji_url ?? null}
-                />
-                {t("reactions.reactedBy")}
-              </h3>
-              <div style="display: flex; align-items: center; gap: 8px">
-                <Show when={currentUser()?.role === "admin" && importableEmoji()}>
-                  <Show when={importState() === "idle"}>
-                    <button class="btn btn-small" onClick={handleImport}>
-                      {t("reactions.importEmoji")}
-                    </button>
-                  </Show>
-                  <Show when={importState() === "loading"}>
-                    <button class="btn btn-small" disabled>
-                      {t("common.loading")}
-                    </button>
-                  </Show>
-                  <Show when={importState() === "success"}>
-                    <span class="import-success">{t("reactions.importSuccess")}</span>
-                  </Show>
-                  <Show when={importState() === "error"}>
-                    <span class="import-error" title={importError()}>
-                      {t("reactions.importFailed")}
-                    </span>
-                  </Show>
-                </Show>
-                <button class="modal-close" onClick={closeModal}>✕</button>
-              </div>
+          <div class="modal-content reacted-by-modal" onClick={(e) => e.stopPropagation()}>
+            <button class="reacted-by-close" onClick={closeModal}>✕</button>
+            <div class="reacted-by-emoji-hero">
+              <Emoji emoji={modalEmoji()!} url={modalUrl()} class="reacted-by-emoji-large" />
+              {modalEmoji()!.startsWith(":") && (
+                <span class="reacted-by-emoji-caption">{modalEmoji()!.replace(/@[^:]+/, "")}</span>
+              )}
             </div>
             <div class="reacted-by-list">
               <Show when={modalLoading()}>
@@ -211,6 +354,31 @@ export default function ReactionBar(props: Props) {
                   );
                 }}
               </For>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Reaction confirmation dialog for unsupported servers */}
+      <Show when={pendingReactionEmoji()}>
+        <div class="modal-overlay" onClick={cancelReaction}>
+          <div class="modal-content reaction-confirm-modal" onClick={(e) => e.stopPropagation()}>
+            <p class="reaction-confirm-message">{t("reactions.confirmUnsupported" as any)}</p>
+            <label class="reaction-confirm-checkbox">
+              <input
+                type="checkbox"
+                checked={confirmDontShow()}
+                onChange={(e) => setConfirmDontShow(e.currentTarget.checked)}
+              />
+              {t("reactions.dontShowAgain" as any)}
+            </label>
+            <div class="reaction-confirm-buttons">
+              <button class="reaction-confirm-cancel" onClick={cancelReaction}>
+                {t("note.cancel")}
+              </button>
+              <button class="reaction-confirm-ok" onClick={confirmReaction}>
+                {t("reactions.sendReaction" as any)}
+              </button>
             </div>
           </div>
         </div>

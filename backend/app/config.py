@@ -18,15 +18,25 @@ class Settings(BaseSettings):
     s3_bucket: str = "nekonoverse"
     s3_region: str = "us-east-1"
     skip_ssl_verify: bool = False
+    allow_private_networks: bool = False  # Disable SSRF protection (for federation tests)
     face_detect_url: str | None = None
     face_detect_uds: str | None = None  # UDS path for face-detect (e.g. /var/run/nekonoverse-face-detect/uvicorn.sock)
+    media_proxy_transform_url: str | None = None
+    media_proxy_transform_uds: str | None = None
+    summary_proxy_url: str | None = None
+    summary_proxy_uds: str | None = None
 
     # Forward proxy for outbound federation requests (origin IP concealment)
     http_proxy: str | None = None
     https_proxy: str | None = None
     no_proxy: str = ""
 
+    valkey_max_connections: int = 1000
+
     use_https: bool = True
+
+    # Web Push (VAPID)
+    vapid_private_key: str | None = None
 
     def derive_key(self, purpose: str) -> str:
         """Derive a purpose-specific key from secret_key using HMAC."""
@@ -46,7 +56,35 @@ class Settings(BaseSettings):
     def media_url(self) -> str:
         return f"{self.server_url}/media"
 
+    @property
+    def face_detect_enabled(self) -> bool:
+        return bool(self.face_detect_url or self.face_detect_uds)
+
+    @property
+    def face_detect_base_url(self) -> str:
+        return self.face_detect_url or "http://localhost"
+
+    @property
+    def media_proxy_transform_enabled(self) -> bool:
+        return bool(self.media_proxy_transform_url or self.media_proxy_transform_uds)
+
+    @property
+    def media_proxy_transform_base_url(self) -> str:
+        return self.media_proxy_transform_url or "http://localhost"
+
     model_config = {"env_file": ".env"}
 
 
 settings = Settings()
+
+# デフォルトのSECRET_KEYでの運用を防止
+_INSECURE_KEYS = {"change-this-to-a-random-secret-key", ""}
+if not settings.debug and settings.secret_key in _INSECURE_KEYS:
+    import sys
+
+    print(
+        "FATAL: SECRET_KEY is not configured. "
+        "Set a strong random value in .env (e.g. python -c \"import secrets; print(secrets.token_hex(32))\")",
+        file=sys.stderr,
+    )
+    sys.exit(1)

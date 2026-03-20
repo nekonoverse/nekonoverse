@@ -156,7 +156,7 @@ async def test_auto_detect_no_service(db, test_user, mock_s3):
         filename="test.png", mime_type="image/png",
     )
     with patch("app.services.drive_service.settings") as mock_settings:
-        mock_settings.face_detect_url = None
+        mock_settings.face_detect_enabled = False
         await auto_detect_focal_point(db, drive_file)
     assert drive_file.focal_x is None
     assert drive_file.focal_y is None
@@ -177,7 +177,8 @@ async def test_auto_detect_service_down(db, test_user, mock_s3):
         patch("app.storage.download_file", new_callable=AsyncMock, return_value=TINY_PNG),
         patch("httpx.AsyncClient.post", side_effect=httpx.ConnectError("connection refused")),
     ):
-        mock_settings.face_detect_url = "http://gpu-host:8001/object-detection"
+        mock_settings.face_detect_enabled = True
+        mock_settings.face_detect_base_url = "http://gpu-host:8001/object-detection"
         await auto_detect_focal_point(db, drive_file)
     # Should not crash, focal point stays None
     assert drive_file.focal_x is None
@@ -345,12 +346,13 @@ async def test_auto_detect_happy_path(db, test_user, mock_s3):
         patch("app.storage.download_file", new_callable=AsyncMock, return_value=TINY_PNG),
         patch("httpx.AsyncClient.post", mock_post),
     ):
-        mock_settings.face_detect_url = "http://gpu-host:8001/object-detection"
+        mock_settings.face_detect_enabled = True
+        mock_settings.face_detect_base_url = "http://gpu-host:8001/object-detection"
         await auto_detect_focal_point(db, drive_file)
 
-    # Center of box (50, 40) on 100x100 image → focal_x=0.0, focal_y=0.2
+    # cx=50, cy=20+(60-20)/3=33.3 on 100x100 → focal_x=0.0, focal_y≈0.33
     assert drive_file.focal_x == pytest.approx(0.0, abs=0.01)
-    assert drive_file.focal_y == pytest.approx(0.2, abs=0.01)
+    assert drive_file.focal_y == pytest.approx(0.333, abs=0.02)
 
 
 async def test_auto_detect_skips_when_focal_set(db, test_user, mock_s3):
@@ -366,7 +368,8 @@ async def test_auto_detect_skips_when_focal_set(db, test_user, mock_s3):
     await db.commit()
 
     with patch("app.services.drive_service.settings") as mock_settings:
-        mock_settings.face_detect_url = "http://gpu-host:8001/object-detection"
+        mock_settings.face_detect_enabled = True
+        mock_settings.face_detect_base_url = "http://gpu-host:8001/object-detection"
         await auto_detect_focal_point(db, drive_file)
 
     # Should remain unchanged
@@ -384,7 +387,8 @@ async def test_auto_detect_invalid_url_scheme(db, test_user, mock_s3):
     )
 
     with patch("app.services.drive_service.settings") as mock_settings:
-        mock_settings.face_detect_url = "file:///etc/passwd"
+        mock_settings.face_detect_enabled = True
+        mock_settings.face_detect_base_url = "file:///etc/passwd"
         await auto_detect_focal_point(db, drive_file)
 
     assert drive_file.focal_x is None
@@ -482,3 +486,49 @@ async def test_ap_create_malformed_focal_point(db):
     att = att_result.scalar_one()
     assert att.remote_focal_x is None
     assert att.remote_focal_y is None
+
+
+# --- Unit tests for focal_from_detections ---
+
+
+def test_focal_from_detections_shifts_upward():
+    """focal_from_detections biases Y toward top of face box."""
+    from app.utils.focal import focal_from_detections
+
+    results = [{"box": {"xmin": 30, "ymin": 20, "xmax": 70, "ymax": 60}}]
+    fx, fy = focal_from_detections(results, 100, 100)
+
+    # cx=50, cy=20+(60-20)/3=33.33
+    assert fx == pytest.approx(0.0, abs=0.01)
+    assert fy == pytest.approx(0.333, abs=0.02)
+    # Must be higher (more positive) than the old center-based value (0.2)
+    assert fy > 0.2
+
+
+def test_focal_from_detections_multi_face():
+    """Multi-face: union box center X, 1/3-from-top Y."""
+    from app.utils.focal import focal_from_detections
+
+    results = [
+        {"box": {"xmin": 10, "ymin": 20, "xmax": 40, "ymax": 60}},
+        {"box": {"xmin": 60, "ymin": 30, "xmax": 90, "ymax": 70}},
+    ]
+    fx, fy = focal_from_detections(results, 100, 100)
+    # Union: xmin=10, ymin=20, xmax=90, ymax=70
+    # cx=50, cy=20+(70-20)/3=36.67
+    assert fx == pytest.approx(0.0, abs=0.01)
+    assert fy == pytest.approx(0.267, abs=0.02)
+
+
+def test_focal_from_detections_empty():
+    from app.utils.focal import focal_from_detections
+
+    assert focal_from_detections([], 100, 100) is None
+
+
+def test_focal_from_detections_invalid_dimensions():
+    from app.utils.focal import focal_from_detections
+
+    results = [{"box": {"xmin": 10, "ymin": 10, "xmax": 50, "ymax": 50}}]
+    assert focal_from_detections(results, 0, 100) is None
+    assert focal_from_detections(results, 100, 0) is None

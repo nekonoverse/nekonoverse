@@ -1,27 +1,29 @@
-import { createSignal, onMount, Show, For } from "solid-js";
-import { apiRequest } from "../api/client";
-import type { Account } from "../api/accounts";
-import { currentUser, authLoading } from "../stores/auth";
-import { useI18n } from "../i18n";
-import { defaultAvatar } from "../stores/instance";
+import { createSignal, createResource, Show, For } from "solid-js";
+import { apiRequest } from "@nekonoverse/ui/api/client";
+import type { Account } from "@nekonoverse/ui/api/accounts";
+import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { setPendingFollowRequests } from "@nekonoverse/ui/stores/streaming";
 
 export default function FollowRequests() {
   const { t } = useI18n();
   const [requests, setRequests] = createSignal<Account[]>([]);
-  const [loading, setLoading] = createSignal(true);
 
-  onMount(async () => {
-    try {
+  const [initialData] = createResource(
+    () => (!authLoading() && currentUser() ? true : false),
+    async () => {
       const data = await apiRequest<Account[]>("/api/v1/follow_requests");
       setRequests(data);
-    } catch {}
-    setLoading(false);
-  });
+      return data;
+    },
+  );
 
   const authorize = async (id: string) => {
     try {
       await apiRequest(`/api/v1/follow_requests/${id}/authorize`, { method: "POST" });
       setRequests((prev) => prev.filter((r) => r.id !== id));
+      setPendingFollowRequests((c) => Math.max(0, c - 1));
     } catch {}
   };
 
@@ -29,6 +31,7 @@ export default function FollowRequests() {
     try {
       await apiRequest(`/api/v1/follow_requests/${id}/reject`, { method: "POST" });
       setRequests((prev) => prev.filter((r) => r.id !== id));
+      setPendingFollowRequests((c) => Math.max(0, c - 1));
     } catch {}
   };
 
@@ -37,13 +40,13 @@ export default function FollowRequests() {
       <h1>{t("followRequest.title")}</h1>
       <Show when={!authLoading()} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<p>{t("followRequest.loginRequired")}</p>}>
-          <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
             <Show when={requests().length > 0} fallback={<p class="empty">{t("followRequest.empty")}</p>}>
               <div class="follow-requests-list">
                 <For each={requests()}>
                   {(account) => (
                     <div class="follow-request-item">
-                      <a href={account.url?.startsWith("http") ? `/@${account.acct}` : account.url} class="follow-request-user">
+                      <a href={`/@${account.acct}`} class="follow-request-user">
                         <img
                           src={account.avatar || defaultAvatar()}
                           alt={account.username}

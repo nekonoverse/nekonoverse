@@ -11,7 +11,6 @@ from app.models.drive_file import DriveFile
 from app.models.user import User
 from app.schemas.media import DriveFileResponse, MediaAttachment
 from app.services.drive_service import (
-    auto_detect_focal_point,
     delete_drive_file,
     file_to_url,
     get_drive_file,
@@ -103,7 +102,9 @@ async def upload_media_v1(
     if focal_x is not None and focal_y is not None:
         await update_drive_file_meta(db, drive_file, focal_x=focal_x, focal_y=focal_y)
     else:
-        await auto_detect_focal_point(db, drive_file)
+        from app.services.face_detect_queue import enqueue_local
+
+        await enqueue_local(drive_file.id)
 
     return _to_media_attachment(drive_file)
 

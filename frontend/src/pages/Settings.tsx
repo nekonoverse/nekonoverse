@@ -1,24 +1,30 @@
 import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "solid-js";
 import QRCode from "qrcode";
 import { useNavigate, useParams, A } from "@solidjs/router";
-import { currentUser, authLoading, logout } from "../stores/auth";
+import { currentUser, authLoading, logout } from "@nekonoverse/ui/stores/auth";
 import {
   theme, setTheme, fontSize, setFontSize,
   fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
   timeFormat, setTimeFormat,
+  cursorStyle, setCursorStyle,
+  wideEmojiStyle, setWideEmojiStyle,
+  hideNonFollowedReplies, setHideNonFollowedReplies,
+  nyaizeEnabled, setNyaizeEnabled,
+  reduceMfmMotion, setReduceMfmMotion,
   FONT_FAMILY_MAP,
-  type Theme, type FontSize, type FontFamily, type TimeFormat,
-} from "../stores/theme";
+  type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle, type WideEmojiStyle,
+} from "@nekonoverse/ui/stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
   rememberVisibility, setRememberVisibility,
-} from "../stores/composer";
-import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "../stores/instance";
+} from "@nekonoverse/ui/stores/composer";
+import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "@nekonoverse/ui/stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
-import { useI18n, locales, type Locale } from "../i18n";
-import { changePassword } from "../api/settings";
-import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "../api/accounts";
-import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "../api/totp";
+import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
+import { changePassword } from "@nekonoverse/ui/api/settings";
+import { getAuthorizedApps, revokeAuthorizedApp, type AuthorizedApp } from "@nekonoverse/ui/api/authorizedApps";
+import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
 import PasskeyManager from "../components/PasskeyManager";
 import Breadcrumb from "../components/Breadcrumb";
 
@@ -47,6 +53,7 @@ const categories: SettingsCategory[] = [
     labelKey: "settings.categoryAccount",
     sections: [
       { key: "security", labelKey: "settings.tabSecurity", descKey: "settings.descSecurity" },
+      { key: "apps", labelKey: "settings.tabApps", descKey: "settings.descApps" },
       { key: "blocks", labelKey: "settings.tabBlocks", descKey: "settings.descBlocks" },
       { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
       { key: "migration", labelKey: "settings.tabMigration", descKey: "settings.descMigration" },
@@ -115,6 +122,7 @@ export default function Settings() {
           <Match when={section() === "posting"}><PostingTab /></Match>
           <Match when={section() === "appearance"}><AppearanceTab /></Match>
           <Match when={section() === "security"}><SecurityTab onLogout={handleLogout} /></Match>
+          <Match when={section() === "apps"}><AppsTab /></Match>
           <Match when={section() === "blocks"}><BlocksTab /></Match>
           <Match when={section() === "mutes"}><MutesTab /></Match>
           <Match when={section() === "migration"}><MigrationTab /></Match>
@@ -166,18 +174,18 @@ function AppearanceTab() {
         <h3>{t("settings.fontSize")}</h3>
         <div class="theme-selector">
           {([
-            { key: "small" as FontSize, label: t("settings.fontSmall"), size: "14px" },
-            { key: "medium" as FontSize, label: t("settings.fontMedium"), size: "16px" },
-            { key: "large" as FontSize, label: t("settings.fontLarge"), size: "20px" },
-            { key: "xlarge" as FontSize, label: t("settings.fontXLarge"), size: "24px" },
-            { key: "xxlarge" as FontSize, label: t("settings.fontXXLarge"), size: "28px" },
+            { key: "small" as FontSize, size: "14px" },
+            { key: "medium" as FontSize, size: "16px" },
+            { key: "large" as FontSize, size: "20px" },
+            { key: "xlarge" as FontSize, size: "24px" },
+            { key: "xxlarge" as FontSize, size: "28px" },
           ]).map((item) => (
             <button
               class={`theme-btn${fontSize() === item.key ? " theme-active" : ""}`}
               style={{ "font-size": item.size }}
               onClick={() => setFontSize(item.key)}
             >
-              {item.label}
+              {t("settings.fontSample" as any)}
             </button>
           ))}
         </div>
@@ -185,7 +193,7 @@ function AppearanceTab() {
 
       <div class="settings-section">
         <h3>{t("settings.fontFamily")}</h3>
-        <div class="theme-selector" style={{ "flex-wrap": "wrap" }}>
+        <div class="theme-selector">
           {([
             { key: "noto" as FontFamily, label: t("settings.fontNoto"), css: FONT_FAMILY_MAP.noto },
             { key: "hiragino" as FontFamily, label: t("settings.fontHiragino"), css: FONT_FAMILY_MAP.hiragino },
@@ -214,6 +222,7 @@ function AppearanceTab() {
             onInput={(e) => setCustomFontFamily(e.currentTarget.value)}
             style={{ "font-family": customFontFamily() || "inherit" }}
           />
+          <p class="settings-desc" style={{ "margin-top": "4px" }}>{t("settings.fontCustomHint")}</p>
         </Show>
       </div>
 
@@ -236,6 +245,68 @@ function AppearanceTab() {
         </div>
       </div>
 
+      <div class="settings-section">
+        <h3>{t("settings.cursorStyle")}</h3>
+        <div class="theme-selector">
+          {([
+            { key: "default" as CursorStyle, label: t("settings.cursorDefault") },
+            { key: "paw" as CursorStyle, label: t("settings.cursorPaw") },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${cursorStyle() === item.key ? " theme-active" : ""}`}
+              onClick={() => setCursorStyle(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.wideEmoji")}</h3>
+        <div class="theme-selector">
+          {([
+            { key: "shrink" as WideEmojiStyle, label: t("settings.wideEmojiShrink") },
+            { key: "blur" as WideEmojiStyle, label: t("settings.wideEmojiBlur") },
+            { key: "overflow" as WideEmojiStyle, label: t("settings.wideEmojiOverflow") },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${wideEmojiStyle() === item.key ? " theme-active" : ""}`}
+              onClick={() => setWideEmojiStyle(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.reactionConfirm" as any)}</h3>
+        <p style="color: var(--text-secondary); font-size: 0.9em; margin: 0 0 8px">
+          {t("settings.reactionConfirmDesc" as any)}
+        </p>
+        <button
+          class="theme-btn"
+          onClick={() => {
+            localStorage.removeItem("hideReactionConfirm");
+          }}
+        >
+          {t("settings.reactionConfirmReset" as any)}
+        </button>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.mfmMotion" as any)}</h3>
+        <label class="toggle-label">
+          <input
+            type="checkbox"
+            checked={reduceMfmMotion()}
+            onChange={(e) => setReduceMfmMotion(e.currentTarget.checked)}
+          />
+          {t("settings.reduceMfmMotion" as any)}
+        </label>
+      </div>
+
     </>
   );
 }
@@ -249,6 +320,7 @@ function PostingTab() {
       <VisibilitySelector
         value={defaultVisibility()}
         onChange={(v) => setDefaultVisibility(v)}
+        exclude={["direct"]}
       />
       <label class="toggle-label">
         <input
@@ -257,6 +329,23 @@ function PostingTab() {
           onChange={(e) => setRememberVisibility(e.currentTarget.checked)}
         />
         {t("settings.rememberVisibility")}
+      </label>
+      <h3>{t("settings.timeline")}</h3>
+      <label class="toggle-label">
+        <input
+          type="checkbox"
+          checked={hideNonFollowedReplies()}
+          onChange={(e) => setHideNonFollowedReplies(e.currentTarget.checked)}
+        />
+        {t("settings.hideNonFollowedReplies")}
+      </label>
+      <label class="toggle-label">
+        <input
+          type="checkbox"
+          checked={nyaizeEnabled()}
+          onChange={(e) => setNyaizeEnabled(e.currentTarget.checked)}
+        />
+        {t("settings.nyaize")}
       </label>
     </div>
   );
@@ -607,6 +696,93 @@ function SecurityTab(props: { onLogout: () => void }) {
   );
 }
 
+function AppsTab() {
+  const { t } = useI18n();
+  const [apps, setApps] = createSignal<AuthorizedApp[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [revokeTarget, setRevokeTarget] = createSignal<AuthorizedApp | null>(null);
+  const [revoking, setRevoking] = createSignal(false);
+
+  onMount(async () => {
+    try {
+      setApps(await getAuthorizedApps());
+    } catch {}
+    setLoading(false);
+  });
+
+  const handleRevoke = async () => {
+    const target = revokeTarget();
+    if (!target) return;
+    setRevoking(true);
+    try {
+      await revokeAuthorizedApp(target.id);
+      setApps((prev) => prev.filter((a) => a.id !== target.id));
+      setRevokeTarget(null);
+    } catch {}
+    setRevoking(false);
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("apps.authorizedApps" as any)}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={apps().length > 0} fallback={<p class="empty">{t("apps.noApps" as any)}</p>}>
+            <div class="blockmute-list">
+              <For each={apps()}>
+                {(app) => (
+                  <div class="blockmute-item">
+                    <div class="blockmute-user" style={{ cursor: "default" }}>
+                      <div>
+                        <strong>{app.name}</strong>
+                        <Show when={app.website && /^https?:\/\//.test(app.website!)}>
+                          <a
+                            href={app.website!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="blockmute-handle"
+                          >
+                            {app.website}
+                          </a>
+                        </Show>
+                        <span class="blockmute-handle">
+                          {app.scopes.join(", ")}
+                        </span>
+                        <span class="blockmute-handle">
+                          {t("apps.authorizedAt" as any)}: {new Date(app.created_at).toLocaleDateString()}
+                        </span>
+                      </div>
+                    </div>
+                    <button class="btn btn-small btn-danger" onClick={() => setRevokeTarget(app)}>
+                      {t("apps.revoke" as any)}
+                    </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
+      </div>
+      <Show when={revokeTarget()}>
+        <div class="modal-overlay" onClick={() => setRevokeTarget(null)}>
+          <div class="modal-content" style={{ padding: "24px", "max-width": "400px" }} onClick={(e) => e.stopPropagation()}>
+            <h3 style={{ margin: "0 0 8px" }}>{t("apps.confirmRevoke" as any)}</h3>
+            <p style={{ margin: "0 0 20px", color: "var(--text-secondary)" }}>{revokeTarget()!.name}</p>
+            <div style={{ display: "flex", gap: "8px", "justify-content": "flex-end" }}>
+              <button class="btn btn-small" onClick={() => setRevokeTarget(null)}>
+                {t("common.cancel")}
+              </button>
+              <button class="btn btn-small btn-danger" onClick={handleRevoke} disabled={revoking()}>
+                {t("apps.revoke" as any)}
+              </button>
+            </div>
+          </div>
+        </div>
+      </Show>
+    </AuthGuard>
+  );
+}
+
 function BlocksTab() {
   const { t } = useI18n();
   const [accounts, setAccounts] = createSignal<Account[]>([]);
@@ -812,6 +988,14 @@ function AboutTab() {
             <span class="about-info-value">{__APP_VERSION__}</span>
           </div>
         </div>
+      </div>
+
+      <div class="settings-section">
+        <p class="legal-links">
+          <a href="/terms" target="_blank">{t("legal.terms")}</a>
+          {" ・ "}
+          <a href="/privacy" target="_blank">{t("legal.privacy")}</a>
+        </p>
       </div>
 
       <div class="settings-section">

@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.dependencies import get_current_user, get_db
 from app.models.custom_emoji import CustomEmoji
 from app.models.user import User
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.schemas.note import CustomEmojiInfo, NoteActorResponse
 from app.schemas.notification import NotificationResponse
 from app.utils.media_proxy import media_proxy_url
@@ -44,8 +45,12 @@ async def _resolve_actor_emojis(
 
     result: list[CustomEmojiInfo] = []
     for emoji in emoji_list:
-        url = media_proxy_url(emoji.url)
-        static = media_proxy_url(emoji.static_url) if emoji.static_url else url
+        url = media_proxy_url(emoji.url, variant="emoji")
+        static = (
+            media_proxy_url(emoji.static_url, variant="emoji", static=True)
+            if emoji.static_url
+            else media_proxy_url(emoji.url, variant="emoji", static=True)
+        )
         result.append(CustomEmojiInfo(shortcode=emoji.shortcode, url=url, static_url=static))
     return result
 
@@ -96,7 +101,7 @@ async def _batch_resolve_emoji_urls(
     url_map: dict[str, str | None] = {}
     for emoji_str, (shortcode, _domain) in parsed.items():
         url = local_map.get(shortcode) or remote_map.get(shortcode)
-        url_map[emoji_str] = media_proxy_url(url) if url else None
+        url_map[emoji_str] = media_proxy_url(url, variant="emoji") if url else None
 
     return url_map
 
@@ -107,39 +112,77 @@ async def _notification_to_response(
     emoji_url_map: dict | None = None,
     emoji_cache: dict | None = None,
     actor_id=None,
+    reactions_map: dict | None = None,
 ) -> NotificationResponse:
     account = None
     if notif.sender:
         actor_emojis = await _resolve_actor_emojis(
             db, notif.sender.display_name, notif.sender.domain
         )
+        sender = notif.sender
+        avatar = media_proxy_url(sender.avatar_url, variant="avatar") or "/default-avatar.svg"
+        header = media_proxy_url(sender.header_url) or ""
+        acct = (
+            f"{sender.username}@{sender.domain}" if sender.domain else sender.username
+        )
+        from app.config import settings as app_settings
+
+        actor_url = (
+            f"{app_settings.server_url}/@{sender.username}"
+            if not sender.domain
+            else f"{app_settings.server_url}/@{acct}"
+        )
         account = NoteActorResponse(
-            id=notif.sender.id,
-            username=notif.sender.username,
-            display_name=notif.sender.display_name,
-            avatar_url=(media_proxy_url(notif.sender.avatar_url) or "/default-avatar.svg"),
-            ap_id=notif.sender.ap_id,
-            domain=notif.sender.domain,
+            id=sender.id,
+            username=sender.username,
+            display_name=sender.display_name or "",
+            avatar_url=avatar,
+            ap_id=sender.ap_id,
+            domain=sender.domain,
             emojis=actor_emojis,
+            acct=acct,
+            uri=sender.ap_id,
+            url=actor_url,
+            avatar=avatar,
+            avatar_static=avatar,
+            header=header,
+            header_static=header,
+            note=sender.summary or "",
+            bot=sender.is_bot,
+            group=sender.type == "Group",
+            created_at=_to_mastodon_datetime(sender.created_at),
+            locked=sender.manually_approves_followers,
+            discoverable=sender.discoverable,
         )
 
     status = None
     if notif.note:
         from app.api.mastodon.statuses import note_to_response
 
+        reactions = (reactions_map or {}).get(notif.note.id)
         status = await note_to_response(
-            notif.note, db=db, emoji_cache=emoji_cache, actor_id=actor_id
+            notif.note, reactions=reactions, db=db,
+            emoji_cache=emoji_cache, actor_id=actor_id,
         )
 
     emoji_url = None
     if emoji_url_map and notif.reaction_emoji:
         emoji_url = emoji_url_map.get(notif.reaction_emoji)
 
+    # ⭐ reaction (from Mastodon favourite API) → "favourite" type for compat
+    # Other emoji reactions → "reaction" type (Fedibird/Misskey extension)
+    notif_type = notif.type
+    if notif.type == "reaction" and notif.reaction_emoji == "\u2b50":
+        notif_type = "favourite"
+    elif notif.type == "renote":
+        notif_type = "reblog"
+
     return NotificationResponse(
         id=notif.id,
-        type=notif.type,
-        created_at=notif.created_at,
+        type=notif_type,
+        created_at=_to_mastodon_datetime(notif.created_at),
         read=notif.read,
+        group_key=f"ungrouped-{notif.id}",
         account=account,
         status=status,
         emoji=notif.reaction_emoji,
@@ -151,24 +194,33 @@ async def _notification_to_response(
 async def get_notifications(
     max_id: uuid.UUID | None = Query(None),
     limit: int = Query(20, ge=1, le=40),
+    types: list[str] | None = Query(None, alias="types[]"),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.notification_service import get_notifications as _get
 
-    notifications = await _get(db, user.actor_id, limit=limit, max_id=max_id)
+    notifications = await _get(
+        db, user.actor_id, limit=limit, max_id=max_id, types=types,
+    )
 
     # 絵文字URLをバッチ解決
     emoji_strings = [n.reaction_emoji for n in notifications]
     emoji_url_map = await _batch_resolve_emoji_urls(db, emoji_strings)
 
-    # Note用の絵文字キャッシュもバッチ構築
+    # Note用の絵文字キャッシュ + リアクションをバッチ構築
     notes_with_content = [n.note for n in notifications if n.note]
     emoji_cache: dict | None = None
+    reactions_map: dict = {}
     if notes_with_content:
         from app.api.mastodon.statuses import _build_emoji_cache
 
         emoji_cache = await _build_emoji_cache(db, notes_with_content)
+
+        from app.services.note_service import get_reaction_summaries
+
+        note_ids = [note.id for note in notes_with_content]
+        reactions_map = await get_reaction_summaries(db, note_ids, user.actor_id)
 
     result = []
     for n in notifications:
@@ -179,6 +231,7 @@ async def get_notifications(
                 emoji_url_map=emoji_url_map,
                 emoji_cache=emoji_cache,
                 actor_id=user.actor_id,
+                reactions_map=reactions_map,
             )
         )
     return result
@@ -195,6 +248,18 @@ async def dismiss_notification(
     success = await mark_as_read(db, notification_id, user.actor_id)
     if not success:
         raise HTTPException(status_code=404, detail="Notification not found")
+    await db.commit()
+    return {"ok": True}
+
+
+@router.post("/mark_all_as_read")
+async def mark_all_notifications_as_read(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.notification_service import mark_all_as_read
+
+    await mark_all_as_read(db, user.actor_id)
     await db.commit()
     return {"ok": True}
 

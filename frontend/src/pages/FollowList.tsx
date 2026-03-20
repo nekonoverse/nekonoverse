@@ -1,4 +1,4 @@
-import { createSignal, onMount, Show, For } from "solid-js";
+import { createSignal, createResource, Show, For } from "solid-js";
 import { A, useParams, useLocation } from "@solidjs/router";
 import {
   lookupAccount,
@@ -7,14 +7,15 @@ import {
   followAccount,
   unfollowAccount,
   type Account,
-} from "../api/accounts";
-import { useI18n } from "../i18n";
-import { currentUser } from "../stores/auth";
-import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "../stores/followedUsers";
-import { sanitizeHtml } from "../utils/sanitize";
-import { emojify } from "../utils/emojify";
-import { twemojify } from "../utils/twemojify";
-import { defaultAvatar } from "../stores/instance";
+} from "@nekonoverse/ui/api/accounts";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { isFollowing as isFollowingUser, addFollowedId, removeFollowedId } from "@nekonoverse/ui/stores/followedUsers";
+import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { emojify } from "@nekonoverse/ui/utils/emojify";
+import { twemojify } from "@nekonoverse/ui/utils/twemojify";
+import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 export default function FollowList() {
   const { t } = useI18n();
@@ -23,32 +24,31 @@ export default function FollowList() {
 
   const [account, setAccount] = createSignal<Account | null>(null);
   const [accounts, setAccounts] = createSignal<Account[]>([]);
-  const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
   const [followLoadingId, setFollowLoadingId] = createSignal<string | null>(null);
 
   const tab = () => location.pathname.endsWith("/following") ? "following" : "followers";
 
-  const loadData = async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const acct = params.acct.replace(/^@/, "");
-      const acc = await lookupAccount(acct);
-      setAccount(acc);
+  const [initialData] = createResource(
+    () => `${params.acct}:${tab()}`,
+    async () => {
+      setError("");
+      try {
+        const acct = params.acct.replace(/^@/, "");
+        const acc = await lookupAccount(acct);
+        setAccount(acc);
 
-      const list = tab() === "followers"
-        ? await getFollowers(acc.id)
-        : await getFollowing(acc.id);
-      setAccounts(list);
-    } catch (e: any) {
-      setError(e.message || "Not found");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  onMount(loadData);
+        const list = tab() === "followers"
+          ? await getFollowers(acc.id)
+          : await getFollowing(acc.id);
+        setAccounts(list);
+        return { acc, list };
+      } catch (e: any) {
+        setError(e.message || "Not found");
+        return null;
+      }
+    },
+  );
 
   const handleFollow = async (targetId: string) => {
     setFollowLoadingId(targetId);
@@ -68,7 +68,7 @@ export default function FollowList() {
 
   return (
     <div class="page-container">
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+      <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
         <Show when={!error()} fallback={<p class="error">{error()}</p>}>
           <div class="follow-list-header">
             <A href={acctPath()} class="follow-list-back">
@@ -135,6 +135,7 @@ export default function FollowList() {
                               el.innerHTML = sanitizeHtml(acc.note);
                               if (acc.emojis) emojify(el, acc.emojis);
                               twemojify(el);
+                              externalLinksNewTab(el);
                             }} />
                           </Show>
                         </div>

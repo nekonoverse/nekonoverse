@@ -13,6 +13,12 @@ test.describe("Notifications", { tag: "@serial" }, () => {
   const userB = `notif_user_${uid}`;
   const password = "testpassword123";
 
+  /** Switch to the "Other" notifications tab (non-mention notifications). */
+  async function switchToOtherTab(page: import("@playwright/test").Page) {
+    const otherTab = page.locator(".notif-tab").nth(1);
+    await otherTab.click();
+  }
+
   test("follow notification appears after being followed", async ({
     browser,
     page,
@@ -37,8 +43,10 @@ test.describe("Notifications", { tag: "@serial" }, () => {
     );
     expect(followResp.ok()).toBeTruthy();
 
-    // Admin checks notifications
+    // Admin checks notifications — follow is in "Other" tab
     await page.goto("/notifications");
+    await page.waitForSelector(".notif-tab", { timeout: 10_000 });
+    await switchToOtherTab(page);
     await page.waitForSelector(".notification-item", { timeout: 15_000 });
 
     const typeTexts = await page
@@ -69,8 +77,10 @@ test.describe("Notifications", { tag: "@serial" }, () => {
     );
     expect(reactResp.ok()).toBeTruthy();
 
-    // Admin checks notifications
+    // Admin checks notifications — reaction is in "Other" tab
     await page.goto("/notifications");
+    await page.waitForSelector(".notif-tab", { timeout: 10_000 });
+    await switchToOtherTab(page);
     await page.waitForSelector(".notification-item", { timeout: 15_000 });
 
     const items = await page.locator(".notification-item").count();
@@ -79,13 +89,55 @@ test.describe("Notifications", { tag: "@serial" }, () => {
     await reactSession.context.close();
   });
 
+  test("mention notification appears in mentions tab", async ({
+    browser,
+    page,
+  }) => {
+    const baseURL = process.env.E2E_BASE_URL || "http://localhost:3080";
+
+    // Login admin
+    await loginAsAdmin(page);
+
+    // Register another user who will mention admin
+    const mentionUser = `notif_mention_${uid}`;
+    const mentionSession = await registerAndLogin(
+      browser,
+      mentionUser,
+      password,
+      baseURL,
+    );
+
+    // mentionUser creates a note mentioning admin
+    const mentionResp = await mentionSession.page.request.post(
+      "/api/v1/statuses",
+      { data: { content: "@admin hello from mention test!", visibility: "public" } },
+    );
+    expect(mentionResp.ok()).toBeTruthy();
+
+    // Admin navigates to notifications — mention should be in "Mentions" tab (default)
+    await page.goto("/notifications");
+    await page.waitForSelector(".notif-tab", { timeout: 10_000 });
+    // Mentions tab is default, wait for notification items
+    await page.waitForSelector(".notification-item", { timeout: 15_000 });
+
+    const items = await page.locator(".notification-item").count();
+    expect(items).toBeGreaterThan(0);
+
+    // Verify it's in the mentions tab content
+    const noteContents = await page.locator(".notification-note").allTextContents();
+    expect(noteContents.some((c) => c.includes("hello from mention test"))).toBeTruthy();
+
+    await mentionSession.context.close();
+  });
+
   test("dismiss notification removes it", async ({ page }) => {
     await loginAsAdmin(page);
     await page.goto("/notifications");
+    await page.waitForSelector(".notif-tab", { timeout: 10_000 });
+    await switchToOtherTab(page);
     await page.waitForSelector(".notification-item", { timeout: 15_000 });
 
     const countBefore = await page.locator(".notification-item").count();
-    // 最初の未読通知のdismissボタンをクリック
     const dismissBtn = page.locator(".notification-dismiss").first();
     if (await dismissBtn.isVisible()) {
       await dismissBtn.click();
@@ -109,6 +161,7 @@ test.describe("Notifications", { tag: "@serial" }, () => {
     if (await clearBtn.isVisible()) {
       await clearBtn.click();
       await page.waitForTimeout(1000);
+      await switchToOtherTab(page);
       const items = await page.locator(".notification-item").count();
       expect(items).toBe(0);
     }

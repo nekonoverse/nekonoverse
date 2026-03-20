@@ -17,7 +17,7 @@ router = APIRouter(prefix="/api/v1/follow_requests", tags=["follow_requests"])
 
 
 def _account_response(actor: Actor) -> dict:
-    avatar = media_proxy_url(actor.avatar_url) if actor.avatar_url else None
+    avatar = media_proxy_url(actor.avatar_url, variant="avatar") if actor.avatar_url else None
     header = media_proxy_url(actor.header_url) if actor.header_url else None
     return {
         "id": str(actor.id),
@@ -75,6 +75,14 @@ async def authorize_follow_request(
 
     follow.accepted = True
     await db.flush()
+
+    # Create "follow" notification now that the request is accepted
+    from app.services.notification_service import create_notification, publish_notification
+
+    notif = await create_notification(db, "follow", user.actor_id, account_id)
+    if notif:
+        await db.flush()
+        await publish_notification(notif)
 
     # Send Accept activity to remote follower
     follower = follow.follower

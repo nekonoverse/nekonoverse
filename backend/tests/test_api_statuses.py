@@ -126,7 +126,7 @@ async def test_create_status_followers(authed_client, mock_valkey):
         "content": "Followers only", "visibility": "followers"
     })
     assert resp.status_code == 201
-    assert resp.json()["visibility"] == "followers"
+    assert resp.json()["visibility"] == "private"
 
 
 async def test_get_status_includes_reactions(authed_client, mock_valkey):
@@ -206,6 +206,39 @@ async def test_unreblog_not_reblogged(authed_client, mock_valkey):
     note_id = create_resp.json()["id"]
     resp = await authed_client.post(f"/api/v1/statuses/{note_id}/unreblog")
     assert resp.status_code == 422
+
+
+async def test_reblog_followers_only_rejected(authed_client, mock_valkey):
+    """Reblogging a followers-only note should be rejected with 422."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Followers only post", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 422
+    assert "private" in resp.json()["detail"].lower()
+
+
+async def test_reblog_direct_rejected(authed_client, mock_valkey):
+    """Reblogging a direct message should be rejected with 422."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Direct message", "visibility": "direct"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 422
+    assert "private" in resp.json()["detail"].lower()
+
+
+async def test_reblog_unlisted_allowed(authed_client, mock_valkey):
+    """Reblogging an unlisted note should be allowed."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unlisted post", "visibility": "unlisted"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 200
+    assert resp.json()["reblog"] is not None
 
 
 # --- Delete tests ---

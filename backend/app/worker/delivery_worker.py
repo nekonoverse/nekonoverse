@@ -1,5 +1,6 @@
 """Activity delivery worker -- processes the delivery queue."""
 
+import asyncio
 import json
 import logging
 import uuid
@@ -20,8 +21,11 @@ logger = logging.getLogger(__name__)
 
 AP_CONTENT_TYPE = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
 
-# 署名鍵キャッシュ (actor_id -> (Actor, private_key_pem))
-_signing_key_cache: dict[uuid.UUID, tuple[Actor, str]] = {}
+MAX_CONCURRENT = 16
+
+# L-1: 署名鍵キャッシュ (actor_id -> (Actor, private_key_pem, cached_at))
+_signing_key_cache: dict[uuid.UUID, tuple[Actor, str, float]] = {}
+_SIGNING_KEY_CACHE_TTL = 3600  # 1 hour
 
 # ワーカー用の共有HTTPクライアント
 _http_client: httpx.AsyncClient | None = None
@@ -41,8 +45,10 @@ def _get_http_client(settings) -> httpx.AsyncClient:
     return _http_client
 
 
-async def get_next_job(db: AsyncSession) -> DeliveryJob | None:
-    """Get the next deliverable job from the queue."""
+async def get_pending_jobs(
+    db: AsyncSession, limit: int = MAX_CONCURRENT
+) -> list[DeliveryJob]:
+    """Get pending deliverable jobs with row-level locking."""
     now = datetime.now(timezone.utc)
     result = await db.execute(
         select(DeliveryJob)
@@ -51,16 +57,36 @@ async def get_next_job(db: AsyncSession) -> DeliveryJob | None:
             (DeliveryJob.next_retry_at.is_(None)) | (DeliveryJob.next_retry_at <= now),
         )
         .order_by(DeliveryJob.created_at)
-        .limit(1)
+        .limit(limit)
+        .with_for_update(skip_locked=True)
     )
-    return result.scalar_one_or_none()
+    return list(result.scalars().all())
+
+
+async def get_next_jobs(db: AsyncSession, limit: int = 20) -> list[DeliveryJob]:
+    """H-1: Get multiple deliverable jobs for concurrent processing."""
+    now = datetime.now(timezone.utc)
+    result = await db.execute(
+        select(DeliveryJob)
+        .where(
+            DeliveryJob.status == "pending",
+            (DeliveryJob.next_retry_at.is_(None)) | (DeliveryJob.next_retry_at <= now),
+        )
+        .order_by(DeliveryJob.created_at)
+        .limit(limit)
+    )
+    return list(result.scalars().all())
 
 
 async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Actor | None, str]:
     """Get actor and its private key for signing. Uses in-memory cache."""
+    import time
+
     cached = _signing_key_cache.get(actor_id)
     if cached:
-        return cached
+        actor, pem, cached_at = cached
+        if time.time() - cached_at < _SIGNING_KEY_CACHE_TTL:
+            return actor, pem
 
     result = await db.execute(
         select(Actor).options(selectinload(Actor.local_user)).where(Actor.id == actor_id)
@@ -69,14 +95,22 @@ async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Act
     if not actor or not actor.local_user:
         return actor, ""
 
-    pair = (actor, actor.local_user.private_key_pem)
-    _signing_key_cache[actor_id] = pair
-    return pair
+    _signing_key_cache[actor_id] = (actor, actor.local_user.private_key_pem, time.time())
+    return actor, actor.local_user.private_key_pem
 
 
 async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:
     """Deliver an activity to a remote inbox."""
     from app.config import settings as app_settings
+    from app.utils.network import is_private_host
+
+    # SSRF防止: 内部ネットワークへの配送をブロック
+    from urllib.parse import urlparse
+
+    parsed = urlparse(job.target_inbox_url)
+    if not app_settings.allow_private_networks and is_private_host(parsed.hostname or ""):
+        logger.warning("Blocked delivery to private host: %s", job.target_inbox_url)
+        return False
 
     body = json.dumps(job.payload).encode("utf-8")
     # Use dynamic URL for local actor to ensure correct scheme
@@ -104,50 +138,45 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
     return resp.status_code in (200, 202, 204)
 
 
-async def process_jobs():
-    """Process delivery jobs from the queue."""
-    async with async_session() as db:
-        job = await get_next_job(db)
-        if not job:
-            return False
+async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
+    """Deliver a single job with semaphore-based concurrency control."""
+    async with sem:
+        async with async_session() as db:
+            job = await db.get(DeliveryJob, job_id)
+            if not job or job.status != "processing":
+                return
 
-        job.status = "processing"
-        job.last_attempted_at = datetime.now(timezone.utc)
-        job.attempts += 1
-        await db.commit()
-
-        actor, private_key_pem = await get_actor_with_key(db, job.actor_id)
-        if not actor or not private_key_pem:
-            job.status = "dead"
-            job.error_message = "Actor or private key not found"
-            await db.commit()
-            return True
-
-        try:
-            success = await deliver_activity(job, actor, private_key_pem)
-            if success:
-                job.status = "delivered"
-                logger.info("Delivered to %s", job.target_inbox_url)
-            else:
-                raise Exception("Non-success status code")
-        except Exception as e:
-            logger.warning(
-                "Delivery failed to %s (attempt %d/%d): %s",
-                job.target_inbox_url,
-                job.attempts,
-                job.max_attempts,
-                str(e),
-            )
-            if job.attempts >= job.max_attempts:
+            actor, private_key_pem = await get_actor_with_key(db, job.actor_id)
+            if not actor or not private_key_pem:
                 job.status = "dead"
-            else:
-                job.status = "pending"
-                delay = min(60 * (2**job.attempts), 21600)  # Max 6 hours
-                job.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
-            job.error_message = str(e)
+                job.error_message = "Actor or private key not found"
+                await db.commit()
+                return
 
-        await db.commit()
-        return True
+            try:
+                success = await deliver_activity(job, actor, private_key_pem)
+                if success:
+                    job.status = "delivered"
+                    logger.info("Delivered to %s", job.target_inbox_url)
+                else:
+                    raise Exception("Non-success status code")
+            except Exception as e:
+                logger.warning(
+                    "Delivery failed to %s (attempt %d/%d): %s",
+                    job.target_inbox_url,
+                    job.attempts,
+                    job.max_attempts,
+                    str(e),
+                )
+                if job.attempts >= job.max_attempts:
+                    job.status = "dead"
+                else:
+                    job.status = "pending"
+                    delay = min(60 * (2**job.attempts), 21600)  # Max 6 hours
+                    job.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+                job.error_message = str(e)
+
+            await db.commit()
 
 
 async def _update_heartbeat():
@@ -160,19 +189,38 @@ async def _update_heartbeat():
 
 
 async def run_delivery_loop():
-    """Main delivery worker loop."""
-    logger.info("Delivery worker started")
+    """Main delivery worker loop with concurrent job processing."""
+    logger.info("Delivery worker started (max_concurrent=%d)", MAX_CONCURRENT)
+
+    sem = asyncio.Semaphore(MAX_CONCURRENT)
+    tasks: set[asyncio.Task] = set()
 
     while True:
         try:
             await _update_heartbeat()
-            had_work = await process_jobs()
+
+            had_work = False
+            async with async_session() as db:
+                jobs = await get_pending_jobs(db, limit=MAX_CONCURRENT)
+                if jobs:
+                    had_work = True
+                    now = datetime.now(timezone.utc)
+                    for job in jobs:
+                        job.status = "processing"
+                        job.last_attempted_at = now
+                        job.attempts += 1
+                    await db.commit()
+
+                    for job in jobs:
+                        task = asyncio.create_task(_deliver_one(job.id, sem))
+                        tasks.add(task)
+                        task.add_done_callback(tasks.discard)
+
             if not had_work:
                 # Wait for notification from Valkey
                 await valkey_client.brpop("delivery:queue", timeout=5)
                 # result is discarded -- we just use it as a wake-up signal
+
         except Exception:
             logger.exception("Error in delivery worker loop")
-            import asyncio
-
             await asyncio.sleep(5)

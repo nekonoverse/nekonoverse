@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class PollCreateRequest(BaseModel):
@@ -21,8 +21,10 @@ class PollCreateRequest(BaseModel):
 
 
 class NoteCreateRequest(BaseModel):
-    content: str = Field(min_length=1, max_length=5000)
-    visibility: str = Field(default="public", pattern=r"^(public|unlisted|followers|direct)$")
+    model_config = ConfigDict(populate_by_name=True)
+
+    content: str = Field(default="", max_length=5000, alias="status")
+    visibility: str = Field(default="public", pattern=r"^(public|unlisted|followers|private|direct)$")
     sensitive: bool = False
     spoiler_text: str | None = Field(default=None, max_length=500)
     in_reply_to_id: uuid.UUID | None = None
@@ -30,15 +32,44 @@ class NoteCreateRequest(BaseModel):
     quote_id: uuid.UUID | None = None
     poll: PollCreateRequest | None = None
 
+    @model_validator(mode="after")
+    def content_or_media_required(self) -> "NoteCreateRequest":
+        if not self.content.strip() and not self.media_ids:
+            raise ValueError("Content or media is required")
+        return self
+
 
 class NoteActorResponse(BaseModel):
     id: uuid.UUID
     username: str
-    display_name: str | None
-    avatar_url: str | None
+    display_name: str = ""
+    avatar_url: str | None = None
     ap_id: str
     domain: str | None
+    server_software: str | None = None
+    server_software_version: str | None = None
+    server_name: str | None = None
     emojis: list["CustomEmojiInfo"] = []
+    # Mastodon Account compat
+    acct: str = ""
+    uri: str = ""
+    url: str = ""
+    avatar: str = ""
+    avatar_static: str = ""
+    header: str = ""
+    header_static: str = ""
+    note: str = ""
+    is_cat: bool = False
+    bot: bool = False
+    group: bool = False
+    created_at: str = ""
+    followers_count: int = 0
+    following_count: int = 0
+    statuses_count: int = 0
+    locked: bool = False
+    discoverable: bool | None = None
+    fields: list = []
+    last_status_at: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -48,12 +79,26 @@ class ReactionSummary(BaseModel):
     count: int
     me: bool = False
     emoji_url: str | None = None
+    importable: bool = False
+    import_domain: str | None = None
+
+
+class EmojiReaction(BaseModel):
+    """Fedibird-compatible emoji reaction format."""
+
+    name: str
+    count: int
+    me: bool = False
+    url: str | None = None
+    static_url: str | None = None
+    account_ids: list[str] = []
 
 
 class CustomEmojiInfo(BaseModel):
     shortcode: str
     url: str
     static_url: str
+    visible_in_picker: bool = True
 
 
 class NoteMediaAttachment(BaseModel):
@@ -61,6 +106,7 @@ class NoteMediaAttachment(BaseModel):
     type: str
     url: str
     preview_url: str
+    remote_url: str | None = None
     description: str | None = None
     blurhash: str | None = None
     meta: dict | None = None
@@ -81,6 +127,7 @@ class PollResponse(BaseModel):
     options: list[PollOptionResponse] = []
     voted: bool = False
     own_votes: list[int] = []
+    emojis: list["CustomEmojiInfo"] = []
 
 
 class TagInfo(BaseModel):
@@ -102,6 +149,23 @@ class NoteEditHistoryEntry(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class PreviewCardResponse(BaseModel):
+    url: str
+    title: str = ""
+    description: str = ""
+    image: str | None = None
+    type: str = "link"
+    author_name: str = ""
+    author_url: str = ""
+    provider_name: str = ""
+    provider_url: str = ""
+    html: str = ""
+    width: int = 0
+    height: int = 0
+    embed_url: str = ""
+    blurhash: str | None = None
+
+
 class NoteResponse(BaseModel):
     id: uuid.UUID
     ap_id: str
@@ -109,8 +173,8 @@ class NoteResponse(BaseModel):
     source: str | None
     visibility: str
     sensitive: bool
-    spoiler_text: str | None
-    published: datetime
+    spoiler_text: str = ""
+    published: str
     edited_at: str | None = None
     replies_count: int
     reactions_count: int
@@ -119,15 +183,34 @@ class NoteResponse(BaseModel):
     in_reply_to_account_id: uuid.UUID | None = None
     actor: NoteActorResponse
     reactions: list[ReactionSummary] = []
+    emoji_reactions: list[EmojiReaction] = []
     reblog: "NoteResponse | None" = None
     media_attachments: list[NoteMediaAttachment] = []
     quote: "NoteResponse | None" = None
     poll: PollResponse | None = None
+    favourited: bool = False
+    reblogged: bool = False
     pinned: bool = False
     emojis: list[CustomEmojiInfo] = []
     tags: list[TagInfo] = []
+    # Mastodon Status compat aliases
+    uri: str = ""
+    url: str | None = None
+    account: NoteActorResponse | None = None
+    created_at: str = ""
+    reblogs_count: int = 0
+    favourites_count: int = 0
+    muted: bool = False
+    bookmarked: bool = False
+    mentions: list = []
+    filtered: list = []
+    card: PreviewCardResponse | None = None
+    application: dict | None = None
+    language: str | None = None
 
     model_config = {"from_attributes": True}
+
+
 
 
 class ContextResponse(BaseModel):

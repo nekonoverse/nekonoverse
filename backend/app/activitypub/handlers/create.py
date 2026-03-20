@@ -82,26 +82,45 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     else:
         visibility = "direct"
 
-    # Resolve reply
+    # Resolve reply and quote
     in_reply_to_ap_id = note_data.get("inReplyTo")
-    in_reply_to_id = None
-    if in_reply_to_ap_id:
-        reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id)
-        if reply_note:
-            in_reply_to_id = reply_note.id
-
-    # Resolve quote (Misskey-style)
     quote_ap_id = (
         note_data.get("_misskey_quote") or note_data.get("quoteUrl") or note_data.get("quoteUri")
     )
+
+    # ローカルDBを先にチェック
+    in_reply_to_id = None
     quote_id = None
-    if quote_ap_id:
-        quoted_note = await get_note_by_ap_id(db, quote_ap_id)
-        # ローカルに無ければリモートからfetch
-        if not quoted_note:
-            quoted_note = await fetch_remote_note(db, quote_ap_id)
-        if quoted_note:
-            quote_id = quoted_note.id
+    reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id) if in_reply_to_ap_id else None
+    quoted_note = await get_note_by_ap_id(db, quote_ap_id) if quote_ap_id else None
+
+    # H-4: ローカルに無い場合のリモートフェッチを並列化
+    import asyncio as _asyncio
+
+    fetch_tasks = []
+    need_reply_fetch = in_reply_to_ap_id and not reply_note
+    need_quote_fetch = quote_ap_id and not quoted_note
+    if need_reply_fetch:
+        fetch_tasks.append(fetch_remote_note(db, in_reply_to_ap_id))
+    if need_quote_fetch:
+        fetch_tasks.append(fetch_remote_note(db, quote_ap_id))
+    if fetch_tasks:
+        results = await _asyncio.gather(*fetch_tasks, return_exceptions=True)
+        idx = 0
+        if need_reply_fetch:
+            r = results[idx]
+            if not isinstance(r, Exception):
+                reply_note = r
+            idx += 1
+        if need_quote_fetch:
+            r = results[idx]
+            if not isinstance(r, Exception):
+                quoted_note = r
+
+    if reply_note:
+        in_reply_to_id = reply_note.id
+    if quoted_note:
+        quote_id = quoted_note.id
 
     # Extract mentions and custom emoji from tag array
     tags = note_data.get("tag", [])
@@ -271,8 +290,40 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     if hashtag_names:
         await upsert_ht(db, note.id, hashtag_names)
 
+    # Mention/reply notifications for local users
+    from app.services.notification_service import create_notification, publish_notification
+
+    pending_notifs = []
+
+    # Determine reply parent actor to avoid duplicate mention+reply notifications
+    reply_recipient_id = None
+    if in_reply_to_id:
+        reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id)
+        if reply_note:
+            # Increment parent's replies_count
+            reply_note.replies_count = reply_note.replies_count + 1
+            if reply_note.actor and reply_note.actor.is_local and reply_note.actor_id != actor.id:
+                reply_recipient_id = reply_note.actor_id
+                notif = await create_notification(
+                    db, "reply", reply_note.actor_id, actor.id, note.id,
+                )
+                if notif:
+                    pending_notifs.append(notif)
+
+    for mention in mentions_list:
+        mentioned_actor = await get_actor_by_ap_id(db, mention["ap_id"])
+        if mentioned_actor and mentioned_actor.is_local and mentioned_actor.id != reply_recipient_id:
+            notif = await create_notification(
+                db, "mention", mentioned_actor.id, actor.id, note.id,
+            )
+            if notif:
+                pending_notifs.append(notif)
+
     await db.commit()
     logger.info("Saved remote note %s from %s", ap_id, actor_ap_id)
+
+    for notif in pending_notifs:
+        await publish_notification(notif)
 
     # Publish to Valkey for real-time SSE streaming
     try:
@@ -292,7 +343,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         logger.exception("Failed to publish remote note to streaming")
 
     # Background focal point detection for remote image attachments
-    if settings.face_detect_url:
+    if settings.face_detect_enabled:
         from sqlalchemy import select as sel
 
         from app.models.note_attachment import NoteAttachment as NA
@@ -303,17 +354,15 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                 NA.remote_url.isnot(None),
                 NA.remote_focal_x.is_(None),
                 NA.remote_mime_type.in_(
-                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
+                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
                 ),
             )
         )
         att_ids = [row[0] for row in att_rows.all()]
         if att_ids:
-            import asyncio
+            from app.services.face_detect_queue import enqueue_remote
 
-            from app.services.focal_point_service import detect_remote_focal_points
-
-            asyncio.create_task(detect_remote_focal_points(note.id, att_ids))
+            await enqueue_remote(note.id, att_ids)
 
 
 async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
@@ -358,16 +407,31 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
 
     from app.models.poll_vote import PollVote
 
-    existing = await db.execute(
-        select(PollVote).where(
-            PollVote.note_id == poll_note.id,
-            PollVote.actor_id == voter.id,
-            PollVote.choice_index == choice_index,
+    # M-14: 単一選択投票では同一アクターの既存投票をチェック
+    if not poll_note.poll_multiple:
+        existing_any = await db.execute(
+            select(PollVote).where(
+                PollVote.note_id == poll_note.id,
+                PollVote.actor_id == voter.id,
+            )
         )
-    )
-    if existing.scalars().first():
-        logger.debug("Duplicate poll vote from %s on %s", voter_ap_id, in_reply_to)
-        return
+        if existing_any.scalars().first():
+            logger.debug(
+                "Duplicate poll vote (single-choice) from %s on %s",
+                voter_ap_id, in_reply_to,
+            )
+            return
+    else:
+        existing = await db.execute(
+            select(PollVote).where(
+                PollVote.note_id == poll_note.id,
+                PollVote.actor_id == voter.id,
+                PollVote.choice_index == choice_index,
+            )
+        )
+        if existing.scalars().first():
+            logger.debug("Duplicate poll vote from %s on %s", voter_ap_id, in_reply_to)
+            return
 
     # Record vote
     vote = PollVote(

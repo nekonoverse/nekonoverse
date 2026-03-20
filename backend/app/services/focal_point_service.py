@@ -12,7 +12,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _IMAGE_MIMES = frozenset({
-    "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif",
+    "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng",
 })
 _MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 
@@ -27,7 +27,7 @@ async def detect_remote_focal_points(
     and publishes a streaming event.  Designed for asyncio.create_task();
     never raises.
     """
-    if not settings.face_detect_url:
+    if not settings.face_detect_enabled:
         return
 
     from app.database import async_session
@@ -53,15 +53,18 @@ async def detect_remote_focal_points(
             updated = False
             for att, res in zip(attachments, results):
                 if isinstance(res, Exception):
-                    logger.debug("Focal detection failed for %s: %s", att.id, res)
+                    logger.warning("Focal detection failed for %s: %s", att.id, res)
                 elif res is True:
                     updated = True
 
             if updated:
                 await db.commit()
+                logger.info("Focal points updated for note %s, publishing update", note_id)
                 await _publish_update(note_id)
     except Exception:
-        logger.debug("Background focal detection failed for note %s", note_id, exc_info=True)
+        logger.warning(
+            "Background focal detection failed for note %s", note_id, exc_info=True
+        )
 
 
 async def _detect_single(att) -> bool:
@@ -87,26 +90,46 @@ async def _detect_single(att) -> bool:
 
 
 async def _download_image(url: str) -> bytes | None:
-    """Download remote image with SSRF protection and size limit."""
-    from urllib.parse import urlparse
+    """Download remote image with SSRF protection and size limit.
 
-    from app.api.mastodon.media_proxy import _is_private_host
+    Manually follows redirects to validate each hop against private hosts.
+    """
+    from urllib.parse import urljoin, urlparse
+
+    from app.utils.network import is_private_host
 
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return None
-    if _is_private_host(parsed.hostname):
+    if is_private_host(parsed.hostname):
         return None
 
     from app.utils.http_client import make_async_client
 
     async with make_async_client(
         timeout=httpx.Timeout(15.0, connect=5.0),
-        follow_redirects=True,
-        max_redirects=3,
+        follow_redirects=False,
         verify=not settings.skip_ssl_verify,
     ) as client:
-        resp = await client.get(url)
+        current_url = url
+        for _ in range(3):
+            resp = await client.get(current_url)
+            if resp.status_code in (301, 302, 303, 307, 308):
+                location = resp.headers.get("location")
+                if not location:
+                    return None
+                resolved = urljoin(current_url, location)
+                rp = urlparse(resolved)
+                if rp.scheme not in ("http", "https") or not rp.hostname:
+                    return None
+                if is_private_host(rp.hostname):
+                    return None
+                current_url = resolved
+            else:
+                break
+        else:
+            return None
+
         if resp.status_code != 200:
             return None
         if len(resp.content) > _MAX_DOWNLOAD_BYTES:
@@ -206,22 +229,15 @@ async def _call_face_detect(
 
     async with make_face_detect_client() as client:
         resp = await client.post(
-            settings.face_detect_url,
+            settings.face_detect_base_url,
             json={"inputs": b64, "parameters": {"threshold": 0.5}},
         )
         resp.raise_for_status()
         results = resp.json()
 
-    if not results:
-        return None
+    from app.utils.focal import focal_from_detections
 
-    box = results[0]["box"]
-    cx = (box["xmin"] + box["xmax"]) / 2
-    cy = (box["ymin"] + box["ymax"]) / 2
-
-    focal_x = max(-1.0, min(1.0, (cx / width) * 2 - 1))
-    focal_y = max(-1.0, min(1.0, 1 - (cy / height) * 2))
-    return (focal_x, focal_y)
+    return focal_from_detections(results, width, height)
 
 
 async def _publish_update(note_id: uuid.UUID) -> None:

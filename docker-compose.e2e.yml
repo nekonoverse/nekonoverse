@@ -72,6 +72,7 @@ services:
       S3_SECRET_ACCESS_KEY: changeme-s3
       S3_BUCKET: nekonoverse
       S3_REGION: us-east-1
+      MEDIA_PROXY_TRANSFORM_URL: http://media-proxy-rs:12766
     depends_on:
       postgres:
         condition: service_healthy
@@ -101,6 +102,7 @@ services:
       S3_SECRET_ACCESS_KEY: changeme-s3
       S3_BUCKET: nekonoverse
       S3_REGION: us-east-1
+      MEDIA_PROXY_TRANSFORM_URL: http://media-proxy-rs:12766
     depends_on:
       app:
         condition: service_healthy
@@ -109,12 +111,13 @@ services:
 
   frontend:
     build:
-      context: ./frontend
-      dockerfile: Dockerfile
+      context: .
+      dockerfile: frontend/Dockerfile
       target: dev
     command: npx --yes vite dev --host 0.0.0.0 --port 3000
     volumes:
       - ./frontend:/app
+      - ./packages:/packages
       - /app/node_modules
     depends_on:
       app:
@@ -136,6 +139,16 @@ services:
         condition: service_started
       s3proxy-deliverer:
         condition: service_started
+    networks:
+      - e2e
+
+  media-proxy-rs:
+    image: ghcr.io/nekonoverse/media-proxy-rs:main
+    environment:
+      MEDIA_PROXY_CONFIG_PATH: /config/config.json
+      MEDIA_PROXY_ALLOWED_NETWORKS: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,127.0.0.0/8"
+    volumes:
+      - ./media-proxy-rs/config.json:/config/config.json:ro
     networks:
       - e2e
 

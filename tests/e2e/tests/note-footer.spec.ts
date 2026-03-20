@@ -6,7 +6,7 @@ test.describe("Note Footer", () => {
     await loginAsAdmin(page);
   });
 
-  test("note footer items are vertically aligned", async ({ page }) => {
+  test("note footer items are right-aligned in column layout", async ({ page }) => {
     // Create and edit a note so the "edited" label appears
     const text = `Footer align ${Date.now()}`;
     const note = await createNote(page, text);
@@ -18,13 +18,17 @@ test.describe("Note Footer", () => {
     const noteCard = page.locator(".note-card").filter({ hasText: `${text} edited` });
     await expect(noteCard).toBeVisible({ timeout: 10_000 });
 
-    // Verify footer has align-items: center
+    // Verify footer uses column layout with right-aligned items
     const footer = noteCard.locator(".note-footer");
     await expect(footer).toBeVisible();
-    const alignItems = await footer.evaluate(
-      (el) => window.getComputedStyle(el).alignItems,
-    );
-    expect(alignItems).toBe("center");
+    await expect(async () => {
+      const styles = await footer.evaluate((el) => {
+        const s = window.getComputedStyle(el);
+        return { flexDirection: s.flexDirection, alignItems: s.alignItems };
+      });
+      expect(styles.flexDirection).toBe("column");
+      expect(styles.alignItems).toBe("flex-end");
+    }).toPass({ timeout: 5_000 });
 
     // Verify edited label and time link are present
     await expect(noteCard.locator(".note-edited-label")).toBeVisible();

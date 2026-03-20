@@ -3,6 +3,7 @@ import { loginAsAdmin, createNote } from "./helpers";
 
 test.describe("Reactions", () => {
   test("add reaction via emoji picker", async ({ page }) => {
+    test.setTimeout(60_000);
     await loginAsAdmin(page);
     const uid = Date.now();
     await createNote(page, `reaction-test-${uid}`);
@@ -16,16 +17,29 @@ test.describe("Reactions", () => {
       .first();
 
     // リアクション追加ボタンをクリック
+    // Firefox では Playwright の click() が空振りするため evaluate で DOM 直接クリック
     const addBtn = noteCard.locator(".reaction-add-btn");
-    await addBtn.click();
+    await addBtn.waitFor({ state: "visible", timeout: 10_000 });
+    await addBtn.scrollIntoViewIfNeeded();
+    await addBtn.evaluate((el) => (el as HTMLElement).click());
 
     // Emoji Picker が表示される
-    await page.waitForSelector(".emoji-picker", { timeout: 5_000 });
+    await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
 
-    // 最初の絵文字ボタンをクリック
-    const emoji = page.locator(".emoji-picker .emoji-btn").first();
-    await emoji.waitFor({ timeout: 10_000 });
-    await emoji.click();
+    // カスタム絵文字の非同期読み込みで DOM が再構築されるのを待つ
+    await page.waitForFunction(
+      () => {
+        const btns = document.querySelectorAll(".emoji-picker .emoji-btn");
+        return btns.length > 0;
+      },
+      { timeout: 10_000 },
+    );
+
+    // 最初の絵文字ボタンをクリック (evaluate で DOM detach を回避)
+    await page.evaluate(() => {
+      const btn = document.querySelector(".emoji-picker .emoji-btn") as HTMLElement;
+      btn?.click();
+    });
 
     // リアクションバッジが表示される
     await expect(noteCard.locator(".reaction-badge")).toBeVisible({
@@ -38,8 +52,8 @@ test.describe("Reactions", () => {
     const uid = Date.now();
     const note = await createNote(page, `unreact-test-${uid}`);
 
-    // API でリアクション追加
-    await page.request.post(`/api/v1/statuses/${note.id}/react/%E2%AD%90`);
+    // API でリアクション追加 (👍 を使用 — ⭐はお気に入りボタンに移動したため)
+    await page.request.post(`/api/v1/statuses/${note.id}/react/%F0%9F%91%8D`);
 
     await page.goto("/");
     await page.waitForSelector(".note-card", { timeout: 10_000 });

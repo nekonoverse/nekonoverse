@@ -116,6 +116,34 @@ test.describe("MFM Rendering", () => {
     const noteContent = findNoteContent(page, marker);
     const link = noteContent.locator('a[href="https://example.com"]');
     await expect(link).toBeVisible({ timeout: 10_000 });
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", /noopener/);
+  });
+
+  test("markdown link opens in new tab", async ({ page }) => {
+    const marker = `mdlink-test-${Date.now()}`;
+    await createNote(page, `[Example](https://example.com) ${marker}`);
+    await page.goto("/");
+    await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
+
+    const noteContent = findNoteContent(page, marker);
+    const link = noteContent.locator('a[href="https://example.com"]');
+    await expect(link).toBeVisible({ timeout: 10_000 });
+    await expect(link).toHaveAttribute("target", "_blank");
+    await expect(link).toHaveAttribute("rel", /noopener/);
+  });
+
+  test("mention links do not open in new tab", async ({ page }) => {
+    const marker = `mention-newtab-${Date.now()}`;
+    await createNote(page, `@admin ${marker}`);
+    await page.goto("/");
+    await expect(page.locator(".timeline")).toBeVisible({ timeout: 10_000 });
+
+    const noteContent = findNoteContent(page, marker);
+    const mention = noteContent.locator("a.mention");
+    await expect(mention).toBeVisible({ timeout: 10_000 });
+    const target = await mention.getAttribute("target");
+    expect(target).toBeFalsy();
   });
 
   test("blur function applies blur class", async ({ page }) => {

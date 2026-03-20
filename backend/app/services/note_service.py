@@ -38,6 +38,10 @@ async def create_note(
     poll_expires_in: int | None = None,
     poll_multiple: bool = False,
 ) -> Note:
+    # CW付きノートは自動的にsensitiveにする (Mastodon互換)
+    if spoiler_text and not sensitive:
+        sensitive = True
+
     actor = user.actor
     note_id = uuid.uuid4()
     ap_id = f"{settings.server_url}/notes/{note_id}"
@@ -68,7 +72,11 @@ async def create_note(
         if not mentioned_actor and domain:
             from app.services.actor_service import resolve_webfinger
 
-            mentioned_actor = await resolve_webfinger(db, username, domain)
+            try:
+                mentioned_actor = await resolve_webfinger(db, username, domain)
+            except Exception:
+                await db.rollback()
+                mentioned_actor = None  # WebFinger解決失敗はスキップ
         if mentioned_actor:
             mentioned_uri = actor_uri(mentioned_actor)
             mention_data.append(
@@ -84,6 +92,23 @@ async def create_note(
             else:
                 if mentioned_uri not in cc_list:
                     cc_list.append(mentioned_uri)
+
+    # リプライ先の解決: AP ID取得 + 作者をcc/toに追加 (AP配送に必要)
+    in_reply_to_ap_id = None
+    if in_reply_to_id:
+        parent = await get_note_by_id(db, in_reply_to_id)
+        if parent:
+            in_reply_to_ap_id = parent.ap_id
+            if parent.actor:
+                from app.services.actor_service import actor_uri
+
+                parent_uri = actor_uri(parent.actor)
+                if visibility == "direct":
+                    if parent_uri not in to_list:
+                        to_list.append(parent_uri)
+                else:
+                    if parent_uri not in cc_list:
+                        cc_list.append(parent_uri)
 
     html_content = text_to_html(content)
 
@@ -109,6 +134,7 @@ async def create_note(
         cc=cc_list,
         local=True,
         in_reply_to_id=in_reply_to_id,
+        in_reply_to_ap_id=in_reply_to_ap_id,
         mentions=mention_data,
         quote_id=quote_id,
         quote_ap_id=quote_ap_id,
@@ -211,40 +237,60 @@ async def create_note(
                     inbox = mentioned.shared_inbox_url or mentioned.inbox_url
                     inboxes.add(inbox)
 
+        # リプライ先のリモートユーザーへの配送
+        if in_reply_to_id:
+            parent = await get_note_by_id(db, in_reply_to_id)
+            if parent and parent.actor and parent.actor.domain:
+                inbox = parent.actor.shared_inbox_url or parent.actor.inbox_url
+                if inbox:
+                    inboxes.add(inbox)
+
         for inbox_url in inboxes:
             await enqueue_delivery(db, actor.id, inbox_url, activity)
 
     # Send notifications
-    from app.services.notification_service import create_notification
+    from app.services.notification_service import create_notification, publish_notification
 
-    # Mention notifications (local actors only)
-    for m in mention_data:
-        if not m.get("domain"):  # local actor
-            from app.services.actor_service import get_actor_by_username
+    pending_notifs = []
 
-            mentioned = await get_actor_by_username(db, m["username"], None)
-            if mentioned:
-                await create_notification(
-                    db,
-                    "mention",
-                    mentioned.id,
-                    actor.id,
-                    note_id,
-                )
-
-    # Reply notification
+    # Determine reply parent actor to avoid duplicate mention+reply notifications
+    reply_recipient_id = None
     if in_reply_to_id:
         parent = await get_note_by_id(db, in_reply_to_id)
         if parent and parent.actor.is_local:
-            await create_notification(
+            reply_recipient_id = parent.actor_id
+            notif = await create_notification(
                 db,
                 "reply",
                 parent.actor_id,
                 actor.id,
                 note_id,
             )
+            if notif:
+                pending_notifs.append(notif)
+
+    # Mention notifications (local actors only, skip reply recipient)
+    for m in mention_data:
+        if not m.get("domain"):  # local actor
+            from app.services.actor_service import get_actor_by_username
+
+            mentioned = await get_actor_by_username(db, m["username"], None)
+            if mentioned and mentioned.id != reply_recipient_id:
+                notif = await create_notification(
+                    db,
+                    "mention",
+                    mentioned.id,
+                    actor.id,
+                    note_id,
+                )
+                if notif:
+                    pending_notifs.append(notif)
 
     await db.commit()
+
+    # Publish notification events after commit
+    for notif in pending_notifs:
+        await publish_notification(notif)
 
     # Publish real-time events via Valkey pub/sub
     try:
@@ -257,14 +303,48 @@ async def create_note(
         if visibility == "public":
             await valkey_client.publish("timeline:public", event)
         follower_ids = await get_follower_ids(db, actor.id)
-        for fid in follower_ids:
-            await valkey_client.publish(f"timeline:home:{fid}", event)
-        await valkey_client.publish(f"timeline:home:{actor.id}", event)
+        # M-9: Valkeyパイプラインで一括pub/sub
+        if follower_ids:
+            pipe = valkey_client.pipeline()
+            for fid in follower_ids:
+                pipe.publish(f"timeline:home:{fid}", event)
+            pipe.publish(f"timeline:home:{actor.id}", event)
+            await pipe.execute()
+        else:
+            await valkey_client.publish(f"timeline:home:{actor.id}", event)
     except Exception:
         pass  # Don't fail note creation if pub/sub fails
 
+    # Enqueue URL summary extraction (if summary proxy configured)
+    if content:
+        from app.services.summary_proxy_queue import enqueue as enqueue_summary
+
+        first_url = _extract_first_url(content)
+        if first_url:
+            await enqueue_summary(note_id, first_url)
+
+    # M-12: statuses_countキャッシュを無効化
+    try:
+        await valkey_client.delete(f"perf:statuses_count:{actor.id}")
+    except Exception:
+        pass
+
     # Re-query after delivery commits to get fresh state
     return await get_note_by_id(db, note_id)
+
+
+_URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
+
+
+def _extract_first_url(text: str) -> str | None:
+    """Extract the first HTTP(S) URL from plain text."""
+    m = _URL_RE.search(text)
+    if m:
+        url = m.group(0)
+        # Strip trailing punctuation
+        url = url.rstrip(".,;:!?")
+        return url
+    return None
 
 
 def _note_load_options():
@@ -531,14 +611,40 @@ async def get_reaction_summary(
 
         from app.utils.media_proxy import media_proxy_url
 
-        summaries.append(
-            {
-                "emoji": emoji,
-                "count": count,
-                "me": me,
-                "emoji_url": media_proxy_url(emoji_url),
-            }
-        )
+        is_importable = False
+        import_domain: str | None = None
+        if m and not local:
+            # Custom emoji without a local copy → importable
+            shortcode_val = m.group(1)
+            domain_val = m.group(2)
+            if domain_val:
+                is_importable = True
+                import_domain = domain_val
+            elif emoji_url:
+                # No domain in reaction string but found a remote emoji
+                remote_q = await db.execute(
+                    select(CustomEmoji.domain)
+                    .where(
+                        CustomEmoji.shortcode == shortcode_val,
+                        CustomEmoji.domain.isnot(None),
+                    )
+                    .limit(1)
+                )
+                remote_domain = remote_q.scalar_one_or_none()
+                if remote_domain:
+                    is_importable = True
+                    import_domain = remote_domain
+
+        entry: dict = {
+            "emoji": emoji,
+            "count": count,
+            "me": me,
+            "emoji_url": media_proxy_url(emoji_url, variant="emoji") if emoji_url else None,
+            "importable": is_importable,
+        }
+        if is_importable:
+            entry["import_domain"] = import_domain
+        summaries.append(entry)
     return summaries
 
 
@@ -546,6 +652,7 @@ async def get_reaction_summaries(
     db: AsyncSession,
     note_ids: list[uuid.UUID],
     current_actor_id: uuid.UUID | None = None,
+    include_account_ids: bool = False,
 ) -> dict[uuid.UUID, list[dict]]:
     """Get aggregated reactions for multiple notes in batch.
 
@@ -595,6 +702,7 @@ async def get_reaction_summaries(
 
     # 4) Batch-fetch all needed custom emojis in at most 2 queries
     emoji_url_map: dict[str, str | None] = {}  # emoji string -> url
+    importable_emojis: dict[str, str] = {}  # emoji_str -> remote domain
     if custom_emojis_needed:
         all_shortcodes = set(custom_emojis_needed.keys())
 
@@ -631,20 +739,42 @@ async def get_reaction_summaries(
                     emoji_url_map[emoji_str] = local_emojis[shortcode].url
                 elif shortcode in remote_emojis:
                     emoji_url_map[emoji_str] = remote_emojis[shortcode].url
+                    importable_emojis[emoji_str] = remote_emojis[shortcode].domain
 
-    # 5) Build the result dict
+    # 5) Optionally fetch account_ids per (note_id, emoji) for Fedibird compat
+    account_ids_map: dict[tuple[uuid.UUID, str], list[str]] = {}
+    if include_account_ids:
+        from app.models.actor import Actor
+
+        aid_result = await db.execute(
+            select(Reaction.note_id, Reaction.emoji, Actor.id)
+            .join(Actor, Reaction.actor_id == Actor.id)
+            .where(Reaction.note_id.in_(note_ids))
+        )
+        for nid, emoji_str, actor_id_val in aid_result.all():
+            key = (nid, emoji_str)
+            account_ids_map.setdefault(key, []).append(str(actor_id_val))
+
+    # 6) Build the result dict
     summaries: dict[uuid.UUID, list[dict]] = {nid: [] for nid in note_ids}
     for note_id_val, emoji_str, count in rows:
         me = (note_id_val, emoji_str) in me_set
         emoji_url = emoji_url_map.get(emoji_str)
-        summaries[note_id_val].append(
-            {
-                "emoji": emoji_str,
-                "count": count,
-                "me": me,
-                "emoji_url": media_proxy_url(emoji_url),
-            }
-        )
+        is_importable = emoji_str in importable_emojis
+        entry: dict = {
+            "emoji": emoji_str,
+            "count": count,
+            "me": me,
+            "emoji_url": media_proxy_url(emoji_url, variant="emoji") if emoji_url else None,
+            "importable": is_importable,
+        }
+        if is_importable:
+            entry["import_domain"] = importable_emojis[emoji_str]
+        if include_account_ids:
+            entry["account_ids"] = account_ids_map.get(
+                (note_id_val, emoji_str), []
+            )
+        summaries[note_id_val].append(entry)
     return summaries
 
 
@@ -716,6 +846,27 @@ async def fetch_remote_note(
     # DBに既にあればそれを返す
     existing = await get_note_by_ap_id(db, ap_id)
     if existing:
+        # 既存ノートでもfocal未検出の画像があればエンキュー
+        if settings.face_detect_enabled:
+            from sqlalchemy import select as sel
+
+            from app.models.note_attachment import NoteAttachment as NA
+
+            att_rows = await db.execute(
+                sel(NA.id).where(
+                    NA.note_id == existing.id,
+                    NA.remote_url.isnot(None),
+                    NA.remote_focal_x.is_(None),
+                    NA.remote_mime_type.in_(
+                        ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
+                    ),
+                )
+            )
+            att_ids = [row[0] for row in att_rows.all()]
+            if att_ids:
+                from app.services.face_detect_queue import enqueue_remote
+
+                await enqueue_remote(existing.id, att_ids)
         return existing
 
     try:
@@ -740,6 +891,15 @@ async def fetch_remote_note(
     if not note_ap_id:
         return None
 
+    # M-12: リクエストURLとレスポンスidのドメイン一致検証
+    from urllib.parse import urlparse as _urlparse
+
+    req_domain = _urlparse(ap_id).hostname
+    res_domain = _urlparse(note_ap_id).hostname
+    if req_domain and res_domain and req_domain != res_domain:
+        logger.warning("Domain mismatch for note: requested %s but got id %s", ap_id, note_ap_id)
+        return None
+
     # 重複チェック(fetchの間に別のリクエストで作成された可能性)
     existing = await get_note_by_ap_id(db, note_ap_id)
     if existing:
@@ -756,7 +916,15 @@ async def fetch_remote_note(
         logger.warning("Could not resolve actor %s for fetched note %s", actor_ap_id, note_ap_id)
         return None
 
-    content = sanitize_html(data.get("content", ""))
+    raw_content = data.get("content", "")
+    # contentMap (multilingual) fallback: prefer default language or first value
+    if not isinstance(raw_content, str):
+        content_map = data.get("contentMap", {})
+        if isinstance(content_map, dict) and content_map:
+            raw_content = next(iter(content_map.values()))
+        if not isinstance(raw_content, str):
+            raw_content = ""
+    content = sanitize_html(raw_content)
     source_data = data.get("source")
     source = None
     if isinstance(source_data, dict):
@@ -948,6 +1116,35 @@ async def fetch_remote_note(
             remote_focal_y=focal_y,
         )
         db.add(attachment)
+
+    # Background focal point detection for remote image attachments
+    if settings.face_detect_enabled:
+        await db.flush()
+        from sqlalchemy import select as sel
+
+        from app.models.note_attachment import NoteAttachment as NA
+
+        att_rows = await db.execute(
+            sel(NA.id).where(
+                NA.note_id == note.id,
+                NA.remote_url.isnot(None),
+                NA.remote_focal_x.is_(None),
+                NA.remote_mime_type.in_(
+                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
+                ),
+            )
+        )
+        att_ids = [row[0] for row in att_rows.all()]
+        if att_ids:
+            from app.services.face_detect_queue import enqueue_remote
+
+            await enqueue_remote(note.id, att_ids)
+
+    # Increment parent's replies_count for remote replies
+    if in_reply_to_id:
+        parent = await get_note_by_id(db, in_reply_to_id)
+        if parent:
+            parent.replies_count = parent.replies_count + 1
 
     # Extract and upsert hashtags from AP tags
     from app.services.hashtag_service import (

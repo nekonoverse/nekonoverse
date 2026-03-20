@@ -97,6 +97,31 @@ async def test_create_status_with_media(authed_client, test_user, db, mock_valke
     assert att["blurhash"] is not None
 
 
+async def test_create_status_image_only(authed_client, test_user, db, mock_valkey):
+    """Creating a note with media_ids but empty content succeeds (Mastodon compat)."""
+    df = await make_drive_file(db, test_user.id)
+    await db.flush()
+
+    resp = await authed_client.post("/api/v1/statuses", json={
+        "status": "",
+        "visibility": "public",
+        "media_ids": [str(df.id)],
+    })
+    assert resp.status_code == 201
+    data = resp.json()
+    assert data["content"] == ""
+    assert len(data["media_attachments"]) == 1
+
+
+async def test_create_status_empty_content_no_media_rejected(authed_client, mock_valkey):
+    """Empty content with no media is rejected."""
+    resp = await authed_client.post("/api/v1/statuses", json={
+        "status": "",
+        "visibility": "public",
+    })
+    assert resp.status_code == 422
+
+
 async def test_create_status_max_4_media_rejected(authed_client, test_user, db, mock_valkey):
     """Sending more than 4 media_ids is rejected by the schema."""
     files = [await make_drive_file(db, test_user.id, filename=f"img{i}.png") for i in range(5)]

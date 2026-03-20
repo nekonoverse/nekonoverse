@@ -10,6 +10,21 @@ import httpx
 
 from app.config import settings
 
+# M-14: S3操作用の共有HTTPクライアント
+_s3_client: httpx.AsyncClient | None = None
+
+
+def _get_s3_client() -> httpx.AsyncClient:
+    global _s3_client
+    if _s3_client is None or _s3_client.is_closed:
+        from app.utils.http_client import USER_AGENT
+        _s3_client = httpx.AsyncClient(
+            base_url=settings.s3_endpoint_url,
+            timeout=30.0,
+            headers={"User-Agent": USER_AGENT},
+        )
+    return _s3_client
+
 
 def _sign(key: bytes, msg: str) -> bytes:
     return hmac.new(key, msg.encode(), hashlib.sha256).digest()
@@ -89,10 +104,10 @@ async def ensure_bucket() -> None:
     path = f"/{settings.s3_bucket}"
     content_sha256 = hashlib.sha256(b"").hexdigest()
     headers = _auth_headers("PUT", path, content_sha256)
-    async with httpx.AsyncClient(base_url=settings.s3_endpoint_url) as client:
-        resp = await client.put(path, headers=headers)
-        if resp.status_code not in (200, 409):
-            resp.raise_for_status()
+    client = _get_s3_client()
+    resp = await client.put(path, headers=headers)
+    if resp.status_code not in (200, 409):
+        resp.raise_for_status()
 
 
 async def upload_file(key: str, data: bytes, content_type: str) -> str:
@@ -102,9 +117,9 @@ async def upload_file(key: str, data: bytes, content_type: str) -> str:
     extra = {"content-type": content_type}
     headers = _auth_headers("PUT", path, content_sha256, extra)
     headers["content-type"] = content_type
-    async with httpx.AsyncClient(base_url=settings.s3_endpoint_url) as client:
-        resp = await client.put(path, content=data, headers=headers)
-        resp.raise_for_status()
+    client = _get_s3_client()
+    resp = await client.put(path, content=data, headers=headers)
+    resp.raise_for_status()
     return resp.headers.get("etag", "").strip('"')
 
 
@@ -113,10 +128,10 @@ async def delete_file(key: str) -> None:
     path = f"/{settings.s3_bucket}/{key}"
     content_sha256 = hashlib.sha256(b"").hexdigest()
     headers = _auth_headers("DELETE", path, content_sha256)
-    async with httpx.AsyncClient(base_url=settings.s3_endpoint_url) as client:
-        resp = await client.delete(path, headers=headers)
-        if resp.status_code not in (200, 204, 404):
-            resp.raise_for_status()
+    client = _get_s3_client()
+    resp = await client.delete(path, headers=headers)
+    if resp.status_code not in (200, 204, 404):
+        resp.raise_for_status()
 
 
 async def download_file(key: str) -> bytes:
@@ -124,9 +139,9 @@ async def download_file(key: str) -> bytes:
     path = f"/{settings.s3_bucket}/{key}"
     content_sha256 = "UNSIGNED-PAYLOAD"
     headers = _auth_headers("GET", path, content_sha256)
-    async with httpx.AsyncClient(base_url=settings.s3_endpoint_url) as client:
-        resp = await client.get(path, headers=headers)
-        resp.raise_for_status()
+    client = _get_s3_client()
+    resp = await client.get(path, headers=headers)
+    resp.raise_for_status()
     return resp.content
 
 
@@ -135,7 +150,7 @@ async def get_file_stream(key: str) -> tuple[AsyncIterator[bytes], str, int]:
     path = f"/{settings.s3_bucket}/{key}"
     content_sha256 = "UNSIGNED-PAYLOAD"
     headers = _auth_headers("GET", path, content_sha256)
-    client = httpx.AsyncClient(base_url=settings.s3_endpoint_url)
+    client = _get_s3_client()
     resp = await client.send(
         client.build_request("GET", path, headers=headers),
         stream=True,

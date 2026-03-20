@@ -1,27 +1,44 @@
-import { createSignal, createEffect, on, onCleanup, Show, For, Index, batch } from "solid-js";
+import { createSignal, createResource, createEffect, on, onMount, onCleanup, Show, For, Index, batch } from "solid-js";
 import { A, useParams } from "@solidjs/router";
-import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "../api/accounts";
-import { updateAvatar, updateHeader, updateProfile } from "../api/settings";
-import type { Note } from "../api/statuses";
-import { getNote } from "../api/statuses";
+import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { updateAvatar, updateHeader, updateProfile, deleteAvatar, deleteHeader, updateHeaderFocus } from "@nekonoverse/ui/api/settings";
+import HeaderCropPicker from "../components/HeaderCropPicker";
+import { focalPointToObjectPosition } from "@nekonoverse/ui/utils/focalPoint";
+import type { Note } from "@nekonoverse/ui/api/statuses";
+import { getNote } from "@nekonoverse/ui/api/statuses";
 import NoteCard from "../components/notes/NoteCard";
-import { useI18n } from "../i18n";
-import { currentUser, fetchCurrentUser } from "../stores/auth";
-import { addFollowedId, removeFollowedId } from "../stores/followedUsers";
-import { onReaction } from "../stores/streaming";
-import { sanitizeHtml } from "../utils/sanitize";
-import { emojify } from "../utils/emojify";
-import { twemojify } from "../utils/twemojify";
-import { defaultAvatar } from "../stores/instance";
-import { formatTimestamp, useTimeTick } from "../utils/formatTime";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
+import ComposeModal from "../components/notes/ComposeModal";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser, fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
+import { addFollowedId, removeFollowedId } from "@nekonoverse/ui/stores/followedUsers";
+import { onReaction } from "@nekonoverse/ui/stores/streaming";
+import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import { emojify } from "@nekonoverse/ui/utils/emojify";
+import { twemojify } from "@nekonoverse/ui/utils/twemojify";
+import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 
 export default function Profile() {
   const { t } = useI18n();
   const params = useParams<{ acct: string }>();
   const [account, setAccount] = createSignal<Account | null>(null);
   const [notes, setNotes] = createSignal<Note[]>([]);
-  const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
+
+  // Infinite scroll state
+  const [loadingMore, setLoadingMore] = createSignal(false);
+  const [hasMore, setHasMore] = createSignal(true);
+  let sentinelRef: HTMLDivElement | undefined;
+  let observer: IntersectionObserver | undefined;
+
+  const setSentinelRef = (el: HTMLDivElement) => {
+    sentinelRef = el;
+    if (observer && el) {
+      observer.observe(el);
+    }
+  };
 
   // Follow state
   const [isFollowing, setIsFollowing] = createSignal(false);
@@ -37,6 +54,11 @@ export default function Profile() {
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
   const [showUnlockModal, setShowUnlockModal] = createSignal(false);
 
+  // Compose modal state
+  const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
+  const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
+
   // Inline edit state
   const [editing, setEditing] = createSignal(false);
   const [editName, setEditName] = createSignal("");
@@ -46,10 +68,10 @@ export default function Profile() {
   const [editIsCat, setEditIsCat] = createSignal(false);
   const [editIsBot, setEditIsBot] = createSignal(false);
   const [editLocked, setEditLocked] = createSignal(false);
-  const [editDiscoverable, setEditDiscoverable] = createSignal(true);
   const [saving, setSaving] = createSignal(false);
   const [uploadingAvatar, setUploadingAvatar] = createSignal(false);
   const [uploadingHeader, setUploadingHeader] = createSignal(false);
+  const [showHeaderFocal, setShowHeaderFocal] = createSignal(false);
 
   let avatarInput!: HTMLInputElement;
   let headerInput!: HTMLInputElement;
@@ -59,63 +81,115 @@ export default function Profile() {
       const acct = params.acct.replace(/^@/, "");
       const acc = await lookupAccount(acct);
       setAccount(acc);
-      const statuses = await getAccountStatuses(acc.id);
-      setNotes(statuses);
-      // Load relationship if logged in and not own profile
+
+      // statuses取得とrelationship取得を並列実行
       const own = currentUser()?.username === acc.username && !acc.acct.includes("@");
+      const promises: Promise<void>[] = [
+        getAccountStatuses(acc.id).then((statuses) => setNotes(statuses)),
+      ];
       if (currentUser() && !own) {
-        try {
-          const rel = await getRelationship(acc.id);
-          setIsFollowing(rel.following);
-          setIsRequested(rel.requested);
-          setIsBlocking(rel.blocking);
-          setIsMuting(rel.muting);
-          setIsFollowedBy(rel.followed_by);
-          if (rel.following) addFollowedId(acc.id);
-          else removeFollowedId(acc.id);
-        } catch {}
+        promises.push(
+          getRelationship(acc.id).then((rel) => {
+            setIsFollowing(rel.following);
+            setIsRequested(rel.requested);
+            setIsBlocking(rel.blocking);
+            setIsMuting(rel.muting);
+            setIsFollowedBy(rel.followed_by);
+            if (rel.following) addFollowedId(acc.id);
+            else removeFollowedId(acc.id);
+          }).catch(() => {}),
+        );
       }
+      await Promise.all(promises);
     } catch (e: any) {
       setError(e.message || "Not found");
-    } finally {
-      setLoading(false);
     }
   };
 
-  createEffect(on(() => params.acct, () => {
-    batch(() => {
-      setAccount(null);
-      setNotes([]);
-      setLoading(true);
-      setError("");
-      setIsFollowing(false);
-      setIsRequested(false);
-      setIsBlocking(false);
-      setIsMuting(false);
-      setIsFollowedBy(false);
-      setEditing(false);
-      setMoreOpen(false);
-      setShowUnfollowModal(false);
-      setShowUnlockModal(false);
-    });
-    loadProfile();
-  }));
+  const loadMoreNotes = async () => {
+    if (loadingMore() || !hasMore()) return;
+    const current = notes();
+    const acc = account();
+    if (current.length === 0 || !acc) return;
+    const lastId = current[current.length - 1].id;
+    setLoadingMore(true);
+    try {
+      const data = await getAccountStatuses(acc.id, { max_id: lastId });
+      if (data.length === 0) {
+        setHasMore(false);
+      } else {
+        setNotes((prev) => [...prev, ...data]);
+      }
+    } catch {
+    } finally {
+      setLoadingMore(false);
+      if (observer && sentinelRef && hasMore()) {
+        observer.unobserve(sentinelRef);
+        observer.observe(sentinelRef);
+      }
+    }
+  };
+
+  onMount(() => {
+    observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0]?.isIntersecting) {
+          loadMoreNotes();
+        }
+      },
+      { rootMargin: "200px" },
+    );
+    if (sentinelRef) {
+      observer.observe(sentinelRef);
+    }
+  });
+
+  onCleanup(() => {
+    observer?.disconnect();
+  });
+
+  const [profileData] = createResource(
+    () => params.acct,
+    async (acct) => {
+      batch(() => {
+        setAccount(null);
+        setNotes([]);
+        setError("");
+        setHasMore(true);
+        setIsFollowing(false);
+        setIsRequested(false);
+        setIsBlocking(false);
+        setIsMuting(false);
+        setIsFollowedBy(false);
+        setEditing(false);
+        setMoreOpen(false);
+        setShowUnfollowModal(false);
+        setShowUnlockModal(false);
+      });
+      await loadProfile();
+      return account();
+    },
+  );
 
   const isOwn = () => {
     const acc = account();
     return acc && currentUser()?.username === acc.username && !acc.acct.includes("@");
   };
 
+  // M-9: テキストノードベースのデコードに切り替え (innerHTMLへの未サニタイズ代入を回避)
   const htmlToPlainText = (html: string): string => {
-    const el = document.createElement("div");
-    el.innerHTML = html.replace(/<br\s*\/?>/gi, "\n");
-    return el.textContent?.trim() || "";
+    const parser = new DOMParser();
+    const doc = parser.parseFromString(
+      html.replace(/<br\s*\/?>/gi, "\n"),
+      "text/html",
+    );
+    return doc.body.textContent?.trim() || "";
   };
 
   const decodeHtmlEntities = (text: string): string => {
-    const el = document.createElement("div");
-    el.innerHTML = text;
-    return el.textContent || "";
+    const textarea = document.createElement("textarea");
+    textarea.innerHTML = text;
+    return textarea.value || "";
   };
 
   const startEditing = () => {
@@ -135,7 +209,6 @@ export default function Profile() {
     setEditIsCat(user?.is_cat || false);
     setEditIsBot(user?.is_bot || false);
     setEditLocked(user?.locked || false);
-    setEditDiscoverable(user?.discoverable ?? true);
     setEditing(true);
   };
 
@@ -175,7 +248,6 @@ export default function Profile() {
         is_cat: editIsCat(),
         is_bot: editIsBot(),
         locked: editLocked(),
-        discoverable: editDiscoverable(),
       });
       await refreshAccount();
       setEditing(false);
@@ -222,6 +294,38 @@ export default function Profile() {
       setUploadingHeader(false);
       input.value = "";
     }
+  };
+
+  const handleDeleteAvatar = async (e: MouseEvent) => {
+    e.stopPropagation();
+    setUploadingAvatar(true);
+    try {
+      await deleteAvatar();
+      await refreshAccount();
+    } catch {
+    } finally {
+      setUploadingAvatar(false);
+    }
+  };
+
+  const handleDeleteHeader = async (e: MouseEvent) => {
+    e.stopPropagation();
+    setUploadingHeader(true);
+    try {
+      await deleteHeader();
+      await refreshAccount();
+    } catch {
+    } finally {
+      setUploadingHeader(false);
+    }
+  };
+
+  const handleHeaderFocalSave = async (x: number, y: number) => {
+    try {
+      await updateHeaderFocus(x, y);
+      await refreshAccount();
+    } catch {}
+    setShowHeaderFocal(false);
   };
 
   const handleBlock = async () => {
@@ -286,7 +390,7 @@ export default function Profile() {
 
   return (
     <div class="page-container">
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+      <Show when={profileData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
         <Show when={!error()} fallback={<p class="error">{error()}</p>}>
           {(() => {
             const acc = account()!;
@@ -294,31 +398,58 @@ export default function Profile() {
               <>
                 <div class="profile-header">
                   <Show when={editing()}>
-                    <div
-                      class="profile-header-editable"
-                      onClick={() => headerInput.click()}
-                    >
-                      <Show when={acc.header}>
-                        <img class="profile-header-img" src={acc.header} alt="" />
-                      </Show>
-                      <Show when={!acc.header}>
-                        <div class="profile-header-placeholder" />
-                      </Show>
-                      <div class="profile-overlay">
-                        {uploadingHeader() ? "..." : "\u{1F4F7}"}
+                    <div class="profile-header-editable">
+                      <div onClick={() => headerInput.click()}>
+                        <Show when={acc.header}>
+                          <img
+                            class="profile-header-img"
+                            src={acc.header}
+                            alt=""
+                            style={{ "object-position": focalPointToObjectPosition(currentUser()?.header_focal) }}
+                          />
+                        </Show>
+                        <Show when={!acc.header}>
+                          <div class="profile-header-placeholder" />
+                        </Show>
+                        <div class="profile-overlay">
+                          {uploadingHeader() ? "..." : "\u{1F4F7}"}
+                        </div>
+                      </div>
+                      <div class="profile-image-actions">
+                        <Show when={acc.header}>
+                          <button
+                            class="profile-image-action-btn"
+                            title={t("profile.cropHeader")}
+                            onClick={(e) => { e.stopPropagation(); setShowHeaderFocal(true); }}
+                          >
+                            +
+                          </button>
+                          <button
+                            class="profile-image-action-btn profile-image-delete-btn"
+                            title={t("profile.deleteHeader")}
+                            onClick={handleDeleteHeader}
+                          >
+                            ✕
+                          </button>
+                        </Show>
                       </div>
                     </div>
                     <input
                       ref={headerInput}
                       type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng"
                       onChange={handleHeaderChange}
                       style="display: none"
                     />
                   </Show>
                   <Show when={!editing()}>
                     <Show when={acc.header}>
-                      <img class="profile-header-img" src={acc.header} alt="" />
+                      <img
+                        class="profile-header-img"
+                        src={acc.header}
+                        alt=""
+                        style={{ "object-position": focalPointToObjectPosition(currentUser()?.header_focal) }}
+                      />
                     </Show>
                     <Show when={!acc.header}>
                       <div class="profile-header-placeholder" />
@@ -326,23 +457,34 @@ export default function Profile() {
                   </Show>
 
                   <Show when={editing()}>
-                    <div
-                      class="profile-avatar-editable"
-                      onClick={() => avatarInput.click()}
-                    >
-                      <img
-                        class="profile-avatar"
-                        src={acc.avatar || defaultAvatar()}
-                        alt=""
-                      />
-                      <div class="profile-avatar-overlay">
-                        {uploadingAvatar() ? "..." : "\u{1F4F7}"}
+                    <div class="profile-avatar-edit-wrapper">
+                      <div
+                        class="profile-avatar-editable"
+                        onClick={() => avatarInput.click()}
+                      >
+                        <img
+                          class="profile-avatar"
+                          src={acc.avatar || defaultAvatar()}
+                          alt=""
+                        />
+                        <div class="profile-avatar-overlay">
+                          {uploadingAvatar() ? "..." : "\u{1F4F7}"}
+                        </div>
                       </div>
+                      <Show when={acc.avatar}>
+                        <button
+                          class="profile-avatar-delete-btn"
+                          title={t("profile.deleteAvatar")}
+                          onClick={handleDeleteAvatar}
+                        >
+                          ✕
+                        </button>
+                      </Show>
                     </div>
                     <input
                       ref={avatarInput}
                       type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng"
                       onChange={handleAvatarChange}
                       style="display: none"
                     />
@@ -472,7 +614,7 @@ export default function Profile() {
                   <Show when={!isOwn() && currentUser() && isFollowedBy()}>
                     <span class="follows-you-badge">{t("profile.followsYou")}</span>
                   </Show>
-                  <Show when={acc.acct.includes("@") && acc.url}>
+                  <Show when={acc.acct.includes("@") && acc.url && /^https?:\/\//.test(acc.url)}>
                     <a
                       class="remote-view-link"
                       href={acc.url}
@@ -569,10 +711,6 @@ export default function Profile() {
                           <input type="checkbox" checked={editLocked()} onChange={(e) => setEditLocked(e.currentTarget.checked)} />
                           {t("settings.locked")}
                         </label>
-                        <label class="profile-edit-checkbox">
-                          <input type="checkbox" checked={editDiscoverable()} onChange={(e) => setEditDiscoverable(e.currentTarget.checked)} />
-                          {t("settings.discoverable")}
-                        </label>
                       </div>
                     </div>
                   </Show>
@@ -582,6 +720,7 @@ export default function Profile() {
                         el.innerHTML = sanitizeHtml(acc.note);
                         if (acc.emojis) emojify(el, acc.emojis);
                         twemojify(el);
+                        externalLinksNewTab(el);
                       }} />
                     </Show>
                     <Show when={acc.fields && acc.fields.length > 0}>
@@ -594,6 +733,7 @@ export default function Profile() {
                                 el.innerHTML = sanitizeHtml(field.value);
                                 if (acc.emojis) emojify(el, acc.emojis);
                                 twemojify(el);
+                                externalLinksNewTab(el);
                               }} />
                             </>
                           )}
@@ -617,6 +757,9 @@ export default function Profile() {
                           note={note}
                           onReactionUpdate={() => refreshNote(note.id)}
                           onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
+                          onReply={(n) => setReplyTarget(n)}
+                          onQuote={(n) => setQuoteTarget(n)}
+                          onThreadOpen={(id) => setThreadNoteId(id)}
                         />
                       )}
                     </For>
@@ -634,9 +777,19 @@ export default function Profile() {
                           note={note}
                           onReactionUpdate={() => refreshNote(note.id)}
                           onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
+                          onReply={(n) => setReplyTarget(n)}
+                          onQuote={(n) => setQuoteTarget(n)}
+                          onThreadOpen={(id) => setThreadNoteId(id)}
                         />
                       )}
                     </For>
+                    <div ref={setSentinelRef} class="timeline-sentinel" />
+                    <Show when={loadingMore()}>
+                      <p class="timeline-loading">{t("timeline.loadingMore")}</p>
+                    </Show>
+                    <Show when={!hasMore() && notes().length > 0}>
+                      <p class="timeline-end">{t("timeline.noMore")}</p>
+                    </Show>
                   </Show>
                 </div>
               </>
@@ -679,6 +832,14 @@ export default function Profile() {
         </div>
       </Show>
 
+      {/* Compose modal (reply / quote) */}
+      <ComposeModal
+        open={!!replyTarget() || !!quoteTarget()}
+        onClose={() => { setReplyTarget(null); setQuoteTarget(null); }}
+        replyTo={replyTarget()}
+        quoteNote={quoteTarget()}
+      />
+
       {/* Unlock confirmation modal */}
       <Show when={showUnlockModal()}>
         <div class="modal-overlay" onClick={() => setShowUnlockModal(false)}>
@@ -707,6 +868,33 @@ export default function Profile() {
             </div>
           </div>
         </div>
+      </Show>
+
+      {/* Thread modal */}
+      <Show when={threadNoteId()}>
+        <NoteThreadModal
+          noteId={threadNoteId()!}
+          onClose={() => setThreadNoteId(null)}
+          onReply={(n) => {
+            setThreadNoteId(null);
+            setReplyTarget(n);
+          }}
+          onQuote={(n) => {
+            setThreadNoteId(null);
+            setQuoteTarget(n);
+          }}
+        />
+      </Show>
+
+      {/* Header crop picker */}
+      <Show when={showHeaderFocal() && account()?.header}>
+        <HeaderCropPicker
+          imageUrl={account()!.header!}
+          initialX={currentUser()?.header_focal?.x}
+          initialY={currentUser()?.header_focal?.y}
+          onSave={handleHeaderFocalSave}
+          onClose={() => setShowHeaderFocal(false)}
+        />
       </Show>
     </div>
   );

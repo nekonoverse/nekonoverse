@@ -319,10 +319,40 @@ class TestFederation:
         followers = instance_a.get_followers("alice")
         assert followers["type"] == "OrderedCollection"
         assert followers["totalItems"] == 0
+        # first must point to a page URL, not the collection itself
+        assert "?page=true" in followers["first"]
+        assert followers["first"] != followers["id"]
 
         following = instance_a.get_following("alice")
         assert following["type"] == "OrderedCollection"
         assert following["totalItems"] == 0
+        assert "?page=true" in following["first"]
+        assert following["first"] != following["id"]
+
+    def test_06b_followers_following_page(self, instance_a: InstanceClient, alice):
+        """Followers/following page endpoint returns OrderedCollectionPage."""
+        resp = instance_a.http.get(
+            "/users/alice/followers",
+            params={"page": "true"},
+            headers={"Accept": "application/activity+json"},
+        )
+        assert resp.status_code == 200
+        page = resp.json()
+        assert page["type"] == "OrderedCollectionPage"
+        assert "partOf" in page
+        assert "orderedItems" in page
+        assert isinstance(page["orderedItems"], list)
+
+        resp = instance_a.http.get(
+            "/users/alice/following",
+            params={"page": "true"},
+            headers={"Accept": "application/activity+json"},
+        )
+        assert resp.status_code == 200
+        page = resp.json()
+        assert page["type"] == "OrderedCollectionPage"
+        assert "partOf" in page
+        assert "orderedItems" in page
 
     def test_07_nodeinfo(self, instance_a: InstanceClient):
         """NodeInfo endpoint works."""
@@ -431,3 +461,94 @@ class TestFederation:
 
         actor = instance_a.get_actor_ap("alice")
         assert actor["id"] == self_link
+
+
+# ── 6. Account Migration (Move) ─────────────────────────────
+
+
+class TestAccountMigration:
+    """Test account migration (Move activity) between instances.
+
+    Scenario: alice@instance-a moves to alice_moved@instance-b.
+    A follower (carol@instance-b) should be migrated to follow the new account.
+    """
+
+    def test_01_setup_migration_users(self, instance_a, instance_b, alice, bob):
+        """Register migration-specific users (alice and bob via fixtures)."""
+        # alice_moved on instance-b: the target account alice will migrate to
+        instance_b.register("alice_moved", "alice_moved@example.com", "password1234", "Alice (moved)")
+        # carol on instance-b: will follow alice via remote follow, then get migrated
+        instance_b.register("carol", "carol@example.com", "password1234", "Carol")
+
+    def test_02_set_also_known_as_on_target(self, instance_b):
+        """Set alsoKnownAs on alice_moved@instance-b to include alice@instance-a."""
+        # Login as alice_moved
+        instance_b_moved = InstanceClient(INSTANCE_B, INSTANCE_B_DOMAIN)
+        instance_b_moved.login("alice_moved", "password1234")
+
+        # Set alsoKnownAs to alice@instance-a's AP ID
+        alice_a_ap_id = f"http://{INSTANCE_A_DOMAIN}/users/alice"
+        instance_b_moved.update_credentials(also_known_as=[alice_a_ap_id])
+
+        # Verify via AP actor endpoint
+        actor = instance_b_moved.get_actor_ap("alice_moved")
+        assert "alsoKnownAs" in actor
+        assert alice_a_ap_id in actor["alsoKnownAs"]
+
+    def test_03_carol_follows_alice_remote(self, instance_a, instance_b):
+        """carol@instance-b follows alice@instance-a (cross-instance follow)."""
+        # Login as carol on instance-b
+        carol_client = InstanceClient(INSTANCE_B, INSTANCE_B_DOMAIN)
+        carol_client.login("carol", "password1234")
+
+        # Resolve alice@instance-a on instance-b (creates remote actor record)
+        accounts = carol_client.search_accounts(f"alice@{INSTANCE_A_DOMAIN}", resolve=True)
+        assert len(accounts) >= 1, "alice@instance-a should be resolvable from instance-b"
+        alice_remote_id = accounts[0]["id"]
+
+        # Follow alice
+        carol_client.follow(alice_remote_id)
+
+        # Wait for follow to be accepted (auto-accept for non-locked accounts)
+        def check_follow_accepted():
+            followers = instance_a.get_followers("alice")
+            return followers["totalItems"] > 0
+
+        poll_until(check_follow_accepted, timeout=15, desc="carol's follow of alice to be accepted")
+
+        # Verify alice has at least one follower on instance-a
+        followers = instance_a.get_followers("alice")
+        assert followers["totalItems"] >= 1
+
+    def test_04_initiate_move(self, instance_a):
+        """alice@instance-a initiates move to alice_moved@instance-b."""
+        target_ap_id = f"http://{INSTANCE_B_DOMAIN}/users/alice_moved"
+        result = instance_a.move_account(target_ap_id)
+        assert result.get("ok") is True
+
+    def test_05_verify_moved_to_on_source(self, instance_a):
+        """Verify alice@instance-a's actor shows movedTo."""
+        target_ap_id = f"http://{INSTANCE_B_DOMAIN}/users/alice_moved"
+
+        def check_moved():
+            actor = instance_a.get_actor_ap("alice")
+            return actor.get("movedTo") == target_ap_id
+
+        poll_until(check_moved, timeout=10, desc="alice's actor to show movedTo")
+
+    def test_06_verify_follower_migration(self, instance_b):
+        """carol@instance-b should now also follow alice_moved@instance-b."""
+        # Login as carol on instance-b
+        carol_client = InstanceClient(INSTANCE_B, INSTANCE_B_DOMAIN)
+        carol_client.login("carol", "password1234")
+
+        def check_carol_follows_moved():
+            # Check alice_moved's followers on instance-b
+            followers = instance_b.get_followers("alice_moved")
+            return followers["totalItems"] > 0
+
+        poll_until(
+            check_carol_follows_moved,
+            timeout=20,
+            desc="carol to follow alice_moved after migration",
+        )

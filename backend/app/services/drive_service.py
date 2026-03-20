@@ -1,12 +1,12 @@
 """Drive file management service."""
 
 import base64
+import io
 import logging
 import math
 import uuid
 from urllib.parse import urlparse
 
-import httpx
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -23,9 +23,120 @@ ALLOWED_IMAGE_TYPES = {
     "image/gif",
     "image/webp",
     "image/avif",
+    "image/apng",
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+# マジックバイト: MIMEタイプと実際のファイルヘッダーの対応
+_MAGIC_BYTES: dict[str, list[bytes]] = {
+    "image/jpeg": [b"\xff\xd8\xff"],
+    "image/png": [b"\x89PNG\r\n\x1a\n"],
+    "image/apng": [b"\x89PNG\r\n\x1a\n"],
+    "image/gif": [b"GIF87a", b"GIF89a"],
+    "image/webp": [b"RIFF"],  # RIFF????WEBP
+    # L-12: AVIFのftypボックスチェック追加
+    "image/avif": [b"\x00\x00\x00"],  # ftypボックス (先頭4バイトはサイズ、8-11バイトが"ftyp")
+}
+
+
+def _validate_magic_bytes(data: bytes, mime_type: str) -> None:
+    """Validate that file content matches the declared MIME type."""
+    # L-12: AVIFのftypボックス検証
+    if mime_type == "image/avif":
+        if len(data) >= 12 and data[4:8] == b"ftyp":
+            ftyp_brand = data[8:12]
+            if ftyp_brand in (b"avif", b"avis", b"mif1"):
+                return
+        raise ValueError(f"File content does not match declared type {mime_type}")
+
+    signatures = _MAGIC_BYTES.get(mime_type)
+    if not signatures:
+        return  # 検証定義がないMIMEタイプはスキップ
+    for sig in signatures:
+        if data[:len(sig)] == sig:
+            return
+    raise ValueError(f"File content does not match declared type {mime_type}")
+
+# PNG signature
+_PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
+
+
+def _remove_jpeg_app1(data: bytes) -> bytes:
+    """Remove APP1 (EXIF) segments from JPEG at byte level (no image decoding)."""
+    import struct
+
+    if len(data) < 2 or data[:2] != b"\xff\xd8":
+        return data
+    result = bytearray(b"\xff\xd8")
+    pos = 2
+    while pos < len(data):
+        if data[pos] != 0xFF:
+            result.extend(data[pos:])
+            break
+        marker = data[pos : pos + 2]
+        if marker == b"\xff\xda":  # SOS — rest is image data
+            result.extend(data[pos:])
+            break
+        # Standalone markers (no length field)
+        if marker[1] in range(0xD0, 0xDA) or marker == b"\xff\x01":
+            result.extend(marker)
+            pos += 2
+            continue
+        if pos + 4 > len(data):
+            result.extend(data[pos:])
+            break
+        length = struct.unpack(">H", data[pos + 2 : pos + 4])[0]
+        segment_end = pos + 2 + length
+        if marker == b"\xff\xe1":  # APP1 = EXIF
+            pos = segment_end
+            continue
+        result.extend(data[pos:segment_end])
+        pos = segment_end
+    return bytes(result)
+
+
+def _strip_exif_jpeg(data: bytes) -> bytes:
+    """Remove EXIF from JPEG at byte level. No image decoding."""
+    try:
+        return _remove_jpeg_app1(data)
+    except Exception:
+        return data
+
+
+def _strip_exif_png(data: bytes) -> bytes:
+    """Remove eXIf chunk from PNG at byte level (no image decoding)."""
+    if len(data) < 8 or data[:8] != _PNG_SIGNATURE:
+        return data
+    result = bytearray(data[:8])
+    pos = 8
+    while pos + 8 <= len(data):
+        length = int.from_bytes(data[pos : pos + 4], "big")
+        chunk_type = data[pos + 4 : pos + 8]
+        chunk_end = pos + 12 + length  # 4(len) + 4(type) + data + 4(crc)
+        if chunk_end > len(data):
+            result.extend(data[pos:])
+            break
+        if chunk_type == b"eXIf":
+            pos = chunk_end
+            continue
+        result.extend(data[pos:chunk_end])
+        pos = chunk_end
+    return bytes(result)
+
+
+def strip_exif(data: bytes, mime_type: str) -> bytes:
+    """Remove EXIF metadata from image data at byte level (no image decoding).
+
+    JPEG: Removes APP1 segments. PNG: Removes eXIf chunks.
+    Other formats: Returned unchanged.
+    Orientation correction is the client's responsibility.
+    """
+    if mime_type == "image/jpeg":
+        return _strip_exif_jpeg(data)
+    if mime_type == "image/png":
+        return _strip_exif_png(data)
+    return data
 
 
 async def upload_drive_file(
@@ -42,6 +153,20 @@ async def upload_drive_file(
 
     if mime_type not in ALLOWED_IMAGE_TYPES:
         raise ValueError(f"Unsupported file type: {mime_type}")
+
+    # Quota check (skip for server files)
+    if owner and not server_file:
+        from app.services.quota_service import check_quota
+
+        ok, usage, limit = await check_quota(db, owner, len(data))
+        if not ok:
+            raise ValueError("Storage quota exceeded")
+
+    # マジックバイト検証: 申告されたMIMEタイプと実際のファイル内容が一致するか確認
+    _validate_magic_bytes(data, mime_type)
+
+    # Strip EXIF metadata before storing (defense-in-depth for privacy)
+    data = strip_exif(data, mime_type)
 
     file_id = uuid.uuid4()
     ext = _extension_for_mime(mime_type)
@@ -116,11 +241,22 @@ async def update_drive_file_meta(
     return drive_file
 
 
-async def auto_detect_focal_point(db: AsyncSession, drive_file: DriveFile) -> None:
-    """Call face detection service to auto-set focal point. Fails silently."""
-    if not settings.face_detect_url:
+async def auto_detect_focal_point(
+    db: AsyncSession,
+    drive_file: DriveFile,
+    image_data: bytes | None = None,
+) -> None:
+    """Call face detection service to auto-set focal point. Fails silently.
+
+    Args:
+        db: Database session.
+        drive_file: The drive file to detect focal point for.
+        image_data: Raw image bytes. If not provided, downloads from S3.
+    """
+    if not settings.face_detect_enabled:
         return
-    parsed = urlparse(settings.face_detect_url)
+    base_url = settings.face_detect_base_url
+    parsed = urlparse(base_url)
     if parsed.scheme not in ("http", "https"):
         logger.warning("Invalid face_detect_url scheme: %s", parsed.scheme)
         return
@@ -130,37 +266,46 @@ async def auto_detect_focal_point(db: AsyncSession, drive_file: DriveFile) -> No
         return
 
     try:
-        image_data = await _read_file_data(drive_file)
         if not image_data:
-            return
+            image_data = await _read_file_data(drive_file)
+            if not image_data:
+                logger.warning(
+                    "Could not read file %s from S3 for face detection",
+                    drive_file.s3_key,
+                )
+                return
+
+        logger.info("Running face detection for %s", drive_file.id)
 
         b64 = base64.b64encode(image_data).decode("ascii")
         from app.utils.http_client import make_face_detect_client
 
         async with make_face_detect_client() as client:
             resp = await client.post(
-                settings.face_detect_url,
+                base_url,
                 json={"inputs": b64, "parameters": {"threshold": 0.5}},
             )
             resp.raise_for_status()
             results = resp.json()
 
-        if not results:
+        from app.utils.focal import focal_from_detections
+
+        focal = focal_from_detections(
+            results, drive_file.width or 1, drive_file.height or 1
+        )
+        if not focal:
+            logger.info("No face detected for %s", drive_file.id)
             return
 
-        # Use the highest-score detection
-        best = results[0]
-        box = best["box"]
-        cx = (box["xmin"] + box["xmax"]) / 2
-        cy = (box["ymin"] + box["ymax"]) / 2
-
-        w = drive_file.width or 1
-        h = drive_file.height or 1
-        drive_file.focal_x = max(-1.0, min(1.0, (cx / w) * 2 - 1))
-        drive_file.focal_y = max(-1.0, min(1.0, 1 - (cy / h) * 2))
+        drive_file.focal_x, drive_file.focal_y = focal
         await db.commit()
+        logger.info(
+            "Focal point set for %s: (%.2f, %.2f)", drive_file.id, focal[0], focal[1]
+        )
     except Exception:
-        logger.debug("Face detection failed for %s, skipping", drive_file.id, exc_info=True)
+        logger.warning(
+            "Face detection failed for %s", drive_file.id, exc_info=True
+        )
 
 
 async def _read_file_data(drive_file: DriveFile) -> bytes | None:
@@ -185,6 +330,7 @@ def _extension_for_mime(mime_type: str) -> str:
         "image/gif": ".gif",
         "image/webp": ".webp",
         "image/avif": ".avif",
+        "image/apng": ".apng",
     }.get(mime_type, "")
 
 

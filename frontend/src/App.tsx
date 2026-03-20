@@ -1,13 +1,14 @@
-import { Router, Route } from "@solidjs/router";
-import { lazy, onMount, onCleanup, type ParentProps } from "solid-js";
-import { I18nProvider } from "./i18n";
-import { initTheme } from "./stores/theme";
-import { fetchCurrentUser } from "./stores/auth";
+import { Router, Route, useIsRouting } from "@solidjs/router";
+import { lazy, onMount, onCleanup, createEffect, createSignal, Show, Suspense, type ParentProps } from "solid-js";
+import { I18nProvider } from "@nekonoverse/ui/i18n";
+import { initTheme } from "@nekonoverse/ui/stores/theme";
+import { fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
 import {
+  instance,
   fetchInstance,
   checkClientVersion,
   startVersionPolling,
-} from "./stores/instance";
+} from "@nekonoverse/ui/stores/instance";
 import Navbar from "./components/layout/Navbar";
 import SwipeBack from "./components/SwipeBack";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";
@@ -29,6 +30,45 @@ const FollowList = lazy(() => import("./pages/FollowList"));
 const FollowRequests = lazy(() => import("./pages/FollowRequests"));
 const TagTimeline = lazy(() => import("./pages/TagTimeline"));
 const NoteThread = lazy(() => import("./pages/NoteThread"));
+const Terms = lazy(() => import("./pages/Terms"));
+const Privacy = lazy(() => import("./pages/Privacy"));
+
+function NavigationProgress() {
+  const isRouting = useIsRouting();
+  const [visible, setVisible] = createSignal(false);
+  const [width, setWidth] = createSignal(0);
+  let hideTimer: ReturnType<typeof setTimeout> | undefined;
+  let growTimer: ReturnType<typeof setInterval> | undefined;
+
+  createEffect(() => {
+    if (isRouting()) {
+      // ルーティング開始 → バー表示
+      clearTimeout(hideTimer);
+      setVisible(true);
+      setWidth(30);
+      clearInterval(growTimer);
+      growTimer = setInterval(() => {
+        setWidth((w) => (w < 90 ? w + (90 - w) * 0.1 : w));
+      }, 100);
+    } else if (visible()) {
+      // ルーティング完了 → 100%にしてフェードアウト
+      clearInterval(growTimer);
+      setWidth(100);
+      hideTimer = setTimeout(() => setVisible(false), 200);
+    }
+  });
+
+  onCleanup(() => {
+    clearTimeout(hideTimer);
+    clearInterval(growTimer);
+  });
+
+  return (
+    <Show when={visible()}>
+      <div class="nav-progress-bar" style={{ width: `${width()}%` }} />
+    </Show>
+  );
+}
 
 function Layout(props: ParentProps) {
   onMount(() => {
@@ -36,14 +76,22 @@ function Layout(props: ParentProps) {
     fetchInstance();
   });
 
+  createEffect(() => {
+    const info = instance();
+    if (info?.title) {
+      document.title = info.title;
+    }
+  });
+
   const stopPolling = startVersionPolling();
   onCleanup(stopPolling);
 
   return (
     <>
+      <NavigationProgress />
       <Navbar />
       <SwipeBack />
-      {props.children}
+      <Suspense>{props.children}</Suspense>
     </>
   );
 }
@@ -58,11 +106,14 @@ export default function App() {
         <Route path="/register" component={Register} />
         <Route path="/settings/*section" component={Settings} />
         <Route path="/notifications" component={Notifications} />
+        <Route path="/mentions" component={Notifications} />
         <Route path="/admin/*section" component={Admin} />
         <Route path="/drive" component={Drive} />
         <Route path="/bookmarks" component={Bookmarks} />
         <Route path="/follow-requests" component={FollowRequests} />
         <Route path="/search" component={Search} />
+        <Route path="/terms" component={Terms} />
+        <Route path="/privacy" component={Privacy} />
         <Route path="/tags/:tag" component={TagTimeline} />
         <Route path="/notes/:id" component={NoteThread} />
         <Route path="/:acct/followers" component={FollowList} />

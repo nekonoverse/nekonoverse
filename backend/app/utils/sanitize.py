@@ -3,7 +3,7 @@ import re
 import bleach
 
 ALLOWED_TAGS = ["a", "br", "p", "span", "em", "strong", "code", "pre", "blockquote"]
-ALLOWED_ATTRIBUTES = {"a": ["href", "rel", "class"], "span": ["class"]}
+ALLOWED_ATTRIBUTES = {"a": ["href", "rel", "class", "target"], "span": ["class"]}
 
 URL_PATTERN = re.compile(r"(https?://[^\s<]+)")
 MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?")
@@ -39,6 +39,8 @@ def _replace_mention(match: re.Match) -> str:
 
 def text_to_html(text: str) -> str:
     """Convert plain text to simple HTML with auto-linking, mentions, and line breaks."""
+    if not text.strip():
+        return ""
     escaped = bleach.clean(text)
 
     # Auto-link URLs first (before mention parsing)

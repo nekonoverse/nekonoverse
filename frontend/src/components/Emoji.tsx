@@ -1,4 +1,5 @@
-import { emojiToUrl } from "../utils/twemoji";
+import { Show } from "solid-js";
+import { emojiToUrl } from "@nekonoverse/ui/utils/twemoji";
 
 interface Props {
   emoji: string;
@@ -7,29 +8,35 @@ interface Props {
 }
 
 export default function Emoji(props: Props) {
-  if (props.url) {
-    const shortcode = props.emoji.replace(/^:|:$/g, "").split("@")[0];
-    return (
-      <img
-        class={`custom-emoji ${props.class ?? ""}`}
-        src={props.url}
-        alt={`:${shortcode}:`}
-        title={`:${shortcode}:`}
-        draggable={false}
-      />
-    );
-  }
-
-  if (props.emoji.startsWith(":") && props.emoji.endsWith(":")) {
-    return <span>{props.emoji}</span>;
-  }
+  const isCustom = () => props.emoji.startsWith(":") && props.emoji.endsWith(":");
+  const shortcode = () => props.emoji.replace(/^:|:$/g, "").split("@")[0];
 
   return (
-    <img
-      class={`twemoji ${props.class ?? ""}`}
-      src={emojiToUrl(props.emoji)}
-      alt={props.emoji}
-      draggable={false}
-    />
+    <Show
+      when={props.url}
+      fallback={
+        <Show
+          when={isCustom()}
+          fallback={
+            <img
+              class={`twemoji ${props.class ?? ""}`}
+              src={emojiToUrl(props.emoji)}
+              alt={props.emoji}
+              draggable={false}
+            />
+          }
+        >
+          <span>{props.emoji}</span>
+        </Show>
+      }
+    >
+      <img
+        class={`custom-emoji ${props.class ?? ""}`}
+        src={props.url!}
+        alt={`:${shortcode()}:`}
+        title={`:${shortcode()}:`}
+        draggable={false}
+      />
+    </Show>
   );
 }

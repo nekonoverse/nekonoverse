@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+  <!-- 押し込まれた肉球: パッドが広がり、全体が少し下にずれる -->
+  <!-- Paw pad (main, squished wider) -->
+  <ellipse cx="16" cy="23" rx="8" ry="5" fill="#d63851"/>
+  <ellipse cx="16" cy="23" rx="6" ry="3.8" fill="#B86B8A"/>
+  <!-- Toe beans (spread out more) -->
+  <ellipse cx="7.5" cy="14" rx="3.8" ry="2.8" fill="#d63851" transform="rotate(-20 7.5 14)"/>
+  <ellipse cx="7.5" cy="14" rx="2.4" ry="1.8" fill="#B86B8A" transform="rotate(-20 7.5 14)"/>
+  <ellipse cx="16" cy="11" rx="3.8" ry="2.8" fill="#d63851"/>
+  <ellipse cx="16" cy="11" rx="2.4" ry="1.8" fill="#B86B8A"/>
+  <ellipse cx="24.5" cy="14" rx="3.8" ry="2.8" fill="#d63851" transform="rotate(20 24.5 14)"/>
+  <ellipse cx="24.5" cy="14" rx="2.4" ry="1.8" fill="#B86B8A" transform="rotate(20 24.5 14)"/>
+</svg>

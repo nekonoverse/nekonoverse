@@ -1,12 +1,11 @@
-import ipaddress
-import socket
 from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import StreamingResponse
+from fastapi.responses import Response, StreamingResponse
 
 from app.utils.media_proxy import verify_proxy_hmac
+from app.utils.network import is_private_host as _is_private_host
 
 router = APIRouter(prefix="/api/v1/media", tags=["media_proxy"])
 
@@ -14,23 +13,66 @@ _MAX_SIZE = 20 * 1024 * 1024  # 20 MB
 _ALLOWED_CONTENT_PREFIXES = ("image/", "video/", "audio/")
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
+# Magic byte signatures for image detection when Content-Type is unreliable
+_IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
+    (b"\x89PNG\r\n\x1a\n", "image/png"),   # PNG / APNG
+    (b"\xff\xd8\xff", "image/jpeg"),
+    (b"GIF87a", "image/gif"),
+    (b"GIF89a", "image/gif"),
+    (b"RIFF", "image/webp"),  # RIFF....WEBP (check WEBP at offset 8)
+    (b"BM", "image/bmp"),
+    (b"II\x2a\x00", "image/tiff"),
+    (b"MM\x00\x2a", "image/tiff"),
+    (b"\xff\x0a", "image/jxl"),             # JPEG XL codestream
+    (b"\x00\x00\x00\x0c\x4a\x58\x4c\x20", "image/jxl"),  # JPEG XL container
+]
 
-def _is_private_host(hostname: str) -> bool:
-    """Block requests to private/loopback IP ranges (SSRF protection)."""
+
+def _detect_image_type(head: bytes) -> str | None:
+    """Detect image MIME type from magic bytes. Returns None if unknown."""
+    for sig, mime in _IMAGE_SIGNATURES:
+        if head[:len(sig)] == sig:
+            if sig == b"RIFF" and head[8:12] != b"WEBP":
+                continue
+            return mime
+    # AVIF/HEIF: ftyp box at offset 4
+    if len(head) >= 12 and head[4:8] == b"ftyp":
+        brand = head[8:12]
+        if brand in (b"avif", b"avis", b"mif1", b"heic", b"heix"):
+            return "image/avif"
+    return None
+
+
+async def _transform_image(body: bytes, **params) -> tuple[bytes, str]:
+    """Send image to external transform service. Falls back to original on error."""
+    from app.config import settings
+    from app.utils.http_client import make_media_transform_client
+
+    form_data = {k: str(v) for k, v in params.items() if v}
     try:
-        for info in socket.getaddrinfo(hostname, None):
-            addr = ipaddress.ip_address(info[4][0])
-            if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
-                return True
-    except (socket.gaierror, ValueError):
-        return True  # can't resolve → block
-    return False
+        async with make_media_transform_client() as client:
+            base = settings.media_proxy_transform_base_url
+            resp = await client.post(
+                f"{base}/transform" if not base.endswith("/transform") else base,
+                files={"file": ("image", body)},
+                data=form_data,
+            )
+            if resp.status_code == 200:
+                return resp.content, resp.headers.get("content-type", "image/webp")
+    except Exception:
+        pass
+    return body, "image/webp"
 
 
 @router.get("/proxy")
 async def proxy_media(
     url: str = Query(..., min_length=1),
     h: str = Query(..., min_length=16, max_length=32),
+    avatar: int | None = Query(None),
+    emoji: int | None = Query(None),
+    preview: int | None = Query(None),
+    static: int | None = Query(None),
+    badge: int | None = Query(None),
 ):
     if not verify_proxy_hmac(url, h):
         raise HTTPException(status_code=403, detail="Invalid signature")
@@ -76,15 +118,30 @@ async def proxy_media(
             raise HTTPException(status_code=502, detail="Upstream returned non-200")
 
         content_type = resp.headers.get("content-type", "")
-        if not any(content_type.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
-            raise HTTPException(status_code=403, detail="Disallowed content type")
-
         body = resp.content
+
+        if not any(content_type.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
+            # application/octet-stream 等の場合、先頭バイトで画像判定
+            detected = _detect_image_type(body[:12]) if body else None
+            if detected:
+                content_type = detected
+            else:
+                raise HTTPException(status_code=403, detail="Disallowed content type")
         if len(body) > _MAX_SIZE:
             raise HTTPException(status_code=413, detail="Response too large")
 
-    return StreamingResponse(
-        iter([body]),
+    # Transform if params present, image content, and service configured
+    from app.config import settings
+
+    needs_transform = any([avatar, emoji, preview, static, badge])
+    if needs_transform and content_type.startswith("image/") and settings.media_proxy_transform_enabled:
+        body, content_type = await _transform_image(
+            body, avatar=avatar, emoji=emoji, preview=preview,
+            static=static, badge=badge,
+        )
+
+    return Response(
+        content=body,
         media_type=content_type,
         headers={
             "Cache-Control": "public, max-age=86400",

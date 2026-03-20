@@ -1,8 +1,8 @@
 import { onMount, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { currentUser } from "../stores/auth";
-import { registrationMode, inviteRequired, approvalRequired, instanceLoading } from "../stores/instance";
-import { useI18n } from "../i18n";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { registrationMode, inviteRequired, approvalRequired, instanceLoading } from "@nekonoverse/ui/stores/instance";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import RegisterForm from "../components/auth/RegisterForm";
 
 export default function Register() {

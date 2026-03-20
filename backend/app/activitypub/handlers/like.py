@@ -33,7 +33,7 @@ async def handle_like(db: AsyncSession, activity: dict):
     elif content and is_single_emoji(content):
         emoji = content
     else:
-        emoji = "\u2764"  # ❤
+        emoji = "\u2b50"  # ⭐ — bare Like (e.g. from Mastodon) = favourite
 
     # Cache custom emoji from tag array
     if is_custom_emoji_shortcode(emoji):
@@ -120,10 +120,11 @@ async def _save_reaction(
     await db.flush()
 
     # Notify local note author
+    notif = None
     if note.actor and note.actor.is_local:
         from app.services.notification_service import create_notification
 
-        await create_notification(
+        notif = await create_notification(
             db,
             "reaction",
             note.actor_id,
@@ -133,6 +134,11 @@ async def _save_reaction(
         )
 
     await db.commit()
+
+    if notif:
+        from app.services.notification_service import publish_notification
+
+        await publish_notification(notif)
 
     from app.services.reaction_service import _publish_reaction_event
 

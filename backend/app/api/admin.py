@@ -3,12 +3,14 @@
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
-from sqlalchemy import func, select
+from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_admin_user, get_db, get_staff_user
+from app.dependencies import get_admin_user, get_db, get_permitted_staff, get_staff_user
 from app.models.actor import Actor
+from app.models.delivery import DeliveryJob
+from app.models.follow import Follow
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
 from app.models.user import User
@@ -32,6 +34,9 @@ from app.schemas.admin import (
     QueueStatsResponse,
     ReportResponse,
     RoleChangeRequest,
+    RoleCreateRequest,
+    RoleResponse,
+    RoleUpdateRequest,
     ServerSettingsResponse,
     ServerSettingsUpdate,
     SystemStatsResponse,
@@ -66,6 +71,13 @@ async def upload_server_icon(
 
     url = file_to_url(drive_file)
 
+    from app.services.icon_service import generate_all_icons
+
+    try:
+        await generate_all_icons(db, data, set_server_icon=False)
+    except Exception:
+        pass  # Icon derivative generation is best-effort
+
     from app.services.server_settings_service import set_setting
 
     await set_setting(db, "server_icon_url", url)
@@ -89,15 +101,28 @@ async def get_server_settings(
     if mode is None:
         reg_open = settings.get("registration_open", "true") == "true"
         mode = "open" if reg_open else "closed"
+    from app.services.push_service import get_vapid_public_key_base64url
+
+    try:
+        vapid_key = get_vapid_public_key_base64url()
+    except Exception:
+        vapid_key = None
+
     return ServerSettingsResponse(
         server_name=settings.get("server_name"),
         server_description=settings.get("server_description"),
         tos_url=settings.get("tos_url"),
+        terms_of_service=settings.get("terms_of_service"),
+        privacy_policy=settings.get("privacy_policy"),
         registration_open=mode != "closed",
         registration_mode=mode,
         invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
         server_theme_color=settings.get("server_theme_color"),
+        push_enabled=settings.get("push_enabled", "true") == "true",
+        vapid_public_key=vapid_key,
+        timeline_default_limit=int(settings.get("timeline_default_limit", "20")),
+        timeline_max_limit=int(settings.get("timeline_max_limit", "40")),
     )
 
 
@@ -123,6 +148,10 @@ async def update_server_settings(
                 await _resolve_pending_users(db, user, value)
         elif key == "invite_create_role":
             await set_setting(db, key, value)
+        elif key == "push_enabled":
+            await set_setting(db, key, "true" if value else "false")
+        elif key in ("timeline_default_limit", "timeline_max_limit"):
+            await set_setting(db, key, str(int(value)))
         else:
             await set_setting(db, key, value)
     await db.commit()
@@ -130,21 +159,87 @@ async def update_server_settings(
     await log_action(db, user, "update_settings", "server", "settings")
     await db.commit()
 
+    # instance_infoキャッシュを無効化 (設定変更を即時反映)
+    try:
+        from app.valkey_client import valkey as _v
+
+        await _v.delete("perf:instance_info_v1")
+        await _v.delete("perf:instance_info_v2")
+    except Exception:
+        pass
+
     settings = await get_all_settings(db)
     mode = settings.get("registration_mode")
     if mode is None:
         reg_open = settings.get("registration_open", "true") == "true"
         mode = "open" if reg_open else "closed"
+    from app.services.push_service import get_vapid_public_key_base64url
+
+    try:
+        vapid_key = get_vapid_public_key_base64url()
+    except Exception:
+        vapid_key = None
+
     return ServerSettingsResponse(
         server_name=settings.get("server_name"),
         server_description=settings.get("server_description"),
         tos_url=settings.get("tos_url"),
+        terms_of_service=settings.get("terms_of_service"),
+        privacy_policy=settings.get("privacy_policy"),
         registration_open=mode != "closed",
         registration_mode=mode,
         invite_create_role=settings.get("invite_create_role", "admin"),
         server_icon_url=settings.get("server_icon_url"),
         server_theme_color=settings.get("server_theme_color"),
+        push_enabled=settings.get("push_enabled", "true") == "true",
+        vapid_public_key=vapid_key,
+        timeline_default_limit=int(settings.get("timeline_default_limit", "20")),
+        timeline_max_limit=int(settings.get("timeline_max_limit", "40")),
     )
+
+
+# --- VAPID Key Management ---
+
+
+@router.post("/push/generate-vapid-key")
+async def generate_vapid_key(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Generate a new VAPID key pair and store the private key in server settings."""
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric import ec
+
+    from app.services.moderation_service import log_action
+    from app.services.server_settings_service import set_setting
+
+    # 新しいP-256鍵ペアを生成
+    private_key = ec.generate_private_key(ec.SECP256R1())
+    private_bytes = private_key.private_numbers().private_value.to_bytes(32, "big")
+    private_key_b64 = base64.urlsafe_b64encode(private_bytes).rstrip(b"=").decode()
+
+    # 公開鍵を算出
+    pub_numbers = private_key.public_key().public_numbers()
+    x_bytes = pub_numbers.x.to_bytes(32, "big")
+    y_bytes = pub_numbers.y.to_bytes(32, "big")
+    raw_public = b"\x04" + x_bytes + y_bytes
+    public_key_b64 = base64.urlsafe_b64encode(raw_public).rstrip(b"=").decode()
+
+    # DB保存 + インメモリキャッシュ更新
+    await set_setting(db, "vapid_private_key", private_key_b64)
+    await db.commit()
+
+    from app.services.push_service import set_db_vapid_key
+
+    set_db_vapid_key(private_key_b64)
+
+    await log_action(db, user, "generate_vapid_key", "server", "push")
+    await db.commit()
+
+    return {
+        "vapid_public_key": public_key_b64,
+    }
 
 
 # --- Stats ---
@@ -152,17 +247,41 @@ async def update_server_settings(
 
 @router.get("/stats", response_model=AdminStatsResponse)
 async def get_admin_stats(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     user_count = (await db.execute(select(func.count(User.id)))).scalar() or 0
+    # ローカルユーザーの投稿のみカウント
     note_count = (
-        await db.execute(select(func.count(Note.id)).where(Note.deleted_at.is_(None)))
-    ).scalar() or 0
-    domain_count = (
         await db.execute(
-            select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
+            select(func.count(Note.id)).where(
+                Note.deleted_at.is_(None),
+                Note.local.is_(True),
+            )
         )
+    ).scalar() or 0
+    # 配送中/購読中のアクティブな連合ドメインのみカウント
+    # 配送先ドメイン（delivered/pending/processing）
+    delivery_domains = select(
+        func.substring(DeliveryJob.target_inbox_url, r"https?://([^/]+)").label("domain")
+    ).where(DeliveryJob.status.in_(["delivered", "pending", "processing"]))
+    # フォロー関係のあるリモートドメイン（ローカル→リモート、リモート→ローカル）
+    local_actor_ids = select(Actor.id).where(Actor.domain.is_(None))
+    # ローカルユーザーがフォローしているリモートActorのドメイン
+    following_domains = (
+        select(Actor.domain.label("domain"))
+        .join(Follow, Follow.following_id == Actor.id)
+        .where(Follow.follower_id.in_(local_actor_ids), Actor.domain.isnot(None))
+    )
+    # リモートActorがローカルユーザーをフォローしているドメイン
+    follower_domains = (
+        select(Actor.domain.label("domain"))
+        .join(Follow, Follow.follower_id == Actor.id)
+        .where(Follow.following_id.in_(local_actor_ids), Actor.domain.isnot(None))
+    )
+    active_domains = union(delivery_domains, following_domains, follower_domains).subquery()
+    domain_count = (
+        await db.execute(select(func.count(func.distinct(active_domains.c.domain))))
     ).scalar() or 0
     return AdminStatsResponse(
         user_count=user_count,
@@ -176,7 +295,7 @@ async def get_admin_stats(
 
 @router.get("/users", response_model=list[AdminUserResponse])
 async def list_users(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=50, le=100),
     offset: int = Query(default=0, ge=0),
@@ -197,6 +316,7 @@ async def list_users(
             display_name=u.actor.display_name,
             role=u.role,
             is_active=u.is_active,
+            is_system=u.is_system,
             suspended=u.actor.is_suspended,
             silenced=u.actor.is_silenced,
             created_at=u.created_at,
@@ -215,8 +335,15 @@ async def change_user_role(
     from app.services.moderation_service import log_action
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if target.id == user.id:
         raise HTTPException(status_code=422, detail="Cannot change own role")
+
+    from app.services.role_service import role_exists
+
+    if not await role_exists(db, body.role):
+        raise HTTPException(status_code=422, detail=f"Role '{body.role}' does not exist")
 
     old_role = target.role
     target.role = body.role
@@ -231,12 +358,14 @@ async def change_user_role(
 async def suspend_user(
     user_id: uuid.UUID,
     body: ModerationActionRequest = ModerationActionRequest(),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import suspend_actor
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if target.actor.is_suspended:
         raise HTTPException(status_code=422, detail="Already suspended")
     if target.id == user.id:
@@ -251,12 +380,14 @@ async def suspend_user(
 @router.post("/users/{user_id}/unsuspend")
 async def unsuspend_user(
     user_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import unsuspend_actor
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if not target.actor.is_suspended:
         raise HTTPException(status_code=422, detail="Not suspended")
     _check_moderation_permission(user, target)
@@ -270,12 +401,14 @@ async def unsuspend_user(
 async def silence_user(
     user_id: uuid.UUID,
     body: ModerationActionRequest = ModerationActionRequest(),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import silence_actor
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Already silenced")
     if target.id == user.id:
@@ -290,12 +423,14 @@ async def silence_user(
 @router.post("/users/{user_id}/unsilence")
 async def unsilence_user(
     user_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("users")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import unsilence_actor
 
     target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot modify system account")
     if not target.actor.is_silenced:
         raise HTTPException(status_code=422, detail="Not silenced")
     _check_moderation_permission(user, target)
@@ -310,7 +445,7 @@ async def unsilence_user(
 
 @router.get("/federation", response_model=FederatedServerListResponse)
 async def list_federated_servers(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("federation")),
     db: AsyncSession = Depends(get_db),
     limit: int = Query(default=40, le=200, ge=1),
     offset: int = Query(default=0, ge=0),
@@ -343,7 +478,7 @@ async def list_federated_servers(
 @router.get("/federation/{domain:path}", response_model=FederatedServerDetailResponse)
 async def get_federated_server_detail_endpoint(
     domain: str,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("federation")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.federation_service import get_federated_server_detail
@@ -359,7 +494,7 @@ async def get_federated_server_detail_endpoint(
 
 @router.get("/domain_blocks", response_model=list[DomainBlockResponse])
 async def list_domain_blocks(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("domains")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.domain_block_service import list_domain_blocks as _list
@@ -371,7 +506,7 @@ async def list_domain_blocks(
 @router.post("/domain_blocks", response_model=DomainBlockResponse, status_code=201)
 async def create_domain_block(
     body: DomainBlockRequest,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("domains")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.domain_block_service import create_domain_block as _create
@@ -390,7 +525,7 @@ async def create_domain_block(
 @router.delete("/domain_blocks/{domain}")
 async def remove_domain_block(
     domain: str,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("domains")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.domain_block_service import remove_domain_block as _remove
@@ -410,7 +545,7 @@ async def remove_domain_block(
 
 @router.get("/reports", response_model=list[ReportResponse])
 async def get_reports(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("reports")),
     db: AsyncSession = Depends(get_db),
     status: str | None = Query(default=None),
 ):
@@ -437,7 +572,7 @@ async def get_reports(
 @router.post("/reports/{report_id}/resolve")
 async def resolve_report(
     report_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("reports")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
@@ -459,7 +594,7 @@ async def resolve_report(
 @router.post("/reports/{report_id}/reject")
 async def reject_report(
     report_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("reports")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import log_action
@@ -485,7 +620,7 @@ async def reject_report(
 async def admin_delete_note(
     note_id: uuid.UUID,
     body: ModerationActionRequest = ModerationActionRequest(),
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("content")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import admin_delete_note as _delete
@@ -505,7 +640,7 @@ async def admin_delete_note(
 @router.post("/notes/{note_id}/sensitive")
 async def force_note_sensitive(
     note_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("content")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.moderation_service import force_sensitive
@@ -559,7 +694,7 @@ async def get_moderation_log(
 
 @router.get("/emoji/list", response_model=list[AdminEmojiResponse])
 async def list_emojis(
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_all_local_emojis
@@ -574,7 +709,7 @@ async def list_remote_emojis_endpoint(
     search: str | None = Query(None),
     limit: int = Query(100, le=200),
     offset: int = Query(0, ge=0),
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_remote_emojis
@@ -585,7 +720,7 @@ async def list_remote_emojis_endpoint(
 
 @router.get("/emoji/remote/domains")
 async def list_remote_emoji_domains_endpoint(
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import list_remote_emoji_domains
@@ -596,7 +731,7 @@ async def list_remote_emoji_domains_endpoint(
 @router.post("/emoji/import-remote/{emoji_id}", response_model=AdminEmojiResponse)
 async def import_remote_emoji(
     emoji_id: uuid.UUID,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import import_remote_emoji_to_local
@@ -612,20 +747,43 @@ async def import_remote_emoji(
 @router.post("/emoji/import-by-shortcode", response_model=AdminEmojiResponse)
 async def import_remote_emoji_by_shortcode(
     body: ImportByShortcodeRequest,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local
+    from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local, update_emoji
 
     remote = await get_custom_emoji(db, body.shortcode, body.domain)
     if not remote:
         raise HTTPException(status_code=404, detail="Remote emoji not found")
+
+    # Apply metadata overrides to remote emoji before import
+    overrides = {}
+    if body.category is not None:
+        overrides["category"] = body.category
+    if body.author is not None:
+        overrides["author"] = body.author
+    if body.license is not None:
+        overrides["license"] = body.license
+    if body.description is not None:
+        overrides["description"] = body.description
+    if body.is_sensitive is not None:
+        overrides["is_sensitive"] = body.is_sensitive
+    if body.aliases is not None:
+        overrides["aliases"] = body.aliases
+    if overrides:
+        await update_emoji(db, remote.id, overrides)
+
     try:
         emoji = await import_remote_emoji_to_local(db, remote.id)
-        await db.commit()
-        return AdminEmojiResponse.model_validate(emoji)
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
+
+    # Apply shortcode override to the new local emoji
+    if body.shortcode_override and body.shortcode_override != body.shortcode:
+        await update_emoji(db, emoji.id, {"shortcode": body.shortcode_override})
+
+    await db.commit()
+    return AdminEmojiResponse.model_validate(emoji)
 
 
 @router.post("/emoji/add", response_model=AdminEmojiResponse)
@@ -642,7 +800,7 @@ async def add_emoji(
     copy_permission: str | None = Form(None),
     usage_info: str | None = Form(None),
     is_based_on: str | None = Form(None),
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     import json as json_mod
@@ -694,7 +852,7 @@ async def add_emoji(
 async def update_emoji_endpoint(
     emoji_id: uuid.UUID,
     body: AdminEmojiUpdate,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import update_emoji
@@ -710,7 +868,7 @@ async def update_emoji_endpoint(
 @router.delete("/emoji/{emoji_id}")
 async def delete_emoji_endpoint(
     emoji_id: uuid.UUID,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.emoji_service import delete_emoji, get_emoji_by_id
@@ -733,7 +891,7 @@ async def delete_emoji_endpoint(
 
 @router.get("/emoji/export")
 async def export_emojis(
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     import io
@@ -816,7 +974,7 @@ async def export_emojis(
 @router.post("/emoji/import")
 async def import_emojis(
     file: UploadFile = File(...),
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
     import io
@@ -1147,7 +1305,7 @@ async def get_system_stats(
 
 @router.get("/registrations", response_model=list[PendingRegistrationResponse])
 async def list_pending_registrations(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
     """List users awaiting approval."""
@@ -1173,7 +1331,7 @@ async def list_pending_registrations(
 @router.post("/registrations/{user_id}/approve")
 async def approve_registration(
     user_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
     """Approve a pending registration."""
@@ -1192,7 +1350,7 @@ async def approve_registration(
 @router.post("/registrations/{user_id}/reject")
 async def reject_registration(
     user_id: uuid.UUID,
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
     """Reject a pending registration and delete the user."""
@@ -1208,6 +1366,118 @@ async def reject_registration(
     await db.delete(actor)
     await db.commit()
     return {"ok": True}
+
+
+# --- Moderator Permissions ---
+
+
+@router.get("/permissions")
+async def get_permissions(
+    user: User = Depends(get_staff_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return current moderator permission settings (visible to all staff)."""
+    from app.services.permission_service import get_moderator_permissions
+
+    return await get_moderator_permissions(db)
+
+
+@router.patch("/permissions")
+async def update_permissions(
+    body: dict,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update moderator permission settings (admin only)."""
+    from app.services.permission_service import (
+        get_moderator_permissions,
+        set_moderator_permissions,
+    )
+
+    await set_moderator_permissions(db, body)
+    await db.commit()
+    return await get_moderator_permissions(db)
+
+
+# --- Roles ---
+
+
+@router.get("/roles")
+async def list_roles(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return all roles ordered by priority (descending)."""
+    from app.services.role_service import get_all_roles
+
+    roles = await get_all_roles(db)
+    return [RoleResponse.model_validate(r) for r in roles]
+
+
+@router.get("/roles/{role_name}")
+async def get_role(
+    role_name: str,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.role_service import get_role as _get_role
+
+    role = await _get_role(db, role_name)
+    if not role:
+        raise HTTPException(status_code=404, detail="Role not found")
+    return RoleResponse.model_validate(role)
+
+
+@router.post("/roles", status_code=201)
+async def create_role(
+    body: RoleCreateRequest,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.role_service import create_role as _create_role
+
+    try:
+        role = await _create_role(db, body.name, body.display_name, body.copy_from)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return RoleResponse.model_validate(role)
+
+
+@router.patch("/roles/{role_name}")
+async def update_role(
+    role_name: str,
+    body: RoleUpdateRequest,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.role_service import update_role as _update_role
+
+    try:
+        role = await _update_role(
+            db,
+            role_name,
+            display_name=body.display_name,
+            permissions=body.permissions,
+            quota_bytes=body.quota_bytes,
+            priority=body.priority,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return RoleResponse.model_validate(role)
+
+
+@router.delete("/roles/{role_name}", status_code=204)
+async def delete_role(
+    role_name: str,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.role_service import delete_role as _delete_role
+
+    try:
+        await _delete_role(db, role_name)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
 
 # --- Helpers ---

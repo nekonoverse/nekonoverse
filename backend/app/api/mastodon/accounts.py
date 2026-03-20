@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,6 +12,7 @@ from app.models.note import Note
 from app.models.user import User
 from app.services.follow_service import follow_actor, get_follow_counts, unfollow_actor
 from app.services.note_service import get_statuses_count
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
@@ -130,17 +131,24 @@ async def _actor_to_account(
 ) -> dict:
     import re
 
+    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or "/default-avatar.svg"
+    avatar_static = media_proxy_url(actor.avatar_url, variant="avatar", static=True) or avatar
+    header = media_proxy_url(actor.header_url) or ""
     data = {
         "id": str(actor.id),
         "username": actor.username,
         "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
-        "display_name": actor.display_name,
+        "display_name": actor.display_name or "",
         "note": actor.summary or "",
-        "avatar": media_proxy_url(actor.avatar_url) or "/default-avatar.svg",
-        "header": media_proxy_url(actor.header_url),
+        "uri": actor.ap_id,
+        "avatar": avatar,
+        "avatar_static": avatar_static,
+        "header": header,
+        "header_static": header,
         "url": actor.ap_id,
-        "created_at": actor.created_at.isoformat() if actor.created_at else None,
+        "created_at": _to_mastodon_datetime(actor.created_at),
         "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
+        "group": actor.type == "Group",
         "locked": actor.manually_approves_followers,
         "discoverable": actor.discoverable,
         "fields": [
@@ -148,13 +156,11 @@ async def _actor_to_account(
             for f in (actor.fields or [])
         ],
         "emojis": [],
+        "followers_count": followers_count or 0,
+        "following_count": following_count or 0,
+        "statuses_count": statuses_count or 0,
+        "last_status_at": None,
     }
-    if followers_count is not None:
-        data["followers_count"] = followers_count
-    if following_count is not None:
-        data["following_count"] = following_count
-    if statuses_count is not None:
-        data["statuses_count"] = statuses_count
 
     # Resolve custom emoji from display_name, summary, and fields
     if db:
@@ -179,10 +185,10 @@ async def _actor_to_account(
             data["emojis"] = [
                 {
                     "shortcode": e.shortcode,
-                    "url": media_proxy_url(e.url),
-                    "static_url": media_proxy_url(e.static_url)
+                    "url": media_proxy_url(e.url, variant="emoji"),
+                    "static_url": media_proxy_url(e.static_url, variant="emoji", static=True)
                     if e.static_url
-                    else media_proxy_url(e.url),
+                    else media_proxy_url(e.url, variant="emoji", static=True),
                 }
                 for e in emoji_list
             ]
@@ -196,16 +202,24 @@ def _actor_to_limited_account(actor: Actor) -> dict:
         "id": str(actor.id),
         "username": actor.username,
         "acct": f"{actor.username}@{actor.domain}" if actor.domain else actor.username,
-        "display_name": actor.display_name,
+        "display_name": actor.display_name or "",
         "note": "",
+        "uri": actor.ap_id,
         "avatar": "/default-avatar.svg",
+        "avatar_static": "/default-avatar.svg",
         "header": "",
+        "header_static": "",
         "url": actor.ap_id,
-        "created_at": actor.created_at.isoformat() if actor.created_at else None,
+        "created_at": _to_mastodon_datetime(actor.created_at),
         "bot": getattr(actor, "is_bot", False) or actor.type == "Service",
+        "group": actor.type == "Group",
         "locked": actor.manually_approves_followers,
         "discoverable": actor.discoverable,
         "fields": [],
+        "emojis": [],
+        "followers_count": 0,
+        "following_count": 0,
+        "statuses_count": 0,
         "limited": True,
     }
 
@@ -306,6 +320,7 @@ async def unmute_account(
 async def get_account_statuses(
     actor_id: uuid.UUID,
     limit: int = 20,
+    max_id: uuid.UUID | None = None,
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -326,12 +341,30 @@ async def get_account_statuses(
         get_reaction_summaries,
     )
 
+    # Determine which visibility levels to show based on relationship
+    visible = ["public", "unlisted"]
+    if user:
+        if user.actor_id == actor_id:
+            # Own profile: show everything
+            visible = ["public", "unlisted", "followers", "direct"]
+        else:
+            # Check if current user follows this actor
+            follow_check = await db.execute(
+                select(Follow.id).where(
+                    Follow.follower_id == user.actor_id,
+                    Follow.following_id == actor_id,
+                    Follow.accepted.is_(True),
+                ).limit(1)
+            )
+            if follow_check.scalar_one_or_none() is not None:
+                visible = ["public", "unlisted", "followers"]
+
     query = (
         select(Note)
         .options(*_note_load_options())
         .where(
             Note.actor_id == actor_id,
-            Note.visibility.in_(["public", "unlisted"]),
+            Note.visibility.in_(visible),
             Note.deleted_at.is_(None),
         )
     )
@@ -350,6 +383,15 @@ async def get_account_statuses(
             actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc
         )
         query = query.where(Note.published > threshold)
+
+    if max_id:
+        # Cursor-based pagination: get the published timestamp of max_id note
+        cursor_result = await db.execute(
+            select(Note.published).where(Note.id == max_id)
+        )
+        cursor_ts = cursor_result.scalar_one_or_none()
+        if cursor_ts:
+            query = query.where(Note.published < cursor_ts)
 
     query = query.order_by(Note.published.desc()).limit(min(limit, 40))
     notes_result = await db.execute(query)
@@ -422,10 +464,10 @@ async def _batch_resolve_actor_emojis(
                 emojis.append(
                     {
                         "shortcode": e.shortcode,
-                        "url": media_proxy_url(e.url),
-                        "static_url": media_proxy_url(e.static_url)
+                        "url": media_proxy_url(e.url, variant="emoji"),
+                        "static_url": media_proxy_url(e.static_url, variant="emoji", static=True)
                         if e.static_url
-                        else media_proxy_url(e.url),
+                        else media_proxy_url(e.url, variant="emoji", static=True),
                     }
                 )
         if emojis:
@@ -552,7 +594,84 @@ async def get_relationship(
         "blocking": blocking,
         "muting": muting,
         "requested": requested,
+        "showing_reblogs": True,
+        "notifying": False,
+        "domain_blocking": False,
+        "endorsed": False,
+        "muting_notifications": False,
+        "note": "",
+        "languages": None,
     }
+
+
+@relationships_router.get("/accounts/relationships")
+async def get_relationships_batch(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    ids: list[str] = Query(default=[], alias="id[]"),
+):
+    """Batch-check follow/block/mute status with multiple accounts."""
+    if not ids:
+        return []
+
+    # UUIDへの変換 (無効なIDは無視)
+    actor_ids: list[uuid.UUID] = []
+    for id_str in ids[:40]:  # 最大40件
+        try:
+            actor_ids.append(uuid.UUID(id_str))
+        except ValueError:
+            continue
+
+    if not actor_ids:
+        return []
+
+    from app.services.block_service import get_blocked_ids
+    from app.services.mute_service import get_muted_ids
+
+    # 一括クエリでFollow, Block, Mute状態を取得
+    follow_out_result = await db.execute(
+        select(Follow).where(
+            Follow.follower_id == user.actor_id,
+            Follow.following_id.in_(actor_ids),
+        )
+    )
+    outgoing_follows = {f.following_id: f for f in follow_out_result.scalars().all()}
+
+    follow_in_result = await db.execute(
+        select(Follow.follower_id).where(
+            Follow.follower_id.in_(actor_ids),
+            Follow.following_id == user.actor_id,
+            Follow.accepted.is_(True),
+        )
+    )
+    followed_by_ids = {row[0] for row in follow_in_result.all()}
+
+    blocked_ids = set(await get_blocked_ids(db, user.actor_id))
+    muted_ids = set(await get_muted_ids(db, user.actor_id))
+
+    results = []
+    for aid in actor_ids:
+        outgoing = outgoing_follows.get(aid)
+        following = outgoing.accepted if outgoing else False
+        requested = (not outgoing.accepted) if outgoing else False
+
+        results.append({
+            "id": str(aid),
+            "following": following,
+            "followed_by": aid in followed_by_ids,
+            "blocking": aid in blocked_ids,
+            "muting": aid in muted_ids,
+            "requested": requested,
+            "showing_reblogs": True,
+            "notifying": False,
+            "domain_blocking": False,
+            "endorsed": False,
+            "muting_notifications": False,
+            "note": "",
+            "languages": None,
+        })
+
+    return results
 
 
 class MoveRequest(BaseModel):

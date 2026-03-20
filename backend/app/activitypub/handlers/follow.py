@@ -54,10 +54,13 @@ async def handle_follow(db: AsyncSession, activity: dict):
         await db.commit()
 
         # Notify the local target about the new follower
-        from app.services.notification_service import create_notification
+        from app.services.notification_service import create_notification, publish_notification
 
-        await create_notification(db, "follow", target.id, follower.id)
+        notif_type = "follow" if not target.manually_approves_followers else "follow_request"
+        notif = await create_notification(db, notif_type, target.id, follower.id)
         await db.commit()
+        if notif:
+            await publish_notification(notif)
 
     # Auto-accept if not manually approving
     if not target.manually_approves_followers:
@@ -82,8 +85,18 @@ async def handle_accept(db: AsyncSession, activity: dict):
     if inner.get("type") != "Follow":
         return
 
-    actor_ap_id = inner.get("actor")
+    # M-16: Accept actorがフォロー先(inner object)と一致するか検証
+    accept_actor = activity.get("actor")
     target_ap_id = inner.get("object")
+    if accept_actor and target_ap_id and accept_actor != target_ap_id:
+        logger.warning(
+            "Accept actor mismatch: accept.actor=%s, follow.object=%s",
+            accept_actor,
+            target_ap_id,
+        )
+        return
+
+    actor_ap_id = inner.get("actor")
 
     if not actor_ap_id or not target_ap_id:
         return
@@ -116,8 +129,18 @@ async def handle_reject(db: AsyncSession, activity: dict):
     if inner.get("type") != "Follow":
         return
 
-    actor_ap_id = inner.get("actor")
+    # M-16: Reject actorがフォロー先(inner object)と一致するか検証
+    reject_actor = activity.get("actor")
     target_ap_id = inner.get("object")
+    if reject_actor and target_ap_id and reject_actor != target_ap_id:
+        logger.warning(
+            "Reject actor mismatch: reject.actor=%s, follow.object=%s",
+            reject_actor,
+            target_ap_id,
+        )
+        return
+
+    actor_ap_id = inner.get("actor")
 
     if not actor_ap_id or not target_ap_id:
         return

@@ -1,20 +1,20 @@
-import { createSignal, onMount, onCleanup, Show, For } from "solid-js";
-import { getNotifications, dismissNotification, clearNotifications, type Notification } from "../api/notifications";
+import { createSignal, createResource, createEffect, onCleanup, Show, For } from "solid-js";
+import { getNotifications, dismissNotification, clearNotifications, markAllNotificationsAsRead, type Notification } from "@nekonoverse/ui/api/notifications";
 import NoteCard from "../components/notes/NoteCard";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
 import Emoji from "../components/Emoji";
-import { emojify } from "../utils/emojify";
-import { twemojify } from "../utils/twemojify";
-import { formatTimestamp, useTimeTick } from "../utils/formatTime";
-import { getNote } from "../api/statuses";
-import { onNotification, onReaction, resetUnread } from "../stores/streaming";
-import { useI18n } from "../i18n";
-import { currentUser } from "../stores/auth";
-import { defaultAvatar } from "../stores/instance";
+import { emojify } from "@nekonoverse/ui/utils/emojify";
+import { twemojify } from "@nekonoverse/ui/utils/twemojify";
+import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
+import { getNote } from "@nekonoverse/ui/api/statuses";
+import { onNotification, onReaction, resetUnread, unreadMentions, unreadOther, resetUnreadMentions, resetUnreadOther } from "@nekonoverse/ui/stores/streaming";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { isPushSupported, getPermissionState, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "@nekonoverse/ui/utils/pushNotification";
+import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
 
-function actorHandle(account: Notification["account"]): string {
-  if (!account) return "";
-  return account.domain ? `@${account.username}@${account.domain}` : `@${account.username}`;
-}
+type Tab = "mentions" | "other";
 
 function profileUrl(account: Notification["account"]): string {
   if (!account) return "#";
@@ -25,36 +25,100 @@ function profileUrl(account: Notification["account"]): string {
 
 export default function Notifications() {
   const { t } = useI18n();
-  const [notifications, setNotifications] = createSignal<Notification[]>([]);
-  const [loading, setLoading] = createSignal(true);
+  // 未読がある方のタブを初期表示（メンションに未読がなく、その他に未読がある場合のみ切り替え）
+  const initialTab: Tab = unreadMentions() === 0 && unreadOther() > 0 ? "other" : "mentions";
+  const [tab, setTab] = createSignal<Tab>(initialTab);
+  const [allNotifs, setAllNotifs] = createSignal<Notification[]>([]);
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
+  const [pushSubscribed, setPushSubscribed] = createSignal(false);
+  const [pushToggling, setPushToggling] = createSignal(false);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
-  const load = async () => {
-    try {
-      const data = await getNotifications({ limit: 20 });
-      setNotifications(data);
-      setHasMore(data.length >= 20);
-    } catch {
-    } finally {
-      setLoading(false);
+  createEffect(async () => {
+    if (currentUser() && isPushSupported()) {
+      const subscribed = await isSubscribedToPush();
+      setPushSubscribed(subscribed);
     }
-  };
-
-  onMount(() => {
-    load();
-    resetUnread();
   });
 
-  // Subscribe to real-time notifications from global stream
-  const unsub = onNotification(async () => {
+  const togglePush = async () => {
+    setPushToggling(true);
     try {
-      const fresh = await getNotifications({ limit: 1 });
-      if (fresh.length > 0) {
-        setNotifications((prev) => {
-          if (prev.some((n) => n.id === fresh[0].id)) return prev;
-          return [fresh[0], ...prev];
-        });
+      if (pushSubscribed()) {
+        await unsubscribeFromPush();
+        setPushSubscribed(false);
+      } else {
+        const result = await subscribeToPush();
+        setPushSubscribed(result !== null);
+      }
+    } catch { /* ignore */ }
+    setPushToggling(false);
+  };
+
+  const filtered = () => {
+    const t = tab();
+    return allNotifs().filter((n) =>
+      t === "mentions"
+        ? n.type === "mention" || n.type === "reply"
+        : n.type !== "mention" && n.type !== "reply"
+    );
+  };
+
+  const load = async () => {
+    const data = await getNotifications({ limit: 40 });
+    // SSE で先に追加された通知を失わないようマージ
+    setAllNotifs((prev) => {
+      if (prev.length === 0) return data;
+      const dataIds = new Set(data.map((n) => n.id));
+      const extra = prev.filter((n) => !dataIds.has(n.id));
+      return extra.length > 0 ? [...extra, ...data] : data;
+    });
+    setHasMore(data.length >= 40);
+
+    // 現在のタブが空で他方にデータがあれば自動切替
+    const currentTab = tab();
+    const all = allNotifs();
+    const hasMentions = all.some((n) => n.type === "mention" || n.type === "reply");
+    const hasOther = all.some((n) => n.type !== "mention" && n.type !== "reply");
+    if (currentTab === "mentions" && !hasMentions && hasOther) {
+      setTab("other");
+    } else if (currentTab === "other" && !hasOther && hasMentions) {
+      setTab("mentions");
+    }
+    return data;
+  };
+
+  const [initialData] = createResource(
+    () => (!authLoading() && currentUser() ? true : false),
+    async () => {
+      const data = await load();
+      resetUnread();
+      try {
+        await markAllNotificationsAsRead();
+        setAllNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
+      } catch { /* ignore */ }
+      return data;
+    },
+  );
+
+  const unsub = onNotification(async (data) => {
+    const eventData = data as { id?: string };
+    try {
+      // DB commit の可視化を待つためリトライ付きで取得
+      for (let attempt = 0; attempt < 3; attempt++) {
+        const fresh = await getNotifications({ limit: 5 });
+        const target = eventData.id
+          ? fresh.find((n) => n.id === eventData.id)
+          : fresh[0];
+        if (target) {
+          setAllNotifs((prev) => {
+            if (prev.some((n) => n.id === target.id)) return prev;
+            return [target, ...prev];
+          });
+          break;
+        }
+        await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
       }
     } catch { /* ignore */ }
     resetUnread();
@@ -63,7 +127,7 @@ export default function Notifications() {
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
-    if (notifications().some((n) => n.status?.id === id)) {
+    if (allNotifs().some((n) => n.status?.id === id)) {
       await refreshNote(id);
     }
   });
@@ -71,16 +135,16 @@ export default function Notifications() {
   onCleanup(() => { unsub(); unsubReaction(); });
 
   const loadMore = async () => {
-    const current = notifications();
+    const current = allNotifs();
     if (current.length === 0 || loadingMore()) return;
     setLoadingMore(true);
     try {
       const older = await getNotifications({
         max_id: current[current.length - 1].id,
-        limit: 20,
+        limit: 40,
       });
-      setNotifications([...current, ...older]);
-      setHasMore(older.length >= 20);
+      setAllNotifs([...current, ...older]);
+      setHasMore(older.length >= 40);
     } catch {
     } finally {
       setLoadingMore(false);
@@ -90,21 +154,21 @@ export default function Notifications() {
   const handleClearAll = async () => {
     try {
       await clearNotifications();
-      setNotifications([]);
+      setAllNotifs([]);
     } catch {}
   };
 
   const handleDismiss = async (id: string) => {
     try {
       await dismissNotification(id);
-      setNotifications((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
+      setAllNotifs((prev) => prev.map((n) => (n.id === id ? { ...n, read: true } : n)));
     } catch {}
   };
 
   const refreshNote = async (noteId: string) => {
     try {
       const updated = await getNote(noteId);
-      setNotifications((prev) =>
+      setAllNotifs((prev) =>
         prev.map((n) => {
           if (n.status?.id === noteId) return { ...n, status: updated };
           if (n.status?.reblog?.id === noteId) {
@@ -118,12 +182,14 @@ export default function Notifications() {
 
   const notifIcon = (type: string) => {
     switch (type) {
-      case "follow": return "👤";
-      case "mention": return "💬";
-      case "reblog": return "🔁";
-      case "favourite": return "⭐";
-      case "reaction": return "✨";
-      default: return "🔔";
+      case "follow": return "\u{1F464}";
+      case "follow_request": return "\u{1F464}";
+      case "mention": return "\u{1F4AC}";
+      case "reply": return "\u{1F4AC}";
+      case "reblog": return "\u{1F501}";
+      case "favourite": return "\u2B50";
+      case "reaction": return "\u2728";
+      default: return "\u{1F514}";
     }
   };
 
@@ -131,21 +197,72 @@ export default function Notifications() {
     <div class="page-container">
       <div class="notifications-header">
         <h2>{t("notifications.title")}</h2>
-        <Show when={notifications().length > 0}>
-          <button class="btn btn-small" onClick={handleClearAll}>
-            {t("notifications.clearAll")}
-          </button>
-        </Show>
+        <div class="notifications-actions">
+          <Show when={currentUser() && isPushSupported()}>
+            <button
+              class={`btn btn-small${pushSubscribed() ? " btn-active" : ""}`}
+              onClick={togglePush}
+              disabled={pushToggling() || getPermissionState() === "denied"}
+              title={
+                getPermissionState() === "denied"
+                  ? t("push.denied")
+                  : pushSubscribed()
+                    ? t("push.disable")
+                    : t("push.enable")
+              }
+            >
+              {pushToggling()
+                ? t("common.loading")
+                : pushSubscribed()
+                  ? t("push.enabled")
+                  : t("push.disabled")}
+            </button>
+          </Show>
+          <Show when={allNotifs().length > 0}>
+            <button class="btn btn-small" onClick={handleClearAll}>
+              {t("notifications.clearAll")}
+            </button>
+          </Show>
+        </div>
       </div>
 
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+      <div class="notif-tabs">
+        <button
+          class={`notif-tab${tab() === "mentions" ? " active" : ""}`}
+          onClick={() => { setTab("mentions"); resetUnreadMentions(); }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px">
+            <circle cx="12" cy="12" r="4" />
+            <path d="M16 8v5a3 3 0 0 0 6 0v-1a10 10 0 1 0-3.92 7.94" />
+          </svg>
+          {t("notifications.tabMentions" as keyof Dictionary)}
+          <Show when={unreadMentions() > 0}>
+            <span class="notif-tab-badge">{unreadMentions() > 99 ? "99+" : unreadMentions()}</span>
+          </Show>
+        </button>
+        <button
+          class={`notif-tab${tab() === "other" ? " active" : ""}`}
+          onClick={() => { setTab("other"); resetUnreadOther(); }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
+            <path d="M13.73 21a2 2 0 0 1-3.46 0" />
+          </svg>
+          {t("notifications.tabOther" as keyof Dictionary)}
+          <Show when={unreadOther() > 0}>
+            <span class="notif-tab-badge">{unreadOther() > 99 ? "99+" : unreadOther()}</span>
+          </Show>
+        </button>
+      </div>
+
+      <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
         <Show when={currentUser()} fallback={<p>{t("notifications.loginRequired")}</p>}>
           <Show
-            when={notifications().length > 0}
+            when={filtered().length > 0}
             fallback={<p class="empty">{t("notifications.empty")}</p>}
           >
             <div class="notifications-list">
-              <For each={notifications()}>
+              <For each={filtered()}>
                 {(notif) => (
                   <div class={`notification-item${notif.read ? "" : " unread"}`}>
                     <div class="notification-icon">{notifIcon(notif.type)}</div>
@@ -166,7 +283,7 @@ export default function Notifications() {
                           </a>
                         </Show>
                         <span class="notification-type-text">
-                          {t(`notifications.type.${notif.type}` as keyof import("../i18n/dictionaries/ja").Dictionary)}
+                          {t(`notifications.type.${notif.type}` as keyof Dictionary)}
                         </span>
                         <Show when={notif.type === "reaction" && notif.emoji}>
                           <span class="notification-emoji">
@@ -191,6 +308,7 @@ export default function Notifications() {
                           <NoteCard
                             note={notif.status!}
                             onReactionUpdate={() => refreshNote(notif.status!.id)}
+                            onThreadOpen={(id) => setThreadNoteId(id)}
                           />
                         </div>
                       </Show>
@@ -212,6 +330,14 @@ export default function Notifications() {
             </Show>
           </Show>
         </Show>
+      </Show>
+
+      {/* Thread modal */}
+      <Show when={threadNoteId()}>
+        <NoteThreadModal
+          noteId={threadNoteId()!}
+          onClose={() => setThreadNoteId(null)}
+        />
       </Show>
     </div>
   );

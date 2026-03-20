@@ -1,8 +1,8 @@
 import { createSignal, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { searchAccounts, type Account } from "../api/accounts";
-import { useI18n } from "../i18n";
-import { defaultAvatar } from "../stores/instance";
+import { searchAccounts, type Account } from "@nekonoverse/ui/api/accounts";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
 export default function Search() {
   const { t } = useI18n();

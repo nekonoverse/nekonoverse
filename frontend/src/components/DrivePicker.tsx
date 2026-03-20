@@ -1,6 +1,6 @@
 import { createSignal, onMount, Show, For } from "solid-js";
-import { getDriveFiles, type DriveFile } from "../api/drive";
-import { useI18n } from "../i18n";
+import { getDriveFiles, type DriveFile } from "@nekonoverse/ui/api/drive";
+import { useI18n } from "@nekonoverse/ui/i18n";
 
 interface Props {
   onSelect: (files: DriveFile[]) => void;

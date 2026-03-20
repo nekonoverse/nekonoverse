@@ -33,10 +33,10 @@ test.describe("Profile Page", () => {
 
     // Add a field
     await page.click('button:has-text("Add Field")');
-    await expect(page.locator(".profile-edit-field-row")).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".profile-edit-field-row").last()).toBeVisible({ timeout: 5_000 });
 
-    // Type multiple characters into the label input and verify focus is retained
-    const labelInput = page.locator(".profile-edit-field-row .profile-edit-field-input").first();
+    // Type multiple characters into the last (newly added) field's label input
+    const labelInput = page.locator(".profile-edit-field-row").last().locator(".profile-edit-field-input").first();
     await labelInput.click();
     await labelInput.pressSequentially("test label", { delay: 50 });
     await expect(labelInput).toBeFocused();

@@ -112,45 +112,99 @@ async def get_outbox(
 
 
 @router.get("/users/{username}/followers")
-async def get_followers_collection(username: str, db: AsyncSession = Depends(get_db)):
+async def get_followers_collection(
+    username: str,
+    page: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
     actor = await get_actor_by_username(db, username, domain=None)
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
     from app.models.follow import Follow
 
-    count_result = await db.execute(
-        select(func.count())
-        .select_from(Follow)
-        .where(Follow.following_id == actor.id, Follow.accepted.is_(True))
-    )
-    total = count_result.scalar() or 0
     followers_url = f"{settings.server_url}/users/{username}/followers"
 
+    if not page:
+        count_result = await db.execute(
+            select(func.count())
+            .select_from(Follow)
+            .where(Follow.following_id == actor.id, Follow.accepted.is_(True))
+        )
+        total = count_result.scalar() or 0
+        return Response(
+            content=json.dumps(
+                render_ordered_collection(followers_url, total, f"{followers_url}?page=true")
+            ),
+            media_type=AP_CONTENT_TYPE,
+        )
+
+    from app.models.actor import Actor
+
+    # M-10: ページネーション追加 (40件ずつ)
+    result = await db.execute(
+        select(Actor.ap_id)
+        .join(Follow, Follow.follower_id == Actor.id)
+        .where(Follow.following_id == actor.id, Follow.accepted.is_(True))
+        .order_by(Follow.created_at.desc())
+        .limit(40)
+    )
+    items = [ap_id for (ap_id,) in result.all()]
     return Response(
-        content=json.dumps(render_ordered_collection(followers_url, total, followers_url)),
+        content=json.dumps(
+            render_ordered_collection_page(
+                f"{followers_url}?page=true", followers_url, items
+            )
+        ),
         media_type=AP_CONTENT_TYPE,
     )
 
 
 @router.get("/users/{username}/following")
-async def get_following_collection(username: str, db: AsyncSession = Depends(get_db)):
+async def get_following_collection(
+    username: str,
+    page: bool = False,
+    db: AsyncSession = Depends(get_db),
+):
     actor = await get_actor_by_username(db, username, domain=None)
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
     from app.models.follow import Follow
 
-    count_result = await db.execute(
-        select(func.count())
-        .select_from(Follow)
-        .where(Follow.follower_id == actor.id, Follow.accepted.is_(True))
-    )
-    total = count_result.scalar() or 0
     following_url = f"{settings.server_url}/users/{username}/following"
 
+    if not page:
+        count_result = await db.execute(
+            select(func.count())
+            .select_from(Follow)
+            .where(Follow.follower_id == actor.id, Follow.accepted.is_(True))
+        )
+        total = count_result.scalar() or 0
+        return Response(
+            content=json.dumps(
+                render_ordered_collection(following_url, total, f"{following_url}?page=true")
+            ),
+            media_type=AP_CONTENT_TYPE,
+        )
+
+    from app.models.actor import Actor
+
+    # M-10: ページネーション追加 (40件ずつ)
+    result = await db.execute(
+        select(Actor.ap_id)
+        .join(Follow, Follow.following_id == Actor.id)
+        .where(Follow.follower_id == actor.id, Follow.accepted.is_(True))
+        .order_by(Follow.created_at.desc())
+        .limit(40)
+    )
+    items = [ap_id for (ap_id,) in result.all()]
     return Response(
-        content=json.dumps(render_ordered_collection(following_url, total, following_url)),
+        content=json.dumps(
+            render_ordered_collection_page(
+                f"{following_url}?page=true", following_url, items
+            )
+        ),
         media_type=AP_CONTENT_TYPE,
     )
 
@@ -179,6 +233,7 @@ async def get_featured(username: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/notes/{note_id}")
 async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)):
+    from app.services.hashtag_service import get_hashtags_for_notes
     from app.services.note_service import get_note_by_id
 
     note = await get_note_by_id(db, note_id)
@@ -187,6 +242,10 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
 
     if not is_ap_request(request):
         raise HTTPException(status_code=404, detail="Not found")
+
+    # Load hashtags for AP rendering
+    hashtags_map = await get_hashtags_for_notes(db, [note.id])
+    note._hashtag_names = hashtags_map.get(note.id, [])
 
     return Response(
         content=json.dumps(render_note(note)),
@@ -226,6 +285,8 @@ async def verify_inbox_signature(request: Request, db: AsyncSession) -> tuple[bo
 
 def _verify_digest(body: bytes, digest_header: str | None) -> bool:
     """Verify that the Digest header matches the actual request body hash."""
+    import hmac as _hmac
+
     if not digest_header:
         return False
     # SHA-256=<base64> 形式をパース
@@ -233,7 +294,45 @@ def _verify_digest(body: bytes, digest_header: str | None) -> bool:
         return False
     expected_b64 = digest_header[len("SHA-256=") :]
     actual_hash = base64.b64encode(hashlib.sha256(body).digest()).decode()
-    return actual_hash == expected_b64
+    # L-6: タイミングセーフ比較
+    return _hmac.compare_digest(actual_hash, expected_b64)
+
+
+# H-4: Inboxリクエストのボディサイズ上限 (1MB)
+MAX_INBOX_BODY_SIZE = 1 * 1024 * 1024
+
+# H-5: Inboxレート制限
+INBOX_MAX_REQUESTS = 200
+INBOX_RATE_TTL = 60  # 1分あたり
+
+
+async def _check_inbox_rate_limit(request: Request) -> None:
+    """H-5: Inboxエンドポイントのドメイン/IPベースレート制限"""
+    from app.valkey_client import valkey
+
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"inbox_rate:{client_ip}"
+    try:
+        attempts = await valkey.get(key)
+        if attempts is not None and int(attempts) >= INBOX_MAX_REQUESTS:
+            raise HTTPException(status_code=429, detail="Too many requests")
+        await valkey.incr(key)
+        await valkey.expire(key, INBOX_RATE_TTL)
+    except HTTPException:
+        raise
+    except Exception:
+        pass
+
+
+async def _read_inbox_body(request: Request) -> bytes:
+    """H-4: サイズ制限付きInboxボディ読み取り"""
+    content_length = request.headers.get("content-length")
+    if content_length and int(content_length) > MAX_INBOX_BODY_SIZE:
+        raise HTTPException(status_code=413, detail="Request body too large")
+    body = await request.body()
+    if len(body) > MAX_INBOX_BODY_SIZE:
+        raise HTTPException(status_code=413, detail="Request body too large")
+    return body
 
 
 @router.post("/users/{username}/inbox")
@@ -242,7 +341,8 @@ async def user_inbox(username: str, request: Request, db: AsyncSession = Depends
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
-    body = await request.body()
+    await _check_inbox_rate_limit(request)
+    body = await _read_inbox_body(request)
 
     # Digestヘッダーの検証
     digest_header = request.headers.get("digest")
@@ -261,6 +361,12 @@ async def user_inbox(username: str, request: Request, db: AsyncSession = Depends
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
 
+    # JSON-LD expanded form (Pleroma/Akkoma): トップレベルが配列の場合は先頭要素を取り出す
+    if isinstance(activity, list):
+        if not activity:
+            raise HTTPException(status_code=400, detail="Empty activity array")
+        activity = activity[0]
+
     # 署名鍵のアクターとactivityのactorが一致するか検証
     _verify_key_actor_match(key_id, activity)
 
@@ -270,7 +376,8 @@ async def user_inbox(username: str, request: Request, db: AsyncSession = Depends
 
 @router.post("/inbox")
 async def shared_inbox(request: Request, db: AsyncSession = Depends(get_db)):
-    body = await request.body()
+    await _check_inbox_rate_limit(request)
+    body = await _read_inbox_body(request)
 
     # Digestヘッダーの検証
     digest_header = request.headers.get("digest")
@@ -287,6 +394,12 @@ async def shared_inbox(request: Request, db: AsyncSession = Depends(get_db)):
         activity = json.loads(body)
     except json.JSONDecodeError:
         raise HTTPException(status_code=400, detail="Invalid JSON")
+
+    # JSON-LD expanded form (Pleroma/Akkoma): トップレベルが配列の場合は先頭要素を取り出す
+    if isinstance(activity, list):
+        if not activity:
+            raise HTTPException(status_code=400, detail="Empty activity array")
+        activity = activity[0]
 
     # 署名鍵のアクターとactivityのactorが一致するか検証
     _verify_key_actor_match(key_id, activity)
@@ -334,6 +447,23 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
             logger.info("Rejected activity from blocked domain: %s", domain)
             return
 
+    # M-15: ユーザーレベルのブロックチェック
+    if actor_id_str:
+        from app.services.actor_service import get_actor_by_ap_id
+
+        remote_actor = await get_actor_by_ap_id(db, actor_id_str)
+        if remote_actor:
+            from app.models.user_block import UserBlock
+
+            block_result = await db.execute(
+                select(UserBlock).where(
+                    UserBlock.target_id == remote_actor.id,
+                ).limit(1)
+            )
+            if block_result.scalar_one_or_none():
+                logger.info("Rejected activity from user-blocked actor: %s", actor_id_str)
+                return
+
     # Idempotency check via Valkey
     activity_id = activity.get("id")
     if activity_id:
@@ -342,6 +472,15 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
         already_seen = await valkey.set(f"seen_activity:{activity_id}", "1", nx=True, ex=86400)
         if not already_seen:
             logger.info("Duplicate activity %s, skipping", activity_id)
+            return
+    else:
+        # M-11: IDなしの活動はボディハッシュで冪等性チェック
+        from app.valkey_client import valkey
+
+        body_hash = hashlib.sha256(json.dumps(activity, sort_keys=True).encode()).hexdigest()
+        already_seen = await valkey.set(f"seen_activity:hash:{body_hash}", "1", nx=True, ex=86400)
+        if not already_seen:
+            logger.info("Duplicate activity (by hash), skipping")
             return
 
     from app.activitypub.handlers import (

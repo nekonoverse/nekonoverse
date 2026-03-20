@@ -9,10 +9,14 @@ import {
   Match,
 } from "solid-js";
 import { useParams, A } from "@solidjs/router";
-import { useI18n } from "../i18n";
-import { currentUser } from "../stores/auth";
-import { registrationMode } from "../stores/instance";
+import { useI18n } from "@nekonoverse/ui/i18n";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
+import { getRoleName } from "@nekonoverse/ui/api/types/auth";
+import { registrationMode } from "@nekonoverse/ui/stores/instance";
 import Breadcrumb from "../components/Breadcrumb";
+import EmojiEditForm, {
+  type EmojiEditFields,
+} from "../components/reactions/EmojiEditForm";
 import {
   getAdminStats,
   getServerSettings,
@@ -40,6 +44,8 @@ import {
   getRemoteEmojis,
   getRemoteEmojiDomains,
   importRemoteEmoji,
+  updateEmoji,
+  importRemoteEmojiByShortcode,
   getServerFiles,
   uploadServerFile,
   deleteServerFile,
@@ -57,6 +63,14 @@ import {
   getPendingRegistrations,
   approveRegistration,
   rejectRegistration,
+  generateVapidKey,
+  getModeratorPermissions,
+  updateModeratorPermissions,
+  getRoles,
+  createRole,
+  updateRole,
+  deleteRole,
+  type AdminRole,
   type AdminStats,
   type ServerSettings,
   type AdminUser,
@@ -75,12 +89,14 @@ import {
   type QueueJobList,
   type SystemStats,
   type PendingRegistration,
-} from "../api/admin";
+} from "@nekonoverse/ui/api/admin";
 
 interface AdminSection {
   key: string;
   labelKey: string;
   descKey: string;
+  /** If set, moderators need this permission key to see the section. */
+  permission?: string;
 }
 
 interface AdminCategory {
@@ -94,21 +110,24 @@ const categories: AdminCategory[] = [
     labelKey: "admin.categoryModeration",
     adminOnly: false,
     sections: [
-      { key: "users", labelKey: "admin.tabUsers", descKey: "admin.descUsers" },
+      { key: "users", labelKey: "admin.tabUsers", descKey: "admin.descUsers", permission: "users" },
       {
         key: "registrations",
         labelKey: "admin.tabRegistrations",
         descKey: "admin.descRegistrations",
+        permission: "registrations",
       },
       {
         key: "domains",
         labelKey: "admin.tabDomains",
         descKey: "admin.descDomains",
+        permission: "domains",
       },
       {
         key: "reports",
         labelKey: "admin.tabReports",
         descKey: "admin.descReports",
+        permission: "reports",
       },
       { key: "log", labelKey: "admin.tabLog", descKey: "admin.descLog" },
     ],
@@ -121,7 +140,9 @@ const categories: AdminCategory[] = [
         key: "federation",
         labelKey: "admin.tabFederation",
         descKey: "admin.descFederation",
+        permission: "federation",
       },
+      { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji", permission: "emoji" },
     ],
   },
   {
@@ -133,12 +154,16 @@ const categories: AdminCategory[] = [
         labelKey: "admin.tabSettings",
         descKey: "admin.descSettings",
       },
-      { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji" },
       { key: "files", labelKey: "admin.tabFiles", descKey: "admin.descFiles" },
       {
         key: "invites",
         labelKey: "admin.tabInvites",
         descKey: "admin.descInvites",
+      },
+      {
+        key: "roles",
+        labelKey: "admin.tabRoles",
+        descKey: "admin.descRoles",
       },
       {
         key: "queue",
@@ -171,10 +196,43 @@ export default function Admin() {
 
   const isStaff = () => {
     const u = currentUser();
-    return u && (u.role === "admin" || u.role === "moderator");
+    const r = getRoleName(u?.role);
+    return u && (r === "admin" || r === "moderator");
   };
 
-  const isAdmin = () => currentUser()?.role === "admin";
+  const isAdmin = () => getRoleName(currentUser()?.role) === "admin";
+
+  // Fetch moderator permissions for non-admin staff to filter visible sections
+  const [modPerms, setModPerms] = createSignal<Record<string, boolean> | null>(null);
+
+  let permsInit = false;
+  createEffect(() => {
+    if (isStaff() && !isAdmin() && !permsInit) {
+      permsInit = true;
+      (async () => {
+        try {
+          setModPerms(await getModeratorPermissions());
+        } catch {
+          // If fetch fails (e.g. admin-only endpoint), show all sections
+          setModPerms(null);
+        }
+      })();
+    }
+  });
+
+  /** Check whether a section should be visible to the current user. */
+  const isSectionVisible = (s: AdminSection): boolean => {
+    // Registration section: only show when approval mode is active
+    if (s.key === "registrations" && registrationMode() !== "approval") return false;
+    // Admins can always see everything
+    if (isAdmin()) return true;
+    // No permission requirement means always visible to staff
+    if (!s.permission) return true;
+    // Moderator: check permission map
+    const perms = modPerms();
+    if (!perms) return true;  // Not loaded yet, show all
+    return perms[s.permission] !== false;
+  };
 
   return (
     <div class="page-container admin-page">
@@ -197,9 +255,7 @@ export default function Admin() {
                           {t(cat.labelKey as any)}
                         </h3>
                         <div class="settings-menu-grid">
-                          <For each={cat.sections.filter(
-                            (s) => s.key !== "registrations" || registrationMode() === "approval"
-                          )}>
+                          <For each={cat.sections.filter(isSectionVisible)}>
                             {(s) => (
                               <A
                                 href={`/admin/${s.key}`}
@@ -259,6 +315,9 @@ export default function Admin() {
             </Match>
             <Match when={section() === "invites"}>
               <InvitesTab />
+            </Match>
+            <Match when={section() === "roles"}>
+              <RolesTab />
             </Match>
             <Match when={section() === "queue"}>
               <QueueTab />
@@ -330,6 +389,13 @@ function ServerSettingsTab() {
   const [themeColor, setThemeColor] = createSignal("");
   const [iconUrl, setIconUrl] = createSignal("");
   const [uploadingIcon, setUploadingIcon] = createSignal(false);
+  const [termsContent, setTermsContent] = createSignal("");
+  const [privacyContent, setPrivacyContent] = createSignal("");
+  const [pushEnabled, setPushEnabled] = createSignal(true);
+  const [vapidKey, setVapidKey] = createSignal<string | null>(null);
+  const [generatingKey, setGeneratingKey] = createSignal(false);
+  const [tlDefault, setTlDefault] = createSignal(20);
+  const [tlMax, setTlMax] = createSignal(40);
   let iconInput!: HTMLInputElement;
 
   // Use createEffect for reliable initialization inside Switch/Match
@@ -348,6 +414,12 @@ function ServerSettingsTab() {
           setInviteRole(s.invite_create_role || "admin");
           setThemeColor(s.server_theme_color || "");
           if (s.server_icon_url) setIconUrl(s.server_icon_url);
+          setTermsContent(s.terms_of_service || "");
+          setPrivacyContent(s.privacy_policy || "");
+          setPushEnabled(s.push_enabled ?? true);
+          setVapidKey(s.vapid_public_key ?? null);
+          setTlDefault(s.timeline_default_limit ?? 20);
+          setTlMax(s.timeline_max_limit ?? 40);
         } catch (e) {
           console.error("Failed to load server settings:", e);
         }
@@ -366,6 +438,11 @@ function ServerSettingsTab() {
         registration_mode: regMode(),
         invite_create_role: inviteRole(),
         server_theme_color: themeColor() || null,
+        terms_of_service: termsContent() || null,
+        privacy_policy: privacyContent() || null,
+        push_enabled: pushEnabled(),
+        timeline_default_limit: tlDefault(),
+        timeline_max_limit: tlMax(),
       } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
@@ -402,6 +479,24 @@ function ServerSettingsTab() {
             type="text"
             value={tos()}
             onInput={(e) => setTos(e.currentTarget.value)}
+          />
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.termsOfService")}</label>
+          <textarea
+            rows={12}
+            value={termsContent()}
+            onInput={(e) => setTermsContent(e.currentTarget.value)}
+            style={{ "font-family": "monospace", "font-size": "0.9em" }}
+          />
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.privacyPolicy")}</label>
+          <textarea
+            rows={12}
+            value={privacyContent()}
+            onInput={(e) => setPrivacyContent(e.currentTarget.value)}
+            style={{ "font-family": "monospace", "font-size": "0.9em" }}
           />
         </div>
         <div class="settings-form-group">
@@ -472,7 +567,7 @@ function ServerSettingsTab() {
         <input
           ref={iconInput}
           type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+          accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng,image/svg+xml"
           style="display: none"
           onChange={async (e) => {
             const file = (e.currentTarget as HTMLInputElement).files?.[0];
@@ -486,6 +581,81 @@ function ServerSettingsTab() {
             (e.currentTarget as HTMLInputElement).value = "";
           }}
         />
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("admin.pushSettings")}</h3>
+        <div class="settings-form-group">
+          <label style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+            <input
+              type="checkbox"
+              checked={pushEnabled()}
+              onChange={(e) => setPushEnabled(e.currentTarget.checked)}
+            />
+            {t("admin.pushEnabled")}
+          </label>
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.vapidPublicKey")}</label>
+          <Show when={vapidKey()} fallback={<p style={{ color: "var(--text-muted)" }}>{t("admin.vapidNotGenerated")}</p>}>
+            <input
+              type="text"
+              value={vapidKey()!}
+              readOnly
+              style={{ "font-family": "monospace", "font-size": "0.85em" }}
+              onClick={(e) => e.currentTarget.select()}
+            />
+          </Show>
+        </div>
+        <button
+          class="btn btn-small"
+          onClick={async () => {
+            if (!confirm(t("admin.vapidConfirmGenerate"))) return;
+            setGeneratingKey(true);
+            try {
+              const res = await generateVapidKey();
+              setVapidKey(res.vapid_public_key);
+            } catch (e) {
+              console.error("Failed to generate VAPID key:", e);
+            }
+            setGeneratingKey(false);
+          }}
+          disabled={generatingKey()}
+        >
+          {generatingKey() ? t("common.loading") : t("admin.vapidGenerate")}
+        </button>
+        <p style={{ "font-size": "0.85em", color: "var(--text-muted)", "margin-top": "8px" }}>
+          {t("admin.vapidGenerateWarning")}
+        </p>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("admin.timelineSettings")}</h3>
+        <div class="settings-form-group">
+          <label>{t("admin.timelineDefaultLimit")}</label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={tlDefault()}
+            onInput={(e) => setTlDefault(parseInt(e.currentTarget.value) || 20)}
+            style={{ "max-width": "120px" }}
+          />
+        </div>
+        <div class="settings-form-group">
+          <label>{t("admin.timelineMaxLimit")}</label>
+          <input
+            type="number"
+            min={1}
+            max={200}
+            value={tlMax()}
+            onInput={(e) => setTlMax(parseInt(e.currentTarget.value) || 40)}
+            style={{ "max-width": "120px" }}
+          />
+        </div>
+        <button class="btn btn-small" onClick={handleSave} disabled={saving()}>
+          {saving() ? t("profile.saving") : t("settings.save")}
+        </button>
       </div>
     </Show>
   );
@@ -636,7 +806,7 @@ function UsersTab() {
   const [users, setUsers] = createSignal<AdminUser[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [error, setError] = createSignal("");
-  const isAdmin = () => currentUser()?.role === "admin";
+  const isAdmin = () => getRoleName(currentUser()?.role) === "admin";
   const isSelf = (userId: string) => currentUser()?.id === userId;
 
   const loadUsers = async () => {
@@ -754,9 +924,15 @@ function UsersTab() {
                   <div class="admin-user-info">
                     <strong>{u.display_name || u.username}</strong>
                     <span class="admin-user-handle">@{u.username}</span>
-                    <span class={`admin-role-badge role-${u.role}`}>
-                      {u.role}
-                    </span>
+                    <Show when={u.is_system} fallback={
+                      <span class={`admin-role-badge role-${u.role}`}>
+                        {u.role}
+                      </span>
+                    }>
+                      <span class="admin-status-badge system">
+                        {t("admin.systemAccount")}
+                      </span>
+                    </Show>
                     <Show when={u.suspended}>
                       <span class="admin-status-badge suspended">
                         {t("admin.suspended")}
@@ -768,7 +944,7 @@ function UsersTab() {
                       </span>
                     </Show>
                   </div>
-                  <Show when={!isSelf(u.id)}>
+                  <Show when={!isSelf(u.id) && !u.is_system}>
                     <div class="admin-user-actions">
                       <Show when={isAdmin()}>
                         <select
@@ -1163,6 +1339,24 @@ function EmojiTab() {
   const [showForm, setShowForm] = createSignal(false);
   const [importing, setImporting] = createSignal(false);
   const [importMsg, setImportMsg] = createSignal("");
+  const [importFileName, setImportFileName] = createSignal("");
+  const [importFileSize, setImportFileSize] = createSignal("");
+
+  // Edit modal state
+  const [editTarget, setEditTarget] = createSignal<AdminEmoji | null>(null);
+  const [editFields, setEditFields] = createSignal<EmojiEditFields>({
+    shortcode: "", category: "", author: "", license: "", description: "", isSensitive: false, aliases: "",
+  });
+  const [editSaving, setEditSaving] = createSignal(false);
+  const [editError, setEditError] = createSignal("");
+
+  // Remote import modal state
+  const [importTarget, setImportTarget] = createSignal<RemoteEmoji | null>(null);
+  const [impFields, setImpFields] = createSignal<EmojiEditFields>({
+    shortcode: "", category: "", author: "", license: "", description: "", isSensitive: false, aliases: "",
+  });
+  const [impSaving, setImpSaving] = createSignal(false);
+  const [impError, setImpError] = createSignal("");
 
   // Remote emoji state
   const [remoteEmojis, setRemoteEmojis] = createSignal<RemoteEmoji[]>([]);
@@ -1172,14 +1366,16 @@ function EmojiTab() {
   const [remoteSearch, setRemoteSearch] = createSignal("");
   const [remoteMsg, setRemoteMsg] = createSignal("");
   const [importingId, setImportingId] = createSignal("");
-  const [shortcode, setShortcode] = createSignal("");
-  const [category, setCategory] = createSignal("");
-  const [aliases, setAliases] = createSignal("");
-  const [license, setLicense] = createSignal("");
-  const [author, setAuthor] = createSignal("");
-  const [description, setDescription] = createSignal("");
+  const [fields, setFields] = createSignal<EmojiEditFields>({
+    shortcode: "",
+    category: "",
+    aliases: "",
+    license: "",
+    author: "",
+    description: "",
+    isSensitive: false,
+  });
   const [copyPermission, setCopyPermission] = createSignal("");
-  const [isSensitive, setIsSensitive] = createSignal(false);
   const [localOnly, setLocalOnly] = createSignal(false);
   const [adding, setAdding] = createSignal(false);
   let fileInput!: HTMLInputElement;
@@ -1205,38 +1401,41 @@ function EmojiTab() {
 
   const handleAdd = async () => {
     const file = fileInput.files?.[0];
-    if (!file || !shortcode().trim()) return;
+    const f = fields();
+    if (!file || !f.shortcode.trim()) return;
     setAdding(true);
     const fd = new FormData();
     fd.append("file", file);
-    fd.append("shortcode", shortcode().trim());
-    if (category()) fd.append("category", category());
-    if (aliases())
+    fd.append("shortcode", f.shortcode.trim());
+    if (f.category) fd.append("category", f.category);
+    if (f.aliases)
       fd.append(
         "aliases",
         JSON.stringify(
-          aliases()
+          f.aliases
             .split(",")
             .map((a) => a.trim())
             .filter(Boolean),
         ),
       );
-    if (license()) fd.append("license", license());
-    if (author()) fd.append("author", author());
-    if (description()) fd.append("description", description());
+    if (f.license) fd.append("license", f.license);
+    if (f.author) fd.append("author", f.author);
+    if (f.description) fd.append("description", f.description);
     if (copyPermission()) fd.append("copy_permission", copyPermission());
-    fd.append("is_sensitive", String(isSensitive()));
+    fd.append("is_sensitive", String(f.isSensitive));
     fd.append("local_only", String(localOnly()));
     try {
       await addEmoji(fd);
-      setShortcode("");
-      setCategory("");
-      setAliases("");
-      setLicense("");
-      setAuthor("");
-      setDescription("");
+      setFields({
+        shortcode: "",
+        category: "",
+        aliases: "",
+        license: "",
+        author: "",
+        description: "",
+        isSensitive: false,
+      });
       setCopyPermission("");
-      setIsSensitive(false);
       setLocalOnly(false);
       fileInput.value = "";
       setShowForm(false);
@@ -1283,11 +1482,19 @@ function EmojiTab() {
     setImportingId("");
   };
 
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const handleImport = async (e: Event) => {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
     if (!file) return;
     setImporting(true);
     setImportMsg("");
+    setImportFileName(file.name);
+    setImportFileSize(formatSize(file.size));
     try {
       const res = await importEmojis(file);
       setImportMsg(
@@ -1301,6 +1508,92 @@ function EmojiTab() {
     }
     setImporting(false);
     (e.currentTarget as HTMLInputElement).value = "";
+  };
+
+  const openEdit = (e: AdminEmoji) => {
+    setEditTarget(e);
+    setEditFields({
+      shortcode: e.shortcode,
+      category: e.category || "",
+      author: e.author || "",
+      license: e.license || "",
+      description: e.description || "",
+      isSensitive: e.is_sensitive,
+      aliases: (e.aliases || []).join(", "),
+    });
+    setEditError("");
+  };
+
+  const handleEditSave = async () => {
+    const target = editTarget();
+    if (!target || editSaving()) return;
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const f = editFields();
+      await updateEmoji(target.id, {
+        shortcode: f.shortcode !== target.shortcode ? f.shortcode : undefined,
+        category: f.category || undefined,
+        author: f.author || undefined,
+        license: f.license || undefined,
+        description: f.description || undefined,
+        is_sensitive: f.isSensitive,
+        aliases: f.aliases
+          ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean)
+          : [],
+      });
+      setEditTarget(null);
+      await load();
+    } catch (e: any) {
+      setEditError(e.message || "Failed to save");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const openImportModal = (e: RemoteEmoji) => {
+    setImportTarget(e);
+    setImpFields({
+      shortcode: e.shortcode,
+      category: e.category || "",
+      author: e.author || "",
+      license: e.license || "",
+      description: e.description || "",
+      isSensitive: e.is_sensitive,
+      aliases: (e.aliases || []).join(", "),
+    });
+    setImpError("");
+  };
+
+  const handleImportSave = async () => {
+    const target = importTarget();
+    if (!target || !target.domain || impSaving()) return;
+    setImpSaving(true);
+    setImpError("");
+    try {
+      const f = impFields();
+      await importRemoteEmojiByShortcode({
+        shortcode: target.shortcode,
+        domain: target.domain,
+        shortcode_override: f.shortcode !== target.shortcode ? f.shortcode : undefined,
+        category: f.category || undefined,
+        author: f.author || undefined,
+        license: f.license || undefined,
+        description: f.description || undefined,
+        is_sensitive: f.isSensitive,
+        aliases: f.aliases
+          ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean)
+          : undefined,
+      });
+      setImportTarget(null);
+      setRemoteMsg(t("admin.importSuccess"));
+      await load();
+      await loadRemote();
+    } catch (e: any) {
+      setImpError(e.message || t("admin.importFailed"));
+    } finally {
+      setImpSaving(false);
+    }
   };
 
   return (
@@ -1338,93 +1631,19 @@ function EmojiTab() {
             <label>{t("admin.emojiFile")}</label>
             <input ref={fileInput} type="file" accept="image/*" />
           </div>
-          <div class="settings-form-group">
-            <label>{t("admin.emojiShortcode")}</label>
-            <input
-              type="text"
-              value={shortcode()}
-              onInput={(e) => setShortcode(e.currentTarget.value)}
-              placeholder="neko_smile"
-            />
-          </div>
-          <div class="admin-emoji-form-row">
-            <div class="settings-form-group">
-              <label>{t("admin.emojiCategory")}</label>
-              <input
-                type="text"
-                value={category()}
-                onInput={(e) => setCategory(e.currentTarget.value)}
-              />
-            </div>
-            <div class="settings-form-group">
-              <label>{t("admin.emojiAliases")}</label>
-              <input
-                type="text"
-                value={aliases()}
-                onInput={(e) => setAliases(e.currentTarget.value)}
-              />
-            </div>
-          </div>
-          <div class="admin-emoji-form-row">
-            <div class="settings-form-group">
-              <label>{t("admin.emojiLicense")}</label>
-              <input
-                type="text"
-                value={license()}
-                onInput={(e) => setLicense(e.currentTarget.value)}
-              />
-            </div>
-            <div class="settings-form-group">
-              <label>{t("admin.emojiAuthor")}</label>
-              <input
-                type="text"
-                value={author()}
-                onInput={(e) => setAuthor(e.currentTarget.value)}
-              />
-            </div>
-          </div>
-          <div class="settings-form-group">
-            <label>{t("admin.emojiDescription")}</label>
-            <input
-              type="text"
-              value={description()}
-              onInput={(e) => setDescription(e.currentTarget.value)}
-            />
-          </div>
-          <div class="settings-form-group">
-            <label>{t("admin.emojiCopyPermission")}</label>
-            <select
-              value={copyPermission()}
-              onChange={(e) => setCopyPermission(e.currentTarget.value)}
-            >
-              <option value="">--</option>
-              <option value="allow">allow</option>
-              <option value="deny">deny</option>
-              <option value="conditional">conditional</option>
-            </select>
-          </div>
-          <div class="admin-emoji-form-row">
-            <label class="toggle-label">
-              <input
-                type="checkbox"
-                checked={isSensitive()}
-                onChange={(e) => setIsSensitive(e.currentTarget.checked)}
-              />
-              {t("admin.emojiSensitive")}
-            </label>
-            <label class="toggle-label">
-              <input
-                type="checkbox"
-                checked={localOnly()}
-                onChange={(e) => setLocalOnly(e.currentTarget.checked)}
-              />
-              {t("admin.emojiLocalOnly")}
-            </label>
-          </div>
+          <EmojiEditForm
+            fields={fields()}
+            onChange={setFields}
+            showAdminFields
+            copyPermission={copyPermission()}
+            onCopyPermissionChange={setCopyPermission}
+            localOnly={localOnly()}
+            onLocalOnlyChange={setLocalOnly}
+          />
           <button
             class="btn btn-small"
             onClick={handleAdd}
-            disabled={adding() || !shortcode().trim()}
+            disabled={adding() || !fields().shortcode.trim()}
           >
             {adding() ? t("common.loading") : t("admin.emojiAdd")}
           </button>
@@ -1458,6 +1677,12 @@ function EmojiTab() {
                       <span class="admin-emoji-meta">{e.author}</span>
                     </Show>
                   </div>
+                  <button
+                    class="btn btn-small"
+                    onClick={() => openEdit(e)}
+                  >
+                    {t("admin.editEmoji")}
+                  </button>
                   <button
                     class="btn btn-small btn-danger"
                     onClick={() => handleDelete(e.id)}
@@ -1524,14 +1749,10 @@ function EmojiTab() {
                 </div>
                 <button
                   class="btn btn-small"
-                  onClick={() => handleImportRemote(e.id)}
-                  disabled={
-                    importingId() === e.id || e.copy_permission === "deny"
-                  }
+                  onClick={() => openImportModal(e)}
+                  disabled={e.copy_permission === "deny"}
                 >
-                  {importingId() === e.id
-                    ? t("common.loading")
-                    : t("admin.importEmoji")}
+                  {t("admin.importEmoji")}
                 </button>
               </div>
             )}
@@ -1546,6 +1767,83 @@ function EmojiTab() {
         }
       >
         <p class="empty">{t("admin.noRemoteEmoji")}</p>
+      </Show>
+
+      {/* Edit local emoji modal */}
+      <Show when={editTarget()}>
+        <div class="modal-overlay" onClick={() => setEditTarget(null)}>
+          <div class="modal-content" style="max-width: 440px" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3 style="display: flex; align-items: center; gap: 8px">
+                <img src={editTarget()!.url} alt={editTarget()!.shortcode} style="height: 32px" />
+                {t("admin.editEmoji")}
+              </h3>
+              <button class="modal-close" onClick={() => setEditTarget(null)}>✕</button>
+            </div>
+            <div class="emoji-import-form">
+              <EmojiEditForm
+                fields={editFields()}
+                onChange={setEditFields}
+              />
+              <Show when={editError()}>
+                <div class="emoji-import-error">{editError()}</div>
+              </Show>
+              <div class="emoji-import-actions">
+                <button class="btn" onClick={() => setEditTarget(null)}>
+                  {t("common.cancel")}
+                </button>
+                <button class="btn btn-primary" onClick={handleEditSave} disabled={editSaving()}>
+                  {editSaving() ? t("common.loading") : t("settings.save")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Import remote emoji modal */}
+      <Show when={importTarget()}>
+        <div class="modal-overlay" onClick={() => setImportTarget(null)}>
+          <div class="modal-content" style="max-width: 440px" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3 style="display: flex; align-items: center; gap: 8px">
+                <img src={importTarget()!.url} alt={importTarget()!.shortcode} style="height: 32px" />
+                {t("admin.importEmoji")}
+              </h3>
+              <button class="modal-close" onClick={() => setImportTarget(null)}>✕</button>
+            </div>
+            <div class="emoji-import-form">
+              <EmojiEditForm
+                fields={impFields()}
+                onChange={setImpFields}
+                previewUrl={importTarget()!.url}
+                previewDomain={importTarget()!.domain}
+              />
+              <Show when={impError()}>
+                <div class="emoji-import-error">{impError()}</div>
+              </Show>
+              <div class="emoji-import-actions">
+                <button class="btn" onClick={() => setImportTarget(null)}>
+                  {t("common.cancel")}
+                </button>
+                <button class="btn btn-primary" onClick={handleImportSave} disabled={impSaving()}>
+                  {impSaving() ? t("common.loading") : t("admin.importEmoji")}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* ZIP import progress modal */}
+      <Show when={importing()}>
+        <div class="modal-overlay">
+          <div class="modal-content emoji-import-progress">
+            <div class="emoji-import-spinner" />
+            <p class="emoji-import-title">{t("admin.importingEmoji" as any)}</p>
+            <p class="emoji-import-detail">{importFileName()} ({importFileSize()})</p>
+          </div>
+        </div>
       </Show>
     </div>
   );
@@ -2773,6 +3071,378 @@ function SystemTab() {
             </div>
           </div>
         )}
+      </Show>
+    </div>
+  );
+}
+
+const PERMISSION_KEYS = [
+  "users",
+  "reports",
+  "content",
+  "domains",
+  "federation",
+  "emoji",
+  "registrations",
+] as const;
+
+const PERM_LABEL_KEYS: Record<string, string> = {
+  users: "admin.permUsers",
+  reports: "admin.permReports",
+  content: "admin.permContent",
+  domains: "admin.permDomains",
+  federation: "admin.permFederation",
+  emoji: "admin.permEmoji",
+  registrations: "admin.permRegistrations",
+};
+
+const PERM_DESC_KEYS: Record<string, string> = {
+  users: "admin.permUsersDesc",
+  reports: "admin.permReportsDesc",
+  content: "admin.permContentDesc",
+  domains: "admin.permDomainsDesc",
+  federation: "admin.permFederationDesc",
+  emoji: "admin.permEmojiDesc",
+  registrations: "admin.permRegistrationsDesc",
+};
+
+function formatQuota(bytes: number): string {
+  if (bytes === 0) return "Unlimited";
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(0)} MB`;
+  return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
+}
+
+function RolesTab() {
+  const { t } = useI18n();
+  const [roles, setRoles] = createSignal<AdminRole[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [error, setError] = createSignal("");
+  const [saved, setSaved] = createSignal(false);
+  const [editingRole, setEditingRole] = createSignal<string | null>(null);
+  const [editData, setEditData] = createSignal<{
+    display_name: string;
+    permissions: Record<string, boolean>;
+    quota_bytes: number;
+    priority: number;
+  } | null>(null);
+  const [showCreate, setShowCreate] = createSignal(false);
+  const [newName, setNewName] = createSignal("");
+  const [newDisplayName, setNewDisplayName] = createSignal("");
+  const [copyFrom, setCopyFrom] = createSignal("");
+
+  const loadRoles = async () => {
+    try {
+      setRoles(await getRoles());
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to load roles");
+    }
+    setLoading(false);
+  };
+
+  let init = false;
+  createEffect(() => {
+    if (!init) {
+      init = true;
+      loadRoles();
+    }
+  });
+
+  const startEdit = (role: AdminRole) => {
+    setEditingRole(role.name);
+    setEditData({
+      display_name: role.display_name,
+      permissions: { ...role.permissions },
+      quota_bytes: role.quota_bytes,
+      priority: role.priority,
+    });
+    setSaved(false);
+  };
+
+  const cancelEdit = () => {
+    setEditingRole(null);
+    setEditData(null);
+  };
+
+  const handleSave = async () => {
+    const name = editingRole();
+    const data = editData();
+    if (!name || !data) return;
+    setError("");
+    setSaved(false);
+    try {
+      await updateRole(name, data);
+      await loadRoles();
+      setSaved(true);
+      setEditingRole(null);
+      setEditData(null);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to save");
+    }
+  };
+
+  const handleCreate = async () => {
+    const name = newName().trim();
+    const displayName = newDisplayName().trim();
+    if (!name || !displayName) return;
+    setError("");
+    try {
+      await createRole({
+        name,
+        display_name: displayName,
+        copy_from: copyFrom() || undefined,
+      });
+      await loadRoles();
+      setShowCreate(false);
+      setNewName("");
+      setNewDisplayName("");
+      setCopyFrom("");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to create role");
+    }
+  };
+
+  const handleDelete = async (name: string) => {
+    if (!confirm(t("admin.roleConfirmDelete" as any))) return;
+    setError("");
+    try {
+      await deleteRole(name);
+      await loadRoles();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Failed to delete role");
+    }
+  };
+
+  const togglePermission = (key: string) => {
+    const data = editData();
+    if (!data) return;
+    setEditData({
+      ...data,
+      permissions: { ...data.permissions, [key]: !data.permissions[key] },
+    });
+  };
+
+  return (
+    <div class="settings-section">
+      <h3>{t("admin.rolesTitle" as any)}</h3>
+      <p style={{ color: "var(--text-muted)", "margin-bottom": "16px" }}>
+        {t("admin.rolesDesc" as any)}
+      </p>
+      <Show when={error()}>
+        <p class="error">{error()}</p>
+      </Show>
+      <Show when={saved()}>
+        <p class="settings-success">{t("settings.saved")}</p>
+      </Show>
+      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+        <div style={{ display: "flex", "flex-direction": "column", gap: "12px" }}>
+          <For each={roles()}>
+            {(role) => (
+              <div class="admin-role-card" style={{
+                border: "1px solid var(--border-color)",
+                "border-radius": "8px",
+                padding: "16px",
+              }}>
+                <div style={{
+                  display: "flex",
+                  "justify-content": "space-between",
+                  "align-items": "center",
+                  "margin-bottom": editingRole() === role.name ? "12px" : "0",
+                }}>
+                  <div>
+                    <strong>{role.display_name}</strong>
+                    <span style={{
+                      color: "var(--text-muted)",
+                      "margin-left": "8px",
+                      "font-size": "0.9em",
+                    }}>
+                      ({role.name})
+                    </span>
+                    <Show when={role.is_admin}>
+                      <span style={{
+                        "margin-left": "8px",
+                        color: "var(--accent)",
+                        "font-size": "0.85em",
+                      }}>Admin</span>
+                    </Show>
+                  </div>
+                  <div style={{ display: "flex", gap: "8px", "align-items": "center" }}>
+                    <span style={{ color: "var(--text-muted)", "font-size": "0.85em" }}>
+                      {t("admin.roleQuota" as any)}: {role.quota_bytes === 0
+                        ? t("admin.roleUnlimited" as any)
+                        : formatQuota(role.quota_bytes)}
+                    </span>
+                    <Show when={editingRole() !== role.name}>
+                      <button class="btn btn-small" onClick={() => startEdit(role)}>
+                        {t("settings.edit" as any)}
+                      </button>
+                    </Show>
+                    <Show when={!role.is_system}>
+                      <button
+                        class="btn btn-small btn-danger"
+                        onClick={() => handleDelete(role.name)}
+                      >
+                        {t("admin.roleDelete" as any)}
+                      </button>
+                    </Show>
+                  </div>
+                </div>
+                <Show when={editingRole() === role.name && editData()}>
+                  {(data) => (
+                    <div style={{ "border-top": "1px solid var(--border-color)", "padding-top": "12px" }}>
+                      <div style={{ "margin-bottom": "12px" }}>
+                        <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                          {t("admin.roleDisplayName" as any)}
+                        </label>
+                        <input
+                          type="text"
+                          class="input"
+                          value={data().display_name}
+                          onInput={(e) => setEditData({ ...data(), display_name: e.currentTarget.value })}
+                          style={{ width: "200px" }}
+                        />
+                      </div>
+                      <div style={{ "margin-bottom": "12px" }}>
+                        <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                          {t("admin.roleQuota" as any)} (MB, 0 = {t("admin.roleUnlimited" as any)})
+                        </label>
+                        <input
+                          type="number"
+                          class="input"
+                          value={data().quota_bytes / (1024 * 1024)}
+                          onInput={(e) => setEditData({
+                            ...data(),
+                            quota_bytes: Math.max(0, parseInt(e.currentTarget.value) || 0) * 1024 * 1024,
+                          })}
+                          style={{ width: "120px" }}
+                          min="0"
+                        />
+                      </div>
+                      <div style={{ "margin-bottom": "12px" }}>
+                        <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                          {t("admin.rolePriority" as any)}
+                        </label>
+                        <input
+                          type="number"
+                          class="input"
+                          value={data().priority}
+                          onInput={(e) => setEditData({
+                            ...data(),
+                            priority: parseInt(e.currentTarget.value) || 0,
+                          })}
+                          style={{ width: "80px" }}
+                        />
+                      </div>
+                      <Show when={!role.is_admin}>
+                        <div style={{ "margin-bottom": "12px" }}>
+                          <label style={{ display: "block", "margin-bottom": "8px", "font-size": "0.9em" }}>
+                            {t("admin.permissionsTitle" as any)}
+                          </label>
+                          <div class="admin-permissions-list">
+                            <For each={[...PERMISSION_KEYS]}>
+                              {(key) => (
+                                <div class="admin-permissions-item">
+                                  <div class="admin-permissions-info">
+                                    <strong>{t(PERM_LABEL_KEYS[key] as any)}</strong>
+                                    <span style={{ color: "var(--text-muted)", "font-size": "0.9em" }}>
+                                      {t(PERM_DESC_KEYS[key] as any)}
+                                    </span>
+                                  </div>
+                                  <label class="admin-permissions-toggle">
+                                    <input
+                                      type="checkbox"
+                                      checked={data().permissions[key] !== false && data().permissions[key] !== undefined
+                                        ? true : !!data().permissions[key]}
+                                      onChange={() => togglePermission(key)}
+                                    />
+                                    <span class="admin-permissions-slider" />
+                                  </label>
+                                </div>
+                              )}
+                            </For>
+                          </div>
+                        </div>
+                      </Show>
+                      <div style={{ display: "flex", gap: "8px" }}>
+                        <button class="btn btn-small" onClick={handleSave}>
+                          {t("settings.save")}
+                        </button>
+                        <button class="btn btn-small" onClick={cancelEdit}>
+                          {t("common.cancel" as any)}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </Show>
+              </div>
+            )}
+          </For>
+        </div>
+
+        <div style={{ "margin-top": "16px" }}>
+          <Show when={!showCreate()}>
+            <button class="btn btn-small" onClick={() => setShowCreate(true)}>
+              {t("admin.roleCreate" as any)}
+            </button>
+          </Show>
+          <Show when={showCreate()}>
+            <div style={{
+              border: "1px solid var(--border-color)",
+              "border-radius": "8px",
+              padding: "16px",
+            }}>
+              <div style={{ "margin-bottom": "12px" }}>
+                <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                  {t("admin.roleName" as any)} (a-z, 0-9, _)
+                </label>
+                <input
+                  type="text"
+                  class="input"
+                  value={newName()}
+                  onInput={(e) => setNewName(e.currentTarget.value)}
+                  style={{ width: "200px" }}
+                  placeholder="custom_role"
+                />
+              </div>
+              <div style={{ "margin-bottom": "12px" }}>
+                <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                  {t("admin.roleDisplayName" as any)}
+                </label>
+                <input
+                  type="text"
+                  class="input"
+                  value={newDisplayName()}
+                  onInput={(e) => setNewDisplayName(e.currentTarget.value)}
+                  style={{ width: "200px" }}
+                />
+              </div>
+              <div style={{ "margin-bottom": "12px" }}>
+                <label style={{ display: "block", "margin-bottom": "4px", "font-size": "0.9em" }}>
+                  {t("admin.roleCopyFrom" as any)}
+                </label>
+                <select
+                  class="input"
+                  value={copyFrom()}
+                  onChange={(e) => setCopyFrom(e.currentTarget.value)}
+                  style={{ width: "200px" }}
+                >
+                  <option value="">---</option>
+                  <For each={roles()}>
+                    {(r) => <option value={r.name}>{r.display_name}</option>}
+                  </For>
+                </select>
+              </div>
+              <div style={{ display: "flex", gap: "8px" }}>
+                <button class="btn btn-small" onClick={handleCreate}>
+                  {t("admin.roleCreate" as any)}
+                </button>
+                <button class="btn btn-small" onClick={() => setShowCreate(false)}>
+                  {t("common.cancel" as any)}
+                </button>
+              </div>
+            </div>
+          </Show>
+        </div>
       </Show>
     </div>
   );

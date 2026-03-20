@@ -87,3 +87,77 @@ async def handle_announce(db: AsyncSession, activity: dict):
 
     await db.commit()
     logger.info("Saved remote Announce %s from %s", activity_id, actor_ap_id)
+
+    # Enqueue focal detection for original note if needed
+    if original:
+        try:
+            from app.config import settings
+
+            if settings.face_detect_enabled:
+                from sqlalchemy import select as sel
+
+                from app.models.note_attachment import NoteAttachment as NA
+
+                att_rows = await db.execute(
+                    sel(NA.id).where(
+                        NA.note_id == original.id,
+                        NA.remote_url.isnot(None),
+                        NA.remote_focal_x.is_(None),
+                        NA.remote_mime_type.in_(
+                            ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
+                        ),
+                    )
+                )
+                att_ids = [row[0] for row in att_rows.all()]
+                if att_ids:
+                    from app.services.face_detect_queue import enqueue_remote
+
+                    await enqueue_remote(original.id, att_ids)
+        except Exception:
+            logger.debug("Failed to enqueue focal detection for Announce", exc_info=True)
+
+    # Notify the original note's author (if local)
+    if original:
+        try:
+            from sqlalchemy import select
+
+            from app.models.actor import Actor
+            from app.services.notification_service import create_notification
+
+            original_actor = (
+                await db.execute(
+                    select(Actor).where(Actor.id == original.actor_id)
+                )
+            ).scalar_one_or_none()
+
+            if original_actor and original_actor.is_local:
+                from app.services.notification_service import publish_notification
+
+                notif = await create_notification(
+                    db,
+                    "renote",
+                    original.actor_id,
+                    actor.id,
+                    original.id,
+                )
+                await db.commit()
+                if notif:
+                    await publish_notification(notif)
+        except Exception:
+            logger.debug("Failed to create renote notification", exc_info=True)
+
+    # Publish streaming events so the renote appears in real-time
+    try:
+        import json
+
+        from app.services.follow_service import get_follower_ids
+        from app.valkey_client import valkey as valkey_client
+
+        event = json.dumps({"event": "update", "payload": {"id": str(note.id)}})
+        if visibility == "public":
+            await valkey_client.publish("timeline:public", event)
+        follower_ids = await get_follower_ids(db, actor.id)
+        for fid in follower_ids:
+            await valkey_client.publish(f"timeline:home:{fid}", event)
+    except Exception:
+        logger.debug("Failed to publish Announce streaming event", exc_info=True)

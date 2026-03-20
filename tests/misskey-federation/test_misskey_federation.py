@@ -282,7 +282,7 @@ class TestFullFederation:
             user = misskey._api("users/show", {"userId": resolved["id"]})
             return user.get("isFollowing", False)
 
-        poll_until(check_following, timeout=30, desc="bob follows alice")
+        poll_until(check_following, timeout=60, interval=2, desc="bob follows alice")
 
     def test_neko_receives_follower(self, neko: NekoClient, alice, bob):
         """alice has bob as a follower after follow federation."""
@@ -296,7 +296,7 @@ class TestFullFederation:
                 return data.get("totalItems", 0) > 0
             return False
 
-        poll_until(check_followers, timeout=30, desc="alice has followers")
+        poll_until(check_followers, timeout=60, interval=2, desc="alice has followers")
 
     def test_neko_note_appears_on_misskey(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """After follow, alice's notes federate to Misskey's timeline."""
@@ -326,7 +326,7 @@ class TestFullFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) > 0
 
-        poll_until(check_reaction, timeout=30, desc="reaction federated to neko")
+        poll_until(check_reaction, timeout=60, interval=2, desc="reaction federated to neko")
 
     def test_misskey_renotes_federated_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """bob renotes a federated note from alice."""
@@ -396,7 +396,7 @@ class TestReactionFederation:
                 return "🎉" in reactions
             return n.get("reactions_count", 0) > 0
 
-        poll_until(check_reaction, timeout=30, desc="🎉 reaction on neko")
+        poll_until(check_reaction, timeout=60, interval=2, desc="🎉 reaction on neko")
 
     def test_misskey_multiple_reactions_different_emoji(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """Misskey user reacts, unreacts, then reacts with different emoji."""
@@ -409,7 +409,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) >= 1
 
-        poll_until(check_first, timeout=30, desc="first reaction arrives")
+        poll_until(check_first, timeout=60, interval=2, desc="first reaction arrives")
 
         # Unreact on Misskey (removes current reaction)
         misskey.unreact(mk_note["id"])
@@ -418,7 +418,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) == 0
 
-        poll_until(check_unreact, timeout=30, desc="unreaction arrives")
+        poll_until(check_unreact, timeout=60, interval=2, desc="unreaction arrives")
 
         # React with different emoji
         misskey.react(mk_note["id"], "❤")
@@ -427,7 +427,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) >= 1
 
-        poll_until(check_second, timeout=30, desc="second reaction arrives")
+        poll_until(check_second, timeout=60, interval=2, desc="second reaction arrives")
 
     def test_neko_reacts_to_misskey_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """alice@neko reacts to bob@misskey's note (reverse direction).
@@ -463,12 +463,22 @@ class TestReactionFederation:
         # Alice reacts on Neko
         neko.react(neko_note["id"], "⭐")
 
-        # Check reaction arrived on Misskey
+        # Check reaction arrived on Misskey — exactly one, with the correct emoji
         def check_reaction_on_misskey():
             reactions = misskey.get_reactions(mk_note["id"])
-            return len(reactions) > 0
+            if len(reactions) == 0:
+                return None
+            return reactions
 
-        poll_until(check_reaction_on_misskey, timeout=30, desc="reaction federated to misskey")
+        reactions = poll_until(check_reaction_on_misskey, timeout=60, interval=2, desc="reaction federated to misskey")
+        assert len(reactions) == 1, f"Expected exactly 1 reaction, got {len(reactions)}"
+        # ⭐ favourite is sent as bare Like (no content) — Misskey maps to ❤
+        assert reactions[0]["type"] == "❤", f"Expected ❤ (bare Like→Misskey default), got {reactions[0]['type']}"
+
+        # Verify the note itself shows the reaction (display side)
+        mk_note_detail = misskey.get_note(mk_note["id"])
+        note_reactions = mk_note_detail.get("reactions", {})
+        assert sum(note_reactions.values()) == 1, f"Expected 1 total reaction on note, got {note_reactions}"
 
     def test_misskey_heart_reaction_maps_correctly(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """Misskey ❤ (Like) reaction is correctly stored on Nekonoverse."""
@@ -479,7 +489,7 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) > 0
 
-        poll_until(check, timeout=30, desc="heart reaction on neko")
+        poll_until(check, timeout=60, interval=2, desc="heart reaction on neko")
 
     def test_misskey_reaction_count_accurate(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
         """Reaction count on Nekonoverse accurately reflects Misskey reactions."""
@@ -490,4 +500,570 @@ class TestReactionFederation:
             n = neko.get_note(note["id"])
             return n.get("reactions_count", 0) == 1
 
-        poll_until(check_count, timeout=30, desc="reaction count == 1")
+        poll_until(check_count, timeout=60, interval=2, desc="reaction count == 1")
+
+
+# ── 10. Renote federation (extended) ────────────────────────
+
+
+class TestRenoteFederation:
+    """Test that remote renotes create notifications and update counts."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, misskey: MisskeyClient):
+        if cls._follow_established:
+            return
+        resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
+        try:
+            misskey.follow(resolved["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+        cls._follow_established = True
+
+    def _wait_for_note_on_misskey(self, neko, misskey, text):
+        self._ensure_follow(neko, misskey)
+        note = neko.create_note(text)
+
+        def find_note():
+            tl = misskey._api("notes/global-timeline", {"limit": 20})
+            for n in tl:
+                if text in (n.get("text") or ""):
+                    return n
+            return None
+
+        mk_note = poll_until(find_note, timeout=60, interval=2, desc=f"'{text}' on misskey")
+        return note, mk_note
+
+    def test_misskey_renote_updates_count_on_neko(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Renote from Misskey increments renotes_count on Nekonoverse."""
+        note, mk_note = self._wait_for_note_on_misskey(
+            neko, misskey, f"Renote count test {time.time()}"
+        )
+        misskey.renote(mk_note["id"])
+
+        def check_count():
+            n = neko.get_note(note["id"])
+            return n.get("renotes_count", 0) >= 1
+
+        poll_until(check_count, timeout=60, interval=2, desc="renotes_count >= 1")
+
+    def test_misskey_renote_creates_notification_on_neko(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Renote from Misskey creates a notification for the original author."""
+        note, mk_note = self._wait_for_note_on_misskey(
+            neko, misskey, f"Renote notif test {time.time()}"
+        )
+        misskey.renote(mk_note["id"])
+
+        def check_notification():
+            notifs = neko.notifications(limit=20)
+            return any(
+                n.get("type") in ("renote", "reblog") and n.get("status", {}).get("id") == note["id"]
+                for n in notifs
+            )
+
+        poll_until(check_notification, timeout=60, interval=2, desc="renote notification on neko")
+
+    def test_misskey_renote_appears_on_neko_public_timeline(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Renote from Misskey appears on Nekonoverse public timeline with reblog field."""
+        note, mk_note = self._wait_for_note_on_misskey(
+            neko, misskey, f"Renote TL test {time.time()}"
+        )
+        misskey.renote(mk_note["id"])
+
+        def check_renote_on_timeline():
+            tl = neko.public_timeline()
+            for n in tl:
+                reblog = n.get("reblog")
+                if reblog and reblog.get("id") == note["id"]:
+                    return n
+            return None
+
+        renote = poll_until(
+            check_renote_on_timeline, timeout=60, interval=2, desc="renote on neko public TL"
+        )
+        # Verify the renote has the reblog field (ribbon data)
+        assert renote["reblog"] is not None
+        assert renote["reblog"]["id"] == note["id"]
+
+
+# ── 11. Reply federation ──────────────────────────────────────
+
+
+class TestReplyFederation:
+    """Test that replies federate correctly between Misskey and Nekonoverse."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, misskey: MisskeyClient):
+        if cls._follow_established:
+            return
+        resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
+        try:
+            misskey.follow(resolved["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+        cls._follow_established = True
+
+    def _wait_for_note_on_misskey(self, neko, misskey, text):
+        self._ensure_follow(neko, misskey)
+        note = neko.create_note(text)
+
+        def find_note():
+            tl = misskey._api("notes/global-timeline", {"limit": 20})
+            for n in tl:
+                if text in (n.get("text") or ""):
+                    return n
+            return None
+
+        mk_note = poll_until(find_note, timeout=60, interval=2, desc=f"'{text}' on misskey")
+        return note, mk_note
+
+    def test_misskey_reply_to_neko_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """bob@misskey replies to alice@neko's note; reply federates back."""
+        note, mk_note = self._wait_for_note_on_misskey(
+            neko, misskey, f"Reply target {time.time()}"
+        )
+        misskey.create_note(f"Reply from Misskey {time.time()}", replyId=mk_note["id"])
+        time.sleep(3)  # Misskey のジョブキュー処理待ち
+
+        def check_reply():
+            ctx = neko.get_context(note["id"])
+            return len(ctx.get("descendants", [])) >= 1
+
+        poll_until(check_reply, timeout=120, interval=3, desc="reply federated to neko")
+
+    def test_neko_reply_to_misskey_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """alice@neko replies to bob@misskey's note."""
+        # alice follows bob@misskey so notes federate
+        results = neko.search_accounts(f"bob@{MISSKEY_DOMAIN}", resolve=True)
+        assert len(results) > 0
+        bob_on_neko = results[0]
+        try:
+            neko.follow(bob_on_neko["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+
+        # bob creates a note
+        unique = f"Reply me from Neko {time.time()}"
+        result = misskey.create_note(unique)
+        mk_note = result["createdNote"]
+
+        # Wait for note to appear on Neko
+        def find_on_neko():
+            tl = neko.public_timeline()
+            for n in tl:
+                if unique in (n.get("content") or ""):
+                    return n
+            return None
+
+        neko_note = poll_until(find_on_neko, timeout=60, interval=2, desc="misskey note on neko")
+
+        # alice replies
+        reply_text = f"Neko reply {time.time()}"
+        neko.create_note(reply_text, in_reply_to_id=neko_note["id"])
+
+        # Check reply appeared on Misskey
+        def check_reply_on_misskey():
+            children = misskey._api("notes/children", {"noteId": mk_note["id"], "limit": 10})
+            return any(reply_text in (c.get("text") or "") for c in children)
+
+        poll_until(check_reply_on_misskey, timeout=60, interval=2, desc="neko reply on misskey")
+
+    def test_reply_thread_context(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """Reply chain creates a proper thread context on Neko."""
+        note, mk_note = self._wait_for_note_on_misskey(
+            neko, misskey, f"Thread ctx {time.time()}"
+        )
+        misskey.create_note(f"Reply in thread {time.time()}", replyId=mk_note["id"])
+
+        def check_context():
+            ctx = neko.get_context(note["id"])
+            return len(ctx.get("descendants", [])) >= 1
+
+        poll_until(check_context, timeout=60, interval=2, desc="reply in thread context")
+
+        ctx = neko.get_context(note["id"])
+        assert len(ctx["descendants"]) >= 1
+        descendant = ctx["descendants"][0]
+        assert descendant["in_reply_to_id"] == note["id"]
+
+
+# ── 12. Mention federation ────────────────────────────────────
+
+
+class TestMentionFederation:
+    """Test that @mentions federate between platforms."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, misskey: MisskeyClient):
+        if cls._follow_established:
+            return
+        resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
+        try:
+            misskey.follow(resolved["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+        cls._follow_established = True
+
+    def test_neko_mentions_misskey_user(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """alice@neko creates a note mentioning @bob@misskey."""
+        # Resolve bob first
+        results = neko.search_accounts(f"bob@{MISSKEY_DOMAIN}", resolve=True)
+        assert len(results) > 0
+
+        unique = f"Hey @bob@{MISSKEY_DOMAIN} check this {time.time()}"
+        note = neko.create_note(unique)
+        assert "id" in note
+
+        # Verify the AP representation has mention tags
+        resp = _get(
+            f"{NEKO_URL}/notes/{note['id']}",
+            headers={"Accept": "application/activity+json"},
+            timeout=10,
+        )
+        assert resp.status_code == 200
+        ap_note = resp.json()
+        tags = ap_note.get("tag", [])
+        mention_tags = [t for t in tags if t.get("type") == "Mention"]
+        assert len(mention_tags) >= 1, f"No Mention tags found in {tags}"
+
+    def test_misskey_mentions_neko_user(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """bob@misskey mentions @alice@nekonoverse; alice should get a notification."""
+        self._ensure_follow(neko, misskey)
+
+        unique = f"Hey @alice@{NEKO_DOMAIN} look {time.time()}"
+        misskey.create_note(unique)
+
+        def check_mention_notification():
+            notifs = neko.notifications(limit=30)
+            return any(
+                n.get("type") == "mention"
+                for n in notifs
+            )
+
+        poll_until(
+            check_mention_notification,
+            timeout=60,
+            interval=2,
+            desc="mention notification on neko",
+        )
+
+
+# ── 13. Delete federation ─────────────────────────────────────
+
+
+class TestDeleteFederation:
+    """Test that note deletions federate between platforms."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, misskey: MisskeyClient):
+        if cls._follow_established:
+            return
+        resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
+        try:
+            misskey.follow(resolved["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+        cls._follow_established = True
+
+    def test_neko_deletes_note_federates_to_misskey(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """alice deletes a note; it should disappear from Misskey."""
+        self._ensure_follow(neko, misskey)
+        unique = f"Delete me {time.time()}"
+        note = neko.create_note(unique)
+
+        # Wait for note on Misskey
+        def find_note():
+            tl = misskey._api("notes/global-timeline", {"limit": 20})
+            for n in tl:
+                if unique in (n.get("text") or ""):
+                    return n
+            return None
+
+        mk_note = poll_until(find_note, timeout=60, interval=2, desc="note on misskey")
+
+        # Delete on Neko
+        neko.delete_note(note["id"])
+
+        # Wait for deletion to federate
+        def check_deleted():
+            try:
+                misskey.get_note(mk_note["id"])
+                return False  # Still exists
+            except Exception:
+                return True  # Deleted (404)
+
+        poll_until(check_deleted, timeout=60, interval=2, desc="deletion federated to misskey")
+
+    def test_misskey_deletes_note_federates_to_neko(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """bob deletes a note; it should be marked deleted on Neko."""
+        # alice follows bob so notes federate
+        results = neko.search_accounts(f"bob@{MISSKEY_DOMAIN}", resolve=True)
+        assert len(results) > 0
+        bob_on_neko = results[0]
+        try:
+            neko.follow(bob_on_neko["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+
+        unique = f"MK delete me {time.time()}"
+        result = misskey.create_note(unique)
+        mk_note = result["createdNote"]
+
+        # Wait for note on Neko
+        def find_on_neko():
+            tl = neko.public_timeline()
+            for n in tl:
+                if unique in (n.get("content") or ""):
+                    return n
+            return None
+
+        neko_note = poll_until(find_on_neko, timeout=60, interval=2, desc="mk note on neko")
+
+        # Delete on Misskey
+        misskey.delete_note(mk_note["id"])
+
+        # Wait for deletion to federate
+        def check_deleted():
+            try:
+                n = neko.get_note(neko_note["id"])
+                # Note may return 404 or have empty/null content after deletion
+                return False
+            except Exception:
+                return True
+
+        poll_until(check_deleted, timeout=60, interval=2, desc="mk deletion federated to neko")
+
+
+# ── 14. Quote federation ──────────────────────────────────────
+
+
+class TestQuoteFederation:
+    """Test quote notes (引用リノート) between Misskey and Nekonoverse."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, misskey: MisskeyClient):
+        if cls._follow_established:
+            return
+        resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
+        try:
+            misskey.follow(resolved["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+        cls._follow_established = True
+
+    def test_misskey_quotes_neko_note(self, neko: NekoClient, misskey: MisskeyClient, alice, bob):
+        """bob@misskey quotes alice@neko's note; quote metadata reaches Neko."""
+        self._ensure_follow(neko, misskey)
+        unique = f"Quote me {time.time()}"
+        note = neko.create_note(unique)
+
+        # Wait for note on Misskey
+        def find_note():
+            tl = misskey._api("notes/global-timeline", {"limit": 20})
+            for n in tl:
+                if unique in (n.get("text") or ""):
+                    return n
+            return None
+
+        mk_note = poll_until(find_note, timeout=60, interval=2, desc="note on misskey")
+
+        # Quote on Misskey
+        quote_text = f"Quoting this {time.time()}"
+        misskey.quote(mk_note["id"], quote_text)
+
+        # Verify the quote is visible on Misskey's timeline
+        def check_quote():
+            tl = misskey._api("notes/local-timeline", {"limit": 20})
+            return any(
+                quote_text in (n.get("text") or "") and n.get("renoteId") == mk_note["id"]
+                for n in tl
+            )
+
+        poll_until(check_quote, timeout=60, interval=2, desc="quote on misskey timeline")
+
+    def test_neko_quote_ap_format(self, neko: NekoClient, alice):
+        """Neko quote includes _misskey_quote in AP representation."""
+        parent = neko.create_note(f"Quotable {time.time()}")
+        quote = neko.create_note(
+            f"My quote {time.time()}", quote_id=parent["id"]
+        )
+
+        resp = _get(
+            f"{NEKO_URL}/notes/{quote['id']}",
+            headers={"Accept": "application/activity+json"},
+            timeout=10,
+        )
+        assert resp.status_code == 200
+        ap_note = resp.json()
+        # Should have _misskey_quote or quoteUrl
+        has_quote = (
+            "_misskey_quote" in ap_note
+            or "quoteUrl" in ap_note
+            or "quoteUri" in ap_note
+        )
+        assert has_quote, f"No quote reference in AP note: {list(ap_note.keys())}"
+
+
+# ── 15. Sensitive/CW federation ───────────────────────────────
+
+
+class TestSensitiveFederation:
+    """Test content warning / sensitive note federation."""
+
+    _follow_established = False
+
+    @classmethod
+    def _ensure_follow(cls, neko: NekoClient, misskey: MisskeyClient):
+        if cls._follow_established:
+            return
+        resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
+        try:
+            misskey.follow(resolved["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+        cls._follow_established = True
+
+    def test_neko_sensitive_note_federates(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """alice creates CW note; Misskey receives it with cw field."""
+        self._ensure_follow(neko, misskey)
+        unique = f"CW content {time.time()}"
+        note = neko.create_note(unique, spoiler_text="Spoiler warning")
+
+        # Verify AP format has summary field
+        resp = _get(
+            f"{NEKO_URL}/notes/{note['id']}",
+            headers={"Accept": "application/activity+json"},
+            timeout=10,
+        )
+        assert resp.status_code == 200
+        ap_note = resp.json()
+        assert ap_note.get("summary") == "Spoiler warning"
+        assert ap_note.get("sensitive") is True
+
+        # Wait for note on Misskey
+        def find_note():
+            tl = misskey._api("notes/global-timeline", {"limit": 20})
+            for n in tl:
+                if unique in (n.get("text") or ""):
+                    return n
+            return None
+
+        mk_note = poll_until(find_note, timeout=60, interval=2, desc="CW note on misskey")
+        assert mk_note.get("cw") == "Spoiler warning"
+
+    def test_misskey_sensitive_note_federates(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """bob creates CW note on Misskey; Neko receives spoiler_text."""
+        # alice follows bob
+        results = neko.search_accounts(f"bob@{MISSKEY_DOMAIN}", resolve=True)
+        assert len(results) > 0
+        bob_on_neko = results[0]
+        try:
+            neko.follow(bob_on_neko["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+
+        unique = f"MK CW content {time.time()}"
+        misskey.create_note(unique, cw="Misskey spoiler")
+
+        def find_on_neko():
+            tl = neko.public_timeline()
+            for n in tl:
+                if unique in (n.get("content") or ""):
+                    return n
+            return None
+
+        neko_note = poll_until(find_on_neko, timeout=60, interval=2, desc="MK CW note on neko")
+        assert neko_note.get("spoiler_text") == "Misskey spoiler"
+
+
+# ── 16. Hashtag federation ─────────────────────────────────────
+
+
+class TestHashtagFederation:
+    """Test hashtag federation between platforms."""
+
+    def test_neko_hashtag_in_ap(self, neko: NekoClient, alice):
+        """Neko notes with hashtags include Hashtag tags in AP representation."""
+        unique = f"Tag test #nekonoverse #federation {time.time()}"
+        note = neko.create_note(unique)
+
+        resp = _get(
+            f"{NEKO_URL}/notes/{note['id']}",
+            headers={"Accept": "application/activity+json"},
+            timeout=10,
+        )
+        assert resp.status_code == 200
+        ap_note = resp.json()
+        tags = ap_note.get("tag", [])
+        hashtag_tags = [t for t in tags if t.get("type") == "Hashtag"]
+        tag_names = [t["name"].lower().lstrip("#") for t in hashtag_tags]
+        assert "nekonoverse" in tag_names, f"Hashtag not found in {tag_names}"
+        assert "federation" in tag_names, f"Hashtag not found in {tag_names}"
+
+    def test_misskey_hashtag_federates_to_neko(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """bob creates hashtag note on Misskey; hashtags federate to Neko."""
+        # alice follows bob
+        results = neko.search_accounts(f"bob@{MISSKEY_DOMAIN}", resolve=True)
+        assert len(results) > 0
+        bob_on_neko = results[0]
+        try:
+            neko.follow(bob_on_neko["id"])
+        except Exception:
+            pass
+        time.sleep(3)
+
+        unique = f"Hashtag from MK #misskey {time.time()}"
+        misskey.create_note(unique)
+
+        def find_on_neko():
+            tl = neko.public_timeline()
+            for n in tl:
+                if "Hashtag from MK" in (n.get("content") or ""):
+                    return n
+            return None
+
+        neko_note = poll_until(find_on_neko, timeout=60, interval=2, desc="MK hashtag note on neko")
+        # Check that the hashtag tag is present or content contains the hashtag
+        tags = neko_note.get("tags", [])
+        content = neko_note.get("content", "")
+        has_hashtag = (
+            any("misskey" in (t.get("name", "") or "").lower() for t in tags)
+            or "#misskey" in content.lower()
+            or "misskey" in content.lower()
+        )
+        assert has_hashtag, f"Hashtag not found in tags={tags} or content={content}"

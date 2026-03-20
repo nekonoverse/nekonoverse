@@ -118,6 +118,86 @@ async def test_get_account_statuses_includes_unlisted(app_client, db, test_user,
     assert len(data) == 2
 
 
+async def test_get_account_statuses_own_profile_sees_all(
+    authed_client, db, test_user, mock_valkey,
+):
+    """Own profile shows all visibility levels including followers and direct."""
+    from sqlalchemy import select
+
+    from app.models.actor import Actor
+
+    result = await db.execute(select(Actor).where(Actor.id == test_user.actor_id))
+    actor = result.scalar_one()
+    await make_note(db, actor, content="Public own", visibility="public")
+    await make_note(db, actor, content="Followers own", visibility="followers")
+    await make_note(db, actor, content="Direct own", visibility="direct")
+    await db.commit()
+
+    resp = await authed_client.get(f"/api/v1/accounts/{test_user.actor_id}/statuses")
+    assert resp.status_code == 200
+    data = resp.json()
+    contents = [d["content"] for d in data]
+    assert any("Public own" in c for c in contents)
+    assert any("Followers own" in c for c in contents)
+    assert any("Direct own" in c for c in contents)
+
+
+async def test_get_account_statuses_follower_sees_followers_posts(
+    authed_client, db, test_user, test_user_b, mock_valkey,
+):
+    """A follower can see followers-only posts on the followed user's profile."""
+    from sqlalchemy import select
+
+    from app.models.actor import Actor
+
+    result = await db.execute(select(Actor).where(Actor.id == test_user_b.actor_id))
+    actor_b = result.scalar_one()
+    await make_note(db, actor_b, content="Public B", visibility="public")
+    await make_note(db, actor_b, content="Followers B", visibility="followers")
+    await make_note(db, actor_b, content="Direct B", visibility="direct")
+
+    # Create follow relationship: test_user follows test_user_b
+    from app.models.follow import Follow
+
+    follow = Follow(
+        follower_id=test_user.actor_id,
+        following_id=test_user_b.actor_id,
+        accepted=True,
+    )
+    db.add(follow)
+    await db.commit()
+
+    resp = await authed_client.get(f"/api/v1/accounts/{test_user_b.actor_id}/statuses")
+    assert resp.status_code == 200
+    data = resp.json()
+    contents = [d["content"] for d in data]
+    assert any("Public B" in c for c in contents)
+    assert any("Followers B" in c for c in contents)
+    assert not any("Direct B" in c for c in contents)
+
+
+async def test_get_account_statuses_non_follower_no_followers_posts(
+    authed_client, db, test_user, test_user_b, mock_valkey,
+):
+    """A non-follower cannot see followers-only posts."""
+    from sqlalchemy import select
+
+    from app.models.actor import Actor
+
+    result = await db.execute(select(Actor).where(Actor.id == test_user_b.actor_id))
+    actor_b = result.scalar_one()
+    await make_note(db, actor_b, content="Public C", visibility="public")
+    await make_note(db, actor_b, content="Followers C", visibility="followers")
+    await db.commit()
+
+    resp = await authed_client.get(f"/api/v1/accounts/{test_user_b.actor_id}/statuses")
+    assert resp.status_code == 200
+    data = resp.json()
+    contents = [d["content"] for d in data]
+    assert any("Public C" in c for c in contents)
+    assert not any("Followers C" in c for c in contents)
+
+
 # --- Search endpoint tests ---
 
 

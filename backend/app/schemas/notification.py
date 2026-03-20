@@ -9,8 +9,9 @@ from app.schemas.note import NoteActorResponse, NoteResponse
 class NotificationResponse(BaseModel):
     id: uuid.UUID
     type: str
-    created_at: datetime
+    created_at: str
     read: bool
+    group_key: str = ""
     account: NoteActorResponse | None = None
     status: NoteResponse | None = None
     emoji: str | None = None

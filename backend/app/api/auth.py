@@ -1,19 +1,24 @@
 import asyncio
+import secrets
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.config import settings
 from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.schemas.user import (
     ChangePasswordRequest,
+    FocalPoint,
     UserLoginRequest,
     UserRegisterRequest,
     UserResponse,
 )
+from app.services.follow_service import get_follow_counts
+from app.services.note_service import get_statuses_count
 from app.services.user_service import (
     authenticate_user,
     change_password,
@@ -21,6 +26,7 @@ from app.services.user_service import (
     get_user_by_id,
     update_display_name,
 )
+from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1", tags=["auth"])
 
@@ -30,12 +36,50 @@ TOTP_MAX_ATTEMPTS = 5
 TOTP_LOCKOUT_TTL = 300  # 5 minutes
 LOGIN_MAX_ATTEMPTS = 10
 LOGIN_LOCKOUT_TTL = 300  # 5 minutes
-REGISTER_MAX_ATTEMPTS = 20
+def _register_max_attempts() -> int:
+    from app.config import settings
+    return 10000 if settings.debug else 20
+
 REGISTER_LOCKOUT_TTL = 3600  # 1 hour
 
 
 def get_session_id(request: Request) -> str | None:
     return request.cookies.get(SESSION_COOKIE)
+
+
+@router.get("/accounts/username_available")
+async def username_available(
+    username: str,
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+):
+    from app.valkey_client import valkey
+
+    # Rate limit by IP
+    client_ip = request.client.host if request.client else "unknown"
+    rl_key = f"username_check:{client_ip}"
+    attempts = await valkey.get(rl_key)
+    if attempts is not None and int(attempts) >= 60:
+        raise HTTPException(status_code=429, detail="Too many requests")
+    await valkey.incr(rl_key)
+    await valkey.expire(rl_key, 60)
+
+    import re
+
+    from sqlalchemy import func
+
+    from app.models.actor import Actor
+
+    if not re.match(r"^[a-zA-Z0-9_]+$", username) or len(username) < 1:
+        return {"available": False}
+
+    result = await db.execute(
+        select(Actor.id).where(
+            func.lower(Actor.username) == username.lower(),
+            Actor.domain.is_(None),
+        )
+    )
+    return {"available": result.scalar_one_or_none() is None}
 
 
 @router.post("/accounts", response_model=UserResponse, status_code=201)
@@ -52,7 +96,7 @@ async def register(
     client_ip = request.client.host if request.client else "unknown"
     reg_key = f"register_attempts:{client_ip}"
     reg_attempts = await valkey.get(reg_key)
-    if reg_attempts is not None and int(reg_attempts) >= REGISTER_MAX_ATTEMPTS:
+    if reg_attempts is not None and int(reg_attempts) >= _register_max_attempts():
         raise HTTPException(
             status_code=429,
             detail="Too many registration attempts. Please try again later.",
@@ -121,7 +165,7 @@ async def register(
     await valkey.incr(reg_key)
     await valkey.expire(reg_key, REGISTER_LOCKOUT_TTL)
 
-    return _user_response(user)
+    return await _user_response(user, db)
 
 
 @router.post("/auth/login")
@@ -174,7 +218,7 @@ async def login(
     if user.totp_enabled:
         from app.valkey_client import valkey
 
-        totp_token = uuid.uuid4().hex
+        totp_token = secrets.token_urlsafe(32)
         await valkey.set(
             f"totp_pending:{totp_token}",
             str(user.id),
@@ -184,7 +228,7 @@ async def login(
 
     from app.valkey_client import valkey
 
-    session_id = uuid.uuid4().hex
+    session_id = secrets.token_urlsafe(32)
     await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
 
     response.set_cookie(
@@ -205,38 +249,185 @@ async def logout(request: Request, response: Response):
         from app.valkey_client import valkey
 
         await valkey.delete(f"session:{session_id}")
-    response.delete_cookie(SESSION_COOKIE)
+    # L-1: セキュリティ属性を指定してCookieを削除
+    response.delete_cookie(
+        SESSION_COOKIE,
+        httponly=True,
+        secure=settings.use_https,
+        samesite="lax",
+    )
     return {"ok": True}
 
 
-@router.get("/accounts/verify_credentials", response_model=UserResponse)
+@router.get("/accounts/verify_credentials")
 async def verify_credentials(
     user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
 ):
-    return _user_response(user)
+    return await _credential_account_response(user, db)
+
+
+@router.get("/accounts/storage")
+async def get_account_storage(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return storage usage and quota for the current user."""
+    from app.services.quota_service import check_quota
+
+    _, usage, quota = await check_quota(db, user, 0)
+    percent = (usage / quota * 100) if quota > 0 else 0.0
+    return {"usage_bytes": usage, "quota_bytes": quota, "usage_percent": round(percent, 1)}
 
 
 DEFAULT_AVATAR_PATH = "/default-avatar.svg"
 
 
-def _user_response(user: User) -> UserResponse:
+def _focal_from_drive_file(drive_file) -> FocalPoint | None:
+    """Extract focal point from a DriveFile."""
+    if drive_file and drive_file.focal_x is not None and drive_file.focal_y is not None:
+        return FocalPoint(x=drive_file.focal_x, y=drive_file.focal_y)
+    return None
+
+
+async def _user_response(user: User, db: AsyncSession) -> UserResponse:
     actor = user.actor
+    # Ensure drive file relationships are loaded for focal point data
+    await db.refresh(actor, ["avatar_file", "header_file"])
     return UserResponse(
         id=user.id,
         username=actor.username,
         display_name=actor.display_name,
         avatar_url=actor.avatar_url or DEFAULT_AVATAR_PATH,
         header_url=actor.header_url,
+        avatar_focal=_focal_from_drive_file(actor.avatar_file),
+        header_focal=_focal_from_drive_file(actor.header_file),
         summary=actor.summary,
         fields=actor.fields or [],
         birthday=actor.birthday,
         is_cat=actor.is_cat,
         is_bot=actor.is_bot,
         locked=actor.manually_approves_followers,
-        discoverable=actor.discoverable,
         role=user.role,
         created_at=user.created_at,
     )
+
+
+def _focal_to_dict(drive_file) -> dict | None:
+    """Extract focal point as plain dict for JSON serialization."""
+    if drive_file and drive_file.focal_x is not None and drive_file.focal_y is not None:
+        return {"x": drive_file.focal_x, "y": drive_file.focal_y}
+    return None
+
+
+async def _credential_account_response(user: User, db: AsyncSession) -> dict:
+    """Build Mastodon CredentialAccount response with nekonoverse extensions."""
+    import re
+
+    actor = user.actor
+    await db.refresh(actor, ["avatar_file", "header_file"])
+    fc, fic = await get_follow_counts(db, actor.id)
+    sc = await get_statuses_count(db, actor.id)
+
+    data = {
+        # Mastodon CredentialAccount fields
+        "id": str(actor.id),
+        "username": actor.username,
+        "acct": actor.username,
+        "display_name": actor.display_name or "",
+        "note": actor.summary or "",
+        "uri": actor.ap_id,
+        "avatar": media_proxy_url(actor.avatar_url, variant="avatar") or DEFAULT_AVATAR_PATH,
+        "avatar_static": media_proxy_url(actor.avatar_url, variant="avatar", static=True) or DEFAULT_AVATAR_PATH,
+        "header": media_proxy_url(actor.header_url) or "",
+        "header_static": media_proxy_url(actor.header_url) or "",
+        "url": f"{settings.server_url}/@{actor.username}",
+        "email": user.email,
+        "created_at": _to_mastodon_datetime(user.created_at),
+        "bot": actor.is_bot,
+        "group": actor.type == "Group",
+        "locked": actor.manually_approves_followers,
+        "discoverable": actor.discoverable,
+        "followers_count": fc,
+        "following_count": fic,
+        "statuses_count": sc,
+        "last_status_at": None,
+        "fields": [
+            {"name": f.get("name", ""), "value": f.get("value", ""), "verified_at": None}
+            for f in (actor.fields or [])
+        ],
+        "emojis": [],
+        "source": {
+            "privacy": "public",
+            "sensitive": False,
+            "language": "",
+            "note": actor.summary or "",
+            "fields": [
+                {"name": f.get("name", ""), "value": f.get("value", "")}
+                for f in (actor.fields or [])
+            ],
+        },
+        # Nekonoverse extensions (used by our frontend)
+        "avatar_url": actor.avatar_url or DEFAULT_AVATAR_PATH,
+        "header_url": actor.header_url,
+        "avatar_focal": _focal_to_dict(actor.avatar_file),
+        "header_focal": _focal_to_dict(actor.header_file),
+        "summary": actor.summary,
+        "birthday": str(actor.birthday) if actor.birthday else None,
+        "is_cat": actor.is_cat,
+        "is_bot": actor.is_bot,
+        "role": {
+            "id": "3" if user.role == "admin" else ("2" if user.role == "moderator" else "-1"),
+            "name": user.role.capitalize() if user.role else "",
+            "permissions": "65535" if user.role == "admin" else "0",
+            "color": "",
+            "highlighted": user.role in ("admin", "moderator"),
+        },
+    }
+
+    # Nekonoverse: effective permissions for frontend feature gating
+    from app.services.role_service import MODERATOR_PERMISSIONS
+
+    if user.is_admin:
+        data["nekonoverse_permissions"] = list(MODERATOR_PERMISSIONS)
+    elif user.is_staff:
+        from app.services.role_service import get_role
+
+        role_obj = await get_role(db, user.role)
+        if role_obj and role_obj.permissions:
+            data["nekonoverse_permissions"] = [
+                k for k, v in role_obj.permissions.items() if v
+            ]
+        else:
+            data["nekonoverse_permissions"] = []
+    else:
+        data["nekonoverse_permissions"] = []
+
+    # Resolve custom emoji
+    shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
+    texts = [data["display_name"] or "", data["note"]]
+    for f in actor.fields or []:
+        texts.append(f.get("name", ""))
+        texts.append(f.get("value", ""))
+    shortcodes = set()
+    for text in texts:
+        shortcodes.update(shortcode_re.findall(text))
+    if shortcodes:
+        from app.services.emoji_service import get_emojis_by_shortcodes
+
+        emoji_list = await get_emojis_by_shortcodes(db, shortcodes, None)
+        data["emojis"] = [
+            {
+                "shortcode": e.shortcode,
+                "url": media_proxy_url(e.url, variant="emoji"),
+                "static_url": media_proxy_url(e.static_url, variant="emoji", static=True)
+                if e.static_url
+                else media_proxy_url(e.url, variant="emoji", static=True),
+            }
+            for e in emoji_list
+        ]
+
+    return data
 
 
 @router.patch("/accounts/update_credentials", response_model=UserResponse)
@@ -248,9 +439,13 @@ async def update_credentials(
     is_cat: bool | None = Form(None),
     is_bot: bool | None = Form(None),
     locked: bool | None = Form(None),
-    discoverable: bool | None = Form(None),
     avatar: UploadFile | None = File(None),
     header: UploadFile | None = File(None),
+    avatar_delete: str | None = Form(None),
+    header_delete: str | None = Form(None),
+    avatar_focus: str | None = Form(None),
+    header_focus: str | None = Form(None),
+    also_known_as: str | None = Form(None),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -326,10 +521,9 @@ async def update_credentials(
         # Auto-accept all pending follow requests when turning off locked mode
         if was_locked and not locked:
             from sqlalchemy import select as sel
+            from sqlalchemy.orm import joinedload
 
             from app.models.follow import Follow
-
-            from sqlalchemy.orm import joinedload
 
             pending_result = await db.execute(
                 sel(Follow).where(
@@ -359,8 +553,16 @@ async def update_credentials(
                     accept_act = render_accept_activity(accept_id, user.actor.ap_id, follow_act)
                     await enqueue_delivery(db, user.actor_id, pf.follower.inbox_url, accept_act)
 
-    if discoverable is not None:
-        user.actor.discoverable = discoverable
+    if also_known_as is not None:
+        import json as _json2
+
+        try:
+            aka_list = _json2.loads(also_known_as)
+        except (ValueError, TypeError):
+            raise HTTPException(status_code=422, detail="Invalid also_known_as JSON")
+        if not isinstance(aka_list, list) or not all(isinstance(v, str) for v in aka_list):
+            raise HTTPException(status_code=422, detail="also_known_as must be a list of strings")
+        user.actor.also_known_as = aka_list if aka_list else None
         changed = True
 
     if avatar:
@@ -381,6 +583,10 @@ async def update_credentials(
         user.actor.avatar_url = file_to_url(drive_file)
         user.actor.avatar_file_id = drive_file.id
         changed = True
+    elif avatar_delete is not None:
+        user.actor.avatar_url = None
+        user.actor.avatar_file_id = None
+        changed = True
 
     if header:
         from app.services.drive_service import file_to_url, upload_drive_file
@@ -400,6 +606,32 @@ async def update_credentials(
         user.actor.header_url = file_to_url(drive_file)
         user.actor.header_file_id = drive_file.id
         changed = True
+    elif header_delete is not None:
+        user.actor.header_url = None
+        user.actor.header_file_id = None
+        changed = True
+
+    if avatar_focus and user.actor.avatar_file_id:
+        from app.api.media import _parse_focus
+        from app.services.drive_service import get_drive_file, update_drive_file_meta
+
+        fx, fy = _parse_focus(avatar_focus)
+        if fx is not None and fy is not None:
+            df = await get_drive_file(db, user.actor.avatar_file_id)
+            if df:
+                await update_drive_file_meta(db, df, focal_x=fx, focal_y=fy)
+                changed = True
+
+    if header_focus and user.actor.header_file_id:
+        from app.api.media import _parse_focus
+        from app.services.drive_service import get_drive_file, update_drive_file_meta
+
+        fx, fy = _parse_focus(header_focus)
+        if fx is not None and fy is not None:
+            df = await get_drive_file(db, user.actor.header_file_id)
+            if df:
+                await update_drive_file_meta(db, df, focal_x=fx, focal_y=fy)
+                changed = True
 
     if changed:
         await db.commit()
@@ -426,7 +658,11 @@ async def update_credentials(
         for inbox_url in inboxes:
             await enqueue_delivery(db, actor.id, inbox_url, update_activity)
 
-    return _user_response(user)
+    return await _user_response(user, db)
+
+
+CHANGE_PW_MAX_ATTEMPTS = 5
+CHANGE_PW_LOCKOUT_TTL = 300  # 5 minutes
 
 
 @router.post("/auth/change_password")
@@ -436,6 +672,24 @@ async def change_password_endpoint(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    # L-8: パスワード変更にレート制限追加
+    from app.valkey_client import valkey
+
+    pw_key = f"change_pw_attempts:{user.id}"
+    try:
+        pw_attempts = await valkey.get(pw_key)
+        if pw_attempts is not None and int(pw_attempts) >= CHANGE_PW_MAX_ATTEMPTS:
+            raise HTTPException(
+                status_code=429,
+                detail="Too many password change attempts. Please wait.",
+            )
+    except HTTPException:
+        raise
+    except Exception:
+        pass  # レート制限の失敗でリクエストをブロックしない
+    await valkey.incr(pw_key)
+    await valkey.expire(pw_key, CHANGE_PW_LOCKOUT_TTL)
+
     try:
         await change_password(
             db,
@@ -647,7 +901,7 @@ async def totp_verify(
     await valkey.delete(f"totp_pending:{body.totp_token}")
 
     # Create session
-    session_id = uuid.uuid4().hex
+    session_id = secrets.token_urlsafe(32)
     await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
 
     response.set_cookie(

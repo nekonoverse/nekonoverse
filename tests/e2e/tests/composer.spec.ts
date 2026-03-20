@@ -26,69 +26,56 @@ test.describe("Note Composer", () => {
     await expect(page.locator("form.note-composer textarea")).toHaveValue("");
   });
 
-  test("emoji picker opens and closes", async ({ page }) => {
+  test("inline emoji suggest opens on colon and closes on Escape", async ({ page }) => {
     const composerForm = page.locator("form.note-composer");
     await expect(composerForm).toBeVisible({ timeout: 10_000 });
 
-    // Emoji button should be visible
-    const emojiBtn = composerForm.locator(".composer-emoji-wrap .composer-attach-btn");
-    await expect(emojiBtn).toBeVisible();
+    const textarea = composerForm.locator("textarea");
+    await textarea.click();
+    await textarea.type(":smi");
 
-    // Click to open picker
-    await emojiBtn.click();
-    await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
-    await expect(page.locator(".emoji-search")).toBeVisible();
+    // Inline suggest should appear
+    await expect(page.locator(".emoji-suggest")).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".emoji-suggest-item").first()).toBeVisible();
 
-    // Close by pressing Escape (more reliable than re-clicking the toggle button
-    // which can race with the picker's outside-click listener)
+    // Close by pressing Escape
     await page.keyboard.press("Escape");
-    await expect(page.locator(".emoji-picker")).not.toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".emoji-suggest")).not.toBeVisible({ timeout: 5_000 });
   });
 
-  test("can insert emoji from picker into textarea", async ({ page }) => {
+  test("can insert emoji via inline suggest", async ({ page }) => {
     const composerForm = page.locator("form.note-composer");
     await expect(composerForm).toBeVisible({ timeout: 10_000 });
 
-    // Type some text first
     const textarea = composerForm.locator("textarea");
-    await textarea.fill("Hello ");
+    await textarea.click();
+    await textarea.type("Hello :smi");
 
-    // Open emoji picker
-    const emojiBtn = composerForm.locator(".composer-emoji-wrap .composer-attach-btn");
-    await emojiBtn.click();
-    await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
+    // Suggest should appear with results
+    await expect(page.locator(".emoji-suggest")).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".emoji-suggest-item").first()).toBeVisible();
 
-    // Search for a specific emoji to get results outside LazyCategory scroll area.
-    // LazyCategory renders Unicode emojis lazily inside .emoji-scroll-area;
-    // in Firefox CI the buttons stay "outside of the viewport" even after
-    // scrollIntoView. Search results bypass LazyCategory entirely.
-    await page.locator(".emoji-search").fill("smile");
-    const firstEmoji = page.locator(".emoji-picker .emoji-btn").first();
-    await expect(firstEmoji).toBeVisible({ timeout: 5_000 });
-    await firstEmoji.click();
+    // Select first item with Enter
+    await page.keyboard.press("Enter");
 
-    // Picker should close and textarea should contain the emoji
-    await expect(page.locator(".emoji-picker")).not.toBeVisible({ timeout: 5_000 });
+    // Suggest should close and textarea should contain the emoji (not the :smi query)
+    await expect(page.locator(".emoji-suggest")).not.toBeVisible({ timeout: 5_000 });
     const value = await textarea.inputValue();
     expect(value.startsWith("Hello ")).toBe(true);
-    expect(value.length).toBeGreaterThan("Hello ".length);
+    expect(value).not.toContain(":smi");
   });
 
-  test("emoji picker search filters results", async ({ page }) => {
+  test("emoji button opens full emoji picker", async ({ page }) => {
     const composerForm = page.locator("form.note-composer");
     await expect(composerForm).toBeVisible({ timeout: 10_000 });
 
-    // Open emoji picker
-    const emojiBtn = composerForm.locator(".composer-emoji-wrap .composer-attach-btn");
-    await emojiBtn.click();
+    // Find the emoji button by its SVG smiley circle
+    const smileBtn = composerForm.locator("button.composer-attach-btn:has(svg circle[r='10'])");
+    await smileBtn.click();
+
+    // Full emoji picker should be visible
     await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 5_000 });
-
-    // Type a search query
-    const searchInput = page.locator(".emoji-search");
-    await searchInput.fill("heart");
-
-    // Should show filtered results (at least one emoji)
-    await expect(page.locator(".emoji-picker .emoji-btn").first()).toBeVisible({ timeout: 5_000 });
+    await expect(page.locator(".emoji-search")).toBeVisible();
   });
 
   test("post button is disabled while uploading media", async ({ page }) => {

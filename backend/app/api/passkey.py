@@ -106,8 +106,20 @@ async def register_verify(
 # ── Authentication flow ────────────────────────────────────────────────────
 
 
+PASSKEY_MAX_ATTEMPTS = 10
+PASSKEY_LOCKOUT_TTL = 300  # 5 minutes
+
+
 @router.post("/authenticate/options")
-async def authenticate_options():
+async def authenticate_options(request: Request):
+    from app.valkey_client import valkey
+
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"passkey_attempts:{client_ip}"
+    attempts = await valkey.get(key)
+    if attempts is not None and int(attempts) >= PASSKEY_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please wait.")
+
     challenge_id = secrets.token_hex(16)
     options = await passkey_service.generate_authentication_options(challenge_id)
     return JSONResponse(content={"challengeId": challenge_id, **options})
@@ -116,9 +128,18 @@ async def authenticate_options():
 @router.post("/authenticate/verify")
 async def authenticate_verify(
     body: PasskeyAuthVerifyRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
+    from app.valkey_client import valkey
+
+    client_ip = request.client.host if request.client else "unknown"
+    key = f"passkey_attempts:{client_ip}"
+    attempts = await valkey.get(key)
+    if attempts is not None and int(attempts) >= PASSKEY_MAX_ATTEMPTS:
+        raise HTTPException(status_code=429, detail="Too many attempts. Please wait.")
+
     credential_json = body.model_dump(exclude={"challengeId"})
 
     try:
@@ -128,11 +149,14 @@ async def authenticate_verify(
             credential_json=credential_json,
         )
     except Exception as e:
+        await valkey.incr(key)
+        await valkey.expire(key, PASSKEY_LOCKOUT_TTL)
         raise HTTPException(status_code=401, detail=str(e))
 
-    from app.valkey_client import valkey
+    # Passkey (WebAuthn) はデバイス所持+生体認証/PINで既にMFAを満たすため、
+    # TOTP追加検証は不要。パスワード認証時のみTOTPを要求する。
 
-    session_id = uuid.uuid4().hex
+    session_id = secrets.token_urlsafe(32)
     await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
 
     response.set_cookie(

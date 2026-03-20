@@ -1,0 +1,173 @@
+services:
+  # ── Certificate Generator ──────────────────────────────────
+  certs:
+    image: alpine:3.21
+    command: >
+      sh -c "apk add --no-cache openssl >/dev/null 2>&1 && /gen-certs.sh"
+    volumes:
+      - certs:/certs
+      - ./tests/pleroma-federation/gen-certs.sh:/gen-certs.sh:ro
+
+  # ── Nekonoverse Instance ───────────────────────────────────
+  postgres-neko:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - pleroma-fed
+
+  valkey-neko:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - pleroma-fed
+
+  app-neko:
+    build: ./backend
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
+    depends_on:
+      postgres-neko:
+        condition: service_healthy
+      valkey-neko:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - pleroma-fed
+
+  worker-neko:
+    build: ./backend
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
+    depends_on:
+      app-neko:
+        condition: service_healthy
+    networks:
+      - pleroma-fed
+
+  nginx-neko:
+    image: nginx:alpine
+    volumes:
+      - ./tests/pleroma-federation/nginx-neko-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      app-neko:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+    networks:
+      pleroma-fed:
+        aliases:
+          - nekonoverse
+
+  # ── Pleroma Instance ─────────────────────────────────────
+  postgres-pl:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: pleroma
+      POSTGRES_USER: pleroma
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U pleroma
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - pleroma-fed
+
+  pleroma-app:
+    image: ghcr.io/explodingcamera/pleroma:stable
+    entrypoint: ["/custom-entrypoint.sh"]
+    environment:
+      DOMAIN: pleroma
+      INSTANCE_NAME: "Pleroma Test"
+      ADMIN_EMAIL: admin@pleroma
+      NOTIFY_EMAIL: notify@pleroma
+      DB_HOST: postgres-pl
+      DB_USER: pleroma
+      DB_PASS: testpass
+      DB_NAME: pleroma
+    volumes:
+      - ./tests/pleroma-federation/pleroma-config.exs:/data/config.exs
+      - ./tests/pleroma-federation/pleroma-entrypoint.sh:/custom-entrypoint.sh:ro
+      - certs:/certs:ro
+    depends_on:
+      postgres-pl:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+    networks:
+      - pleroma-fed
+
+  nginx-pl:
+    image: nginx:alpine
+    volumes:
+      - ./tests/pleroma-federation/nginx-pleroma-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      - pleroma-app
+      - certs
+    networks:
+      pleroma-fed:
+        aliases:
+          - pleroma
+
+  # ── Test Runner ────────────────────────────────────────────
+  test-runner:
+    profiles: ["test"]
+    build: ./tests/pleroma-federation
+    environment:
+      NEKO_URL: https://nekonoverse
+      PLEROMA_URL: https://pleroma
+      NEKO_DOMAIN: nekonoverse
+      PLEROMA_DOMAIN: pleroma
+    depends_on:
+      nginx-neko:
+        condition: service_started
+      nginx-pl:
+        condition: service_started
+      worker-neko:
+        condition: service_started
+    networks:
+      - pleroma-fed
+
+volumes:
+  certs:
+
+networks:
+  pleroma-fed:
+    driver: bridge

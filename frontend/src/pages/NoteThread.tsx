@@ -1,8 +1,8 @@
-import { createSignal, createEffect, Show, For } from "solid-js";
-import { useParams } from "@solidjs/router";
-import { getNote, getContext, type Note, type NoteContext } from "../api/statuses";
-import { currentUser, authLoading } from "../stores/auth";
-import { useI18n } from "../i18n";
+import { createSignal, createResource, Show, For } from "solid-js";
+import { useParams, useNavigate } from "@solidjs/router";
+import { getNote, getContext, type Note, type NoteContext } from "@nekonoverse/ui/api/statuses";
+import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
+import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteCard from "../components/notes/NoteCard";
 import NoteComposer from "../components/notes/NoteComposer";
 
@@ -36,14 +36,29 @@ function buildActorMap(
 
 export default function NoteThread() {
   const params = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const { t } = useI18n();
   const [targetNote, setTargetNote] = createSignal<Note | null>(null);
   const [context, setContext] = createSignal<NoteContext | null>(null);
-  const [loading, setLoading] = createSignal(true);
   const [notFound, setNotFound] = createSignal(false);
 
+  const [initialData] = createResource(
+    () => (!authLoading() && params.id ? params.id : false),
+    async (id) => {
+      setNotFound(false);
+      try {
+        const [note, ctx] = await Promise.all([getNote(id), getContext(id)]);
+        setTargetNote(note);
+        setContext(ctx);
+        return { note, ctx };
+      } catch {
+        setNotFound(true);
+        return null;
+      }
+    },
+  );
+
   const loadThread = async () => {
-    setLoading(true);
     setNotFound(false);
     try {
       const [note, ctx] = await Promise.all([
@@ -54,20 +69,8 @@ export default function NoteThread() {
       setContext(ctx);
     } catch {
       setNotFound(true);
-    } finally {
-      setLoading(false);
     }
   };
-
-  // Load when params change or auth settles
-  let loaded = false;
-  createEffect(() => {
-    const id = params.id;
-    if (!authLoading() && id) {
-      loaded = true;
-      loadThread();
-    }
-  });
 
   const handleReply = async (newNote: Note) => {
     // Reload thread to show the new reply
@@ -75,6 +78,18 @@ export default function NoteThread() {
   };
 
   const handleDelete = (noteId: string) => {
+    // 表示中のノートを削除した場合は前のページに戻る
+    if (noteId === params.id) {
+      const ctx = context();
+      const ancestors = ctx?.ancestors;
+      if (ancestors && ancestors.length > 0) {
+        // 親ノートのスレッドに遷移
+        navigate(`/notes/${ancestors[ancestors.length - 1].id}`, { replace: true });
+      } else {
+        history.length > 1 ? history.back() : navigate("/", { replace: true });
+      }
+      return;
+    }
     const ctx = context();
     if (!ctx) return;
     setContext({
@@ -111,7 +126,7 @@ export default function NoteThread() {
 
   return (
     <div class="page-container">
-      <Show when={!loading()} fallback={<p>{t("thread.loading")}</p>}>
+      <Show when={initialData.state === "ready"} fallback={<p>{t("thread.loading")}</p>}>
         <Show when={!notFound()} fallback={<p class="empty">{t("thread.notFound")}</p>}>
           <div class="thread-view">
             <h2>{t("thread.title")}</h2>

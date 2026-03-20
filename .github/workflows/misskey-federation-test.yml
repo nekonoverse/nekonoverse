@@ -1,0 +1,49 @@
+name: Misskey Federation Test
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  misskey-federation-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and start services
+        run: docker compose -f docker-compose.misskey-federation.yml up -d --build --wait
+        timeout-minutes: 12
+
+      - name: Wait for Misskey to be ready
+        run: |
+          for i in $(seq 1 60); do
+            if docker compose -f docker-compose.misskey-federation.yml exec -T misskey-app wget -q -O- --post-data='{}' --header='Content-Type: application/json' http://localhost:3000/api/ping 2>/dev/null | grep -q "pong"; then
+              echo "Misskey is ready"
+              break
+            fi
+            echo "Waiting for Misskey... ($i/60)"
+            sleep 3
+          done
+
+      - name: Run federation tests
+        run: docker compose -f docker-compose.misskey-federation.yml run --rm --no-deps test-runner
+
+      - name: Collect logs
+        if: always()
+        run: |
+          docker compose -f docker-compose.misskey-federation.yml logs app-neko worker-neko misskey-app nginx-neko nginx-mk > misskey-federation-logs.txt 2>&1
+
+      - name: Upload logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: misskey-federation-logs
+          path: misskey-federation-logs.txt
+
+      - name: Cleanup
+        if: always()
+        run: docker compose -f docker-compose.misskey-federation.yml down -v

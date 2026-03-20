@@ -36,13 +36,13 @@ async def test_create_user_with_role(db):
 
 async def test_create_user_duplicate_username(db):
     await create_user(db, "alice", "alice@example.com", "password1234")
-    with pytest.raises(ValueError, match="Username already taken"):
+    with pytest.raises(ValueError, match="already in use"):
         await create_user(db, "alice", "alice2@example.com", "password1234")
 
 
 async def test_create_user_duplicate_email(db):
     await create_user(db, "alice", "alice@example.com", "password1234")
-    with pytest.raises(ValueError, match="Email already registered"):
+    with pytest.raises(ValueError, match="already in use"):
         await create_user(db, "bob", "alice@example.com", "password1234")
 
 
@@ -81,7 +81,7 @@ async def test_create_user_normalizes_username_to_lowercase(db):
 
 async def test_create_user_duplicate_case_insensitive(db):
     await create_user(db, "alice", "alice@example.com", "password1234")
-    with pytest.raises(ValueError, match="Username already taken"):
+    with pytest.raises(ValueError, match="already in use"):
         await create_user(db, "Alice", "alice2@example.com", "password1234")
 
 

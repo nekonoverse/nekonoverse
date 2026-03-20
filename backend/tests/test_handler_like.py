@@ -16,7 +16,7 @@ async def test_handle_like_default_heart(db, test_user, mock_valkey):
     from app.models.reaction import Reaction
     r = (await db.execute(select(Reaction).where(Reaction.note_id == note.id))).scalar_one_or_none()
     assert r is not None
-    assert r.emoji == "❤"
+    assert r.emoji == "⭐"
 
 
 async def test_handle_like_misskey_reaction(db, test_user, mock_valkey):

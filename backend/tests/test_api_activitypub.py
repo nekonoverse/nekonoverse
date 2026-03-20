@@ -43,7 +43,11 @@ async def test_followers_collection(app_client, test_user, mock_valkey):
         "/users/testuser/followers", headers={"Accept": "application/activity+json"},
     )
     assert resp.status_code == 200
-    assert resp.json()["type"] == "OrderedCollection"
+    data = resp.json()
+    assert data["type"] == "OrderedCollection"
+    # first must be a page URL, not the collection itself (Pleroma compat)
+    assert data["first"] != data["id"]
+    assert "?page=true" in data["first"]
 
 
 async def test_following_collection(app_client, test_user, mock_valkey):
@@ -51,7 +55,34 @@ async def test_following_collection(app_client, test_user, mock_valkey):
         "/users/testuser/following", headers={"Accept": "application/activity+json"},
     )
     assert resp.status_code == 200
-    assert resp.json()["type"] == "OrderedCollection"
+    data = resp.json()
+    assert data["type"] == "OrderedCollection"
+    assert data["first"] != data["id"]
+    assert "?page=true" in data["first"]
+
+
+async def test_followers_collection_page(app_client, test_user, mock_valkey):
+    resp = await app_client.get(
+        "/users/testuser/followers?page=true",
+        headers={"Accept": "application/activity+json"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "OrderedCollectionPage"
+    assert "partOf" in data
+    assert isinstance(data["orderedItems"], list)
+
+
+async def test_following_collection_page(app_client, test_user, mock_valkey):
+    resp = await app_client.get(
+        "/users/testuser/following?page=true",
+        headers={"Accept": "application/activity+json"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "OrderedCollectionPage"
+    assert "partOf" in data
+    assert isinstance(data["orderedItems"], list)
 
 
 async def test_webfinger(app_client, test_user, mock_valkey):
@@ -168,6 +199,24 @@ async def test_note_ap_not_found(app_client, mock_valkey):
         f"/notes/{fake_id}", headers={"Accept": "application/activity+json"},
     )
     assert resp.status_code == 404
+
+
+async def test_note_ap_includes_hashtag_tags(authed_client, mock_valkey):
+    """Note with hashtags should include Hashtag tags in AP output."""
+    create_resp = await authed_client.post(
+        "/api/v1/statuses",
+        json={"content": "Testing #nekonoverse hashtag", "visibility": "public"},
+    )
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.get(
+        f"/notes/{note_id}", headers={"Accept": "application/activity+json"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    tags = data.get("tag", [])
+    hashtag_tags = [t for t in tags if t.get("type") == "Hashtag"]
+    assert len(hashtag_tags) >= 1, f"No Hashtag tags in {tags}"
+    assert any("nekonoverse" in t.get("name", "").lower() for t in hashtag_tags)
 
 
 async def test_actor_suspended(app_client, test_user, db, mock_valkey):

@@ -12,7 +12,7 @@ class CustomEmoji(Base):
     __tablename__ = "custom_emojis"
 
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
-    shortcode: Mapped[str] = mapped_column(String(100), nullable=False)
+    shortcode: Mapped[str] = mapped_column(String(255), nullable=False)
     domain: Mapped[str | None] = mapped_column(String(255), nullable=True, index=True)
     url: Mapped[str] = mapped_column(String(2048), nullable=False)
     static_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
