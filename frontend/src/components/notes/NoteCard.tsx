@@ -1087,7 +1087,7 @@ export default function NoteCard(props: Props) {
                 rel="noopener noreferrer"
                 title={t("remote.viewOnRemote")}
               >
-                ({note().actor.server_name || note().actor.domain}{" "}↗)
+                (<span class="note-via-instance-name">{note().actor.server_name || note().actor.domain}</span>{" "}↗)
               </a>
             </span>
           </Show>

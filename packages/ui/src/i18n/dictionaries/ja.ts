@@ -377,7 +377,6 @@ export const ja = {
   "settings.isCat": "猫モード",
   "settings.isBot": "Botアカウント",
   "settings.locked": "フォローを承認制にする",
-  "settings.discoverable": "ディスカバリーに掲載",
   "settings.profileSaved": "プロフィールを保存しました",
   "settings.maxFields": "最大4つまで",
   "pwa.updateAvailable": "新しいバージョンがあります",

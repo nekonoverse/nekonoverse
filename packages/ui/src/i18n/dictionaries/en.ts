@@ -379,7 +379,6 @@ export const en: Dictionary = {
   "settings.isCat": "Cat mode",
   "settings.isBot": "This is a bot account",
   "settings.locked": "Approve followers manually",
-  "settings.discoverable": "Discoverable",
   "settings.profileSaved": "Profile saved!",
   "settings.maxFields": "Maximum 4 fields",
   "pwa.updateAvailable": "A new version is available",

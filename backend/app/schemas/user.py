@@ -58,7 +58,6 @@ class UserResponse(BaseModel):
     is_cat: bool = False
     is_bot: bool = False
     locked: bool = False
-    discoverable: bool = True
     role: str = "user"
     created_at: datetime
 

@@ -30,7 +30,6 @@ export interface CurrentUser {
   is_cat: boolean;
   is_bot: boolean;
   locked: boolean;
-  discoverable: boolean;
   role: string | RoleObject;
   nekonoverse_permissions?: string[];
 }
