@@ -343,7 +343,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         logger.exception("Failed to publish remote note to streaming")
 
     # Background focal point detection for remote image attachments
-    if settings.face_detect_url:
+    if settings.face_detect_enabled:
         from sqlalchemy import select as sel
 
         from app.models.note_attachment import NoteAttachment as NA

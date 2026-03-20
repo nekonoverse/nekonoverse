@@ -251,9 +251,10 @@ async def auto_detect_focal_point(
         drive_file: The drive file to detect focal point for.
         image_data: Raw image bytes. If not provided, downloads from S3.
     """
-    if not settings.face_detect_url:
+    if not settings.face_detect_enabled:
         return
-    parsed = urlparse(settings.face_detect_url)
+    base_url = settings.face_detect_base_url
+    parsed = urlparse(base_url)
     if parsed.scheme not in ("http", "https"):
         logger.warning("Invalid face_detect_url scheme: %s", parsed.scheme)
         return
@@ -279,7 +280,7 @@ async def auto_detect_focal_point(
 
         async with make_face_detect_client() as client:
             resp = await client.post(
-                settings.face_detect_url,
+                base_url,
                 json={"inputs": b64, "parameters": {"threshold": 0.5}},
             )
             resp.raise_for_status()

@@ -93,7 +93,7 @@ async def handle_announce(db: AsyncSession, activity: dict):
         try:
             from app.config import settings
 
-            if settings.face_detect_url:
+            if settings.face_detect_enabled:
                 from sqlalchemy import select as sel
 
                 from app.models.note_attachment import NoteAttachment as NA
