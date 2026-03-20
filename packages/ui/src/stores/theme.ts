@@ -5,12 +5,14 @@ export type FontSize = "small" | "medium" | "large" | "xlarge" | "xxlarge";
 export type FontFamily = "noto" | "hiragino" | "yu-mac" | "yu-win" | "meiryo" | "ipa" | "system" | "custom";
 export type TimeFormat = "absolute" | "relative" | "combined" | "unixtime";
 export type CursorStyle = "default" | "paw";
+export type WideEmojiStyle = "shrink" | "blur" | "overflow";
 
 const THEMES: Theme[] = ["dark", "light", "novel"];
 const FONT_SIZES: FontSize[] = ["small", "medium", "large", "xlarge", "xxlarge"];
 const FONT_FAMILIES: FontFamily[] = ["noto", "hiragino", "yu-mac", "yu-win", "meiryo", "ipa", "system", "custom"];
 const TIME_FORMATS: TimeFormat[] = ["absolute", "relative", "combined", "unixtime"];
 const CURSOR_STYLES: CursorStyle[] = ["default", "paw"];
+const WIDE_EMOJI_STYLES: WideEmojiStyle[] = ["shrink", "blur", "overflow"];
 const FONT_SIZE_MAP: Record<FontSize, string> = {
   small: "14px",
   medium: "16px",
@@ -62,6 +64,12 @@ function loadCursorStyle(): CursorStyle {
   return "default";
 }
 
+function loadWideEmojiStyle(): WideEmojiStyle {
+  const saved = localStorage.getItem("wideEmojiStyle");
+  if (saved && WIDE_EMOJI_STYLES.includes(saved as WideEmojiStyle)) return saved as WideEmojiStyle;
+  return "overflow";
+}
+
 function applyTheme(t: Theme) {
   if (t === "dark") {
     document.documentElement.removeAttribute("data-theme");
@@ -89,12 +97,21 @@ function applyCursorStyle(s: CursorStyle) {
   }
 }
 
+function applyWideEmojiStyle(s: WideEmojiStyle) {
+  if (s === "overflow") {
+    document.documentElement.removeAttribute("data-wide-emoji");
+  } else {
+    document.documentElement.setAttribute("data-wide-emoji", s);
+  }
+}
+
 const [theme, setThemeSignal] = createSignal<Theme>(loadTheme());
 const [fontSize, setFontSizeSignal] = createSignal<FontSize>(loadFontSize());
 const [fontFamily, setFontFamilySignal] = createSignal<FontFamily>(loadFontFamily());
 const [customFontFamily, setCustomFontFamilySignal] = createSignal<string>(loadCustomFontFamily());
 const [timeFormat, setTimeFormatSignal] = createSignal<TimeFormat>(loadTimeFormat());
 const [cursorStyle, setCursorStyleSignal] = createSignal<CursorStyle>(loadCursorStyle());
+const [wideEmojiStyle, setWideEmojiStyleSignal] = createSignal<WideEmojiStyle>(loadWideEmojiStyle());
 
 const [hideNonFollowedReplies, setHideNonFollowedRepliesSignal] = createSignal<boolean>(
   localStorage.getItem("nekonoverse:hide-non-followed-replies") !== "false"
@@ -104,7 +121,7 @@ const [nyaizeEnabled, setNyaizeEnabledSignal] = createSignal<boolean>(
   localStorage.getItem("nekonoverse:nyaize") !== "false"
 );
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, hideNonFollowedReplies, nyaizeEnabled };
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, hideNonFollowedReplies, nyaizeEnabled };
 
 export function setTheme(t: Theme) {
   setThemeSignal(t);
@@ -143,6 +160,12 @@ export function setCursorStyle(s: CursorStyle) {
   applyCursorStyle(s);
 }
 
+export function setWideEmojiStyle(s: WideEmojiStyle) {
+  setWideEmojiStyleSignal(s);
+  localStorage.setItem("wideEmojiStyle", s);
+  applyWideEmojiStyle(s);
+}
+
 export function setHideNonFollowedReplies(v: boolean) {
   setHideNonFollowedRepliesSignal(v);
   localStorage.setItem("nekonoverse:hide-non-followed-replies", String(v));
@@ -158,4 +181,5 @@ export function initTheme() {
   applyFontSize(fontSize());
   applyFontFamily(fontFamily(), customFontFamily());
   applyCursorStyle(cursorStyle());
+  applyWideEmojiStyle(wideEmojiStyle());
 }

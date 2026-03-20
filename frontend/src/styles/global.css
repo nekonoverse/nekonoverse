@@ -2705,6 +2705,21 @@ a:hover {
   height: 1.4em;
 }
 
+/* 長い絵文字の表示モード: 縮小 */
+[data-wide-emoji="shrink"] .reaction-badge .custom-emoji {
+  max-width: 5em;
+  object-fit: contain;
+}
+
+/* 長い絵文字の表示モード: ぼかしトリミング */
+[data-wide-emoji="blur"] .reaction-badge .custom-emoji {
+  max-width: 5em;
+  object-fit: cover;
+  object-position: left center;
+  -webkit-mask-image: linear-gradient(to right, black 70%, transparent 100%);
+  mask-image: linear-gradient(to right, black 70%, transparent 100%);
+}
+
 .emoji-btn .twemoji {
   height: 24px;
   width: 24px;
