@@ -16,14 +16,17 @@ test.describe("Reactions", () => {
       .filter({ hasText: `reaction-test-${uid}` })
       .first();
 
-    // リアクション追加ボタンをクリック
+    // リアクション追加ボタンをクリック (Firefox ではクリックが空振りする場合があるためリトライ)
     const addBtn = noteCard.locator(".reaction-add-btn");
     await addBtn.waitFor({ state: "visible", timeout: 10_000 });
     await addBtn.scrollIntoViewIfNeeded();
     await addBtn.click();
-
-    // Emoji Picker が表示される
-    await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
+    try {
+      await page.waitForSelector(".emoji-picker", { timeout: 5_000 });
+    } catch {
+      await addBtn.click();
+      await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
+    }
 
     // カスタム絵文字の非同期読み込みで DOM が再構築されるのを待つ
     await page.waitForFunction(

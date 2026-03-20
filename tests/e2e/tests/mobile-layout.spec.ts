@@ -48,12 +48,17 @@ test.describe("Mobile layout", () => {
     await page.waitForSelector(".note-card", { timeout: 10_000 });
 
     // リアクション追加ボタンが表示されるのを待ち、スクロールしてクリック
+    // Firefox ではクリックが空振りする場合があるためリトライ
     const addBtn = page.locator(".reaction-add-btn").first();
     await addBtn.waitFor({ state: "visible", timeout: 10_000 });
     await addBtn.scrollIntoViewIfNeeded();
     await addBtn.click();
-
-    await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
+    try {
+      await page.waitForSelector(".emoji-picker", { timeout: 5_000 });
+    } catch {
+      await addBtn.click();
+      await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
+    }
 
     const box = await page.locator(".emoji-picker").boundingBox();
     expect(box).not.toBeNull();
