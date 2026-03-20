@@ -82,8 +82,13 @@ test.describe("Note Actions", () => {
       .first();
     const bookmarkBtn = noteCard.locator(".note-bookmark-btn");
 
-    // Firefox workaround: evaluate で直接クリック
-    await bookmarkBtn.evaluate((el: HTMLElement) => el.click());
+    // Firefox workaround: evaluate で直接クリック + API完了を待つ
+    await bookmarkBtn.scrollIntoViewIfNeeded();
+    await page.waitForTimeout(200);
+    const [bookmarkResp] = await Promise.all([
+      page.waitForResponse((r) => r.url().includes("/bookmark") && r.status() === 200, { timeout: 10_000 }),
+      bookmarkBtn.evaluate((el: HTMLElement) => el.click()),
+    ]);
 
     // Firefox workaround: SolidJS の DOM 更新が反映されない場合はリロードして確認
     try {
@@ -97,7 +102,7 @@ test.describe("Note Actions", () => {
         .first();
       await expect(refreshedCard.locator(".note-bookmark-btn")).toHaveClass(
         /bookmarked/,
-        { timeout: 5_000 },
+        { timeout: 10_000 },
       );
     }
 
