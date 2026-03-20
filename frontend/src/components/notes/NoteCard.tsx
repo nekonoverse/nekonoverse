@@ -260,11 +260,12 @@ export default function NoteCard(props: Props) {
   const [favCount, setFavCount] = createSignal(0);
   const [pinned, setPinned] = createSignal(false);
   const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
-  const [cwExpanded, setCwExpandedRaw] = createSignal(expandedCwNoteIds.has(displayNote().id));
+  const cwNoteId = () => (props.note.reblog || props.note).id;
+  const [cwExpanded, setCwExpandedRaw] = createSignal(expandedCwNoteIds.has(cwNoteId()));
   const setCwExpanded = (v: boolean) => {
     setCwExpandedRaw(v);
-    if (v) expandedCwNoteIds.add(displayNote().id);
-    else expandedCwNoteIds.delete(displayNote().id);
+    if (v) expandedCwNoteIds.add(cwNoteId());
+    else expandedCwNoteIds.delete(cwNoteId());
   };
   const [contentCollapsed, setContentCollapsed] = createSignal(true);
   const [contentOverflows, setContentOverflows] = createSignal(false);
