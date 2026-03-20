@@ -2710,15 +2710,23 @@ a:hover {
   height: 1.4em;
 }
 
+/* 長い絵文字の表示モード: 共通 — バッジを親幅に収める */
+[data-wide-emoji="shrink"] .reaction-badge,
+[data-wide-emoji="blur"] .reaction-badge {
+  max-width: 100%;
+}
+
 /* 長い絵文字の表示モード: 縮小 */
 [data-wide-emoji="shrink"] .reaction-badge .custom-emoji {
-  max-width: 5em;
+  min-width: 0;
+  flex-shrink: 1;
   object-fit: contain;
 }
 
 /* 長い絵文字の表示モード: ぼかしトリミング */
 [data-wide-emoji="blur"] .reaction-badge .custom-emoji {
-  max-width: 100%;
+  min-width: 0;
+  flex-shrink: 1;
   object-fit: cover;
   object-position: left center;
   -webkit-mask-image: linear-gradient(to right, black 70%, transparent 100%);
