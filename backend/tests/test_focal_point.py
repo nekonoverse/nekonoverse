@@ -156,7 +156,7 @@ async def test_auto_detect_no_service(db, test_user, mock_s3):
         filename="test.png", mime_type="image/png",
     )
     with patch("app.services.drive_service.settings") as mock_settings:
-        mock_settings.face_detect_url = None
+        mock_settings.face_detect_enabled = False
         await auto_detect_focal_point(db, drive_file)
     assert drive_file.focal_x is None
     assert drive_file.focal_y is None
@@ -177,7 +177,8 @@ async def test_auto_detect_service_down(db, test_user, mock_s3):
         patch("app.storage.download_file", new_callable=AsyncMock, return_value=TINY_PNG),
         patch("httpx.AsyncClient.post", side_effect=httpx.ConnectError("connection refused")),
     ):
-        mock_settings.face_detect_url = "http://gpu-host:8001/object-detection"
+        mock_settings.face_detect_enabled = True
+        mock_settings.face_detect_base_url = "http://gpu-host:8001/object-detection"
         await auto_detect_focal_point(db, drive_file)
     # Should not crash, focal point stays None
     assert drive_file.focal_x is None
@@ -345,7 +346,8 @@ async def test_auto_detect_happy_path(db, test_user, mock_s3):
         patch("app.storage.download_file", new_callable=AsyncMock, return_value=TINY_PNG),
         patch("httpx.AsyncClient.post", mock_post),
     ):
-        mock_settings.face_detect_url = "http://gpu-host:8001/object-detection"
+        mock_settings.face_detect_enabled = True
+        mock_settings.face_detect_base_url = "http://gpu-host:8001/object-detection"
         await auto_detect_focal_point(db, drive_file)
 
     # cx=50, cy=20+(60-20)/3=33.3 on 100x100 → focal_x=0.0, focal_y≈0.33
@@ -366,7 +368,8 @@ async def test_auto_detect_skips_when_focal_set(db, test_user, mock_s3):
     await db.commit()
 
     with patch("app.services.drive_service.settings") as mock_settings:
-        mock_settings.face_detect_url = "http://gpu-host:8001/object-detection"
+        mock_settings.face_detect_enabled = True
+        mock_settings.face_detect_base_url = "http://gpu-host:8001/object-detection"
         await auto_detect_focal_point(db, drive_file)
 
     # Should remain unchanged
@@ -384,7 +387,8 @@ async def test_auto_detect_invalid_url_scheme(db, test_user, mock_s3):
     )
 
     with patch("app.services.drive_service.settings") as mock_settings:
-        mock_settings.face_detect_url = "file:///etc/passwd"
+        mock_settings.face_detect_enabled = True
+        mock_settings.face_detect_base_url = "file:///etc/passwd"
         await auto_detect_focal_point(db, drive_file)
 
     assert drive_file.focal_x is None
