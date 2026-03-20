@@ -597,7 +597,7 @@ export default function NoteComposer(props: Props) {
           <input
             ref={fileInput}
             type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng"
             multiple
             onChange={(e) => handleFiles(e.currentTarget.files)}
             style="display: none"

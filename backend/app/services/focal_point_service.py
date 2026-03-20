@@ -12,7 +12,7 @@ from app.config import settings
 logger = logging.getLogger(__name__)
 
 _IMAGE_MIMES = frozenset({
-    "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif",
+    "image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng",
 })
 _MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 

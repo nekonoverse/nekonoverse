@@ -567,7 +567,7 @@ function ServerSettingsTab() {
         <input
           ref={iconInput}
           type="file"
-          accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+          accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng,image/svg+xml"
           style="display: none"
           onChange={async (e) => {
             const file = (e.currentTarget as HTMLInputElement).files?.[0];

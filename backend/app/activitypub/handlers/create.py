@@ -354,7 +354,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                 NA.remote_url.isnot(None),
                 NA.remote_focal_x.is_(None),
                 NA.remote_mime_type.in_(
-                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
+                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
                 ),
             )
         )
