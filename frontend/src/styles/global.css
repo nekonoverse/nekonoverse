@@ -1914,7 +1914,7 @@ a:hover {
 }
 .note-quote-header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   gap: 8px;
   margin-bottom: 6px;
 }
@@ -1924,11 +1924,6 @@ a:hover {
   border-radius: 50%;
   object-fit: cover;
   margin-top: 2px;
-}
-.note-quote-name-wrap {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
 }
 .note-quote-name {
   display: flex;
@@ -1962,9 +1957,12 @@ a:hover {
   word-break: break-word;
 }
 .note-quote-time {
+  display: block;
   color: var(--text-secondary);
   font-size: 0.8em;
   white-space: nowrap;
+  margin-top: 4px;
+  text-align: right;
 }
 .note-quote-media {
   display: grid;
