@@ -7,10 +7,11 @@ import {
   fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
   timeFormat, setTimeFormat,
   cursorStyle, setCursorStyle,
+  wideEmojiStyle, setWideEmojiStyle,
   hideNonFollowedReplies, setHideNonFollowedReplies,
   nyaizeEnabled, setNyaizeEnabled,
   FONT_FAMILY_MAP,
-  type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle,
+  type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle, type WideEmojiStyle,
 } from "@nekonoverse/ui/stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
@@ -253,6 +254,24 @@ function AppearanceTab() {
             <button
               class={`theme-btn${cursorStyle() === item.key ? " theme-active" : ""}`}
               onClick={() => setCursorStyle(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.wideEmoji")}</h3>
+        <div class="theme-selector">
+          {([
+            { key: "shrink" as WideEmojiStyle, label: t("settings.wideEmojiShrink") },
+            { key: "blur" as WideEmojiStyle, label: t("settings.wideEmojiBlur") },
+            { key: "overflow" as WideEmojiStyle, label: t("settings.wideEmojiOverflow") },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${wideEmojiStyle() === item.key ? " theme-active" : ""}`}
+              onClick={() => setWideEmojiStyle(item.key)}
             >
               {item.label}
             </button>
