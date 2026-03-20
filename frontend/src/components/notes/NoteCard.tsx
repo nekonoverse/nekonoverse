@@ -797,6 +797,19 @@ export default function NoteCard(props: Props) {
                             media.meta?.focus,
                           ),
                         }}
+                        onLoad={(e) => {
+                          const el = e.currentTarget;
+                          const parent = el.parentElement;
+                          if (!parent || !el.naturalWidth || !el.naturalHeight
+                              || !el.clientWidth || !el.clientHeight) return;
+                          const imgAR = el.naturalWidth / el.naturalHeight;
+                          const boxAR = el.clientWidth / el.clientHeight;
+                          if (imgAR > boxAR * 1.05) {
+                            parent.setAttribute("data-crop", "horizontal");
+                          } else if (imgAR < boxAR * 0.95) {
+                            parent.setAttribute("data-crop", "vertical");
+                          }
+                        }}
                       />
                     </button>
                   )}
