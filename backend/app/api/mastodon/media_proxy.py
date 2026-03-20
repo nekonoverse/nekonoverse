@@ -51,7 +51,7 @@ async def _transform_image(body: bytes, **params) -> tuple[bytes, str]:
     form_data = {k: str(v) for k, v in params.items() if v}
     try:
         async with make_media_transform_client() as client:
-            base = settings.media_proxy_transform_url
+            base = settings.media_proxy_transform_url or "http://localhost"
             resp = await client.post(
                 f"{base}/transform" if not base.endswith("/transform") else base,
                 files={"file": ("image", body)},
@@ -134,7 +134,8 @@ async def proxy_media(
     from app.config import settings
 
     needs_transform = any([avatar, emoji, preview, static, badge])
-    if needs_transform and content_type.startswith("image/") and settings.media_proxy_transform_url:
+    transform_configured = settings.media_proxy_transform_url or settings.media_proxy_transform_uds
+    if needs_transform and content_type.startswith("image/") and transform_configured:
         body, content_type = await _transform_image(
             body, avatar=avatar, emoji=emoji, preview=preview,
             static=static, badge=badge,
