@@ -241,6 +241,8 @@ export default function NoteCard(props: Props) {
   const [pinned, setPinned] = createSignal(false);
   const [lightboxIndex, setLightboxIndex] = createSignal<number | null>(null);
   const [cwExpanded, setCwExpanded] = createSignal(false);
+  const [contentCollapsed, setContentCollapsed] = createSignal(true);
+  const [contentOverflows, setContentOverflows] = createSignal(false);
   const [sensitiveRevealed, setSensitiveRevealed] = createSignal(false);
   const [editing, setEditing] = createSignal(false);
   const [editContent, setEditContent] = createSignal("");
@@ -722,7 +724,29 @@ export default function NoteCard(props: Props) {
                 renderContent();
               });
               return (
-                <div class="note-content" ref={(el) => { contentEl = el; renderContent(); }} />
+                <>
+                  <div
+                    class="note-content"
+                    classList={{ "note-content-collapsed": contentCollapsed() && contentOverflows() }}
+                    ref={(el) => {
+                      contentEl = el;
+                      renderContent();
+                      requestAnimationFrame(() => {
+                        if (el.scrollHeight > el.clientHeight + 2) {
+                          setContentOverflows(true);
+                        }
+                      });
+                    }}
+                  />
+                  <Show when={contentOverflows() && contentCollapsed()}>
+                    <button
+                      class="note-cw-toggle"
+                      onClick={() => setContentCollapsed(false)}
+                    >
+                      {t("cw.show")}
+                    </button>
+                  </Show>
+                </>
               );
             })()}
           >

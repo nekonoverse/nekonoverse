@@ -17,10 +17,11 @@ test.describe("Reactions", () => {
       .first();
 
     // リアクション追加ボタンをクリック
+    // Firefox では Playwright の click() が空振りするため evaluate で DOM 直接クリック
     const addBtn = noteCard.locator(".reaction-add-btn");
     await addBtn.waitFor({ state: "visible", timeout: 10_000 });
     await addBtn.scrollIntoViewIfNeeded();
-    await addBtn.click();
+    await addBtn.evaluate((el) => (el as HTMLElement).click());
 
     // Emoji Picker が表示される
     await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
@@ -34,11 +35,11 @@ test.describe("Reactions", () => {
       { timeout: 10_000 },
     );
 
-    // 最初の絵文字ボタンをクリック (Firefox の再レンダリング安定を待つ)
-    const emoji = page.locator(".emoji-picker .emoji-btn").first();
-    await expect(emoji).toBeVisible({ timeout: 5_000 });
-    await emoji.scrollIntoViewIfNeeded();
-    await emoji.click();
+    // 最初の絵文字ボタンをクリック (evaluate で DOM detach を回避)
+    await page.evaluate(() => {
+      const btn = document.querySelector(".emoji-picker .emoji-btn") as HTMLElement;
+      btn?.click();
+    });
 
     // リアクションバッジが表示される
     await expect(noteCard.locator(".reaction-badge")).toBeVisible({

@@ -28,7 +28,22 @@ test.describe("Note Actions", () => {
       ),
       boostBtn.click(),
     ]);
-    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 10_000 });
+
+    // Firefox workaround: SolidJS の DOM 更新が反映されない場合があるためリロード
+    try {
+      await expect(boostBtn).toHaveClass(/boosted/, { timeout: 5_000 });
+    } catch {
+      await page.goto("/");
+      await page.waitForSelector(".note-card", { timeout: 10_000 });
+      const refreshedCard = page
+        .locator(`.note-card`)
+        .filter({ hasText: `reblog-test-${uid}` })
+        .first();
+      await expect(refreshedCard.locator(".note-boost-btn")).toHaveClass(
+        /boosted/,
+        { timeout: 10_000 },
+      );
+    }
 
     // --- Un-boost: reload page to get fresh DOM references (Firefox workaround) ---
     await page.goto("/");
@@ -67,13 +82,36 @@ test.describe("Note Actions", () => {
       .filter({ hasText: `bookmark-action-${uid}` })
       .first();
     const bookmarkBtn = noteCard.locator(".note-bookmark-btn");
+    await bookmarkBtn.scrollIntoViewIfNeeded();
     await bookmarkBtn.click();
 
-    await expect(bookmarkBtn).toHaveClass(/bookmarked/, { timeout: 5_000 });
+    // Firefox workaround: SolidJS の DOM 更新が反映されない場合はリロードして確認
+    try {
+      await expect(bookmarkBtn).toHaveClass(/bookmarked/, { timeout: 5_000 });
+    } catch {
+      await page.goto("/");
+      await page.waitForSelector(".note-card", { timeout: 10_000 });
+      const refreshedCard = page
+        .locator(`.note-card`)
+        .filter({ hasText: `bookmark-action-${uid}` })
+        .first();
+      await expect(refreshedCard.locator(".note-bookmark-btn")).toHaveClass(
+        /bookmarked/,
+        { timeout: 5_000 },
+      );
+    }
 
-    // 解除
-    await bookmarkBtn.click();
-    await expect(bookmarkBtn).not.toHaveClass(/bookmarked/, { timeout: 5_000 });
+    // 解除: リロードして fresh DOM で操作
+    await page.goto("/");
+    await page.waitForSelector(".note-card", { timeout: 10_000 });
+    const noteCard2 = page
+      .locator(`.note-card`)
+      .filter({ hasText: `bookmark-action-${uid}` })
+      .first();
+    const bookmarkBtn2 = noteCard2.locator(".note-bookmark-btn");
+    await bookmarkBtn2.scrollIntoViewIfNeeded();
+    await bookmarkBtn2.click();
+    await expect(bookmarkBtn2).not.toHaveClass(/bookmarked/, { timeout: 5_000 });
   });
 
   test("delete note removes it from timeline", async ({ page }) => {

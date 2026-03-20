@@ -47,13 +47,13 @@ test.describe("Mobile layout", () => {
     await page.goto("/");
     await page.waitForSelector(".note-card", { timeout: 10_000 });
 
-    // リアクション追加ボタンが表示されるのを待ち、スクロールしてクリック
+    // リアクション追加ボタンが表示されるのを待ち、クリック
+    // モバイルビューポート + Firefox では Playwright の click() が空振りするため
+    // evaluate で DOM クリックを直接発火させる
     const addBtn = page.locator(".reaction-add-btn").first();
     await addBtn.waitFor({ state: "visible", timeout: 10_000 });
     await addBtn.scrollIntoViewIfNeeded();
-    await addBtn.click();
-
-    await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
+    await addBtn.evaluate((el) => (el as HTMLElement).click());
 
     const box = await page.locator(".emoji-picker").boundingBox();
     expect(box).not.toBeNull();

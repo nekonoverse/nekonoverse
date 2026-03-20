@@ -1333,6 +1333,13 @@ a:hover {
   word-break: break-word;
 }
 
+.note-content-collapsed {
+  max-height: 20em;
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+  mask-image: linear-gradient(to bottom, black 85%, transparent 100%);
+}
+
 .note-content a {
   color: var(--accent);
 }
