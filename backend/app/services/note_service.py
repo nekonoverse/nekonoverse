@@ -847,7 +847,7 @@ async def fetch_remote_note(
     existing = await get_note_by_ap_id(db, ap_id)
     if existing:
         # 既存ノートでもfocal未検出の画像があればエンキュー
-        if settings.face_detect_url:
+        if settings.face_detect_enabled:
             from sqlalchemy import select as sel
 
             from app.models.note_attachment import NoteAttachment as NA
@@ -1110,7 +1110,7 @@ async def fetch_remote_note(
         db.add(attachment)
 
     # Background focal point detection for remote image attachments
-    if settings.face_detect_url:
+    if settings.face_detect_enabled:
         await db.flush()
         from sqlalchemy import select as sel
 

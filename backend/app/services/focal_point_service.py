@@ -27,7 +27,7 @@ async def detect_remote_focal_points(
     and publishes a streaming event.  Designed for asyncio.create_task();
     never raises.
     """
-    if not settings.face_detect_url:
+    if not settings.face_detect_enabled:
         return
 
     from app.database import async_session
@@ -229,7 +229,7 @@ async def _call_face_detect(
 
     async with make_face_detect_client() as client:
         resp = await client.post(
-            settings.face_detect_url,
+            settings.face_detect_base_url,
             json={"inputs": b64, "parameters": {"threshold": 0.5}},
         )
         resp.raise_for_status()

@@ -125,8 +125,8 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     from app.services.drive_service import _read_file_data
     from app.services.focal_point_service import _call_face_detect, _download_image
 
-    if not settings.face_detect_url:
-        print("Error: FACE_DETECT_URL is not set.", file=sys.stderr)
+    if not settings.face_detect_enabled:
+        print("Error: FACE_DETECT_URL or FACE_DETECT_UDS is not set.", file=sys.stderr)
         sys.exit(1)
 
     concurrency = args.concurrency
@@ -249,8 +249,8 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
         _publish_update,
     )
 
-    if not settings.face_detect_url:
-        print("Error: FACE_DETECT_URL is not set.", file=sys.stderr)
+    if not settings.face_detect_enabled:
+        print("Error: FACE_DETECT_URL or FACE_DETECT_UDS is not set.", file=sys.stderr)
         sys.exit(1)
 
     try:

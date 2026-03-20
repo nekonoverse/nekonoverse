@@ -31,7 +31,7 @@ MAX_CONCURRENT = 4
 
 async def enqueue_local(drive_file_id: uuid.UUID) -> None:
     """Enqueue face detection for a local DriveFile."""
-    if not settings.face_detect_url:
+    if not settings.face_detect_enabled:
         return
     job = {
         "type": "local",
@@ -45,7 +45,7 @@ async def enqueue_local(drive_file_id: uuid.UUID) -> None:
 
 async def enqueue_remote(note_id: uuid.UUID, attachment_ids: list[uuid.UUID]) -> None:
     """Enqueue face detection for remote NoteAttachments."""
-    if not settings.face_detect_url:
+    if not settings.face_detect_enabled:
         return
     job = {
         "type": "remote",
@@ -149,8 +149,8 @@ async def run_face_detect_loop() -> None:
     Pops jobs from the Valkey queue, processes them with a concurrency semaphore,
     and handles retries with exponential backoff.
     """
-    if not settings.face_detect_url:
-        logger.info("FACE_DETECT_URL not set, face-detect worker idle")
+    if not settings.face_detect_enabled:
+        logger.info("FACE_DETECT_URL/UDS not set, face-detect worker idle")
         # Still run the loop so we can start processing if config changes
         while True:
             await asyncio.sleep(30)

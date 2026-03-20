@@ -56,6 +56,22 @@ class Settings(BaseSettings):
     def media_url(self) -> str:
         return f"{self.server_url}/media"
 
+    @property
+    def face_detect_enabled(self) -> bool:
+        return bool(self.face_detect_url or self.face_detect_uds)
+
+    @property
+    def face_detect_base_url(self) -> str:
+        return self.face_detect_url or "http://localhost"
+
+    @property
+    def media_proxy_transform_enabled(self) -> bool:
+        return bool(self.media_proxy_transform_url or self.media_proxy_transform_uds)
+
+    @property
+    def media_proxy_transform_base_url(self) -> str:
+        return self.media_proxy_transform_url or "http://localhost"
+
     model_config = {"env_file": ".env"}
 
 
