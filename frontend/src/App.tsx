@@ -4,6 +4,7 @@ import { I18nProvider } from "@nekonoverse/ui/i18n";
 import { initTheme } from "@nekonoverse/ui/stores/theme";
 import { fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
 import {
+  instance,
   fetchInstance,
   checkClientVersion,
   startVersionPolling,
@@ -73,6 +74,13 @@ function Layout(props: ParentProps) {
   onMount(() => {
     fetchCurrentUser();
     fetchInstance();
+  });
+
+  createEffect(() => {
+    const info = instance();
+    if (info?.title) {
+      document.title = info.title;
+    }
   });
 
   const stopPolling = startVersionPolling();
