@@ -2323,8 +2323,8 @@ a:hover {
 .reaction-not-delivered::after {
   content: "✗";
   position: absolute;
-  top: -6px;
-  right: -6px;
+  bottom: -6px;
+  left: -6px;
   font-size: 9px;
   background: var(--text-secondary);
   color: var(--bg-primary);
