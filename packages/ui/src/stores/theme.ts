@@ -121,7 +121,11 @@ const [nyaizeEnabled, setNyaizeEnabledSignal] = createSignal<boolean>(
   localStorage.getItem("nekonoverse:nyaize") !== "false"
 );
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, hideNonFollowedReplies, nyaizeEnabled };
+const [reduceMfmMotion, setReduceMfmMotionSignal] = createSignal<boolean>(
+  localStorage.getItem("nekonoverse:reduce-mfm-motion") === "true"
+);
+
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion };
 
 export function setTheme(t: Theme) {
   setThemeSignal(t);
@@ -176,10 +180,25 @@ export function setNyaizeEnabled(v: boolean) {
   localStorage.setItem("nekonoverse:nyaize", String(v));
 }
 
+export function setReduceMfmMotion(v: boolean) {
+  setReduceMfmMotionSignal(v);
+  localStorage.setItem("nekonoverse:reduce-mfm-motion", String(v));
+  applyReduceMfmMotion(v);
+}
+
+function applyReduceMfmMotion(v: boolean) {
+  if (v) {
+    document.documentElement.setAttribute("data-reduce-mfm-motion", "");
+  } else {
+    document.documentElement.removeAttribute("data-reduce-mfm-motion");
+  }
+}
+
 export function initTheme() {
   applyTheme(theme());
   applyFontSize(fontSize());
   applyFontFamily(fontFamily(), customFontFamily());
   applyCursorStyle(cursorStyle());
   applyWideEmojiStyle(wideEmojiStyle());
+  applyReduceMfmMotion(reduceMfmMotion());
 }
