@@ -59,16 +59,14 @@ test.describe("Mobile layout", () => {
       await page.waitForTimeout(200);
       await addBtn.evaluate((el) => (el as HTMLElement).click());
       await expect(picker).toBeVisible({ timeout: 3_000 });
+      // boundingBox チェックも toPass 内で行う (ピッカーが閉じるレースを回避)
+      const box = await picker.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.y).toBeGreaterThanOrEqual(0);
+      expect(box!.y + box!.height).toBeLessThanOrEqual(MOBILE_HEIGHT + 1);
+      expect(box!.x).toBeGreaterThanOrEqual(0);
+      expect(box!.x + box!.width).toBeLessThanOrEqual(MOBILE_WIDTH + 1);
     }).toPass({ timeout: 15_000 });
-
-    const box = await picker.boundingBox();
-    expect(box).not.toBeNull();
-    if (box) {
-      expect(box.y).toBeGreaterThanOrEqual(0);
-      expect(box.y + box.height).toBeLessThanOrEqual(MOBILE_HEIGHT + 1);
-      expect(box.x).toBeGreaterThanOrEqual(0);
-      expect(box.x + box.width).toBeLessThanOrEqual(MOBILE_WIDTH + 1);
-    }
   });
 
   test("navbar dropdown fits within viewport", async ({ page }) => {
