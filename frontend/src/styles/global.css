@@ -2337,6 +2337,28 @@ a:hover {
   line-height: 1;
 }
 
+/* Unsupported server: reaction badge shows ✗ mark (bottom-left) */
+.reaction-unsupported {
+  position: relative;
+}
+.reaction-unsupported::before {
+  content: "✗";
+  position: absolute;
+  bottom: -6px;
+  left: -6px;
+  font-size: 9px;
+  background: var(--text-secondary);
+  color: var(--bg-primary);
+  border-radius: 50%;
+  width: 13px;
+  height: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  pointer-events: none;
+}
+
 /* Importable remote emoji: shows import badge for permitted users */
 .reaction-importable {
   border-style: dashed;
