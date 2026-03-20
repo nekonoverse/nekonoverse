@@ -437,7 +437,7 @@ export default function Profile() {
                     <input
                       ref={headerInput}
                       type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng"
                       onChange={handleHeaderChange}
                       style="display: none"
                     />
@@ -484,7 +484,7 @@ export default function Profile() {
                     <input
                       ref={avatarInput}
                       type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
+                      accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng"
                       onChange={handleAvatarChange}
                       style="display: none"
                     />

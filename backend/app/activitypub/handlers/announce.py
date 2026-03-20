@@ -104,7 +104,7 @@ async def handle_announce(db: AsyncSession, activity: dict):
                         NA.remote_url.isnot(None),
                         NA.remote_focal_x.is_(None),
                         NA.remote_mime_type.in_(
-                            ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"]
+                            ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
                         ),
                     )
                 )

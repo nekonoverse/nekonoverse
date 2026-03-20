@@ -172,7 +172,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
         print()
 
     # --- Remote NoteAttachments ---
-    image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"}
+    image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"}
     async with async_session() as db:
         rows = await db.execute(
             select(NoteAttachment).where(
@@ -259,7 +259,7 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
         print(f"Error: Invalid UUID: {args.note_id}", file=sys.stderr)
         sys.exit(1)
 
-    image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif"}
+    image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"}
 
     async with async_session() as db:
         note = (

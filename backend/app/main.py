@@ -321,6 +321,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
             "media_attachments": {
                 "supported_mime_types": [
                     "image/jpeg", "image/png", "image/gif", "image/webp",
+                    "image/avif", "image/apng",
                 ],
                 "image_size_limit": 10485760,
                 "image_matrix_limit": 16777216,
@@ -492,6 +493,7 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
             "media_attachments": {
                 "supported_mime_types": [
                     "image/jpeg", "image/png", "image/gif", "image/webp",
+                    "image/avif", "image/apng",
                 ],
                 "description_limit": 1500,
                 "image_size_limit": 10485760,

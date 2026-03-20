@@ -23,6 +23,7 @@ ALLOWED_IMAGE_TYPES = {
     "image/gif",
     "image/webp",
     "image/avif",
+    "image/apng",
 }
 
 MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
@@ -31,6 +32,7 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 _MAGIC_BYTES: dict[str, list[bytes]] = {
     "image/jpeg": [b"\xff\xd8\xff"],
     "image/png": [b"\x89PNG\r\n\x1a\n"],
+    "image/apng": [b"\x89PNG\r\n\x1a\n"],
     "image/gif": [b"GIF87a", b"GIF89a"],
     "image/webp": [b"RIFF"],  # RIFF????WEBP
     # L-12: AVIFのftypボックスチェック追加
@@ -328,6 +330,7 @@ def _extension_for_mime(mime_type: str) -> str:
         "image/gif": ".gif",
         "image/webp": ".webp",
         "image/avif": ".avif",
+        "image/apng": ".apng",
     }.get(mime_type, "")
 
 
