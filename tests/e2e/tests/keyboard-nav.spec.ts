@@ -83,12 +83,14 @@ test.describe("Keyboard navigation (j/k/g)", () => {
     const cardCount = await page.locator(".note-card").count();
     const presses = Math.min(cardCount, 6);
 
-    // Press j rapidly without waiting
+    // Press j multiple times, waiting for each focus to apply
     for (let i = 0; i < presses; i++) {
       await page.keyboard.press("j");
+      await expect(page.locator(".note-card").nth(i)).toHaveClass(
+        /keyboard-focused/,
+        { timeout: 3_000 },
+      );
     }
-
-    await page.waitForTimeout(500);
 
     // Should have exactly one focused card
     const focused = page.locator(".note-card.keyboard-focused");
@@ -101,10 +103,13 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   });
 
   test("g key scrolls to top and clears focus", async ({ page }) => {
-    // Move down a few notes
+    // Move down a few notes, waiting for each focus
     for (let i = 0; i < 5; i++) {
       await page.keyboard.press("j");
-      await page.waitForTimeout(30);
+      await expect(page.locator(".note-card").nth(i)).toHaveClass(
+        /keyboard-focused/,
+        { timeout: 3_000 },
+      );
     }
 
     await expect(page.locator(".note-card.keyboard-focused")).toHaveCount(1, {
