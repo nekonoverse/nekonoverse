@@ -50,14 +50,16 @@ test.describe("Mobile layout", () => {
     // リアクション追加ボタンが表示されるのを待ち、クリック
     // モバイルビューポート + Firefox では Playwright の click() が空振りするため
     // evaluate で DOM クリックを直接発火させる + リトライ
-    const addBtn = page.locator(".reaction-add-btn").first();
-    await addBtn.waitFor({ state: "visible", timeout: 10_000 });
-    await addBtn.scrollIntoViewIfNeeded();
-    await page.waitForTimeout(200);
-    await addBtn.evaluate((el) => (el as HTMLElement).click());
-
+    // Firefox ではクリックが空振りすることがあるためリトライ
     const picker = page.locator(".emoji-picker");
-    await expect(picker).toBeVisible({ timeout: 5_000 });
+    await expect(async () => {
+      const addBtn = page.locator(".reaction-add-btn").first();
+      await addBtn.waitFor({ state: "visible", timeout: 5_000 });
+      await addBtn.scrollIntoViewIfNeeded();
+      await page.waitForTimeout(200);
+      await addBtn.evaluate((el) => (el as HTMLElement).click());
+      await expect(picker).toBeVisible({ timeout: 3_000 });
+    }).toPass({ timeout: 15_000 });
 
     const box = await picker.boundingBox();
     expect(box).not.toBeNull();

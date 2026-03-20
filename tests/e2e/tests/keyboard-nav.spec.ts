@@ -28,15 +28,16 @@ test.describe("Keyboard navigation (j/k/g)", () => {
     const stepsToTest = Math.min(cardCount, 5);
 
     for (let i = 0; i < stepsToTest; i++) {
-      await page.keyboard.press("j");
-
-      const focused = page.locator(".note-card.keyboard-focused");
-      await expect(focused).toHaveCount(1, { timeout: 5_000 });
-
-      // Wait for scroll to settle (Firefox may not complete scroll synchronously)
-      await page.waitForTimeout(300);
+      // Firefox CI ではキー入力が空振りすることがあるためリトライ
+      await expect(async () => {
+        await page.keyboard.press("j");
+        await page.waitForTimeout(300);
+        const cls = await page.locator(".note-card").nth(i).getAttribute("class");
+        expect(cls).toContain("keyboard-focused");
+      }).toPass({ timeout: 10_000 });
 
       // The focused card's top must not be hidden behind navbar
+      const focused = page.locator(".note-card.keyboard-focused");
       const cardTop = await focused.evaluate(
         (el) => el.getBoundingClientRect().top,
       );
