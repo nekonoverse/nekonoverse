@@ -769,6 +769,12 @@ export default function NoteCard(props: Props) {
           <Show
             when={editing()}
             fallback={(() => {
+              const hasContent = () => {
+                const src = noteSource();
+                if (src !== null && src !== undefined && src !== "") return true;
+                const content = noteContent();
+                return content !== null && content !== undefined && content !== "";
+              };
               let contentEl: HTMLDivElement | undefined;
               const renderContent = () => {
                 if (!contentEl) return;
@@ -793,7 +799,7 @@ export default function NoteCard(props: Props) {
                 renderContent();
               });
               return (
-                <>
+                <Show when={hasContent()}>
                   <div
                     class="note-content"
                     classList={{ "note-content-collapsed": contentCollapsed() && contentOverflows() }}
@@ -815,7 +821,7 @@ export default function NoteCard(props: Props) {
                       {t("cw.show")}
                     </button>
                   </Show>
-                </>
+                </Show>
               );
             })()}
           >
