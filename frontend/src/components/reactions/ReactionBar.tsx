@@ -4,7 +4,7 @@ import type { ReactionUser } from "@nekonoverse/ui/api/statuses";
 import { reactToNote, unreactToNote, getReactedBy } from "@nekonoverse/ui/api/statuses";
 import type { ReactionSummary } from "@nekonoverse/ui/api/statuses";
 import { computePhash } from "@nekonoverse/ui/utils/phash";
-import { groupReactions, type GroupedReaction } from "@nekonoverse/ui/utils/groupReactions";
+import { groupReactions, extractShortcode, type GroupedReaction } from "@nekonoverse/ui/utils/groupReactions";
 import { getAllCachedPhashes, setCachedPhash } from "@nekonoverse/ui/utils/phashCache";
 import EmojiPicker from "./EmojiPicker";
 import EmojiImportModal from "./EmojiImportModal";
@@ -20,6 +20,9 @@ interface Props {
   onUpdate?: () => void;
   serverSoftware?: string | null;
 }
+
+// Track in-flight phash computations to prevent duplicate work
+const inFlightUrls = new Set<string>();
 
 export default function ReactionBar(props: Props) {
   const { t } = useI18n();
@@ -47,11 +50,9 @@ export default function ReactionBar(props: Props) {
     const imported = importedShortcodes();
     if (imported.size === 0) return groups;
     return groups.map((g) => {
-      // Check all members (pHash grouped) — if any shortcode was imported,
-      // the whole group is no longer importable
       const anyImported = g.members.some((r) => {
-        const m = SHORTCODE_RE.exec(r.emoji);
-        return m ? imported.has(m[1]) : false;
+        const sc = extractShortcode(r.emoji);
+        return sc ? imported.has(sc) : false;
       });
       if (anyImported) {
         return { ...g, importable: false, importDomain: null };
@@ -60,18 +61,30 @@ export default function ReactionBar(props: Props) {
     });
   };
 
-  // Compute pHash for uncached custom emoji URLs
+  // Compute pHash only for custom emoji with unique shortcodes
+  // (same-shortcode emoji are already grouped in Phase 1 of groupReactions)
   createEffect(() => {
     const currentMap = hashMap();
-    const urlsToHash: string[] = [];
 
+    // Count shortcode occurrences — multi-occurrence shortcodes don't need phash
+    const scCounts = new Map<string, number>();
     for (const r of props.reactions) {
-      if (r.emoji_url && !currentMap.has(r.emoji_url)) {
-        urlsToHash.push(r.emoji_url);
-      }
+      if (!r.emoji_url) continue;
+      const sc = extractShortcode(r.emoji);
+      if (sc) scCounts.set(sc, (scCounts.get(sc) ?? 0) + 1);
+    }
+
+    const urlsToHash: string[] = [];
+    for (const r of props.reactions) {
+      if (!r.emoji_url || currentMap.has(r.emoji_url)) continue;
+      if (inFlightUrls.has(r.emoji_url)) continue;
+      const sc = extractShortcode(r.emoji);
+      if (sc && (scCounts.get(sc) ?? 0) > 1) continue;
+      urlsToHash.push(r.emoji_url);
     }
 
     if (urlsToHash.length === 0) return;
+    for (const url of urlsToHash) inFlightUrls.add(url);
 
     Promise.all(
       urlsToHash.map(async (url) => {
@@ -79,6 +92,7 @@ export default function ReactionBar(props: Props) {
         return hash ? { url, hash } : null;
       }),
     ).then((results) => {
+      for (const url of urlsToHash) inFlightUrls.delete(url);
       const newEntries = results.filter(
         (r): r is { url: string; hash: string } => r !== null,
       );
