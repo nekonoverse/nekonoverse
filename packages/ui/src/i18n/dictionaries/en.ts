@@ -354,6 +354,7 @@ export const en: Dictionary = {
   "admin.emojiFile": "Image file",
   "admin.confirmDeleteEmoji": "Delete this emoji?",
   "admin.importResult": "Imported: {imported}, Skipped: {skipped}",
+  "admin.importingEmoji": "Importing emoji…",
   "admin.remoteEmoji": "Remote Emoji",
   "admin.importEmoji": "Import",
   "admin.importSuccess": "Imported successfully",

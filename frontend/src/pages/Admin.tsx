@@ -1339,6 +1339,8 @@ function EmojiTab() {
   const [showForm, setShowForm] = createSignal(false);
   const [importing, setImporting] = createSignal(false);
   const [importMsg, setImportMsg] = createSignal("");
+  const [importFileName, setImportFileName] = createSignal("");
+  const [importFileSize, setImportFileSize] = createSignal("");
 
   // Edit modal state
   const [editTarget, setEditTarget] = createSignal<AdminEmoji | null>(null);
@@ -1480,11 +1482,19 @@ function EmojiTab() {
     setImportingId("");
   };
 
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
   const handleImport = async (e: Event) => {
     const file = (e.currentTarget as HTMLInputElement).files?.[0];
     if (!file) return;
     setImporting(true);
     setImportMsg("");
+    setImportFileName(file.name);
+    setImportFileSize(formatSize(file.size));
     try {
       const res = await importEmojis(file);
       setImportMsg(
@@ -1821,6 +1831,17 @@ function EmojiTab() {
                 </button>
               </div>
             </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* ZIP import progress modal */}
+      <Show when={importing()}>
+        <div class="modal-overlay">
+          <div class="modal-content emoji-import-progress">
+            <div class="emoji-import-spinner" />
+            <p class="emoji-import-title">{t("admin.importingEmoji" as any)}</p>
+            <p class="emoji-import-detail">{importFileName()} ({importFileSize()})</p>
           </div>
         </div>
       </Show>

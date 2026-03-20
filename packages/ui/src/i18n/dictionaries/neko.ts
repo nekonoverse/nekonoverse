@@ -353,6 +353,7 @@ export const neko: Dictionary = {
   "admin.emojiFile": "がぞうふぁいるにゃ",
   "admin.confirmDeleteEmoji": "このえもじけすにゃ？",
   "admin.importResult": "いんぽーと: {imported}けん, すきっぷ: {skipped}けん",
+  "admin.importingEmoji": "えもじいんぽーとちゅうにゃ…",
   "admin.remoteEmoji": "りもーとえもじにゃ",
   "admin.importEmoji": "いんぽーとにゃ",
   "admin.importSuccess": "いんぽーとできたにゃ",
