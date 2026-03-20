@@ -1,6 +1,6 @@
 [project]
 name = "nekonoverse"
-version = "20260313-1"
+version = "20260320-1"
 description = "ActivityPub server with Misskey-compatible emoji reactions"
 requires-python = ">=3.12"
 dependencies = [
