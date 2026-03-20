@@ -6516,6 +6516,7 @@ a:hover {
   color: var(--text-secondary);
   display: inline-flex;
   align-items: baseline;
+  gap: 4px;
   max-width: 100%;
   min-width: 0;
   white-space: nowrap;
