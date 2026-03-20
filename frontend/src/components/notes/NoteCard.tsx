@@ -76,27 +76,29 @@ function QuoteEmbed(props: { note: Note }) {
           src={props.note.actor.avatar_url || defaultAvatar()}
           alt=""
         />
-        <a
-          href={profileUrl(props.note.actor)}
-          class="note-quote-name"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <strong
-            ref={(el) => {
-              el.textContent =
-                props.note.actor.display_name || props.note.actor.username;
-              emojify(el, props.note.actor.emojis || []);
-              twemojify(el);
-            }}
-          />
-          <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
-        </a>
-        <span class="note-quote-time">
-          {(() => {
-            useTimeTick();
-            return formatTimestamp(props.note.published, t);
-          })()}
-        </span>
+        <div class="note-quote-name-wrap">
+          <a
+            href={profileUrl(props.note.actor)}
+            class="note-quote-name"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <strong
+              ref={(el) => {
+                el.textContent =
+                  props.note.actor.display_name || props.note.actor.username;
+                emojify(el, props.note.actor.emojis || []);
+                twemojify(el);
+              }}
+            />
+            <span class="note-quote-handle">{actorHandle(props.note.actor)}</span>
+          </a>
+          <span class="note-quote-time">
+            {(() => {
+              useTimeTick();
+              return formatTimestamp(props.note.published, t);
+            })()}
+          </span>
+        </div>
       </div>
       <div
         class="note-quote-content"

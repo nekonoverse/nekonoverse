@@ -1914,7 +1914,7 @@ a:hover {
 }
 .note-quote-header {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   margin-bottom: 6px;
 }
@@ -1923,6 +1923,12 @@ a:hover {
   height: 20px;
   border-radius: 50%;
   object-fit: cover;
+  margin-top: 2px;
+}
+.note-quote-name-wrap {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 .note-quote-name {
   display: flex;
@@ -1936,7 +1942,7 @@ a:hover {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  max-width: 160px;
+  max-width: 200px;
   display: inline-block;
   vertical-align: bottom;
 }
@@ -1947,15 +1953,17 @@ a:hover {
   color: var(--text-secondary);
   font-size: 0.9em;
   font-weight: normal;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 .note-quote-content {
   color: var(--text-primary);
   word-break: break-word;
 }
 .note-quote-time {
-  margin-left: auto;
   color: var(--text-secondary);
-  font-size: 0.85em;
+  font-size: 0.8em;
   white-space: nowrap;
 }
 .note-quote-media {
