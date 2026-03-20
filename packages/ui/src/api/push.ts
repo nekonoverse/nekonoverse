@@ -17,11 +17,10 @@ export async function createPushSubscription(
 ): Promise<PushSubscriptionResponse> {
   return apiRequest<PushSubscriptionResponse>("/api/v1/push/subscription", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
+    body: {
       subscription: { endpoint, keys: { p256dh, auth } },
       data: { alerts, policy },
-    }),
+    },
   });
 }
 
@@ -35,8 +34,7 @@ export async function updatePushSubscription(
 ): Promise<PushSubscriptionResponse> {
   return apiRequest<PushSubscriptionResponse>("/api/v1/push/subscription", {
     method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ data: { alerts, policy } }),
+    body: { data: { alerts, policy } },
   });
 }
 

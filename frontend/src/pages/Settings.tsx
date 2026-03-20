@@ -688,7 +688,7 @@ function AppsTab() {
                     <div class="blockmute-user" style={{ cursor: "default" }}>
                       <div>
                         <strong>{app.name}</strong>
-                        <Show when={app.website}>
+                        <Show when={app.website && /^https?:\/\//.test(app.website!)}>
                           <a
                             href={app.website!}
                             target="_blank"

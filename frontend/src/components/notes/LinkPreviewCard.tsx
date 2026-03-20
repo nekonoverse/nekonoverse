@@ -6,6 +6,8 @@ interface Props {
 }
 
 export default function LinkPreviewCard(props: Props) {
+  const isSafeUrl = () => /^https?:\/\//.test(props.card.url);
+
   const domain = () => {
     try {
       return new URL(props.card.url).hostname;
@@ -16,12 +18,12 @@ export default function LinkPreviewCard(props: Props) {
 
   return (
     <a
-      href={props.card.url}
+      href={isSafeUrl() ? props.card.url : undefined}
       target="_blank"
       rel="noopener noreferrer"
       class="link-preview-card"
     >
-      <Show when={props.card.image}>
+      <Show when={props.card.image && /^https?:\/\//.test(props.card.image!)}>
         <div class="link-preview-card-image">
           <img
             src={props.card.image!}
