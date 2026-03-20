@@ -2514,7 +2514,7 @@ a:hover {
 .reacted-by-emoji-large {
   height: 48px;
   width: auto;
-  max-width: 120px;
+  max-width: 100%;
   font-size: 48px;
   line-height: 1;
   object-fit: contain;
@@ -2718,7 +2718,7 @@ a:hover {
 
 /* 長い絵文字の表示モード: ぼかしトリミング */
 [data-wide-emoji="blur"] .reaction-badge .custom-emoji {
-  max-width: 5em;
+  max-width: 100%;
   object-fit: cover;
   object-position: left center;
   -webkit-mask-image: linear-gradient(to right, black 70%, transparent 100%);
