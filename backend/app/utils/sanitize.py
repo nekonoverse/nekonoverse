@@ -39,6 +39,8 @@ def _replace_mention(match: re.Match) -> str:
 
 def text_to_html(text: str) -> str:
     """Convert plain text to simple HTML with auto-linking, mentions, and line breaks."""
+    if not text.strip():
+        return ""
     escaped = bleach.clean(text)
 
     # Auto-link URLs first (before mention parsing)

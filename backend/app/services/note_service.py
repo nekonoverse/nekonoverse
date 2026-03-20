@@ -916,7 +916,15 @@ async def fetch_remote_note(
         logger.warning("Could not resolve actor %s for fetched note %s", actor_ap_id, note_ap_id)
         return None
 
-    content = sanitize_html(data.get("content", ""))
+    raw_content = data.get("content", "")
+    # contentMap (multilingual) fallback: prefer default language or first value
+    if not isinstance(raw_content, str):
+        content_map = data.get("contentMap", {})
+        if isinstance(content_map, dict) and content_map:
+            raw_content = next(iter(content_map.values()))
+        if not isinstance(raw_content, str):
+            raw_content = ""
+    content = sanitize_html(raw_content)
     source_data = data.get("source")
     source = None
     if isinstance(source_data, dict):
