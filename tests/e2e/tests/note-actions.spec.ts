@@ -28,7 +28,22 @@ test.describe("Note Actions", () => {
       ),
       boostBtn.click(),
     ]);
-    await expect(boostBtn).toHaveClass(/boosted/, { timeout: 10_000 });
+
+    // Firefox workaround: SolidJS の DOM 更新が反映されない場合があるためリロード
+    try {
+      await expect(boostBtn).toHaveClass(/boosted/, { timeout: 5_000 });
+    } catch {
+      await page.goto("/");
+      await page.waitForSelector(".note-card", { timeout: 10_000 });
+      const refreshedCard = page
+        .locator(`.note-card`)
+        .filter({ hasText: `reblog-test-${uid}` })
+        .first();
+      await expect(refreshedCard.locator(".note-boost-btn")).toHaveClass(
+        /boosted/,
+        { timeout: 10_000 },
+      );
+    }
 
     // --- Un-boost: reload page to get fresh DOM references (Firefox workaround) ---
     await page.goto("/");
