@@ -471,13 +471,35 @@ export default function NoteCard(props: Props) {
 
   onCleanup(() => cancelActionLongPress());
 
+  let replyLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let replyDidLongPress = false;
+
   const handleReply = () => {
+    if (replyDidLongPress) return;
     if (props.onReply) {
       props.onReply(displayNote());
     } else {
       navigate(`/notes/${displayNote().id}`);
     }
   };
+
+  const startReplyLongPress = () => {
+    if (note().replies_count <= 0) return;
+    replyDidLongPress = false;
+    replyLongPressTimer = setTimeout(() => {
+      replyDidLongPress = true;
+      navigate(`/notes/${displayNote().id}`);
+    }, 500);
+  };
+
+  const cancelReplyLongPress = () => {
+    if (replyLongPressTimer) {
+      clearTimeout(replyLongPressTimer);
+      replyLongPressTimer = null;
+    }
+  };
+
+  onCleanup(() => cancelReplyLongPress());
 
   const note = displayNote;
 
@@ -937,6 +959,11 @@ export default function NoteCard(props: Props) {
             <button
               class="note-action-btn note-reply-btn"
               onClick={handleReply}
+              onMouseDown={startReplyLongPress}
+              onMouseUp={cancelReplyLongPress}
+              onMouseLeave={cancelReplyLongPress}
+              onTouchStart={startReplyLongPress}
+              onTouchEnd={(e) => { cancelReplyLongPress(); if (replyDidLongPress) e.preventDefault(); }}
               title={t("reply.reply")}
             >
               <svg
