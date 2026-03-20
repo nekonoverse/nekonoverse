@@ -60,14 +60,15 @@ docker run --rm \
     $GPG_ARGS \
     alpine:latest sh -c "
         set -e
+        apk add --no-cache tar > /dev/null 2>&1
         if [ -n '${IS_GPG}' ]; then
             apk add --no-cache gnupg > /dev/null 2>&1
             echo '  gpg decrypt...'
             gpg --homedir /gnupg --batch \
                 --output /tmp/archive.tar.gz --decrypt /backup/archive
-            tar xzf /tmp/archive.tar.gz -C /restore
+            tar xzf /tmp/archive.tar.gz --xattrs -C /restore
         else
-            tar xzf /backup/archive -C /restore
+            tar xzf /backup/archive --xattrs -C /restore
         fi
         echo '  extracted.'
     "

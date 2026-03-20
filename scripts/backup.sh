@@ -75,11 +75,12 @@ docker run --rm \
     $GPG_ARGS \
     alpine:latest sh -c "
         set -e
+        apk add --no-cache tar > /dev/null 2>&1
         if [ -d /gnupg ]; then
             apk add --no-cache gnupg > /dev/null 2>&1
         fi
         echo '  tar...'
-        tar czf /tmp/${ARCHIVE_NAME}.tar.gz -C /data .
+        tar czf /tmp/${ARCHIVE_NAME}.tar.gz --xattrs -C /data .
         if [ -d /gnupg ]; then
             echo '  gpg encrypt...'
             gpg --homedir /gnupg --trust-model always --batch \
