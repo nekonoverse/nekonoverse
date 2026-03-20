@@ -2306,6 +2306,7 @@ a:hover {
   justify-content: center;
   width: 1.75em;
   height: 1.75em;
+  flex-shrink: 0;
   background: var(--bg-primary);
   border: 1px dashed var(--border);
   border-radius: 999px;
