@@ -1308,10 +1308,9 @@ a:hover {
 
 .note-footer {
   display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  flex-wrap: wrap;
-  gap: 4px;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
   margin-top: 8px;
 }
 
@@ -6515,12 +6514,10 @@ a:hover {
 .note-via-label {
   font-size: 0.75em;
   color: var(--text-secondary);
-  margin-right: 4px;
   display: inline-flex;
   align-items: baseline;
+  max-width: 100%;
   min-width: 0;
-  flex: 1 1 0;
-  justify-content: flex-end;
   white-space: nowrap;
 }
 
