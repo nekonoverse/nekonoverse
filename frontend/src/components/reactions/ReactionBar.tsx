@@ -24,10 +24,21 @@ interface Props {
 // Track in-flight phash computations to prevent duplicate work
 const inFlightUrls = new Set<string>();
 
+// Module-level state: preserve picker open/close across <For> re-creations
+// (When a streaming reaction event replaces the note object, <For> destroys
+//  and re-creates the component, resetting local signals.)
+const openPickerNoteIds = new Set<string>();
+
 export default function ReactionBar(props: Props) {
   const { t } = useI18n();
   const navigate = useNavigate();
-  const [showPicker, setShowPicker] = createSignal(false);
+  const [showPicker, _setShowPicker] = createSignal(openPickerNoteIds.has(props.noteId));
+
+  const setShowPicker = (v: boolean) => {
+    if (v) openPickerNoteIds.add(props.noteId);
+    else openPickerNoteIds.delete(props.noteId);
+    _setShowPicker(v);
+  };
   const [modalEmoji, setModalEmoji] = createSignal<string | null>(null);
   const [modalUrl, setModalUrl] = createSignal<string | null>(null);
   const [modalUsers, setModalUsers] = createSignal<ReactionUser[]>([]);

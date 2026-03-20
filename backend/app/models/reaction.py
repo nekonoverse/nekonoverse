@@ -19,7 +19,7 @@ class Reaction(Base):
     note_id: Mapped[uuid.UUID] = mapped_column(
         UUID(as_uuid=True), ForeignKey("notes.id"), nullable=False, index=True
     )
-    emoji: Mapped[str] = mapped_column(String(50), nullable=False)
+    emoji: Mapped[str] = mapped_column(String(512), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
     )

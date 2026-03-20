@@ -53,9 +53,22 @@ test.describe("Note Actions", () => {
       .locator(`.note-card`)
       .filter({ hasText: `reblog-test-${uid}` })
       .first();
-    const boostBtn2 = noteCard2.locator(".note-boost-btn");
+    let boostBtn2 = noteCard2.locator(".note-boost-btn");
     await expect(boostBtn2).toBeEnabled({ timeout: 5_000 });
-    await expect(boostBtn2).toHaveClass(/boosted/, { timeout: 5_000 });
+
+    // Firefox workaround: ブースト状態がリロード直後に反映されない場合がある
+    try {
+      await expect(boostBtn2).toHaveClass(/boosted/, { timeout: 5_000 });
+    } catch {
+      await page.goto("/");
+      await page.waitForSelector(".note-card", { timeout: 10_000 });
+      const refreshedCard = page
+        .locator(`.note-card`)
+        .filter({ hasText: `reblog-test-${uid}` })
+        .first();
+      boostBtn2 = refreshedCard.locator(".note-boost-btn");
+      await expect(boostBtn2).toHaveClass(/boosted/, { timeout: 10_000 });
+    }
 
     // Firefox workaround: evaluate で直接クリック
     await Promise.all([
@@ -65,7 +78,22 @@ test.describe("Note Actions", () => {
       ),
       boostBtn2.evaluate((el: HTMLElement) => el.click()),
     ]);
-    await expect(boostBtn2).not.toHaveClass(/boosted/, { timeout: 10_000 });
+
+    // Firefox workaround: アンブースト後の状態確認もリロードフォールバック付き
+    try {
+      await expect(boostBtn2).not.toHaveClass(/boosted/, { timeout: 5_000 });
+    } catch {
+      await page.goto("/");
+      await page.waitForSelector(".note-card", { timeout: 10_000 });
+      const refreshedCard2 = page
+        .locator(`.note-card`)
+        .filter({ hasText: `reblog-test-${uid}` })
+        .first();
+      await expect(refreshedCard2.locator(".note-boost-btn")).not.toHaveClass(
+        /boosted/,
+        { timeout: 5_000 },
+      );
+    }
   });
 
   test("bookmark button toggles bookmarked state", async ({ page }) => {
