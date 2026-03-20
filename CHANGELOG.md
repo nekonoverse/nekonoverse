@@ -1,3 +1,14 @@
+## [20260321-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260321-1) — 2026-03-21
+
+### 修正
+
+- **バックアップ/リストアでxattr(拡張属性)を保持** — GNU tar + `--xattrs` で nekono3s メタデータを保全 (#716)
+- **uvicorn `--uds-perms` → `umask`** — 存在しないオプションを umask 0111 に置換し本番起動を修正
+- **pip-audit CI修正** — `requirements.txt` → `pyproject.toml` を参照するように修正
+- **`scripts.check_schema` の ModuleNotFoundError** — `backend/scripts/__init__.py` を追加 (#716)
+
+---
+
 ## [20260320-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260320-1) — 2026-03-20
 
 ### 追加
