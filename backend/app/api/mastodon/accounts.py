@@ -5,6 +5,7 @@ from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.dependencies import get_current_user, get_db, get_optional_user
 from app.models.actor import Actor
 from app.models.follow import Follow
@@ -12,7 +13,6 @@ from app.models.note import Note
 from app.models.user import User
 from app.services.follow_service import follow_actor, get_follow_counts, unfollow_actor
 from app.services.note_service import get_statuses_count
-from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
@@ -384,6 +384,30 @@ async def get_account_statuses(
         )
         query = query.where(Note.published > threshold)
 
+    # Batch-fetch pinned note IDs for this actor
+    from app.models.pinned_note import PinnedNote
+
+    pinned_result = await db.execute(
+        select(PinnedNote.note_id).where(PinnedNote.actor_id == actor_id)
+    )
+    pinned_ids = {row[0] for row in pinned_result.all()}
+
+    # 1ページ目ではピン留めノートを必ず含める
+    pinned_notes: list[Note] = []
+    if not max_id and pinned_ids:
+        pinned_query = (
+            select(Note)
+            .options(*_note_load_options())
+            .where(
+                Note.id.in_(pinned_ids),
+                Note.visibility.in_(visible),
+                Note.deleted_at.is_(None),
+            )
+            .order_by(Note.published.desc())
+        )
+        pinned_result2 = await db.execute(pinned_query)
+        pinned_notes = list(pinned_result2.scalars().all())
+
     if max_id:
         # Cursor-based pagination: get the published timestamp of max_id note
         cursor_result = await db.execute(
@@ -397,17 +421,16 @@ async def get_account_statuses(
     notes_result = await db.execute(query)
     notes = list(notes_result.scalars().all())
 
+    # ピン留めノートを先頭に追加（重複排除）
+    if pinned_notes:
+        timeline_ids = {n.id for n in notes}
+        for pn in reversed(pinned_notes):
+            if pn.id not in timeline_ids:
+                notes.insert(0, pn)
+
     note_ids = [n.id for n in notes]
     current_actor_id = user.actor_id if user else None
     reactions_map = await get_reaction_summaries(db, note_ids, current_actor_id)
-
-    # Batch-fetch pinned note IDs for this actor
-    from app.models.pinned_note import PinnedNote
-
-    pinned_result = await db.execute(
-        select(PinnedNote.note_id).where(PinnedNote.actor_id == actor_id)
-    )
-    pinned_ids = {row[0] for row in pinned_result.all()}
 
     return await notes_to_responses(
         notes, reactions_map, db, actor_id=current_actor_id, pinned_ids=pinned_ids

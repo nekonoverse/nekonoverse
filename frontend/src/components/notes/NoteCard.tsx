@@ -48,6 +48,7 @@ interface Props {
   onDelete?: (noteId: string) => void;
   onReply?: (note: Note) => void;
   onThreadOpen?: (noteId: string) => void;
+  onPinChange?: (noteId: string, pinned: boolean) => void;
   inReplyToActor?: { username: string; domain: string | null } | null;
 }
 
@@ -370,9 +371,11 @@ export default function NoteCard(props: Props) {
       if (pinned()) {
         await unpinNote(displayNote().id);
         setPinned(false);
+        props.onPinChange?.(displayNote().id, false);
       } else {
         await pinNote(displayNote().id);
         setPinned(true);
+        props.onPinChange?.(displayNote().id, true);
       }
     } catch {}
   };
