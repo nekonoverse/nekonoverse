@@ -400,7 +400,18 @@ async def get_account_statuses(
     note_ids = [n.id for n in notes]
     current_actor_id = user.actor_id if user else None
     reactions_map = await get_reaction_summaries(db, note_ids, current_actor_id)
-    return await notes_to_responses(notes, reactions_map, db, actor_id=current_actor_id)
+
+    # Batch-fetch pinned note IDs for this actor
+    from app.models.pinned_note import PinnedNote
+
+    pinned_result = await db.execute(
+        select(PinnedNote.note_id).where(PinnedNote.actor_id == actor_id)
+    )
+    pinned_ids = {row[0] for row in pinned_result.all()}
+
+    return await notes_to_responses(
+        notes, reactions_map, db, actor_id=current_actor_id, pinned_ids=pinned_ids
+    )
 
 
 async def _batch_resolve_actor_emojis(

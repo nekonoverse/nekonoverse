@@ -3631,6 +3631,18 @@ a:hover {
   padding: 40px 0;
 }
 
+.pinned-posts-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.pinned-toggle-icon {
+  font-size: 0.7em;
+}
+
 /* Note Avatar Link */
 .note-avatar-link {
   flex-shrink: 0;
