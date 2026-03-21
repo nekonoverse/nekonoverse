@@ -17,6 +17,11 @@ export default defineConfig({
   },
   projects: [
     {
+      name: "chromium",
+      use: { browserName: "chromium" },
+      testIgnore: /swipe/,
+    },
+    {
       name: "firefox",
       use: { browserName: "firefox" },
       testIgnore: /swipe/,
