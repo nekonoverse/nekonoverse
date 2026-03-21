@@ -3,10 +3,10 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from app.services.drive_service import (
-    MAX_AUDIO_SIZE,
-    MAX_IMAGE_SIZE,
-    MAX_VIDEO_SIZE,
     _get_image_dimensions,
+    _max_audio_size,
+    _max_image_size,
+    _max_video_size,
     delete_drive_file,
     get_drive_file,
     list_user_files,
@@ -67,7 +67,7 @@ async def test_upload_rejects_unsupported_type(mock_upload, db, test_user):
 
 @patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
 async def test_upload_rejects_large_file(mock_upload, db, test_user):
-    big_data = b"\x00" * (MAX_IMAGE_SIZE + 1)
+    big_data = b"\x00" * (_max_image_size() + 1)
     with pytest.raises(ValueError, match="File too large"):
         await upload_drive_file(
             db=db, owner=test_user, data=big_data,
@@ -228,7 +228,7 @@ async def test_upload_audio_flac(mock_upload, db, test_user):
 @patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
 async def test_video_size_limit_higher_than_image(mock_upload, db, test_user):
     """Video should allow up to 40MB (larger than image 10MB limit)."""
-    big_video = MP4_FTYP + b"\x00" * (MAX_IMAGE_SIZE + 1)
+    big_video = MP4_FTYP + b"\x00" * (_max_image_size() + 1)
     mock_upload.return_value = "etag"
     # Should succeed (within 40MB video limit)
     drive_file = await upload_drive_file(
@@ -240,7 +240,7 @@ async def test_video_size_limit_higher_than_image(mock_upload, db, test_user):
 
 @patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
 async def test_video_rejects_over_40mb(mock_upload, db, test_user):
-    big_data = b"\x00" * (MAX_VIDEO_SIZE + 1)
+    big_data = b"\x00" * (_max_video_size() + 1)
     with pytest.raises(ValueError, match="File too large"):
         await upload_drive_file(
             db=db, owner=test_user, data=big_data,
@@ -250,9 +250,43 @@ async def test_video_rejects_over_40mb(mock_upload, db, test_user):
 
 @patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
 async def test_audio_rejects_over_10mb(mock_upload, db, test_user):
-    big_data = b"\x00" * (MAX_AUDIO_SIZE + 1)
+    big_data = b"\x00" * (_max_audio_size() + 1)
     with pytest.raises(ValueError, match="File too large"):
         await upload_drive_file(
             db=db, owner=test_user, data=big_data,
             filename="huge.mp3", mime_type="audio/mpeg",
         )
+
+
+# ── Configurable size limits ──
+
+
+@patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
+@patch("app.services.drive_service.settings")
+async def test_custom_image_size_limit(mock_settings, mock_upload, db, test_user):
+    """Image size limit should be configurable via settings."""
+    mock_settings.max_image_size_mb = 5  # 5 MB
+    big_data = b"\x00" * (5 * 1024 * 1024 + 1)
+    with pytest.raises(ValueError, match="File too large"):
+        await upload_drive_file(
+            db=db, owner=test_user, data=big_data,
+            filename="big.png", mime_type="image/png",
+        )
+
+
+@patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
+@patch("app.services.drive_service.settings")
+async def test_custom_video_size_limit(mock_settings, mock_upload, db, test_user):
+    """Video size limit should be configurable via settings."""
+    mock_settings.max_video_size_mb = 100  # 100 MB
+    mock_settings.max_image_size_mb = 10
+    mock_settings.max_audio_size_mb = 10
+    mock_settings.face_detect_enabled = False
+    # 50MB video (over default 40MB but within custom 100MB)
+    big_video = MP4_FTYP + b"\x00" * (50 * 1024 * 1024)
+    mock_upload.return_value = "etag"
+    drive_file = await upload_drive_file(
+        db=db, owner=test_user, data=big_video,
+        filename="big.mp4", mime_type="video/mp4",
+    )
+    assert drive_file.mime_type == "video/mp4"

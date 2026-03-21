@@ -44,9 +44,16 @@ ALLOWED_AUDIO_TYPES = {
 
 ALLOWED_MEDIA_TYPES = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES | ALLOWED_AUDIO_TYPES
 
-MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10 MB
-MAX_VIDEO_SIZE = 40 * 1024 * 1024  # 40 MB
-MAX_AUDIO_SIZE = 10 * 1024 * 1024  # 10 MB
+def _max_image_size() -> int:
+    return settings.max_image_size_mb * 1024 * 1024
+
+
+def _max_video_size() -> int:
+    return settings.max_video_size_mb * 1024 * 1024
+
+
+def _max_audio_size() -> int:
+    return settings.max_audio_size_mb * 1024 * 1024
 
 # マジックバイト: MIMEタイプと実際のファイルヘッダーの対応
 _MAGIC_BYTES: dict[str, list[bytes]] = {
@@ -186,11 +193,11 @@ async def upload_drive_file(
 ) -> DriveFile:
     # ファイルサイズ上限をMIMEタイプに応じて分岐
     if mime_type.startswith("video/"):
-        max_size = MAX_VIDEO_SIZE
+        max_size = _max_video_size()
     elif mime_type.startswith("audio/"):
-        max_size = MAX_AUDIO_SIZE
+        max_size = _max_audio_size()
     else:
-        max_size = MAX_IMAGE_SIZE
+        max_size = _max_image_size()
     if len(data) > max_size:
         raise ValueError(f"File too large (max {max_size // 1024 // 1024} MB)")
 

@@ -52,6 +52,8 @@ export const ja = {
   "drive.quotaExceeded": "ストレージ容量を超えています",
   "composer.uploading": "アップロード中...",
   "composer.uploadFailed": "アップロードに失敗しました",
+  "composer.fileTooLarge": "ファイルサイズが大きすぎます（上限 {limit}MB）",
+  "composer.requestTooLarge": "ファイルサイズがサーバーの上限を超えています",
   "composer.setFocalPoint": "焦点を設定",
   "composer.focalPoint": "焦点の設定",
   "composer.saveFocalPoint": "保存",
