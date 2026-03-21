@@ -9,6 +9,7 @@
 
 let guardHandler: ((e: Event) => void) | null = null;
 let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
+let safetyTimer: ReturnType<typeof setTimeout> | undefined;
 let touchEndHandler: (() => void) | null = null;
 let touchCancelHandler: (() => void) | null = null;
 
@@ -28,6 +29,10 @@ function removeGuard() {
   if (cleanupTimer !== undefined) {
     clearTimeout(cleanupTimer);
     cleanupTimer = undefined;
+  }
+  if (safetyTimer !== undefined) {
+    clearTimeout(safetyTimer);
+    safetyTimer = undefined;
   }
 }
 
@@ -50,4 +55,9 @@ export function activateTouchGuard() {
   touchCancelHandler = deactivate;
   document.addEventListener("touchend", deactivate, { once: true });
   document.addEventListener("touchcancel", deactivate, { once: true });
+
+  // Safety timeout: always remove the guard after 2s in case touchend never
+  // fires (e.g. on PC where long-press is triggered by touch emulation but
+  // the user releases via mouse click instead of touch).
+  safetyTimer = setTimeout(removeGuard, 2000);
 }
