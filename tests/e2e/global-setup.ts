@@ -1,7 +1,5 @@
 import { execSync } from "child_process";
-import { request } from "@playwright/test";
-import * as fs from "fs";
-import * as path from "path";
+import { chromium } from "@playwright/test";
 
 const BASE_URL = process.env.E2E_BASE_URL || "http://localhost:3080";
 
@@ -22,61 +20,24 @@ export default async function globalSetup() {
     // Valkey may not be reachable in CI — silently skip
   }
 
-  // Log in as admin via API and save storageState for all tests
-  const apiContext = await request.newContext({ baseURL: BASE_URL });
-  const loginResp = await apiContext.post("/api/v1/auth/login", {
+  // Log in as admin via page.request (browser context) and save storageState
+  const browser = await chromium.launch();
+  const context = await browser.newContext({ baseURL: BASE_URL });
+  const page = await context.newPage();
+
+  // Use page.request.post — same path as test helpers
+  const loginResp = await page.request.post("/api/v1/auth/login", {
     data: { username: "admin", password: "testpassword123" },
   });
 
   if (!loginResp.ok()) {
+    await browser.close();
     throw new Error(
       `globalSetup: admin login failed (${loginResp.status()}): ${await loginResp.text()}`,
     );
   }
 
-  // Extract session cookie from login response
-  const setCookieHeaders = loginResp.headersArray().filter(
-    (h) => h.name.toLowerCase() === "set-cookie",
-  );
-
-  const cookies: Array<{
-    name: string;
-    value: string;
-    domain: string;
-    path: string;
-    httpOnly: boolean;
-    secure: boolean;
-    sameSite: "Lax" | "Strict" | "None";
-  }> = [];
-
-  const urlObj = new URL(BASE_URL);
-  for (const header of setCookieHeaders) {
-    const parts = header.value.split(";").map((s) => s.trim());
-    const [nameValue] = parts;
-    const [name, ...valueParts] = nameValue.split("=");
-    const value = valueParts.join("=");
-    cookies.push({
-      name,
-      value,
-      domain: urlObj.hostname,
-      path: "/",
-      httpOnly: true,
-      secure: false,
-      sameSite: "Lax",
-    });
-  }
-
-  // Write storageState JSON
-  const authDir = path.join(__dirname, ".auth");
-  fs.mkdirSync(authDir, { recursive: true });
-  const storageState = {
-    cookies,
-    origins: [],
-  };
-  fs.writeFileSync(
-    path.join(authDir, "admin.json"),
-    JSON.stringify(storageState, null, 2),
-  );
-
-  await apiContext.dispose();
+  // Session cookie is automatically stored in context
+  await context.storageState({ path: "tests/e2e/.auth/admin.json" });
+  await browser.close();
 }
