@@ -14,6 +14,28 @@ from app.models.user import User
 
 router = APIRouter(prefix="/api/v1", tags=["email"])
 
+# Rate limit constants
+TOKEN_VERIFY_MAX_ATTEMPTS = 10  # max attempts per IP per window
+TOKEN_VERIFY_WINDOW = 900  # 15 minutes
+EMAIL_SEND_MAX_PER_IP = 5  # max emails per IP per window
+EMAIL_SEND_WINDOW = 900  # 15 minutes
+
+
+async def _check_rate_limit(key: str, max_attempts: int, window: int) -> bool:
+    """Check Valkey-based rate limit. Returns True if within limit, False if exceeded."""
+    from app.valkey_client import valkey
+
+    attempts = await valkey.get(key)
+    if attempts is not None and int(attempts) >= max_attempts:
+        return False
+    await valkey.incr(key)
+    await valkey.expire(key, window)
+    return True
+
+
+def _get_client_ip(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
 
 class ChangeEmailRequest(BaseModel):
     email: EmailStr
@@ -38,6 +60,7 @@ class ResetPasswordRequest(BaseModel):
 @router.post("/email/change")
 async def change_email(
     body: ChangeEmailRequest,
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -57,6 +80,12 @@ async def change_email(
     user.email_verification_token = None
 
     if settings.email_enabled:
+        ip = _get_client_ip(request)
+        if not await _check_rate_limit(
+            f"email_send:{ip}", EMAIL_SEND_MAX_PER_IP, EMAIL_SEND_WINDOW
+        ):
+            raise HTTPException(status_code=429, detail="Too many requests")
+
         from app.services.email_service import send_verification_email
 
         await send_verification_email(db, user)
@@ -67,6 +96,7 @@ async def change_email(
 
 @router.post("/email/verify")
 async def resend_verification(
+    request: Request,
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -76,6 +106,12 @@ async def resend_verification(
 
     if user.email_verified:
         return {"message": "Email already verified"}
+
+    ip = _get_client_ip(request)
+    if not await _check_rate_limit(
+        f"email_send:{ip}", EMAIL_SEND_MAX_PER_IP, EMAIL_SEND_WINDOW
+    ):
+        raise HTTPException(status_code=429, detail="Too many requests")
 
     from app.services.email_service import send_verification_email
 
@@ -89,9 +125,16 @@ async def resend_verification(
 @router.post("/email/confirm")
 async def confirm_email(
     body: ConfirmEmailRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Confirm email with token. No auth required."""
+    ip = _get_client_ip(request)
+    if not await _check_rate_limit(
+        f"email_confirm:{ip}", TOKEN_VERIFY_MAX_ATTEMPTS, TOKEN_VERIFY_WINDOW
+    ):
+        raise HTTPException(status_code=429, detail="Too many attempts")
+
     from app.services.email_service import verify_email_token
 
     success = await verify_email_token(db, body.uid, body.token)
@@ -111,22 +154,25 @@ async def forgot_password(
     if not settings.email_enabled:
         raise HTTPException(status_code=422, detail="Email is not configured on this server")
 
-    # Rate limit by IP
-    from app.valkey_client import valkey
-
-    client_ip = request.client.host if request.client else "unknown"
-    rl_key = f"forgot_password:{client_ip}"
-    attempts = await valkey.get(rl_key)
-    if attempts is not None and int(attempts) >= 5:
+    # Rate limit by IP (endpoint-level)
+    ip = _get_client_ip(request)
+    if not await _check_rate_limit(f"forgot_password:{ip}", 5, 300):
         # Still return 200 to not reveal anything
         return {"message": "If an account with that email exists, a reset link has been sent"}
-    await valkey.incr(rl_key)
-    await valkey.expire(rl_key, 300)
 
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
     if user:
+        # Rate limit email sending per IP (cross-endpoint)
+        if not await _check_rate_limit(
+            f"email_send:{ip}", EMAIL_SEND_MAX_PER_IP, EMAIL_SEND_WINDOW
+        ):
+            # Still return 200 to not reveal anything
+            return {
+                "message": "If an account with that email exists, a reset link has been sent"
+            }
+
         from app.services.email_service import send_password_reset_email
 
         await send_password_reset_email(db, user)
@@ -138,9 +184,16 @@ async def forgot_password(
 @router.post("/auth/reset-password")
 async def reset_password(
     body: ResetPasswordRequest,
+    request: Request,
     db: AsyncSession = Depends(get_db),
 ):
     """Reset password with token."""
+    ip = _get_client_ip(request)
+    if not await _check_rate_limit(
+        f"reset_password:{ip}", TOKEN_VERIFY_MAX_ATTEMPTS, TOKEN_VERIFY_WINDOW
+    ):
+        raise HTTPException(status_code=429, detail="Too many attempts")
+
     if len(body.password) < 8:
         raise HTTPException(status_code=422, detail="Password must be at least 8 characters")
 
