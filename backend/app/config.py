@@ -26,6 +26,10 @@ class Settings(BaseSettings):
     summary_proxy_url: str | None = None
     summary_proxy_uds: str | None = None
 
+    # Cloudflare Turnstile CAPTCHA (optional)
+    turnstile_site_key: str | None = None
+    turnstile_secret_key: str | None = None
+
     # Forward proxy for outbound federation requests (origin IP concealment)
     http_proxy: str | None = None
     https_proxy: str | None = None

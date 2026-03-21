@@ -12,6 +12,7 @@ class UserRegisterRequest(BaseModel):
     display_name: str | None = None
     invite_code: str | None = None
     reason: str | None = Field(None, max_length=1000)
+    captcha_token: str | None = None
 
     @field_validator("username")
     @classmethod

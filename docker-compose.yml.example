@@ -80,6 +80,9 @@ services:
       MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
       # summary-proxy (optional — set in .env)
       SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
+      # Cloudflare Turnstile CAPTCHA (optional — set in .env)
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}

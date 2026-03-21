@@ -7212,6 +7212,12 @@ a:hover {
   padding: 0;
 }
 
+.turnstile-container {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
+}
+
 .legal-links {
   text-align: center;
   font-size: 0.85rem;

@@ -10,6 +10,7 @@ interface InstanceInfo {
   vapid_key?: string;
   tos_url?: string;
   privacy_policy_url?: string;
+  turnstile_site_key?: string;
   thumbnail?: { url: string };
   stats?: {
     user_count: number;
@@ -67,6 +68,10 @@ export function approvalRequired(): boolean {
 
 export function defaultAvatar(): string {
   return instance()?.thumbnail?.url || "/default-avatar.svg";
+}
+
+export function turnstileSiteKey(): string | undefined {
+  return instance()?.turnstile_site_key;
 }
 
 function updateDynamicIcons(iconUrl: string) {
