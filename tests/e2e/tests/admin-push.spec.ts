@@ -115,7 +115,10 @@ test.describe("Admin Push Notification Settings", () => {
     await generateBtn.click();
 
     // Wait for key to update
-    await page.waitForTimeout(2000);
+    await expect(async () => {
+      const val = await vapidInput.inputValue();
+      expect(val).not.toBe(oldKey);
+    }).toPass({ timeout: 5_000 });
     const newKey = await vapidInput.inputValue();
 
     // New key should be different from old and also be valid base64url
