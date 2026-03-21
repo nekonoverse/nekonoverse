@@ -42,9 +42,10 @@ async def create_user(
     role: str = "user",
     approval_status: str = "approved",
     registration_reason: str | None = None,
+    skip_reserved_check: bool = False,
 ) -> User:
     username = username.lower()
-    if is_reserved_username(username):
+    if not skip_reserved_check and is_reserved_username(username):
         raise ValueError("This username is reserved")
     # Check if username or email already exists
     existing_actor = await db.execute(

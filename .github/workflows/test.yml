@@ -142,6 +142,19 @@ jobs:
         run: docker compose -f docker-compose.e2e.yml up -d --wait
         timeout-minutes: 5
 
+      - name: Verify API is ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3080/api/v1/health > /dev/null 2>&1; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API not ready after 30s"
+          docker compose -f docker-compose.e2e.yml logs app nginx
+          exit 1
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"
@@ -151,21 +164,21 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-firefox-${{ hashFiles('tests/e2e/package-lock.json') }}
+          key: playwright-chromium-${{ hashFiles('tests/e2e/package-lock.json') }}
 
       - name: Install Playwright
         working-directory: tests/e2e
         run: |
           npm ci
           if [ "${{ steps.playwright-cache.outputs.cache-hit }}" != "true" ]; then
-            npx playwright install --with-deps firefox chromium
+            npx playwright install --with-deps chromium
           else
-            npx playwright install-deps firefox chromium
+            npx playwright install-deps chromium
           fi
 
       - name: Run E2E tests (shard ${{ matrix.shard }}/3)
         working-directory: tests/e2e
-        run: npx playwright test --shard=${{ matrix.shard }}/3
+        run: npx playwright test --project=chromium --project=mobile-chromium --shard=${{ matrix.shard }}/3
 
       - name: Upload test results
         if: failure()

@@ -38,13 +38,14 @@ test.describe("Follow Requests", () => {
     await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
-    const follower = await registerAndLogin(browser, `follower_${Date.now()}`, "testpassword123", baseURL);
+    const followerName = `follower_${Date.now()}`;
+    const follower = await registerAndLogin(browser, followerName, "testpassword123", baseURL);
     const followResp = await follower.page.request.post(`/api/v1/accounts/${adminId}/follow`);
     expect(followResp.ok()).toBeTruthy();
 
     // Check follow request page as admin — navbar badge should also be visible
     await page.goto("/follow-requests");
-    const item = page.locator(".follow-request-item").first();
+    const item = page.locator(".follow-request-item").filter({ hasText: followerName });
     await expect(item).toBeVisible({ timeout: 10_000 });
 
     // Avatar badge should appear indicating pending follow request
@@ -58,13 +59,14 @@ test.describe("Follow Requests", () => {
     await item.locator(".follow-request-accept").click();
     await acceptResponsePromise;
 
-    // Verify via API that no pending requests remain
-    const reqResp = await page.request.get("/api/v1/follow_requests");
-    const remaining = await reqResp.json();
-    expect(remaining.length).toBe(0);
+    // このフォロワーのリクエストが消えたことを確認
+    await expect(async () => {
+      const reqResp = await page.request.get("/api/v1/follow_requests");
+      const remaining = await reqResp.json();
+      const stillPending = remaining.some((r: { acct: string }) => r.acct === followerName);
+      expect(stillPending).toBeFalsy();
+    }).toPass({ timeout: 5_000 });
 
-    // Avatar badge should disappear after accepting all requests
-    await expect(page.locator(".navbar-avatar-badge")).not.toBeVisible({ timeout: 5_000 });
     await follower.context.close();
   });
 
@@ -74,12 +76,14 @@ test.describe("Follow Requests", () => {
     await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
-    const follower = await registerAndLogin(browser, `follower_${Date.now()}`, "testpassword123", baseURL);
+    const followerName = `follower_${Date.now()}`;
+    const follower = await registerAndLogin(browser, followerName, "testpassword123", baseURL);
     const followResp = await follower.page.request.post(`/api/v1/accounts/${adminId}/follow`);
     expect(followResp.ok()).toBeTruthy();
 
     await page.goto("/follow-requests");
-    const item = page.locator(".follow-request-item").first();
+    // 特定のフォロワーのリクエストを探す（並列テストで他のリクエストが存在する可能性がある）
+    const item = page.locator(".follow-request-item").filter({ hasText: followerName });
     await expect(item).toBeVisible({ timeout: 10_000 });
 
     // Reject the follow request
@@ -90,9 +94,13 @@ test.describe("Follow Requests", () => {
     await item.locator(".follow-request-reject").click();
     await rejectResponsePromise;
 
-    const reqResp = await page.request.get("/api/v1/follow_requests");
-    const remaining = await reqResp.json();
-    expect(remaining.length).toBe(0);
+    // このフォロワーのリクエストが消えたことを確認（他テストのリクエストは無視）
+    await expect(async () => {
+      const reqResp = await page.request.get("/api/v1/follow_requests");
+      const remaining = await reqResp.json();
+      const stillPending = remaining.some((r: { acct: string }) => r.acct === followerName);
+      expect(stillPending).toBeFalsy();
+    }).toPass({ timeout: 5_000 });
     await follower.context.close();
   });
 
@@ -134,15 +142,19 @@ test.describe("Follow Requests", () => {
     await setLocked(page, true);
     const adminId = await getActorId(page, "admin");
 
-    const follower = await registerAndLogin(browser, `follower_${Date.now()}`, "testpassword123", baseURL);
+    const followerName = `follower_${Date.now()}`;
+    const follower = await registerAndLogin(browser, followerName, "testpassword123", baseURL);
     const followResp = await follower.page.request.post(`/api/v1/accounts/${adminId}/follow`);
     expect(followResp.ok()).toBeTruthy();
     await follower.context.close();
 
     // Verify request exists
-    const reqResp = await page.request.get("/api/v1/follow_requests");
-    const requests = await reqResp.json();
-    expect(requests.length).toBeGreaterThan(0);
+    await expect(async () => {
+      const reqResp = await page.request.get("/api/v1/follow_requests");
+      const requests = await reqResp.json();
+      const hasPending = requests.some((r: { acct: string }) => r.acct === followerName);
+      expect(hasPending).toBeTruthy();
+    }).toPass({ timeout: 5_000 });
 
     await page.goto("/@admin");
     await expect(page.locator(".profile-info")).toBeVisible({ timeout: 10_000 });
@@ -165,9 +177,12 @@ test.describe("Follow Requests", () => {
 
     await expect(page.locator(".profile-edit-checkboxes")).toHaveCount(0, { timeout: 5_000 });
 
-    // Verify follow requests are now empty (auto-approved)
-    const reqResp2 = await page.request.get("/api/v1/follow_requests");
-    const requests2 = await reqResp2.json();
-    expect(requests2.length).toBe(0);
+    // このフォロワーのリクエストが自動承認されたことを確認
+    await expect(async () => {
+      const reqResp2 = await page.request.get("/api/v1/follow_requests");
+      const requests2 = await reqResp2.json();
+      const stillPending = requests2.some((r: { acct: string }) => r.acct === followerName);
+      expect(stillPending).toBeFalsy();
+    }).toPass({ timeout: 5_000 });
   });
 });

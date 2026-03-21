@@ -44,13 +44,11 @@ function seedRemoteEmojiReaction(
   ].join("\n");
 
   const cmd = `docker compose ${composeArgs.join(" ")} exec -T app python -c '${py.replace(/'/g, "'\"'\"'")}'`;
-  try {
-    execSync(cmd, { stdio: "pipe", timeout: 15_000 });
-  } catch {
-    // Fall back to default compose
-    const fallback = `docker compose exec -T app python -c '${py.replace(/'/g, "'\"'\"'")}'`;
-    execSync(fallback, { stdio: "pipe", timeout: 15_000 });
-  }
+  const execEnv = {
+    ...process.env,
+    COMPOSE_PROJECT_NAME: process.env.COMPOSE_PROJECT_NAME || "neko-e2e",
+  };
+  execSync(cmd, { stdio: "pipe", timeout: 15_000, env: execEnv });
 }
 
 test.describe("Emoji Import Modal", () => {

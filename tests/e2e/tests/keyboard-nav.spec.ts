@@ -48,7 +48,7 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   test("j key moves focus down and cards stay visible below navbar", async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(45_000);
 
     const navbarHeight = await page
       .locator(".navbar")
@@ -66,7 +66,7 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   test("k key moves focus up without card hidden behind navbar", async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(45_000);
 
     const navbarHeight = await page
       .locator(".navbar")
@@ -89,7 +89,7 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   });
 
   test("rapid j presses all apply correctly", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(45_000);
     const cardCount = await page.locator(".note-card").count();
     const presses = Math.min(cardCount, 6);
 
@@ -106,7 +106,7 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   });
 
   test("g key scrolls to top and clears focus", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(45_000);
 
     // Move down a few notes
     for (let i = 0; i < 5; i++) {

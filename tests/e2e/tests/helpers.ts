@@ -7,21 +7,15 @@ import { type Page, type APIRequestContext, expect } from "@playwright/test";
  */
 export async function loginAsAdmin(page: Page) {
   await page.goto("/login");
-  // Wait for SPA to render the form
   await page.waitForSelector("#username", { timeout: 15_000 });
   await page.fill("#username", "admin");
   await page.fill("#password", "testpassword123");
 
-  // Listen for the verify_credentials response that confirms login
   const credentialsPromise = page.waitForResponse(
-    (resp) =>
-      resp.url().includes("/verify_credentials") && resp.status() === 200,
+    (r) => r.url().includes("/verify_credentials") && r.status() === 200,
     { timeout: 15_000 },
   );
-
   await page.click('button[type="submit"]');
-
-  // Wait for both the redirect and the credentials check to complete
   await credentialsPromise;
   await page.waitForURL("/", { timeout: 10_000 });
 }
