@@ -24,6 +24,7 @@ import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
 import { changePassword } from "@nekonoverse/ui/api/settings";
 import { getAuthorizedApps, revokeAuthorizedApp, type AuthorizedApp } from "@nekonoverse/ui/api/authorizedApps";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type LoginHistoryEntry } from "@nekonoverse/ui/api/sessions";
 import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
 import PasskeyManager from "../components/PasskeyManager";
 import Breadcrumb from "../components/Breadcrumb";
@@ -56,6 +57,7 @@ const categories: SettingsCategory[] = [
       { key: "apps", labelKey: "settings.tabApps", descKey: "settings.descApps" },
       { key: "blocks", labelKey: "settings.tabBlocks", descKey: "settings.descBlocks" },
       { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
+      { key: "sessions", labelKey: "settings.tabSessions", descKey: "settings.descSessions" },
       { key: "migration", labelKey: "settings.tabMigration", descKey: "settings.descMigration" },
     ],
   },
@@ -125,6 +127,7 @@ export default function Settings() {
           <Match when={section() === "apps"}><AppsTab /></Match>
           <Match when={section() === "blocks"}><BlocksTab /></Match>
           <Match when={section() === "mutes"}><MutesTab /></Match>
+          <Match when={section() === "sessions"}><SessionsTab /></Match>
           <Match when={section() === "migration"}><MigrationTab /></Match>
           <Match when={section() === "about"}><AboutTab /></Match>
         </Switch>
@@ -873,6 +876,125 @@ function MutesTab() {
                     <button class="btn btn-small" onClick={() => handleUnmute(acc.id)}>
                       {t("block.unmute")}
                     </button>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
+      </div>
+    </AuthGuard>
+  );
+}
+
+function SessionsTab() {
+  const { t } = useI18n();
+  const [sessions, setSessions] = createSignal<SessionInfo[]>([]);
+  const [history, setHistory] = createSignal<LoginHistoryEntry[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [revoking, setRevoking] = createSignal<string | null>(null);
+
+  const methodLabel = (method: string) => {
+    switch (method) {
+      case "password": return t("sessions.methodPassword" as any);
+      case "totp": return t("sessions.methodTotp" as any);
+      case "passkey": return t("sessions.methodPasskey" as any);
+      default: return method;
+    }
+  };
+
+  const formatDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  };
+
+  createEffect(async () => {
+    try {
+      const [s, h] = await Promise.all([getSessions(), getLoginHistory()]);
+      setSessions(s);
+      setHistory(h);
+    } catch {}
+    setLoading(false);
+  });
+
+  const handleRevoke = async (sessionId: string) => {
+    if (!confirm(t("sessions.revokeConfirm" as any))) return;
+    setRevoking(sessionId);
+    try {
+      await deleteSession(sessionId);
+      setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
+    } catch {}
+    setRevoking(null);
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("sessions.activeSessions" as any)}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={sessions().length > 0} fallback={<p class="empty">{t("sessions.noSessions" as any)}</p>}>
+            <div class="blockmute-list">
+              <For each={sessions()}>
+                {(s) => (
+                  <div class="blockmute-item">
+                    <div class="blockmute-user" style={{ cursor: "default" }}>
+                      <div>
+                        <strong>
+                          {s.ip}
+                          <Show when={s.is_current}>
+                            {" "}
+                            <span class="badge">{t("sessions.currentSession" as any)}</span>
+                          </Show>
+                        </strong>
+                        <span class="blockmute-handle">{s.user_agent}</span>
+                        <span class="blockmute-handle">{formatDate(s.created_at)}</span>
+                      </div>
+                    </div>
+                    <Show when={!s.is_current}>
+                      <button
+                        class="btn btn-small btn-danger"
+                        onClick={() => handleRevoke(s.session_id)}
+                        disabled={revoking() === s.session_id}
+                      >
+                        {t("sessions.revoke" as any)}
+                      </button>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("sessions.loginHistory" as any)}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={history().length > 0} fallback={<p class="empty">{t("sessions.noHistory" as any)}</p>}>
+            <div class="blockmute-list">
+              <For each={history()}>
+                {(entry) => (
+                  <div class="blockmute-item">
+                    <div class="blockmute-user" style={{ cursor: "default" }}>
+                      <div>
+                        <strong>
+                          {entry.ip_address}
+                          {" — "}
+                          {methodLabel(entry.method)}
+                          {" — "}
+                          <span style={{ color: entry.success ? "var(--success)" : "var(--error)" }}>
+                            {entry.success ? t("sessions.success" as any) : t("sessions.failed" as any)}
+                          </span>
+                        </strong>
+                        <Show when={entry.user_agent}>
+                          <span class="blockmute-handle">{entry.user_agent}</span>
+                        </Show>
+                        <span class="blockmute-handle">{formatDate(entry.created_at)}</span>
+                      </div>
+                    </div>
                   </div>
                 )}
               </For>
