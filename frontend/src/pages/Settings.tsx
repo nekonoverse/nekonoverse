@@ -1,7 +1,7 @@
 import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "solid-js";
 import QRCode from "qrcode";
 import { useNavigate, useParams, A } from "@solidjs/router";
-import { currentUser, authLoading, logout } from "@nekonoverse/ui/stores/auth";
+import { currentUser, authLoading, logout, fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
 import {
   theme, setTheme, fontSize, setFontSize,
   fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
@@ -706,6 +706,9 @@ function EmailTab() {
   const [sending, setSending] = createSignal(false);
   const [msg, setMsg] = createSignal("");
   const [error, setError] = createSignal("");
+  const [newEmail, setNewEmail] = createSignal("");
+  const [password, setPassword] = createSignal("");
+  const [changing, setChanging] = createSignal(false);
 
   const user = () => currentUser();
   const isVerified = () => user()?.email_verified ?? true;
@@ -731,6 +734,34 @@ function EmailTab() {
       setError(e.message);
     } finally {
       setSending(false);
+    }
+  };
+
+  const handleChangeEmail = async (e: Event) => {
+    e.preventDefault();
+    setMsg("");
+    setError("");
+    setChanging(true);
+    try {
+      const resp = await fetch("/api/v1/email/change", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail(), password: password() }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        setError(data.detail || "Failed to change email");
+      } else {
+        setMsg(t("email.changeSuccess" as any));
+        setNewEmail("");
+        setPassword("");
+        await fetchCurrentUser();
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setChanging(false);
     }
   };
 
@@ -761,6 +792,31 @@ function EmailTab() {
             {t("email.resendVerification" as any)}
           </button>
         </Show>
+
+        <h3 style={{ "margin-top": "24px" }}>{t("email.changeTitle" as any)}</h3>
+        <form onSubmit={handleChangeEmail}>
+          <div class="settings-form-group">
+            <label>{t("email.newEmail" as any)}</label>
+            <input
+              type="email"
+              value={newEmail()}
+              onInput={(e) => setNewEmail(e.currentTarget.value)}
+              required
+            />
+          </div>
+          <div class="settings-form-group">
+            <label>{t("email.passwordConfirm" as any)}</label>
+            <input
+              type="password"
+              value={password()}
+              onInput={(e) => setPassword(e.currentTarget.value)}
+              required
+            />
+          </div>
+          <button class="btn" type="submit" disabled={changing()}>
+            {t("email.changeButton" as any)}
+          </button>
+        </form>
       </div>
     </AuthGuard>
   );
