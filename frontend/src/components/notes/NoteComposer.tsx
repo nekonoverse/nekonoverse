@@ -15,6 +15,7 @@ import {
   rememberVisibility,
   defaultVisibility,
   setLastVisibility,
+  moreRestrictiveVisibility,
   type Visibility,
 } from "@nekonoverse/ui/stores/composer";
 
@@ -86,14 +87,19 @@ export default function NoteComposer(props: Props) {
   let textareaRef!: HTMLTextAreaElement;
   let suggestKeyHandler: ((e: KeyboardEvent) => boolean) | undefined;
 
-  // Auto-set visibility and prepend @mention when replying
+  // Auto-set visibility when replying or quoting:
+  // Use the more restrictive of user's default and the target note's visibility
   createEffect(() => {
-    if (props.replyTo) {
-      const parentVis = props.replyTo.visibility as Visibility;
+    const targetNote = props.replyTo || props.quoteNote;
+    if (targetNote) {
+      const parentVis = targetNote.visibility as Visibility;
       if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
-        setVisibility(parentVis);
+        const userVis = getInitialVisibility();
+        setVisibility(moreRestrictiveVisibility(userVis, parentVis));
       }
-      // Auto-prepend @mention for the replied-to user (skip self-mention)
+    }
+    // Auto-prepend @mention for the replied-to user (skip self-mention)
+    if (props.replyTo) {
       const actor = props.replyTo.actor;
       if (actor && !content()) {
         const isOwnNote = !actor.domain && currentUser()?.username === actor.username;
