@@ -221,25 +221,37 @@ export default function ImageLightbox(props: Props) {
         </button>
       </Show>
 
-      <div
-        class="lightbox-image-container"
-        onDblClick={handleDoubleClick}
-        onMouseDown={handleMouseDown}
-        onTouchStart={handleTouchStart}
-        onTouchMove={handleTouchMove}
-        onTouchEnd={handleTouchEnd}
-      >
-        <img
-          src={current().url}
-          alt={current().description || ""}
-          class="lightbox-image"
-          draggable={false}
-          style={{
-            transform: `scale(${scale()}) translate(${translate().x / scale()}px, ${translate().y / scale()}px)`,
-            cursor: scale() > 1 ? (dragging() ? "grabbing" : "grab") : "default",
-          }}
-        />
-      </div>
+      <Show when={current().type === "video"} fallback={
+        <div
+          class="lightbox-image-container"
+          onDblClick={handleDoubleClick}
+          onMouseDown={handleMouseDown}
+          onTouchStart={handleTouchStart}
+          onTouchMove={handleTouchMove}
+          onTouchEnd={handleTouchEnd}
+        >
+          <img
+            src={current().url}
+            alt={current().description || ""}
+            class="lightbox-image"
+            draggable={false}
+            style={{
+              transform: `scale(${scale()}) translate(${translate().x / scale()}px, ${translate().y / scale()}px)`,
+              cursor: scale() > 1 ? (dragging() ? "grabbing" : "grab") : "default",
+            }}
+          />
+        </div>
+      }>
+        <div class="lightbox-image-container">
+          <video
+            src={current().url}
+            class="lightbox-video"
+            controls
+            autoplay
+            playsinline
+          />
+        </div>
+      </Show>
 
       <Show when={props.media.length > 1 && index() < props.media.length - 1}>
         <button class="lightbox-nav lightbox-nav-next" onClick={next} aria-label="Next">

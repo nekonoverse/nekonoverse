@@ -39,6 +39,19 @@ def _parse_focus(focus: str | None) -> tuple[float | None, float | None]:
         return None, None
 
 
+def _mime_to_media_type(mime: str) -> str:
+    """Convert MIME type to Mastodon-compatible media type string."""
+    if mime.startswith("image/gif"):
+        return "gifv"
+    if mime.startswith("image/"):
+        return "image"
+    if mime.startswith("video/"):
+        return "video"
+    if mime.startswith("audio/"):
+        return "audio"
+    return "unknown"
+
+
 def _to_media_attachment(f: DriveFile) -> MediaAttachment:
     url = file_to_url(f)
     meta = None
@@ -50,7 +63,7 @@ def _to_media_attachment(f: DriveFile) -> MediaAttachment:
         meta["focus"] = {"x": f.focal_x, "y": f.focal_y}
     return MediaAttachment(
         id=str(f.id),
-        type="image" if f.mime_type.startswith("image/") else "unknown",
+        type=_mime_to_media_type(f.mime_type),
         url=url,
         preview_url=url,
         description=f.description,
@@ -101,7 +114,7 @@ async def upload_media_v1(
     focal_x, focal_y = _parse_focus(focus)
     if focal_x is not None and focal_y is not None:
         await update_drive_file_meta(db, drive_file, focal_x=focal_x, focal_y=focal_y)
-    else:
+    elif drive_file.mime_type.startswith("image/"):
         from app.services.face_detect_queue import enqueue_local
 
         await enqueue_local(drive_file.id)
