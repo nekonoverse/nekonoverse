@@ -39,6 +39,7 @@ async def invalidate_user_sessions(user_id: uuid.UUID, exclude_session: str | No
     *user_id*.  Optionally keeps the session identified by *exclude_session*.
     Returns the number of sessions deleted.
     """
+    from app.services.session_service import cleanup_session_metadata
     from app.valkey_client import valkey
 
     user_id_str = str(user_id)
@@ -53,10 +54,19 @@ async def invalidate_user_sessions(user_id: uuid.UUID, exclude_session: str | No
                     continue
                 val = await valkey.get(key)
                 if val == user_id_str:
+                    session_id = key.removeprefix("session:")
                     await valkey.delete(key)
+                    await cleanup_session_metadata(valkey, user_id, session_id)
                     deleted += 1
         if cursor == 0:
             break
+    # Clean up the user sessions set
+    if exclude_session:
+        # Keep only the excluded session in the set
+        await valkey.delete(f"user_sessions:{user_id}")
+        await valkey.sadd(f"user_sessions:{user_id}", exclude_session)
+    else:
+        await valkey.delete(f"user_sessions:{user_id}")
     return deleted
 
 

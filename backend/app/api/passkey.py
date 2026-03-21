@@ -156,8 +156,15 @@ async def authenticate_verify(
     # Passkey (WebAuthn) はデバイス所持+生体認証/PINで既にMFAを満たすため、
     # TOTP追加検証は不要。パスワード認証時のみTOTPを要求する。
 
+    from app.services.session_service import create_session_with_metadata, record_login
+
+    client_ip = request.client.host if request.client else "unknown"
+    client_ua = request.headers.get("user-agent")
+
     session_id = secrets.token_urlsafe(32)
-    await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
+    await create_session_with_metadata(valkey, user.id, session_id, client_ip, client_ua)
+    await record_login(db, user.id, client_ip, client_ua, "passkey")
+    await db.commit()
 
     response.set_cookie(
         SESSION_COOKIE,

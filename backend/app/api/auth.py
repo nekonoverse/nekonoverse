@@ -219,6 +219,8 @@ async def login(
             detail="Too many login attempts. Please wait 5 minutes and try again.",
         )
 
+    client_ua = request.headers.get("user-agent")
+
     user = await authenticate_user(db, body.username, body.password)
     if user is None:
         await valkey.incr(attempts_key)
@@ -237,6 +239,8 @@ async def login(
             detail="Your registration is pending approval",
         )
 
+    from app.services.session_service import create_session_with_metadata, record_login
+
     # If TOTP is enabled, return a temporary token instead of a session
     if user.totp_enabled:
         from app.valkey_client import valkey
@@ -252,7 +256,9 @@ async def login(
     from app.valkey_client import valkey
 
     session_id = secrets.token_urlsafe(32)
-    await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
+    await create_session_with_metadata(valkey, user.id, session_id, client_ip, client_ua)
+    await record_login(db, user.id, client_ip, client_ua, "password")
+    await db.commit()
 
     response.set_cookie(
         SESSION_COOKIE,
@@ -266,12 +272,24 @@ async def login(
 
 
 @router.post("/auth/logout")
-async def logout(request: Request, response: Response):
+async def logout(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+):
     session_id = get_session_id(request)
     if session_id:
         from app.valkey_client import valkey
 
+        # Resolve user_id before deleting the session key
+        user_id_str = await valkey.get(f"session:{session_id}")
         await valkey.delete(f"session:{session_id}")
+        if user_id_str:
+            from app.services.session_service import cleanup_session_metadata
+
+            await cleanup_session_metadata(
+                valkey, uuid.UUID(user_id_str), session_id
+            )
     # L-1: セキュリティ属性を指定してCookieを削除
     response.delete_cookie(
         SESSION_COOKIE,
@@ -280,6 +298,74 @@ async def logout(request: Request, response: Response):
         samesite="lax",
     )
     return {"ok": True}
+
+
+@router.get("/auth/sessions")
+async def list_sessions(
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    from app.services.session_service import list_user_sessions
+    from app.valkey_client import valkey
+
+    current_sid = get_session_id(request)
+    sessions = await list_user_sessions(valkey, user.id)
+    return [
+        {
+            "session_id": s["session_id"],
+            "ip": s.get("ip", ""),
+            "user_agent": s.get("user_agent", ""),
+            "created_at": s.get("created_at", ""),
+            "is_current": s["session_id"] == current_sid,
+        }
+        for s in sessions
+    ]
+
+
+@router.delete("/auth/sessions/{session_id}")
+async def revoke_session(
+    session_id: str,
+    request: Request,
+    user: User = Depends(get_current_user),
+):
+    current_sid = get_session_id(request)
+    if session_id == current_sid:
+        raise HTTPException(
+            status_code=400,
+            detail="Cannot revoke the current session",
+        )
+
+    from app.services.session_service import delete_session
+    from app.valkey_client import valkey
+
+    deleted = await delete_session(valkey, user.id, session_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return {"ok": True}
+
+
+@router.get("/auth/login_history")
+async def login_history(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+    limit: int = 20,
+    offset: int = 0,
+):
+    from app.services.session_service import get_login_history
+
+    limit = min(limit, 100)
+    entries = await get_login_history(db, user.id, limit=limit, offset=offset)
+    return [
+        {
+            "id": str(e.id),
+            "ip_address": e.ip_address,
+            "user_agent": e.user_agent,
+            "method": e.method,
+            "success": e.success,
+            "created_at": e.created_at.isoformat(),
+        }
+        for e in entries
+    ]
 
 
 @router.get("/accounts/verify_credentials")
@@ -861,6 +947,7 @@ async def totp_disable(
 @router.post("/auth/totp/verify")
 async def totp_verify(
     body: TotpVerifyRequest,
+    request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
 ):
@@ -923,9 +1010,16 @@ async def totp_verify(
     await valkey.delete(attempts_key)
     await valkey.delete(f"totp_pending:{body.totp_token}")
 
+    from app.services.session_service import create_session_with_metadata, record_login
+
+    client_ip = request.client.host if request.client else "unknown"
+    client_ua = request.headers.get("user-agent")
+
     # Create session
     session_id = secrets.token_urlsafe(32)
-    await valkey.set(f"session:{session_id}", str(user.id), ex=86400 * 30)
+    await create_session_with_metadata(valkey, user.id, session_id, client_ip, client_ua)
+    await record_login(db, user.id, client_ip, client_ua, "totp")
+    await db.commit()
 
     response.set_cookie(
         SESSION_COOKIE,
