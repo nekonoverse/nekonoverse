@@ -1,6 +1,18 @@
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
+from app.services.user_service import is_reserved_username
+
+
+def test_is_reserved_username():
+    assert is_reserved_username("admin") is True
+    assert is_reserved_username("Admin") is True
+    assert is_reserved_username("SYSTEM") is True
+    assert is_reserved_username("nekonoverse") is True
+    assert is_reserved_username("inbox") is True
+    assert is_reserved_username("nekochan") is False
+    assert is_reserved_username("testuser") is False
+
 
 async def test_register_success(app_client, mock_valkey):
     resp = await app_client.post("/api/v1/accounts", json={
@@ -22,6 +34,26 @@ async def test_register_invalid_username(app_client, mock_valkey):
         "username": "bad user!", "email": "new@example.com", "password": "password1234"
     })
     assert resp.status_code == 422
+
+
+async def test_register_reserved_username(app_client, mock_valkey):
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "admin", "email": "admin@example.com", "password": "password1234"
+    })
+    assert resp.status_code == 422
+
+
+async def test_register_reserved_username_case_insensitive(app_client, mock_valkey):
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "Admin", "email": "admin2@example.com", "password": "password1234"
+    })
+    assert resp.status_code == 422
+
+
+async def test_username_available_reserved(app_client, mock_valkey):
+    resp = await app_client.get("/api/v1/accounts/username_available?username=system")
+    assert resp.status_code == 200
+    assert resp.json()["available"] is False
 
 
 async def test_login_success(app_client, test_user, mock_valkey):
