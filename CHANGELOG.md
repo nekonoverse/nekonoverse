@@ -1,3 +1,11 @@
+## [20260322-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260322-2) — 2026-03-22
+
+### 修正
+
+- **PCでタッチガードが解除されずモーダルが操作不能になる問題** — 安全タイムアウト(2秒)を追加し、touchendが発火しない環境でも確実にガードを解除 (#757, #761)
+
+---
+
 ## [20260322-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260322-1) — 2026-03-22
 
 ### 追加
