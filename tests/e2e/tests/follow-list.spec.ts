@@ -61,12 +61,20 @@ test.describe("Follow List", () => {
     );
     expect(followResp.ok()).toBeTruthy();
 
-    // adminのfollowersタブを確認
-    await page.goto("/@admin/followers");
-    await page.waitForSelector(".follow-list-item", { timeout: 10_000 });
+    // 並列テストがadminをlockしている場合、フォローがpendingになるので承認する
+    const followJson = await followResp.json();
+    if (followJson.requested) {
+      const followerActorId = await getActorId(page, follower);
+      await page.request.post(`/api/v1/follow_requests/${followerActorId}/authorize`);
+    }
 
-    const handles = await page.locator(".follow-list-handle").allTextContents();
-    expect(handles.some((h) => h.includes(follower))).toBeTruthy();
+    // adminのfollowersタブを確認（タイミング問題に対応するためtoPassで再試行）
+    await expect(async () => {
+      await page.goto("/@admin/followers");
+      await page.waitForSelector(".follow-list-item", { timeout: 5_000 });
+      const handles = await page.locator(".follow-list-handle").allTextContents();
+      expect(handles.some((h) => h.includes(follower))).toBeTruthy();
+    }).toPass({ timeout: 15_000 });
 
     await followerSession.context.close();
   });
