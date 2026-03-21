@@ -32,7 +32,7 @@ class Settings(BaseSettings):
     smtp_user: str | None = None
     smtp_password: str | None = None
     smtp_from: str | None = None  # 未設定時は noreply@{domain}
-    smtp_use_tls: bool = True  # STARTTLS
+    smtp_security: str = "starttls"  # "starttls" (port 587) / "ssl" (port 465) / "none"
 
     # Cloudflare Turnstile CAPTCHA (optional)
     turnstile_site_key: str | None = None
