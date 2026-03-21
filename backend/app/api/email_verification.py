@@ -28,10 +28,8 @@ async def _check_rate_limit(key: str, max_attempts: int, window: int) -> bool:
     attempts = await valkey.get(key)
     if attempts is not None and int(attempts) >= max_attempts:
         return False
-    pipe = valkey.pipeline()
-    pipe.incr(key)
-    pipe.expire(key, window)
-    await pipe.execute()
+    await valkey.incr(key)
+    await valkey.expire(key, window)
     return True
 
 
