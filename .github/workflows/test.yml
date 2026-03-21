@@ -142,6 +142,19 @@ jobs:
         run: docker compose -f docker-compose.e2e.yml up -d --wait
         timeout-minutes: 5
 
+      - name: Verify API is ready
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:3080/api/v1/health > /dev/null 2>&1; then
+              echo "API ready"
+              exit 0
+            fi
+            sleep 1
+          done
+          echo "API not ready after 30s"
+          docker compose -f docker-compose.e2e.yml logs app nginx
+          exit 1
+
       - uses: actions/setup-node@v4
         with:
           node-version: "20"

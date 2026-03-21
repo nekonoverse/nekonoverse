@@ -1,16 +1,11 @@
 import { type Page, type APIRequestContext, expect } from "@playwright/test";
 
 /**
- * Ensure the page is authenticated as admin.
- * storageState (set in playwright.config.ts) already provides the session
- * cookie, so this just verifies the session is valid and falls back to
- * UI login if the cookie has expired.
+ * Log in as the pre-created admin user via the login form.
+ * Navigates to /login, fills the form, submits, and waits for the
+ * verify_credentials API call to confirm the session is established.
  */
 export async function loginAsAdmin(page: Page) {
-  const resp = await page.request.get("/api/v1/accounts/verify_credentials");
-  if (resp.status() === 200) return;
-
-  // Fallback: storageState expired — do a full UI login
   await page.goto("/login");
   await page.waitForSelector("#username", { timeout: 15_000 });
   await page.fill("#username", "admin");

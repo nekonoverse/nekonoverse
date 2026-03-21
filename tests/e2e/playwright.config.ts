@@ -13,7 +13,6 @@ export default defineConfig({
     baseURL: process.env.E2E_BASE_URL || "http://localhost:3080",
     screenshot: "only-on-failure",
     trace: "on-first-retry",
-    storageState: ".auth/admin.json",
   },
   projects: [
     {
