@@ -44,15 +44,32 @@ export default function ImageLightbox(props: Props) {
   };
 
   const handleKeyDown = (e: KeyboardEvent) => {
-    if (e.key === "Escape") props.onClose();
+    if (e.key === "Escape") closeWithHistory();
     else if (e.key === "ArrowLeft") prev();
     else if (e.key === "ArrowRight") next();
   };
 
   let savedScrollY = 0;
+  let pushedState = false;
+
+  const handlePopState = () => {
+    pushedState = false;
+    props.onClose();
+  };
+
+  const closeWithHistory = () => {
+    if (pushedState) {
+      pushedState = false;
+      history.back();
+    }
+    props.onClose();
+  };
 
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown);
+    window.addEventListener("popstate", handlePopState);
+    history.pushState({ lightbox: true }, "");
+    pushedState = true;
     // モバイルで position: fixed のズレを防ぐ body 固定テクニック
     savedScrollY = window.scrollY;
     document.body.style.position = "fixed";
@@ -63,6 +80,11 @@ export default function ImageLightbox(props: Props) {
 
   onCleanup(() => {
     document.removeEventListener("keydown", handleKeyDown);
+    window.removeEventListener("popstate", handlePopState);
+    if (pushedState) {
+      pushedState = false;
+      history.back();
+    }
     document.body.style.position = "";
     document.body.style.top = "";
     document.body.style.width = "";
@@ -73,7 +95,7 @@ export default function ImageLightbox(props: Props) {
   const handleBackdropClick = (e: MouseEvent) => {
     if (scale() > 1) return;
     if ((e.target as HTMLElement).classList.contains("lightbox-overlay")) {
-      props.onClose();
+      closeWithHistory();
     }
   };
 
@@ -172,7 +194,7 @@ export default function ImageLightbox(props: Props) {
 
   return (
     <div class="lightbox-overlay" onClick={handleBackdropClick}>
-      <button class="lightbox-close" onClick={props.onClose} aria-label="Close">
+      <button class="lightbox-close" onClick={closeWithHistory} aria-label="Close">
         &times;
       </button>
 

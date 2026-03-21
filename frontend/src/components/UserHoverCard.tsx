@@ -9,6 +9,7 @@ import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { activateTouchGuard } from "../utils/touchGuard";
 
 interface Props {
   actorId: string;
@@ -104,6 +105,7 @@ export default function UserHoverCard(props: Props) {
     longPressTriggered = false;
     longPressTimer = window.setTimeout(() => {
       longPressTriggered = true;
+      activateTouchGuard();
       // Prevent subsequent click from navigating
       e.preventDefault();
       setVisible(true);
@@ -276,7 +278,7 @@ export default function UserHoverCard(props: Props) {
                         fallback={
                           <button
                             class="hover-card-follow-btn"
-                            onClick={handleFollow}
+                            onClick={(e) => { e.stopPropagation(); handleFollow(); }}
                             disabled={followLoading()}
                           >
                             {t("profile.follow")}
@@ -285,7 +287,7 @@ export default function UserHoverCard(props: Props) {
                       >
                         <button
                           class="hover-card-follow-btn following"
-                          onClick={() => setShowUnfollowModal(true)}
+                          onClick={(e) => { e.stopPropagation(); setShowUnfollowModal(true); }}
                         >
                           {t("profile.following")}
                         </button>

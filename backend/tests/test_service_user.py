@@ -29,7 +29,7 @@ async def test_create_user_hashes_password(db):
 
 
 async def test_create_user_with_role(db):
-    user = await create_user(db, "admin", "admin@example.com", "password1234", role="admin")
+    user = await create_user(db, "siteadmin", "siteadmin@example.com", "password1234", role="admin")
     assert user.role == "admin"
     assert user.is_admin is True
 

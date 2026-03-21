@@ -1339,6 +1339,7 @@ function EmojiTab() {
   const [showForm, setShowForm] = createSignal(false);
   const [importing, setImporting] = createSignal(false);
   const [importMsg, setImportMsg] = createSignal("");
+  const [importErrors, setImportErrors] = createSignal<string[]>([]);
   const [importFileName, setImportFileName] = createSignal("");
   const [importFileSize, setImportFileSize] = createSignal("");
 
@@ -1493,6 +1494,7 @@ function EmojiTab() {
     if (!file) return;
     setImporting(true);
     setImportMsg("");
+    setImportErrors([]);
     setImportFileName(file.name);
     setImportFileSize(formatSize(file.size));
     try {
@@ -1502,6 +1504,9 @@ function EmojiTab() {
           .replace("{imported}", String(res.imported))
           .replace("{skipped}", String(res.skipped)),
       );
+      if (res.errors && res.errors.length > 0) {
+        setImportErrors(res.errors);
+      }
       await load();
     } catch {
       setImportMsg("Import failed");
@@ -1623,6 +1628,14 @@ function EmojiTab() {
       </div>
       <Show when={importMsg()}>
         <p class="settings-success">{importMsg()}</p>
+      </Show>
+      <Show when={importErrors().length > 0}>
+        <details class="import-errors">
+          <summary class="settings-error">{importErrors().length} errors</summary>
+          <ul>
+            {importErrors().map((err) => <li>{err}</li>)}
+          </ul>
+        </details>
       </Show>
 
       <Show when={showForm()}>

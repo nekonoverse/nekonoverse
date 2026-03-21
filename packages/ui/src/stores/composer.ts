@@ -51,6 +51,18 @@ export function getInitialVisibility(): Visibility {
   return rememberVisibility() ? lastVisibility() : defaultVisibility();
 }
 
+const VISIBILITY_RANK: Record<Visibility, number> = {
+  public: 0,
+  unlisted: 1,
+  followers: 2,
+  direct: 3,
+};
+
+/** Return the more restrictive of two visibilities. */
+export function moreRestrictiveVisibility(a: Visibility, b: Visibility): Visibility {
+  return (VISIBILITY_RANK[a] ?? 0) >= (VISIBILITY_RANK[b] ?? 0) ? a : b;
+}
+
 // --- Draft storage ---
 
 export interface Draft {

@@ -13,6 +13,7 @@ import { canManageEmoji } from "@nekonoverse/ui/stores/auth";
 import { importedShortcodes } from "@nekonoverse/ui/api/emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { activateTouchGuard } from "../../utils/touchGuard";
 
 interface Props {
   noteId: string;
@@ -28,6 +29,10 @@ const inFlightUrls = new Set<string>();
 // (When a streaming reaction event replaces the note object, <For> destroys
 //  and re-creates the component, resetting local signals.)
 const openPickerNoteIds = new Set<string>();
+// Reactive signal: number of currently open emoji pickers (used by Home.tsx
+// to suppress the "new posts" banner while a picker is visible).
+const [pickerOpenCount, setPickerOpenCount] = createSignal(0);
+export { pickerOpenCount };
 
 export default function ReactionBar(props: Props) {
   const { t } = useI18n();
@@ -38,6 +43,7 @@ export default function ReactionBar(props: Props) {
     if (v) openPickerNoteIds.add(props.noteId);
     else openPickerNoteIds.delete(props.noteId);
     _setShowPicker(v);
+    setPickerOpenCount(openPickerNoteIds.size);
   };
   const [modalEmoji, setModalEmoji] = createSignal<string | null>(null);
   const [modalUrl, setModalUrl] = createSignal<string | null>(null);
@@ -217,6 +223,7 @@ export default function ReactionBar(props: Props) {
     didLongPress = false;
     longPressTimer = setTimeout(() => {
       didLongPress = true;
+      activateTouchGuard();
       openModal(group);
     }, 500);
   };

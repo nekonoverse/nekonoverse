@@ -2744,8 +2744,8 @@ a:hover {
 }
 
 .custom-emoji {
-  height: 1.2em;
-  vertical-align: -0.2em;
+  height: 1.5em;
+  vertical-align: -0.35em;
   display: inline-block;
 }
 
@@ -3629,6 +3629,18 @@ a:hover {
   color: var(--text-secondary);
   text-align: center;
   padding: 40px 0;
+}
+
+.pinned-posts-header {
+  cursor: pointer;
+  user-select: none;
+  display: flex;
+  align-items: center;
+  gap: 0.4em;
+}
+
+.pinned-toggle-icon {
+  font-size: 0.7em;
 }
 
 /* Note Avatar Link */
@@ -7198,6 +7210,12 @@ a:hover {
 .legal-content pre code {
   background: none;
   padding: 0;
+}
+
+.turnstile-container {
+  display: flex;
+  justify-content: center;
+  margin: 12px 0;
 }
 
 .legal-links {

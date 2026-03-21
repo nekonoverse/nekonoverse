@@ -1,6 +1,6 @@
 [project]
 name = "nekonoverse"
-version = "20260321-1"
+version = "20260322-1"
 description = "ActivityPub server with Misskey-compatible emoji reactions"
 requires-python = ">=3.12"
 dependencies = [
@@ -23,6 +23,7 @@ dependencies = [
     "pyotp>=2.9.0",
     "pywebpush>=2.0.0",
     "markdown>=3.7",
+    "aiosmtplib>=3.0.0",
 ]
 
 [project.optional-dependencies]

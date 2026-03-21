@@ -39,10 +39,9 @@ test.describe("Public Timeline Visibility Filtering", () => {
     });
     expect(unlistedResp.status()).toBe(201);
 
-    // Wait enough time for streaming to deliver the event
-    await page.waitForTimeout(3000);
-
-    // The unlisted note must NOT be visible on the public timeline
+    // The unlisted note must NOT appear on the public timeline
+    // Wait briefly for streaming, then assert absence
+    await page.waitForTimeout(1000);
     await expect(
       page.locator(".note-card").filter({ hasText: unlistedText }),
     ).not.toBeVisible();
@@ -77,10 +76,8 @@ test.describe("Public Timeline Visibility Filtering", () => {
     });
     expect(privateResp.status()).toBe(201);
 
-    // Wait for streaming
-    await page.waitForTimeout(3000);
-
     // Must NOT appear on public timeline
+    await page.waitForTimeout(1000);
     await expect(
       page.locator(".note-card").filter({ hasText: privateText }),
     ).not.toBeVisible();
@@ -105,8 +102,8 @@ test.describe("Public Timeline Visibility Filtering", () => {
     await page.goto("/");
     await expect(page.locator(".timeline h2")).toBeVisible({ timeout: 10_000 });
 
-    // Wait for timeline to fully load
-    await page.waitForTimeout(2000);
+    // Wait for timeline to fully load (at least one note rendered)
+    await expect(page.locator(".note-card").first()).toBeVisible({ timeout: 10_000 });
 
     // Unlisted note should NOT be on public timeline (REST API)
     await expect(

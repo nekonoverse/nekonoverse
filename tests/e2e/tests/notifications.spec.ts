@@ -141,7 +141,11 @@ test.describe("Notifications", { tag: "@serial" }, () => {
     const dismissBtn = page.locator(".notification-dismiss").first();
     if (await dismissBtn.isVisible()) {
       await dismissBtn.click();
-      await page.waitForTimeout(500);
+      // Wait for dismiss animation/update to complete
+      await expect(async () => {
+        const unreadCount = await page.locator(".notification-item.unread").count();
+        expect(unreadCount).toBeLessThan(countBefore);
+      }).toPass({ timeout: 5_000 });
       const unreadCount = await page
         .locator(".notification-item.unread")
         .count();
@@ -160,7 +164,6 @@ test.describe("Notifications", { tag: "@serial" }, () => {
 
     if (await clearBtn.isVisible()) {
       await clearBtn.click();
-      await page.waitForTimeout(1000);
       await switchToOtherTab(page);
       const items = await page.locator(".notification-item").count();
       expect(items).toBe(0);
