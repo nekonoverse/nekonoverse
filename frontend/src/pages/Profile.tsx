@@ -382,6 +382,12 @@ export default function Profile() {
     } catch {}
   };
 
+  const handlePinChange = (noteId: string, pinned: boolean) => {
+    setNotes((prev) => prev.map((n) =>
+      n.id === noteId ? { ...n, pinned } : n
+    ));
+  };
+
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
@@ -774,6 +780,7 @@ export default function Profile() {
                             onReply={(n) => setReplyTarget(n)}
                             onQuote={(n) => setQuoteTarget(n)}
                             onThreadOpen={(id) => setThreadNoteId(id)}
+                            onPinChange={handlePinChange}
                           />
                         )}
                       </For>
@@ -795,6 +802,7 @@ export default function Profile() {
                           onReply={(n) => setReplyTarget(n)}
                           onQuote={(n) => setQuoteTarget(n)}
                           onThreadOpen={(id) => setThreadNoteId(id)}
+                          onPinChange={handlePinChange}
                         />
                       )}
                     </For>
