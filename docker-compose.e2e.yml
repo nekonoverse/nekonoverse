@@ -57,7 +57,8 @@ services:
     build: ./backend
     command: >
       sh -c "alembic upgrade head &&
-             python -m app.cli create-admin --username admin --email admin@test.local --password testpassword123 || true &&
+             (python -m app.cli create-admin --username admin --email admin@test.local --password testpassword123 ||
+              python -m app.cli reset-password --username admin --password testpassword123) &&
              uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
     environment:
       DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres:5432/nekonoverse

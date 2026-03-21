@@ -104,6 +104,7 @@ async def _create_admin(args: argparse.Namespace) -> None:
                 password=args.password,
                 display_name=args.display_name,
                 role="admin",
+                skip_reserved_check=True,
             )
         except ValueError as e:
             print(f"Error: {e}", file=sys.stderr)
