@@ -62,8 +62,9 @@ function profileUrl(actor: Note["actor"]): string {
     : `/@${actor.username}`;
 }
 
-// CW展開状態をコンポーネント再マウント後も保持するためのモジュールレベル Set
+// CW展開状態・センシティブ解除状態をコンポーネント再マウント後も保持するためのモジュールレベル Set
 const expandedCwNoteIds = new Set<string>();
+const revealedSensitiveNoteIds = new Set<string>();
 
 function QuoteEmbed(props: { note: Note }) {
   const { t } = useI18n();
@@ -270,7 +271,14 @@ export default function NoteCard(props: Props) {
   };
   const [contentCollapsed, setContentCollapsed] = createSignal(true);
   const [contentOverflows, setContentOverflows] = createSignal(false);
-  const [sensitiveRevealed, setSensitiveRevealed] = createSignal(false);
+  const [sensitiveRevealed, setSensitiveRevealedRaw] = createSignal(
+    revealedSensitiveNoteIds.has(cwNoteId())
+  );
+  const setSensitiveRevealed = (v: boolean) => {
+    setSensitiveRevealedRaw(v);
+    if (v) revealedSensitiveNoteIds.add(cwNoteId());
+    else revealedSensitiveNoteIds.delete(cwNoteId());
+  };
   const [editing, setEditing] = createSignal(false);
   const [editContent, setEditContent] = createSignal("");
   const [editSaving, setEditSaving] = createSignal(false);
