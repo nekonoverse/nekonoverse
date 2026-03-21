@@ -933,42 +933,69 @@ export default function NoteCard(props: Props) {
               >
                 <For each={note().media_attachments.slice(0, 4)}>
                   {(media, i) => (
-                    <button
-                      class="note-media-item"
-                      onClick={() => setLightboxIndex(i())}
-                      type="button"
-                    >
-                      <img
-                        src={media.preview_url || media.url}
-                        alt={media.description || ""}
-                        loading="lazy"
-                        width={media.meta?.original?.width}
-                        height={media.meta?.original?.height}
-                        style={{
-                          "object-position": focalPointToObjectPosition(
-                            media.meta?.focus,
-                          ),
-                        }}
-                        onLoad={(e) => {
-                          const el = e.currentTarget;
-                          const parent = el.parentElement;
-                          if (!parent || !el.naturalWidth || !el.naturalHeight
-                              || !el.clientWidth || !el.clientHeight) return;
-                          const imgAR = el.naturalWidth / el.naturalHeight;
-                          const boxAR = el.clientWidth / el.clientHeight;
-                          if (imgAR > boxAR * 1.05) {
-                            parent.setAttribute("data-crop", "horizontal");
-                          } else if (imgAR < boxAR * 0.95) {
-                            parent.setAttribute("data-crop", "vertical");
-                          }
-                        }}
-                      />
-                      <Show when={i() === 3 && note().media_attachments.length > 4}>
-                        <div class="note-media-more">
-                          +{note().media_attachments.length - 4}
+                    <Show when={media.type === "audio"} fallback={
+                      <button
+                        class="note-media-item"
+                        onClick={() => setLightboxIndex(i())}
+                        type="button"
+                      >
+                        <Show when={media.type === "video"} fallback={
+                          <img
+                            src={media.preview_url || media.url}
+                            alt={media.description || ""}
+                            loading="lazy"
+                            width={media.meta?.original?.width}
+                            height={media.meta?.original?.height}
+                            style={{
+                              "object-position": focalPointToObjectPosition(
+                                media.meta?.focus,
+                              ),
+                            }}
+                            onLoad={(e) => {
+                              const el = e.currentTarget;
+                              const parent = el.parentElement;
+                              if (!parent || !el.naturalWidth || !el.naturalHeight
+                                  || !el.clientWidth || !el.clientHeight) return;
+                              const imgAR = el.naturalWidth / el.naturalHeight;
+                              const boxAR = el.clientWidth / el.clientHeight;
+                              if (imgAR > boxAR * 1.05) {
+                                parent.setAttribute("data-crop", "horizontal");
+                              } else if (imgAR < boxAR * 0.95) {
+                                parent.setAttribute("data-crop", "vertical");
+                              }
+                            }}
+                          />
+                        }>
+                          <video
+                            src={media.url}
+                            preload="metadata"
+                            muted
+                            playsinline
+                            onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+                            onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
+                          />
+                          <div class="note-media-play-icon">
+                            <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
+                              <path d="M8 5v14l11-7z" />
+                            </svg>
+                          </div>
+                        </Show>
+                        <Show when={i() === 3 && note().media_attachments.length > 4}>
+                          <div class="note-media-more">
+                            +{note().media_attachments.length - 4}
+                          </div>
+                        </Show>
+                      </button>
+                    }>
+                      <div class="note-media-item note-audio-item">
+                        <div class="audio-placeholder">
+                          <svg width="48" height="48" viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                          </svg>
                         </div>
-                      </Show>
-                    </button>
+                        <audio src={media.url} controls preload="metadata" />
+                      </div>
+                    </Show>
                   )}
                 </For>
               </div>

@@ -174,7 +174,7 @@ export default function NoteComposer(props: Props) {
     for (const file of toUpload) {
       try {
         // Strip EXIF metadata (GPS, camera info, etc.) from images before upload
-        const processed = await stripExifFromFile(file);
+        const processed = file.type.startsWith("image/") ? await stripExifFromFile(file) : file;
         const media = await uploadMedia(processed);
         setAttachments((prev) => [...prev, media]);
       } catch (err) {
@@ -202,6 +202,14 @@ export default function NoteComposer(props: Props) {
     setFocalPickerMedia(null);
   };
 
+  const mimeToMediaType = (mime: string): string => {
+    if (mime.startsWith("image/gif")) return "gifv";
+    if (mime.startsWith("image/")) return "image";
+    if (mime.startsWith("video/")) return "video";
+    if (mime.startsWith("audio/")) return "audio";
+    return "unknown";
+  };
+
   const handleDriveSelect = (driveFiles: DriveFile[]) => {
     setDrivePickerOpen(false);
     const remaining = MAX_FILES - attachments().length;
@@ -214,13 +222,13 @@ export default function NoteComposer(props: Props) {
         const m = meta || {};
         m.focus = { x: f.focal_x, y: f.focal_y };
         return {
-          id: f.id, type: f.mime_type.startsWith("image/") ? "image" : "unknown",
+          id: f.id, type: mimeToMediaType(f.mime_type),
           url: f.url, preview_url: f.url, description: f.description,
           blurhash: f.blurhash, meta: m,
         };
       }
       return {
-        id: f.id, type: f.mime_type.startsWith("image/") ? "image" : "unknown",
+        id: f.id, type: mimeToMediaType(f.mime_type),
         url: f.url, preview_url: f.url, description: f.description,
         blurhash: f.blurhash, meta,
       };
@@ -292,7 +300,7 @@ export default function NoteComposer(props: Props) {
     if (!items) return;
     const files: File[] = [];
     for (const item of items) {
-      if (item.kind === "file" && item.type.startsWith("image/")) {
+      if (item.kind === "file" && (item.type.startsWith("image/") || item.type.startsWith("video/") || item.type.startsWith("audio/"))) {
         const file = item.getAsFile();
         if (file) files.push(file);
       }
@@ -429,21 +437,35 @@ export default function NoteComposer(props: Props) {
           <For each={attachments()}>
             {(media) => (
               <div class="composer-media-item">
-                <img src={media.preview_url} alt={media.description || ""} />
-                <button
-                  type="button"
-                  class="composer-media-focal-btn"
-                  onClick={() => setFocalPickerMedia(media)}
-                  title={t("composer.setFocalPoint")}
-                >
-                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                    <circle cx="12" cy="12" r="3" />
-                    <line x1="12" y1="2" x2="12" y2="6" />
-                    <line x1="12" y1="18" x2="12" y2="22" />
-                    <line x1="2" y1="12" x2="6" y2="12" />
-                    <line x1="18" y1="12" x2="22" y2="12" />
-                  </svg>
-                </button>
+                <Show when={media.type === "video"}>
+                  <video src={media.url} muted />
+                </Show>
+                <Show when={media.type === "audio"}>
+                  <div class="composer-media-audio-icon">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z" />
+                    </svg>
+                  </div>
+                </Show>
+                <Show when={media.type !== "video" && media.type !== "audio"}>
+                  <img src={media.preview_url} alt={media.description || ""} />
+                </Show>
+                <Show when={media.type !== "audio"}>
+                  <button
+                    type="button"
+                    class="composer-media-focal-btn"
+                    onClick={() => setFocalPickerMedia(media)}
+                    title={t("composer.setFocalPoint")}
+                  >
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="3" />
+                      <line x1="12" y1="2" x2="12" y2="6" />
+                      <line x1="12" y1="18" x2="12" y2="22" />
+                      <line x1="2" y1="12" x2="6" y2="12" />
+                      <line x1="18" y1="12" x2="22" y2="12" />
+                    </svg>
+                  </button>
+                </Show>
                 <button
                   type="button"
                   class="composer-media-remove"
@@ -603,7 +625,7 @@ export default function NoteComposer(props: Props) {
           <input
             ref={fileInput}
             type="file"
-            accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng"
+            accept="image/jpeg,image/png,image/gif,image/webp,image/avif,image/apng,video/mp4,video/webm,video/quicktime,audio/mpeg,audio/ogg,audio/wav,audio/flac,audio/aac,audio/webm"
             multiple
             onChange={(e) => handleFiles(e.currentTarget.files)}
             style="display: none"

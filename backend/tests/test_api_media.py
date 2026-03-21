@@ -124,3 +124,42 @@ async def test_upload_media_with_description(mock_s3, authed_client, test_user):
     )
     assert resp.status_code == 200
     assert resp.json()["description"] == "A test image"
+
+
+# Minimal valid MP4 (ftyp box)
+MP4_FTYP = (
+    b"\x00\x00\x00\x14"  # box size = 20
+    b"ftyp"               # box type
+    b"isom"               # major brand
+    b"\x00\x00\x00\x00"  # minor version
+    b"isom"               # compatible brand
+)
+
+# Minimal MP3 with ID3 tag
+MP3_ID3 = b"ID3\x04\x00\x00\x00\x00\x00\x00"
+
+
+@patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
+async def test_upload_video_mp4(mock_s3, authed_client, test_user):
+    mock_s3.return_value = "etag"
+    resp = await authed_client.post(
+        "/api/v1/media",
+        files={"file": ("test.mp4", BytesIO(MP4_FTYP), "video/mp4")},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "video"
+    assert data["id"]
+
+
+@patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
+async def test_upload_audio_mp3(mock_s3, authed_client, test_user):
+    mock_s3.return_value = "etag"
+    resp = await authed_client.post(
+        "/api/v1/media",
+        files={"file": ("test.mp3", BytesIO(MP3_ID3), "audio/mpeg")},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["type"] == "audio"
+    assert data["id"]
