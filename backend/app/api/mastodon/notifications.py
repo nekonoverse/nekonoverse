@@ -237,6 +237,16 @@ async def get_notifications(
     return result
 
 
+@router.get("/unread_count")
+async def get_unread_count(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from app.services.notification_service import get_unread_count as _get_unread
+
+    return await _get_unread(db, user.actor_id)
+
+
 @router.post("/{notification_id}/dismiss")
 async def dismiss_notification(
     notification_id: uuid.UUID,
