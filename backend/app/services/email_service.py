@@ -34,13 +34,17 @@ async def send_email(to: str, subject: str, html: str, text: str) -> None:
     msg.attach(MIMEText(text, "plain", "utf-8"))
     msg.attach(MIMEText(html, "html", "utf-8"))
 
+    use_tls = settings.smtp_security == "ssl"
+    start_tls = settings.smtp_security == "starttls"
+
     await aiosmtplib.send(
         msg,
         hostname=settings.smtp_host,
         port=settings.smtp_port,
         username=settings.smtp_user,
         password=settings.smtp_password,
-        start_tls=settings.smtp_use_tls,
+        use_tls=use_tls,
+        start_tls=start_tls,
     )
 
 
