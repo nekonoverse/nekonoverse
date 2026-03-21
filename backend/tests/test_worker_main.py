@@ -9,6 +9,7 @@ async def test_run_worker_calls_delivery_loop():
         patch("app.services.face_detect_queue.run_face_detect_loop", new_callable=AsyncMock),
         patch("app.services.summary_proxy_queue.run_summary_proxy_loop", new_callable=AsyncMock),
         patch("app.services.email_queue.run_email_loop", new_callable=AsyncMock),
+        patch("app.services.export_queue.run_export_loop", new_callable=AsyncMock),
     ):
         from app.worker.main import run_worker
 
