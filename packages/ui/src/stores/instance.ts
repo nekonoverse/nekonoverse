@@ -1,5 +1,11 @@
 import { createSignal } from "solid-js";
 
+interface MediaAttachmentsConfig {
+  image_size_limit?: number;
+  video_size_limit?: number;
+  audio_size_limit?: number;
+}
+
 interface InstanceInfo {
   uri: string;
   title: string;
@@ -16,6 +22,9 @@ interface InstanceInfo {
     user_count: number;
     status_count: number;
     domain_count: number;
+  };
+  configuration?: {
+    media_attachments?: MediaAttachmentsConfig;
   };
 }
 
@@ -72,6 +81,18 @@ export function defaultAvatar(): string {
 
 export function turnstileSiteKey(): string | undefined {
   return instance()?.turnstile_site_key;
+}
+
+/** Get the upload size limit in bytes for the given MIME type. */
+export function uploadSizeLimit(mimeType: string): number {
+  const config = instance()?.configuration?.media_attachments;
+  if (mimeType.startsWith("video/")) {
+    return config?.video_size_limit ?? 40 * 1024 * 1024;
+  }
+  if (mimeType.startsWith("audio/")) {
+    return config?.audio_size_limit ?? 10 * 1024 * 1024;
+  }
+  return config?.image_size_limit ?? 10 * 1024 * 1024;
 }
 
 function updateDynamicIcons(iconUrl: string) {

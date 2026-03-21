@@ -54,6 +54,8 @@ export const en: Dictionary = {
   "drive.quotaExceeded": "Storage quota exceeded",
   "composer.uploading": "Uploading...",
   "composer.uploadFailed": "Upload failed",
+  "composer.fileTooLarge": "File too large (limit {limit}MB)",
+  "composer.requestTooLarge": "File size exceeds server limit",
   "composer.setFocalPoint": "Set focal point",
   "composer.focalPoint": "Focal Point",
   "composer.saveFocalPoint": "Save",

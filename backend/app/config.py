@@ -38,6 +38,11 @@ class Settings(BaseSettings):
     turnstile_site_key: str | None = None
     turnstile_secret_key: str | None = None
 
+    # Upload size limits (MB)
+    max_image_size_mb: int = 10
+    max_video_size_mb: int = 40
+    max_audio_size_mb: int = 10
+
     # Forward proxy for outbound federation requests (origin IP concealment)
     http_proxy: str | None = None
     https_proxy: str | None = None

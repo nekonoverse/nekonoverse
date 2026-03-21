@@ -10,6 +10,7 @@ import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { stripExifFromFile } from "@nekonoverse/ui/utils/stripExif";
 import type { DriveFile } from "@nekonoverse/ui/api/drive";
+import { uploadSizeLimit } from "@nekonoverse/ui/stores/instance";
 import {
   getInitialVisibility,
   rememberVisibility,
@@ -173,12 +174,23 @@ export default function NoteComposer(props: Props) {
 
     for (const file of toUpload) {
       try {
+        // ファイルサイズをアップロード前にチェック
+        const limit = uploadSizeLimit(file.type);
+        if (file.size > limit) {
+          const limitMB = Math.round(limit / 1024 / 1024);
+          setError(t("composer.fileTooLarge").replace("{limit}", String(limitMB)));
+          break;
+        }
         // Strip EXIF metadata (GPS, camera info, etc.) from images before upload
         const processed = file.type.startsWith("image/") ? await stripExifFromFile(file) : file;
         const media = await uploadMedia(processed);
         setAttachments((prev) => [...prev, media]);
       } catch (err) {
-        setError(err instanceof Error ? err.message : t("composer.uploadFailed"));
+        if (err instanceof Error && err.message.includes("413")) {
+          setError(t("composer.requestTooLarge"));
+        } else {
+          setError(err instanceof Error ? err.message : t("composer.uploadFailed"));
+        }
         break;
       }
     }

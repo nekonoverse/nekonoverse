@@ -54,6 +54,8 @@ export const neko: Dictionary = {
   "drive.quotaExceeded": "ストレージいっぱいにゃ",
   "composer.uploading": "アップロード中にゃ...",
   "composer.uploadFailed": "アップロードできにゃかった...",
+  "composer.fileTooLarge": "ファイルがおおきすぎるにゃ（じょうげん {limit}MBにゃ）",
+  "composer.requestTooLarge": "ファイルがサーバーのじょうげんをこえてるにゃ",
   "composer.setFocalPoint": "にゃんてんを設定にゃ",
   "composer.focalPoint": "にゃんてんの設定にゃ",
   "composer.saveFocalPoint": "保存にゃ",
