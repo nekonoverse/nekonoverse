@@ -1,9 +1,31 @@
+import re
 import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.custom_emoji import CustomEmoji
+
+_SHORTCODE_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
+_SHORTCODE_MAX_LEN = 255
+
+
+def validate_shortcode(shortcode: str) -> str:
+    """Validate and return the shortcode, raising ValueError if invalid."""
+    if not shortcode or len(shortcode) > _SHORTCODE_MAX_LEN:
+        raise ValueError(
+            f"Shortcode must be 1-{_SHORTCODE_MAX_LEN} characters: {shortcode!r}"
+        )
+    if not _SHORTCODE_PATTERN.match(shortcode):
+        raise ValueError(
+            f"Shortcode must contain only alphanumerics and underscores: {shortcode!r}"
+        )
+    return shortcode
+
+
+def sanitize_shortcode(shortcode: str) -> str:
+    """Replace invalid characters with underscores."""
+    return re.sub(r"[^a-zA-Z0-9_]", "_", shortcode).strip("_")
 
 
 async def get_custom_emoji(
@@ -47,6 +69,7 @@ async def create_local_emoji(
     drive_file_id: uuid.UUID | None = None,
     **kwargs,
 ) -> CustomEmoji:
+    validate_shortcode(shortcode)
     emoji = CustomEmoji(
         shortcode=shortcode,
         domain=None,
@@ -89,6 +112,8 @@ async def update_emoji(db: AsyncSession, emoji_id: uuid.UUID, updates: dict) -> 
     emoji = await get_emoji_by_id(db, emoji_id)
     if not emoji:
         return None
+    if "shortcode" in updates and updates["shortcode"] is not None:
+        validate_shortcode(updates["shortcode"])
     for key, value in updates.items():
         if key in _EMOJI_UPDATABLE_FIELDS:
             setattr(emoji, key, value)

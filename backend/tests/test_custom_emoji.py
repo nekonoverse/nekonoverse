@@ -217,6 +217,36 @@ async def test_create_local_emoji(db, mock_valkey):
     assert emoji.copy_permission == "allow"
 
 
+async def test_create_local_emoji_rejects_hyphen(db, mock_valkey):
+    import pytest
+    from app.services.emoji_service import create_local_emoji
+    with pytest.raises(ValueError, match="alphanumerics and underscores"):
+        await create_local_emoji(db, "bad-code", "http://localhost/emoji/bad.png")
+
+
+async def test_create_local_emoji_rejects_empty(db, mock_valkey):
+    import pytest
+    from app.services.emoji_service import create_local_emoji
+    with pytest.raises(ValueError):
+        await create_local_emoji(db, "", "http://localhost/emoji/empty.png")
+
+
+async def test_sanitize_shortcode():
+    from app.services.emoji_service import sanitize_shortcode
+    assert sanitize_shortcode("hello-world") == "hello_world"
+    assert sanitize_shortcode("foo.bar@baz") == "foo_bar_baz"
+    assert sanitize_shortcode("--leading--") == "leading"
+    assert sanitize_shortcode("valid_code") == "valid_code"
+
+
+async def test_update_emoji_rejects_invalid_shortcode(db, mock_valkey):
+    import pytest
+    from app.services.emoji_service import create_local_emoji, update_emoji
+    emoji = await create_local_emoji(db, "valid_sc", "http://localhost/emoji/v.png")
+    with pytest.raises(ValueError, match="alphanumerics and underscores"):
+        await update_emoji(db, emoji.id, {"shortcode": "bad-sc"})
+
+
 async def test_update_emoji(db, mock_valkey):
     from app.services.emoji_service import create_local_emoji, update_emoji
     emoji = await create_local_emoji(db, "upd_svc", "http://localhost/emoji/upd.png")
