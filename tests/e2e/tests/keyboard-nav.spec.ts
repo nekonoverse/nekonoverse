@@ -37,7 +37,9 @@ test.describe("Keyboard navigation (j/k/g)", () => {
       }).toPass({ timeout: 10_000 });
 
       // The focused card's top must not be hidden behind navbar
+      // スクロール完了を待ってから位置を確認
       const focused = page.locator(".note-card.keyboard-focused");
+      await page.waitForTimeout(300);
       const cardTop = await focused.evaluate(
         (el) => el.getBoundingClientRect().top,
       );
