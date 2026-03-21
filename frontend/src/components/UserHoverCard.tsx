@@ -9,6 +9,7 @@ import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { activateTouchGuard } from "../utils/touchGuard";
 
 interface Props {
   actorId: string;
@@ -104,6 +105,7 @@ export default function UserHoverCard(props: Props) {
     longPressTriggered = false;
     longPressTimer = window.setTimeout(() => {
       longPressTriggered = true;
+      activateTouchGuard();
       // Prevent subsequent click from navigating
       e.preventDefault();
       setVisible(true);

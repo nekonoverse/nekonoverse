@@ -37,6 +37,7 @@ import { timeFormat, nyaizeEnabled } from "@nekonoverse/ui/stores/theme";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { renderMfm } from "@nekonoverse/ui/utils/mfm";
+import { activateTouchGuard } from "../../utils/touchGuard";
 import { nyaizeElement } from "@nekonoverse/ui/utils/nyaize";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 
@@ -481,6 +482,7 @@ export default function NoteCard(props: Props) {
     actionDidLongPress = false;
     actionLongPressTimer = setTimeout(() => {
       actionDidLongPress = true;
+      activateTouchGuard();
       openActionModal(title, fetcher);
     }, 500);
   };
@@ -511,6 +513,7 @@ export default function NoteCard(props: Props) {
     replyDidLongPress = false;
     replyLongPressTimer = setTimeout(() => {
       replyDidLongPress = true;
+      activateTouchGuard();
       navigate(`/notes/${displayNote().id}`);
     }, 500);
   };

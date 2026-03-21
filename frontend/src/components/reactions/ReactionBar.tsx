@@ -13,6 +13,7 @@ import { canManageEmoji } from "@nekonoverse/ui/stores/auth";
 import { importedShortcodes } from "@nekonoverse/ui/api/emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { activateTouchGuard } from "../../utils/touchGuard";
 
 interface Props {
   noteId: string;
@@ -217,6 +218,7 @@ export default function ReactionBar(props: Props) {
     didLongPress = false;
     longPressTimer = setTimeout(() => {
       didLongPress = true;
+      activateTouchGuard();
       openModal(group);
     }, 500);
   };
