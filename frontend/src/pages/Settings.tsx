@@ -54,6 +54,7 @@ const categories: SettingsCategory[] = [
     labelKey: "settings.categoryAccount",
     sections: [
       { key: "security", labelKey: "settings.tabSecurity", descKey: "settings.descSecurity" },
+      { key: "email", labelKey: "settings.tabEmail", descKey: "settings.descEmail" },
       { key: "apps", labelKey: "settings.tabApps", descKey: "settings.descApps" },
       { key: "blocks", labelKey: "settings.tabBlocks", descKey: "settings.descBlocks" },
       { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
@@ -124,6 +125,7 @@ export default function Settings() {
           <Match when={section() === "posting"}><PostingTab /></Match>
           <Match when={section() === "appearance"}><AppearanceTab /></Match>
           <Match when={section() === "security"}><SecurityTab onLogout={handleLogout} /></Match>
+          <Match when={section() === "email"}><EmailTab /></Match>
           <Match when={section() === "apps"}><AppsTab /></Match>
           <Match when={section() === "blocks"}><BlocksTab /></Match>
           <Match when={section() === "mutes"}><MutesTab /></Match>
@@ -694,6 +696,71 @@ function SecurityTab(props: { onLogout: () => void }) {
         <button class="btn-danger-full" onClick={props.onLogout}>
           {t("settings.logout")}
         </button>
+      </div>
+    </AuthGuard>
+  );
+}
+
+function EmailTab() {
+  const { t } = useI18n();
+  const [sending, setSending] = createSignal(false);
+  const [msg, setMsg] = createSignal("");
+  const [error, setError] = createSignal("");
+
+  const user = () => currentUser();
+  const isVerified = () => user()?.email_verified ?? true;
+
+  const handleResend = async () => {
+    setMsg("");
+    setError("");
+    setSending(true);
+    try {
+      const resp = await fetch("/api/v1/email/verify", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (resp.status === 429) {
+        setError("Please wait before requesting again");
+      } else if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        setError(data.detail || "Failed to send email");
+      } else {
+        setMsg(t("email.verificationSent" as any));
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("email.title" as any)}</h3>
+        <Show when={msg()}><p class="settings-success">{msg()}</p></Show>
+        <Show when={error()}><p class="error">{error()}</p></Show>
+        <div class="settings-form-group">
+          <label>Email</label>
+          <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+            <span>{user()?.email || "—"}</span>
+            <span
+              class={isVerified() ? "badge badge-success" : "badge badge-warning"}
+              style={{ "font-size": "0.8em", padding: "2px 8px", "border-radius": "4px" }}
+            >
+              {isVerified() ? t("email.verified" as any) : t("email.notVerified" as any)}
+            </span>
+          </div>
+        </div>
+        <Show when={!isVerified()}>
+          <button
+            class="btn btn-small"
+            onClick={handleResend}
+            disabled={sending()}
+          >
+            {t("email.resendVerification" as any)}
+          </button>
+        </Show>
       </div>
     </AuthGuard>
   );

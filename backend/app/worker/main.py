@@ -10,6 +10,7 @@ logger = logging.getLogger("nekonoverse.worker")
 async def run_worker():
     logger.info("Nekonoverse worker started")
 
+    from app.services.email_queue import run_email_loop
     from app.services.face_detect_queue import run_face_detect_loop
     from app.services.summary_proxy_queue import run_summary_proxy_loop
 
@@ -17,6 +18,7 @@ async def run_worker():
         run_delivery_loop(),
         run_face_detect_loop(),
         run_summary_proxy_loop(),
+        run_email_loop(),
     )
 
 
