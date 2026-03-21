@@ -1,6 +1,7 @@
 from app.models.actor import Actor
 from app.models.bookmark import Bookmark
 from app.models.custom_emoji import CustomEmoji
+from app.models.data_export import DataExport
 from app.models.delivery import DeliveryJob
 from app.models.domain_block import DomainBlock
 from app.models.drive_file import DriveFile
@@ -31,6 +32,7 @@ __all__ = [
     "Actor",
     "Bookmark",
     "CustomEmoji",
+    "DataExport",
     "DeliveryJob",
     "DomainBlock",
     "DriveFile",

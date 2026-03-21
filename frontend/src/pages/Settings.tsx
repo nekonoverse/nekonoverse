@@ -1,4 +1,4 @@
-import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "solid-js";
+import { createSignal, createEffect, onMount, onCleanup, Show, For, Switch, Match } from "solid-js";
 import QRCode from "qrcode";
 import { useNavigate, useParams, A } from "@solidjs/router";
 import { currentUser, authLoading, logout, fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
@@ -21,7 +21,7 @@ import {
 import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "@nekonoverse/ui/stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
-import { changePassword } from "@nekonoverse/ui/api/settings";
+import { changePassword, startExport, getExportStatus, type DataExportStatus } from "@nekonoverse/ui/api/settings";
 import { getAuthorizedApps, revokeAuthorizedApp, type AuthorizedApp } from "@nekonoverse/ui/api/authorizedApps";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type LoginHistoryEntry } from "@nekonoverse/ui/api/sessions";
@@ -60,6 +60,7 @@ const categories: SettingsCategory[] = [
       { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
       { key: "sessions", labelKey: "settings.tabSessions", descKey: "settings.descSessions" },
       { key: "migration", labelKey: "settings.tabMigration", descKey: "settings.descMigration" },
+      { key: "dataExport", labelKey: "settings.tabDataExport", descKey: "settings.descDataExport" },
     ],
   },
   {
@@ -131,6 +132,7 @@ export default function Settings() {
           <Match when={section() === "mutes"}><MutesTab /></Match>
           <Match when={section() === "sessions"}><SessionsTab /></Match>
           <Match when={section() === "migration"}><MigrationTab /></Match>
+          <Match when={section() === "dataExport"}><DataExportTab /></Match>
           <Match when={section() === "about"}><AboutTab /></Match>
         </Switch>
       </Show>
@@ -1255,5 +1257,140 @@ function AboutTab() {
         </button>
       </div>
     </>
+  );
+}
+
+function DataExportTab() {
+  const { t } = useI18n();
+  const [exportStatus, setExportStatus] = createSignal<DataExportStatus | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  const [starting, setStarting] = createSignal(false);
+  const [error, setError] = createSignal("");
+
+  const fetchStatus = async () => {
+    setLoading(true);
+    try {
+      const status = await getExportStatus();
+      setExportStatus(status);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  createEffect(() => {
+    if (currentUser()) fetchStatus();
+  });
+
+  // Poll while pending/processing
+  createEffect(() => {
+    const st = exportStatus();
+    if (st && (st.status === "pending" || st.status === "processing")) {
+      const timer = setInterval(async () => {
+        const updated = await getExportStatus();
+        setExportStatus(updated);
+        if (updated && updated.status !== "pending" && updated.status !== "processing") {
+          clearInterval(timer);
+        }
+      }, 5000);
+      onCleanup(() => clearInterval(timer));
+    }
+  });
+
+  const handleStart = async () => {
+    setError("");
+    setStarting(true);
+    try {
+      await startExport();
+      await fetchStatus();
+    } catch (e: any) {
+      if (e.message?.includes("429")) {
+        setError(t("dataExport.cooldown" as any));
+      } else {
+        setError(e.message || "Failed to start export");
+      }
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("dataExport.title" as any)}</h3>
+        <p style={{ color: "var(--text-secondary)", "margin-bottom": "16px" }}>
+          {t("dataExport.description" as any)}
+        </p>
+
+        <Show when={error()}><p class="error">{error()}</p></Show>
+
+        <Show when={loading()}>
+          <p>{t("common.loading")}</p>
+        </Show>
+
+        <Show when={!loading()}>
+          {(() => {
+            const st = exportStatus();
+            if (!st || st.status === "expired") {
+              return (
+                <button class="btn" onClick={handleStart} disabled={starting()}>
+                  {starting() ? t("common.loading") : t("dataExport.start" as any)}
+                </button>
+              );
+            }
+            if (st.status === "pending" || st.status === "processing") {
+              return (
+                <div class="settings-form-group">
+                  <p>
+                    <span class="spinner" style={{ "margin-right": "8px" }} />
+                    {t("dataExport.processing" as any)}
+                  </p>
+                </div>
+              );
+            }
+            if (st.status === "completed") {
+              return (
+                <div class="settings-form-group">
+                  <p style={{ "margin-bottom": "8px" }}>
+                    {t("dataExport.ready" as any)}
+                    {st.size_bytes ? ` (${formatSize(st.size_bytes)})` : ""}
+                  </p>
+                  <Show when={st.expires_at}>
+                    <p style={{ "font-size": "0.85em", color: "var(--text-secondary)", "margin-bottom": "12px" }}>
+                      {t("dataExport.expiresAt" as any)}: {new Date(st.expires_at!).toLocaleDateString()}
+                    </p>
+                  </Show>
+                  <a
+                    href={`/api/v1/export/${st.id}/download`}
+                    class="btn"
+                    download
+                  >
+                    {t("dataExport.download" as any)}
+                  </a>
+                </div>
+              );
+            }
+            if (st.status === "failed") {
+              return (
+                <div class="settings-form-group">
+                  <p class="error">{st.error || t("dataExport.failed" as any)}</p>
+                  <button class="btn" onClick={handleStart} disabled={starting()}>
+                    {t("dataExport.retry" as any)}
+                  </button>
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </Show>
+      </div>
+    </AuthGuard>
   );
 }

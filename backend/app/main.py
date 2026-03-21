@@ -32,6 +32,7 @@ from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.data_export import router as data_export_router
 from app.api.email_verification import router as email_router
 from app.api.authorized_apps import router as authorized_apps_router
 from app.api.invites import router as invites_router
@@ -729,6 +730,7 @@ async def health():
 
 
 app.include_router(auth_router)
+app.include_router(data_export_router)
 app.include_router(email_router)
 app.include_router(relationships_router)
 app.include_router(accounts_router)
