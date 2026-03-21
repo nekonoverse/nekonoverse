@@ -32,6 +32,8 @@ from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.data_export import router as data_export_router
+from app.api.email_verification import router as email_router
 from app.api.authorized_apps import router as authorized_apps_router
 from app.api.invites import router as invites_router
 from app.api.mastodon.accounts import relationships_router
@@ -345,6 +347,8 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         resp["thumbnail"] = {"url": thumbnail_url}
     if theme_color:
         resp["theme_color"] = theme_color
+    if settings.turnstile_site_key:
+        resp["turnstile_site_key"] = settings.turnstile_site_key
 
     # Legal page URLs
     try:
@@ -525,6 +529,8 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
 
     if vapid_key:
         resp["configuration"]["vapid"] = {"public_key": vapid_key}
+    if settings.turnstile_site_key:
+        resp["turnstile_site_key"] = settings.turnstile_site_key
 
     try:
         await _valkey2.set(_cache_key2, _json2.dumps(resp), ex=120)
@@ -724,6 +730,8 @@ async def health():
 
 
 app.include_router(auth_router)
+app.include_router(data_export_router)
+app.include_router(email_router)
 app.include_router(relationships_router)
 app.include_router(accounts_router)
 app.include_router(notifications_router)

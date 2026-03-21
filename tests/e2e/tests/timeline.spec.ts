@@ -16,7 +16,8 @@ test.describe("Timeline", () => {
     await page.click("button.composer-post-btn");
 
     // The new note should appear on the timeline
-    await expect(page.locator(".note-card").filter({ hasText: text })).toBeVisible({
+    // SSEで同じノートが複数表示される場合があるため .first() を使用
+    await expect(page.locator(".note-card").filter({ hasText: text }).first()).toBeVisible({
       timeout: 10_000,
     });
   });

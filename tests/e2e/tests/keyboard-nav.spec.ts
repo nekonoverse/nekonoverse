@@ -1,6 +1,36 @@
 import { test, expect } from "@playwright/test";
 import { loginAsAdmin, createNote } from "./helpers";
 
+/**
+ * Helper: press a key once then wait for the expected card to receive focus.
+ * Key press and assertion are separated so retries don't send duplicate keys.
+ */
+async function pressAndWaitFocus(
+  page: import("@playwright/test").Page,
+  key: string,
+  expectedIndex: number,
+) {
+  await page.keyboard.press(key);
+  await expect(
+    page.locator(".note-card").nth(expectedIndex),
+  ).toHaveClass(/keyboard-focused/, { timeout: 5_000 });
+}
+
+/**
+ * Helper: assert that the focused card's top is not hidden behind the navbar.
+ * Uses toPass() to tolerate scroll animation delay.
+ */
+async function assertCardNotBehindNavbar(
+  page: import("@playwright/test").Page,
+  navbarHeight: number,
+) {
+  const focused = page.locator(".note-card.keyboard-focused");
+  await expect(async () => {
+    const top = await focused.evaluate((el) => el.getBoundingClientRect().top);
+    expect(top).toBeGreaterThanOrEqual(navbarHeight - 2);
+  }).toPass({ timeout: 5_000 });
+}
+
 test.describe("Keyboard navigation (j/k/g)", () => {
   test.beforeEach(async ({ page }) => {
     await loginAsAdmin(page);
@@ -18,7 +48,7 @@ test.describe("Keyboard navigation (j/k/g)", () => {
   test("j key moves focus down and cards stay visible below navbar", async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(45_000);
 
     const navbarHeight = await page
       .locator(".navbar")
@@ -28,27 +58,15 @@ test.describe("Keyboard navigation (j/k/g)", () => {
     const stepsToTest = Math.min(cardCount, 5);
 
     for (let i = 0; i < stepsToTest; i++) {
-      // Firefox CI ではキー入力が空振りすることがあるためリトライ
-      await expect(async () => {
-        await page.keyboard.press("j");
-        await page.waitForTimeout(300);
-        const cls = await page.locator(".note-card").nth(i).getAttribute("class");
-        expect(cls).toContain("keyboard-focused");
-      }).toPass({ timeout: 10_000 });
-
-      // The focused card's top must not be hidden behind navbar
-      const focused = page.locator(".note-card.keyboard-focused");
-      const cardTop = await focused.evaluate(
-        (el) => el.getBoundingClientRect().top,
-      );
-      expect(cardTop).toBeGreaterThanOrEqual(navbarHeight - 2);
+      await pressAndWaitFocus(page, "j", i);
+      await assertCardNotBehindNavbar(page, navbarHeight);
     }
   });
 
   test("k key moves focus up without card hidden behind navbar", async ({
     page,
   }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(45_000);
 
     const navbarHeight = await page
       .locator(".navbar")
@@ -59,63 +77,40 @@ test.describe("Keyboard navigation (j/k/g)", () => {
 
     // Move down first
     for (let i = 0; i < stepsDown; i++) {
-      await page.keyboard.press("j");
-      await page.waitForTimeout(200);
+      await pressAndWaitFocus(page, "j", i);
     }
 
     // Now move back up
     for (let i = 0; i < stepsDown - 1; i++) {
-      await page.keyboard.press("k");
-
-      const focused = page.locator(".note-card.keyboard-focused");
-      await expect(focused).toHaveCount(1, { timeout: 5_000 });
-
-      // Wait for scroll to settle (Firefox may not complete scroll synchronously)
-      await page.waitForTimeout(300);
-
-      const cardTop = await focused.evaluate(
-        (el) => el.getBoundingClientRect().top,
-      );
-      expect(cardTop).toBeGreaterThanOrEqual(navbarHeight - 2);
+      const expectedIdx = stepsDown - 2 - i;
+      await pressAndWaitFocus(page, "k", expectedIdx);
+      await assertCardNotBehindNavbar(page, navbarHeight);
     }
   });
 
   test("rapid j presses all apply correctly", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(45_000);
     const cardCount = await page.locator(".note-card").count();
     const presses = Math.min(cardCount, 6);
 
-    // Press j multiple times, retrying if focus doesn't apply (Firefox CI)
     for (let i = 0; i < presses; i++) {
-      await expect(async () => {
-        await page.keyboard.press("j");
-        await page.waitForTimeout(200);
-        const cls = await page.locator(".note-card").nth(i).getAttribute("class");
-        expect(cls).toContain("keyboard-focused");
-      }).toPass({ timeout: 10_000 });
+      await pressAndWaitFocus(page, "j", i);
     }
 
-    // Should have exactly one focused card
+    // Should have exactly one focused card at the expected position
     const focused = page.locator(".note-card.keyboard-focused");
     await expect(focused).toHaveCount(1, { timeout: 5_000 });
-
-    // It should be the Nth card (0-indexed)
-    const allCards = page.locator(".note-card");
-    const targetCard = allCards.nth(presses - 1);
-    await expect(targetCard).toHaveClass(/keyboard-focused/, { timeout: 5_000 });
+    await expect(
+      page.locator(".note-card").nth(presses - 1),
+    ).toHaveClass(/keyboard-focused/, { timeout: 5_000 });
   });
 
   test("g key scrolls to top and clears focus", async ({ page }) => {
-    test.setTimeout(90_000);
+    test.setTimeout(45_000);
 
-    // Move down a few notes, retrying j press if focus doesn't apply
+    // Move down a few notes
     for (let i = 0; i < 5; i++) {
-      await expect(async () => {
-        await page.keyboard.press("j");
-        await page.waitForTimeout(200);
-        const cls = await page.locator(".note-card").nth(i).getAttribute("class");
-        expect(cls).toContain("keyboard-focused");
-      }).toPass({ timeout: 10_000 });
+      await pressAndWaitFocus(page, "j", i);
     }
 
     await expect(page.locator(".note-card.keyboard-focused")).toHaveCount(1, {
@@ -124,11 +119,12 @@ test.describe("Keyboard navigation (j/k/g)", () => {
 
     // Press g
     await page.keyboard.press("g");
-    await page.waitForTimeout(300);
 
-    // Should be at top
-    const scrollY = await page.evaluate(() => window.scrollY);
-    expect(scrollY).toBe(0);
+    // Should scroll to top (tolerate animation delay)
+    await expect(async () => {
+      const scrollY = await page.evaluate(() => window.scrollY);
+      expect(scrollY).toBe(0);
+    }).toPass({ timeout: 5_000 });
 
     // No focused cards
     await expect(page.locator(".note-card.keyboard-focused")).toHaveCount(0);

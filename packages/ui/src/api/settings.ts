@@ -95,3 +95,22 @@ export async function changePassword(currentPassword: string, newPassword: strin
     body: { current_password: currentPassword, new_password: newPassword },
   });
 }
+
+// Data export
+
+export interface DataExportStatus {
+  id: string;
+  status: "pending" | "processing" | "completed" | "failed" | "expired";
+  size_bytes?: number | null;
+  error?: string | null;
+  expires_at?: string | null;
+  created_at: string;
+}
+
+export async function startExport(): Promise<{ id: string; status: string }> {
+  return apiRequest("/api/v1/export", { method: "POST" });
+}
+
+export async function getExportStatus(): Promise<DataExportStatus | null> {
+  return apiRequest("/api/v1/export", { method: "GET" });
+}

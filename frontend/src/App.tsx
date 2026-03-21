@@ -32,6 +32,9 @@ const TagTimeline = lazy(() => import("./pages/TagTimeline"));
 const NoteThread = lazy(() => import("./pages/NoteThread"));
 const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
+const ForgotPassword = lazy(() => import("./pages/ForgotPassword"));
+const ResetPassword = lazy(() => import("./pages/ResetPassword"));
+const VerifyEmail = lazy(() => import("./pages/VerifyEmail"));
 
 function NavigationProgress() {
   const isRouting = useIsRouting();
@@ -104,6 +107,9 @@ export default function App() {
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />
         <Route path="/register" component={Register} />
+        <Route path="/forgot-password" component={ForgotPassword} />
+        <Route path="/reset-password" component={ResetPassword} />
+        <Route path="/verify-email" component={VerifyEmail} />
         <Route path="/settings/*section" component={Settings} />
         <Route path="/notifications" component={Notifications} />
         <Route path="/mentions" component={Notifications} />

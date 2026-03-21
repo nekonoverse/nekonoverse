@@ -75,7 +75,16 @@ export default function Navbar() {
     <nav class="navbar">
       <div class="navbar-inner">
         <div class="navbar-left">
-          <a href={isHomeTl() ? "/?tl=home" : "/"} class="navbar-brand">
+          <a
+            href={isHomeTl() ? "/?tl=home" : "/"}
+            class="navbar-brand"
+            onClick={(e) => {
+              if (location.pathname === "/") {
+                e.preventDefault();
+                window.scrollTo({ top: 0, behavior: "smooth" });
+              }
+            }}
+          >
             <Show when={instance()?.thumbnail?.url} fallback={<span class="navbar-brand-text">{instance()?.title || t("app.title")}</span>}>
               {(iconUrl) => (
                 <>

@@ -1,0 +1,103 @@
+import uuid
+from datetime import datetime, timezone
+
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.models.login_history import LoginHistory
+
+SESSION_TTL = 86400 * 30  # 30 days
+
+
+async def create_session_with_metadata(
+    valkey,
+    user_id: uuid.UUID,
+    session_id: str,
+    ip: str,
+    user_agent: str | None,
+) -> None:
+    """Create session key and store metadata alongside it."""
+    await valkey.set(f"session:{session_id}", str(user_id), ex=SESSION_TTL)
+    await valkey.hset(
+        f"session_meta:{session_id}",
+        mapping={
+            "user_id": str(user_id),
+            "ip": ip,
+            "user_agent": user_agent or "",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        },
+    )
+    await valkey.expire(f"session_meta:{session_id}", SESSION_TTL)
+    await valkey.sadd(f"user_sessions:{user_id}", session_id)
+
+
+async def list_user_sessions(valkey, user_id: uuid.UUID) -> list[dict]:
+    """Return active sessions for a user, pruning expired ones."""
+    session_ids = await valkey.smembers(f"user_sessions:{user_id}")
+    sessions = []
+    for sid in session_ids:
+        if not await valkey.exists(f"session:{sid}"):
+            await valkey.srem(f"user_sessions:{user_id}", sid)
+            await valkey.delete(f"session_meta:{sid}")
+            continue
+        meta = await valkey.hgetall(f"session_meta:{sid}")
+        sessions.append({"session_id": sid, **meta})
+    return sessions
+
+
+async def delete_session(
+    valkey, user_id: uuid.UUID, session_id: str
+) -> bool:
+    """Delete a specific session belonging to the user. Returns False if not owned."""
+    owner = await valkey.get(f"session:{session_id}")
+    if owner != str(user_id):
+        return False
+    await valkey.delete(f"session:{session_id}")
+    await valkey.delete(f"session_meta:{session_id}")
+    await valkey.srem(f"user_sessions:{user_id}", session_id)
+    return True
+
+
+async def cleanup_session_metadata(
+    valkey, user_id: uuid.UUID, session_id: str
+) -> None:
+    """Clean up metadata keys for a session (used by logout/invalidation)."""
+    await valkey.delete(f"session_meta:{session_id}")
+    await valkey.srem(f"user_sessions:{user_id}", session_id)
+
+
+async def record_login(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    ip: str,
+    user_agent: str | None,
+    method: str,
+    success: bool = True,
+) -> None:
+    """Record a login attempt in the database."""
+    entry = LoginHistory(
+        user_id=user_id,
+        ip_address=ip,
+        user_agent=user_agent,
+        method=method,
+        success=success,
+    )
+    db.add(entry)
+    await db.flush()
+
+
+async def get_login_history(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    limit: int = 20,
+    offset: int = 0,
+) -> list[LoginHistory]:
+    """Return login history for a user, newest first."""
+    result = await db.execute(
+        select(LoginHistory)
+        .where(LoginHistory.user_id == user_id)
+        .order_by(LoginHistory.created_at.desc())
+        .offset(offset)
+        .limit(limit)
+    )
+    return list(result.scalars().all())

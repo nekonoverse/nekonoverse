@@ -2,7 +2,7 @@
 
 import uuid
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -162,3 +162,26 @@ async def clear_notifications(db: AsyncSession, actor_id: uuid.UUID) -> None:
 
     await db.execute(delete(Notification).where(Notification.recipient_id == actor_id))
     await db.flush()
+
+
+async def get_unread_count(db: AsyncSession, actor_id: uuid.UUID) -> dict[str, int]:
+    """Return unread notification counts: total, mentions, other."""
+    total_q = (
+        select(func.count())
+        .select_from(Notification)
+        .where(Notification.recipient_id == actor_id, Notification.read.is_(False))
+    )
+    total = (await db.execute(total_q)).scalar() or 0
+
+    mentions_q = (
+        select(func.count())
+        .select_from(Notification)
+        .where(
+            Notification.recipient_id == actor_id,
+            Notification.read.is_(False),
+            Notification.type.in_(["mention", "reply"]),
+        )
+    )
+    mentions = (await db.execute(mentions_q)).scalar() or 0
+
+    return {"total": total, "mentions": mentions, "other": total - mentions}

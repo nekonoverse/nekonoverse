@@ -117,10 +117,12 @@ export async function register(
   password: string,
   inviteCode?: string,
   reason?: string,
+  captchaToken?: string,
 ): Promise<{ pending?: boolean }> {
   const body: Record<string, string> = { username, email, password };
   if (inviteCode) body.invite_code = inviteCode;
   if (reason) body.reason = reason;
+  if (captchaToken) body.captcha_token = captchaToken;
   await apiRequest("/api/v1/accounts", {
     method: "POST",
     body,

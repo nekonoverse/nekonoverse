@@ -87,6 +87,16 @@ services:
       MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
       # summary-proxy (optional — set in .env)
       SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
+      # Cloudflare Turnstile CAPTCHA (optional — set in .env)
+      TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
+      TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
+      # SMTP (optional — set in .env)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
     volumes:
       - ./backend:/app
     ports:
@@ -111,6 +121,7 @@ services:
       VALKEY_URL: valkey://valkey:6379/0
       DOMAIN: ${DOMAIN:-localhost}
       SECRET_KEY: ${SECRET_KEY}
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       S3_ENDPOINT_URL: http://nekono3s:8080
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-nekonoverse}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-changeme-s3}
@@ -122,6 +133,13 @@ services:
       MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
       # summary-proxy (optional — set in .env)
       SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
+      # SMTP (optional — set in .env)
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_SECURITY: ${SMTP_SECURITY:-starttls}
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}

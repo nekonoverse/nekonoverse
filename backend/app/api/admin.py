@@ -806,7 +806,12 @@ async def add_emoji(
     import json as json_mod
 
     from app.services.drive_service import file_to_url, upload_drive_file
-    from app.services.emoji_service import create_local_emoji, get_custom_emoji
+    from app.services.emoji_service import create_local_emoji, get_custom_emoji, validate_shortcode
+
+    try:
+        validate_shortcode(shortcode)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
 
     existing = await get_custom_emoji(db, shortcode, None)
     if existing:
@@ -982,7 +987,12 @@ async def import_emojis(
     import zipfile
 
     from app.services.drive_service import file_to_url, upload_drive_file
-    from app.services.emoji_service import create_local_emoji, get_custom_emoji
+    from app.services.emoji_service import (
+        create_local_emoji,
+        get_custom_emoji,
+        sanitize_shortcode,
+        validate_shortcode,
+    )
 
     data = await file.read()
     buf = io.BytesIO(data)
@@ -1011,6 +1021,17 @@ async def import_emojis(
 
             if not shortcode or not filename:
                 results["errors"].append("Missing name or fileName")
+                continue
+
+            # Sanitize shortcode: replace invalid characters with underscores
+            original_shortcode = shortcode
+            shortcode = sanitize_shortcode(shortcode)
+            try:
+                validate_shortcode(shortcode)
+            except ValueError:
+                results["errors"].append(
+                    f":{original_shortcode}: — invalid shortcode"
+                )
                 continue
 
             existing = await get_custom_emoji(db, shortcode, None)

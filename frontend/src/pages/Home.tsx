@@ -22,6 +22,7 @@ import { onUpdate, onReaction } from "@nekonoverse/ui/stores/streaming";
 import { followedIds } from "@nekonoverse/ui/stores/followedUsers";
 import { hideNonFollowedReplies } from "@nekonoverse/ui/stores/theme";
 import { useI18n } from "@nekonoverse/ui/i18n";
+import { pickerOpenCount } from "../components/reactions/ReactionBar";
 import NoteComposer from "../components/notes/NoteComposer";
 import ComposeModal from "../components/notes/ComposeModal";
 import NoteCard from "../components/notes/NoteCard";
@@ -50,8 +51,8 @@ export default function Home() {
   // Scroll-to-top button state
   const [showScrollTop, setShowScrollTop] = createSignal(false);
 
-  // Suppress auto-scroll while emoji picker or other popover is open
-  const isPopoverOpen = () => !!document.querySelector(".emoji-picker, .thread-modal");
+  // Suppress auto-scroll / banner while emoji picker or other popover is open
+  const isPopoverOpen = () => pickerOpenCount() > 0 || !!document.querySelector(".thread-modal");
 
   let sentinelRef: HTMLDivElement | undefined;
   let observer: IntersectionObserver | undefined;
@@ -371,8 +372,8 @@ export default function Home() {
           <div class="timeline">
             <h2>{isHomeTL() ? t("timeline.home") : t("timeline.public")}</h2>
 
-            {/* New posts banner */}
-            <Show when={bufferedNotes().length > 0}>
+            {/* New posts banner (hidden while emoji picker is open to prevent layout shift) */}
+            <Show when={bufferedNotes().length > 0 && !isPopoverOpen()}>
               <button class="new-posts-banner" onClick={flushBuffer}>
                 {t("timeline.newPosts").replace(
                   "{count}",

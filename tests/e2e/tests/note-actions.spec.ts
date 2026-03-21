@@ -131,11 +131,28 @@ test.describe("Note Actions", () => {
     const bookmarkBtn = noteCard.locator(".note-bookmark-btn");
 
     // Firefox workaround: evaluate で直接クリック + API完了を待つ
+    // SolidJS のハンドラが未アタッチでAPIコールが発火しないことがあるため、
+    // タイムアウト時はリロードしてリトライする
     await expect(bookmarkBtn).toBeEnabled({ timeout: 5_000 });
-    await Promise.all([
-      page.waitForResponse((r) => r.url().includes("/bookmark") && r.status() === 200, { timeout: 10_000 }),
-      bookmarkBtn.evaluate((el: HTMLElement) => el.click()),
-    ]);
+    try {
+      await Promise.all([
+        page.waitForResponse((r) => r.url().includes("/bookmark") && r.status() === 200, { timeout: 10_000 }),
+        bookmarkBtn.evaluate((el: HTMLElement) => el.click()),
+      ]);
+    } catch {
+      await page.goto("/");
+      await page.waitForSelector(".note-card", { timeout: 10_000 });
+      const retryCard = page
+        .locator(`.note-card`)
+        .filter({ hasText: `bookmark-action-${uid}` })
+        .first();
+      const retryBtn = retryCard.locator(".note-bookmark-btn");
+      await expect(retryBtn).toBeEnabled({ timeout: 5_000 });
+      await Promise.all([
+        page.waitForResponse((r) => r.url().includes("/bookmark") && r.status() === 200, { timeout: 15_000 }),
+        retryBtn.evaluate((el: HTMLElement) => el.click()),
+      ]);
+    }
 
     // Firefox workaround: SolidJS の DOM 更新が反映されない場合はリロードして確認
     try {

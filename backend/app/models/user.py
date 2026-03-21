@@ -34,6 +34,21 @@ class User(Base):
         Boolean, default=False, server_default="false", nullable=False
     )
     totp_recovery_codes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=None)
+    email_verified: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default="false", nullable=False
+    )
+    email_verification_token: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, default=None
+    )
+    email_verification_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
+    password_reset_token: Mapped[Optional[str]] = mapped_column(
+        String(255), nullable=True, default=None
+    )
+    password_reset_sent_at: Mapped[Optional[datetime]] = mapped_column(
+        DateTime(timezone=True), nullable=True, default=None
+    )
     approval_status: Mapped[str] = mapped_column(
         String(20),
         default="approved",

@@ -1,6 +1,18 @@
 from io import BytesIO
 from unittest.mock import AsyncMock, patch
 
+from app.services.user_service import is_reserved_username
+
+
+def test_is_reserved_username():
+    assert is_reserved_username("admin") is True
+    assert is_reserved_username("Admin") is True
+    assert is_reserved_username("SYSTEM") is True
+    assert is_reserved_username("nekonoverse") is True
+    assert is_reserved_username("inbox") is True
+    assert is_reserved_username("nekochan") is False
+    assert is_reserved_username("testuser") is False
+
 
 async def test_register_success(app_client, mock_valkey):
     resp = await app_client.post("/api/v1/accounts", json={
@@ -22,6 +34,26 @@ async def test_register_invalid_username(app_client, mock_valkey):
         "username": "bad user!", "email": "new@example.com", "password": "password1234"
     })
     assert resp.status_code == 422
+
+
+async def test_register_reserved_username(app_client, mock_valkey):
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "admin", "email": "admin@example.com", "password": "password1234"
+    })
+    assert resp.status_code == 422
+
+
+async def test_register_reserved_username_case_insensitive(app_client, mock_valkey):
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "Admin", "email": "admin2@example.com", "password": "password1234"
+    })
+    assert resp.status_code == 422
+
+
+async def test_username_available_reserved(app_client, mock_valkey):
+    resp = await app_client.get("/api/v1/accounts/username_available?username=system")
+    assert resp.status_code == 200
+    assert resp.json()["available"] is False
 
 
 async def test_login_success(app_client, test_user, mock_valkey):
@@ -361,3 +393,74 @@ async def test_totp_setup_unauthenticated(app_client, mock_valkey):
         "/api/v1/auth/totp/setup", json={"password": "anything"},
     )
     assert resp.status_code == 401
+
+
+# ── Turnstile CAPTCHA ──
+
+
+async def test_register_without_turnstile_config(app_client, mock_valkey):
+    """When turnstile_secret_key is not set, registration works without captcha_token."""
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "nocaptcha", "email": "nocap@example.com", "password": "password1234"
+    })
+    assert resp.status_code == 201
+
+
+async def test_register_turnstile_missing_token(app_client, mock_valkey, monkeypatch):
+    """When Turnstile is enabled, registration without captcha_token returns 422."""
+    monkeypatch.setattr("app.api.auth.settings.turnstile_secret_key", "test-secret")
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "captchauser", "email": "cap@example.com", "password": "password1234"
+    })
+    assert resp.status_code == 422
+    assert "CAPTCHA" in resp.json()["detail"]
+
+
+async def test_register_turnstile_invalid_token(app_client, mock_valkey, monkeypatch):
+    """When Turnstile is enabled, invalid captcha_token returns 422."""
+    from contextlib import asynccontextmanager
+
+    import httpx
+
+    monkeypatch.setattr("app.api.auth.settings.turnstile_secret_key", "test-secret")
+
+    @asynccontextmanager
+    async def mock_client(**kwargs):
+        class FakeClient:
+            async def post(self, url, **kw):
+                return httpx.Response(200, json={"success": False})
+        yield FakeClient()
+
+    monkeypatch.setattr("app.utils.http_client.make_async_client", mock_client)
+
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "captchauser", "email": "cap@example.com",
+        "password": "password1234", "captcha_token": "invalid-token"
+    })
+    assert resp.status_code == 422
+    assert "CAPTCHA verification failed" in resp.json()["detail"]
+
+
+async def test_register_turnstile_valid_token(app_client, mock_valkey, monkeypatch):
+    """When Turnstile is enabled and token is valid, registration succeeds."""
+    from contextlib import asynccontextmanager
+
+    import httpx
+
+    monkeypatch.setattr("app.api.auth.settings.turnstile_secret_key", "test-secret")
+
+    @asynccontextmanager
+    async def mock_client(**kwargs):
+        class FakeClient:
+            async def post(self, url, **kw):
+                return httpx.Response(200, json={"success": True})
+        yield FakeClient()
+
+    monkeypatch.setattr("app.utils.http_client.make_async_client", mock_client)
+
+    resp = await app_client.post("/api/v1/accounts", json={
+        "username": "captchauser", "email": "cap@example.com",
+        "password": "password1234", "captcha_token": "valid-token"
+    })
+    assert resp.status_code == 201
+    assert resp.json()["username"] == "captchauser"

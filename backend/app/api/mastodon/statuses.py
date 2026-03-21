@@ -136,6 +136,7 @@ async def note_to_response(
     reblogged_set: set | None = None,
     software_cache: dict | None = None,
     cards_cache: dict | None = None,
+    pinned: bool = False,
 ) -> NoteResponse:
     """Convert a Note model to a NoteResponse.
 
@@ -458,6 +459,7 @@ async def note_to_response(
         ],
         favourited=favourited,
         reblogged=bool(reblogged_set and note.id in reblogged_set),
+        pinned=pinned,
         reblog=reblog,
         media_attachments=media_attachments,
         quote=quote,
@@ -546,6 +548,7 @@ async def notes_to_responses(
     reactions_map: dict,
     db,
     actor_id=None,
+    pinned_ids: set | None = None,
 ) -> list[NoteResponse]:
     """Convert multiple notes to responses with batched emoji/hashtag resolution.
 
@@ -640,6 +643,7 @@ async def notes_to_responses(
             reblogged_set=reblogged_set,
             software_cache=software_cache,
             cards_cache=cards_cache,
+            pinned=bool(pinned_ids and n.id in pinned_ids),
         )
         result.append(resp)
     return result

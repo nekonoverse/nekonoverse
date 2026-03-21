@@ -32,6 +32,8 @@ export interface CurrentUser {
   locked: boolean;
   role: string | RoleObject;
   nekonoverse_permissions?: string[];
+  email?: string;
+  email_verified?: boolean;
 }
 
 /** Extract role name string from either string or Mastodon-compatible object. */

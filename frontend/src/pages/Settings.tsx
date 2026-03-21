@@ -1,7 +1,7 @@
-import { createSignal, createEffect, onMount, Show, For, Switch, Match } from "solid-js";
+import { createSignal, createEffect, onMount, onCleanup, Show, For, Switch, Match } from "solid-js";
 import QRCode from "qrcode";
 import { useNavigate, useParams, A } from "@solidjs/router";
-import { currentUser, authLoading, logout } from "@nekonoverse/ui/stores/auth";
+import { currentUser, authLoading, logout, fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
 import {
   theme, setTheme, fontSize, setFontSize,
   fontFamily, setFontFamily, customFontFamily, setCustomFontFamily,
@@ -21,9 +21,10 @@ import {
 import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "@nekonoverse/ui/stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
-import { changePassword } from "@nekonoverse/ui/api/settings";
+import { changePassword, startExport, getExportStatus, type DataExportStatus } from "@nekonoverse/ui/api/settings";
 import { getAuthorizedApps, revokeAuthorizedApp, type AuthorizedApp } from "@nekonoverse/ui/api/authorizedApps";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type LoginHistoryEntry } from "@nekonoverse/ui/api/sessions";
 import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
 import PasskeyManager from "../components/PasskeyManager";
 import Breadcrumb from "../components/Breadcrumb";
@@ -53,10 +54,13 @@ const categories: SettingsCategory[] = [
     labelKey: "settings.categoryAccount",
     sections: [
       { key: "security", labelKey: "settings.tabSecurity", descKey: "settings.descSecurity" },
+      { key: "email", labelKey: "settings.tabEmail", descKey: "settings.descEmail" },
       { key: "apps", labelKey: "settings.tabApps", descKey: "settings.descApps" },
       { key: "blocks", labelKey: "settings.tabBlocks", descKey: "settings.descBlocks" },
       { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
+      { key: "sessions", labelKey: "settings.tabSessions", descKey: "settings.descSessions" },
       { key: "migration", labelKey: "settings.tabMigration", descKey: "settings.descMigration" },
+      { key: "dataExport", labelKey: "settings.tabDataExport", descKey: "settings.descDataExport" },
     ],
   },
   {
@@ -122,10 +126,13 @@ export default function Settings() {
           <Match when={section() === "posting"}><PostingTab /></Match>
           <Match when={section() === "appearance"}><AppearanceTab /></Match>
           <Match when={section() === "security"}><SecurityTab onLogout={handleLogout} /></Match>
+          <Match when={section() === "email"}><EmailTab /></Match>
           <Match when={section() === "apps"}><AppsTab /></Match>
           <Match when={section() === "blocks"}><BlocksTab /></Match>
           <Match when={section() === "mutes"}><MutesTab /></Match>
+          <Match when={section() === "sessions"}><SessionsTab /></Match>
           <Match when={section() === "migration"}><MigrationTab /></Match>
+          <Match when={section() === "dataExport"}><DataExportTab /></Match>
           <Match when={section() === "about"}><AboutTab /></Match>
         </Switch>
       </Show>
@@ -696,6 +703,127 @@ function SecurityTab(props: { onLogout: () => void }) {
   );
 }
 
+function EmailTab() {
+  const { t } = useI18n();
+  const [sending, setSending] = createSignal(false);
+  const [msg, setMsg] = createSignal("");
+  const [error, setError] = createSignal("");
+  const [newEmail, setNewEmail] = createSignal("");
+  const [password, setPassword] = createSignal("");
+  const [changing, setChanging] = createSignal(false);
+
+  const user = () => currentUser();
+  const isVerified = () => user()?.email_verified ?? true;
+
+  const handleResend = async () => {
+    setMsg("");
+    setError("");
+    setSending(true);
+    try {
+      const resp = await fetch("/api/v1/email/verify", {
+        method: "POST",
+        credentials: "include",
+      });
+      if (resp.status === 429) {
+        setError("Please wait before requesting again");
+      } else if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        setError(data.detail || "Failed to send email");
+      } else {
+        setMsg(t("email.verificationSent" as any));
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleChangeEmail = async (e: Event) => {
+    e.preventDefault();
+    setMsg("");
+    setError("");
+    setChanging(true);
+    try {
+      const resp = await fetch("/api/v1/email/change", {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: newEmail(), password: password() }),
+      });
+      if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        setError(data.detail || "Failed to change email");
+      } else {
+        setMsg(t("email.changeSuccess" as any));
+        setNewEmail("");
+        setPassword("");
+        await fetchCurrentUser();
+      }
+    } catch (e: any) {
+      setError(e.message);
+    } finally {
+      setChanging(false);
+    }
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("email.title" as any)}</h3>
+        <Show when={msg()}><p class="settings-success">{msg()}</p></Show>
+        <Show when={error()}><p class="error">{error()}</p></Show>
+        <div class="settings-form-group">
+          <label>Email</label>
+          <div style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+            <span>{user()?.email || "—"}</span>
+            <span
+              class={isVerified() ? "badge badge-success" : "badge badge-warning"}
+              style={{ "font-size": "0.8em", padding: "2px 8px", "border-radius": "4px" }}
+            >
+              {isVerified() ? t("email.verified" as any) : t("email.notVerified" as any)}
+            </span>
+          </div>
+        </div>
+        <Show when={!isVerified()}>
+          <button
+            class="btn btn-small"
+            onClick={handleResend}
+            disabled={sending()}
+          >
+            {t("email.resendVerification" as any)}
+          </button>
+        </Show>
+
+        <h3 style={{ "margin-top": "24px" }}>{t("email.changeTitle" as any)}</h3>
+        <form onSubmit={handleChangeEmail}>
+          <div class="settings-form-group">
+            <label>{t("email.newEmail" as any)}</label>
+            <input
+              type="email"
+              value={newEmail()}
+              onInput={(e) => setNewEmail(e.currentTarget.value)}
+              required
+            />
+          </div>
+          <div class="settings-form-group">
+            <label>{t("email.passwordConfirm" as any)}</label>
+            <input
+              type="password"
+              value={password()}
+              onInput={(e) => setPassword(e.currentTarget.value)}
+              required
+            />
+          </div>
+          <button class="btn" type="submit" disabled={changing()}>
+            {t("email.changeButton" as any)}
+          </button>
+        </form>
+      </div>
+    </AuthGuard>
+  );
+}
+
 function AppsTab() {
   const { t } = useI18n();
   const [apps, setApps] = createSignal<AuthorizedApp[]>([]);
@@ -884,6 +1012,125 @@ function MutesTab() {
   );
 }
 
+function SessionsTab() {
+  const { t } = useI18n();
+  const [sessions, setSessions] = createSignal<SessionInfo[]>([]);
+  const [history, setHistory] = createSignal<LoginHistoryEntry[]>([]);
+  const [loading, setLoading] = createSignal(true);
+  const [revoking, setRevoking] = createSignal<string | null>(null);
+
+  const methodLabel = (method: string) => {
+    switch (method) {
+      case "password": return t("sessions.methodPassword" as any);
+      case "totp": return t("sessions.methodTotp" as any);
+      case "passkey": return t("sessions.methodPasskey" as any);
+      default: return method;
+    }
+  };
+
+  const formatDate = (iso: string) => {
+    try {
+      return new Date(iso).toLocaleString();
+    } catch {
+      return iso;
+    }
+  };
+
+  createEffect(async () => {
+    try {
+      const [s, h] = await Promise.all([getSessions(), getLoginHistory()]);
+      setSessions(s);
+      setHistory(h);
+    } catch {}
+    setLoading(false);
+  });
+
+  const handleRevoke = async (sessionId: string) => {
+    if (!confirm(t("sessions.revokeConfirm" as any))) return;
+    setRevoking(sessionId);
+    try {
+      await deleteSession(sessionId);
+      setSessions((prev) => prev.filter((s) => s.session_id !== sessionId));
+    } catch {}
+    setRevoking(null);
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("sessions.activeSessions" as any)}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={sessions().length > 0} fallback={<p class="empty">{t("sessions.noSessions" as any)}</p>}>
+            <div class="blockmute-list">
+              <For each={sessions()}>
+                {(s) => (
+                  <div class="blockmute-item">
+                    <div class="blockmute-user" style={{ cursor: "default" }}>
+                      <div>
+                        <strong>
+                          {s.ip}
+                          <Show when={s.is_current}>
+                            {" "}
+                            <span class="badge">{t("sessions.currentSession" as any)}</span>
+                          </Show>
+                        </strong>
+                        <span class="blockmute-handle">{s.user_agent}</span>
+                        <span class="blockmute-handle">{formatDate(s.created_at)}</span>
+                      </div>
+                    </div>
+                    <Show when={!s.is_current}>
+                      <button
+                        class="btn btn-small btn-danger"
+                        onClick={() => handleRevoke(s.session_id)}
+                        disabled={revoking() === s.session_id}
+                      >
+                        {t("sessions.revoke" as any)}
+                      </button>
+                    </Show>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("sessions.loginHistory" as any)}</h3>
+        <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={history().length > 0} fallback={<p class="empty">{t("sessions.noHistory" as any)}</p>}>
+            <div class="blockmute-list">
+              <For each={history()}>
+                {(entry) => (
+                  <div class="blockmute-item">
+                    <div class="blockmute-user" style={{ cursor: "default" }}>
+                      <div>
+                        <strong>
+                          {entry.ip_address}
+                          {" — "}
+                          {methodLabel(entry.method)}
+                          {" — "}
+                          <span style={{ color: entry.success ? "var(--success)" : "var(--error)" }}>
+                            {entry.success ? t("sessions.success" as any) : t("sessions.failed" as any)}
+                          </span>
+                        </strong>
+                        <Show when={entry.user_agent}>
+                          <span class="blockmute-handle">{entry.user_agent}</span>
+                        </Show>
+                        <span class="blockmute-handle">{formatDate(entry.created_at)}</span>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </For>
+            </div>
+          </Show>
+        </Show>
+      </div>
+    </AuthGuard>
+  );
+}
+
 function MigrationTab() {
   const { t } = useI18n();
   const [targetApId, setTargetApId] = createSignal("");
@@ -1010,5 +1257,140 @@ function AboutTab() {
         </button>
       </div>
     </>
+  );
+}
+
+function DataExportTab() {
+  const { t } = useI18n();
+  const [exportStatus, setExportStatus] = createSignal<DataExportStatus | null>(null);
+  const [loading, setLoading] = createSignal(false);
+  const [starting, setStarting] = createSignal(false);
+  const [error, setError] = createSignal("");
+
+  const fetchStatus = async () => {
+    setLoading(true);
+    try {
+      const status = await getExportStatus();
+      setExportStatus(status);
+    } catch {
+      // ignore
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  createEffect(() => {
+    if (currentUser()) fetchStatus();
+  });
+
+  // Poll while pending/processing
+  createEffect(() => {
+    const st = exportStatus();
+    if (st && (st.status === "pending" || st.status === "processing")) {
+      const timer = setInterval(async () => {
+        const updated = await getExportStatus();
+        setExportStatus(updated);
+        if (updated && updated.status !== "pending" && updated.status !== "processing") {
+          clearInterval(timer);
+        }
+      }, 5000);
+      onCleanup(() => clearInterval(timer));
+    }
+  });
+
+  const handleStart = async () => {
+    setError("");
+    setStarting(true);
+    try {
+      await startExport();
+      await fetchStatus();
+    } catch (e: any) {
+      if (e.message?.includes("429")) {
+        setError(t("dataExport.cooldown" as any));
+      } else {
+        setError(e.message || "Failed to start export");
+      }
+    } finally {
+      setStarting(false);
+    }
+  };
+
+  const formatSize = (bytes: number) => {
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("dataExport.title" as any)}</h3>
+        <p style={{ color: "var(--text-secondary)", "margin-bottom": "16px" }}>
+          {t("dataExport.description" as any)}
+        </p>
+
+        <Show when={error()}><p class="error">{error()}</p></Show>
+
+        <Show when={loading()}>
+          <p>{t("common.loading")}</p>
+        </Show>
+
+        <Show when={!loading()}>
+          {(() => {
+            const st = exportStatus();
+            if (!st || st.status === "expired") {
+              return (
+                <button class="btn" onClick={handleStart} disabled={starting()}>
+                  {starting() ? t("common.loading") : t("dataExport.start" as any)}
+                </button>
+              );
+            }
+            if (st.status === "pending" || st.status === "processing") {
+              return (
+                <div class="settings-form-group">
+                  <p>
+                    <span class="spinner" style={{ "margin-right": "8px" }} />
+                    {t("dataExport.processing" as any)}
+                  </p>
+                </div>
+              );
+            }
+            if (st.status === "completed") {
+              return (
+                <div class="settings-form-group">
+                  <p style={{ "margin-bottom": "8px" }}>
+                    {t("dataExport.ready" as any)}
+                    {st.size_bytes ? ` (${formatSize(st.size_bytes)})` : ""}
+                  </p>
+                  <Show when={st.expires_at}>
+                    <p style={{ "font-size": "0.85em", color: "var(--text-secondary)", "margin-bottom": "12px" }}>
+                      {t("dataExport.expiresAt" as any)}: {new Date(st.expires_at!).toLocaleDateString()}
+                    </p>
+                  </Show>
+                  <a
+                    href={`/api/v1/export/${st.id}/download`}
+                    class="btn"
+                    download
+                  >
+                    {t("dataExport.download" as any)}
+                  </a>
+                </div>
+              );
+            }
+            if (st.status === "failed") {
+              return (
+                <div class="settings-form-group">
+                  <p class="error">{st.error || t("dataExport.failed" as any)}</p>
+                  <button class="btn" onClick={handleStart} disabled={starting()}>
+                    {t("dataExport.retry" as any)}
+                  </button>
+                </div>
+              );
+            }
+            return null;
+          })()}
+        </Show>
+      </div>
+    </AuthGuard>
   );
 }
