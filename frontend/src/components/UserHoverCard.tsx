@@ -276,7 +276,7 @@ export default function UserHoverCard(props: Props) {
                         fallback={
                           <button
                             class="hover-card-follow-btn"
-                            onClick={handleFollow}
+                            onClick={(e) => { e.stopPropagation(); handleFollow(); }}
                             disabled={followLoading()}
                           >
                             {t("profile.follow")}
@@ -285,7 +285,7 @@ export default function UserHoverCard(props: Props) {
                       >
                         <button
                           class="hover-card-follow-btn following"
-                          onClick={() => setShowUnfollowModal(true)}
+                          onClick={(e) => { e.stopPropagation(); setShowUnfollowModal(true); }}
                         >
                           {t("profile.following")}
                         </button>
