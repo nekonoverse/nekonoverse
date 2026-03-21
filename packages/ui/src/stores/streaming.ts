@@ -81,9 +81,23 @@ function doConnect(path: string) {
   };
 }
 
+/** Fetch unread notification count from API and initialize signals */
+export async function fetchUnreadCount() {
+  try {
+    const resp = await fetch("/api/v1/notifications/unread_count", { credentials: "include" });
+    if (resp.ok) {
+      const data = await resp.json();
+      setUnreadCount(data.total ?? 0);
+      setUnreadMentions(data.mentions ?? 0);
+      setUnreadOther(data.other ?? 0);
+    }
+  } catch { /* ignore */ }
+}
+
 /** Start streaming for authenticated user */
 export function connect() {
   disconnect();
+  fetchUnreadCount();
   doConnect("/api/v1/streaming/user");
 }
 

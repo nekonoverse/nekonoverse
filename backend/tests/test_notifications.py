@@ -197,6 +197,48 @@ async def test_duplicate_allowed_after_read(db, mock_valkey, test_user, test_use
     assert n2 is None  # deduplicated regardless of read status
 
 
+# ── Unread Count ─────────────────────────────────────────────────────────────
+
+
+async def test_get_unread_count_empty(db, mock_valkey, test_user):
+    from app.services.notification_service import get_unread_count
+
+    counts = await get_unread_count(db, test_user.actor_id)
+    assert counts == {"total": 0, "mentions": 0, "other": 0}
+
+
+async def test_get_unread_count_with_notifications(db, mock_valkey, test_user, test_user_b):
+    from app.services.notification_service import create_notification, get_unread_count
+
+    await create_notification(db, "mention", test_user.actor_id, test_user_b.actor_id)
+    await create_notification(db, "reply", test_user.actor_id, test_user_b.actor_id)
+    await create_notification(db, "follow", test_user.actor_id, test_user_b.actor_id)
+    await db.commit()
+
+    counts = await get_unread_count(db, test_user.actor_id)
+    assert counts["total"] == 3
+    assert counts["mentions"] == 2  # mention + reply
+    assert counts["other"] == 1    # follow
+
+
+async def test_get_unread_count_after_mark_all_read(db, mock_valkey, test_user, test_user_b):
+    from app.services.notification_service import (
+        create_notification,
+        get_unread_count,
+        mark_all_as_read,
+    )
+
+    await create_notification(db, "mention", test_user.actor_id, test_user_b.actor_id)
+    await create_notification(db, "follow", test_user.actor_id, test_user_b.actor_id)
+    await db.commit()
+
+    await mark_all_as_read(db, test_user.actor_id)
+    await db.commit()
+
+    counts = await get_unread_count(db, test_user.actor_id)
+    assert counts == {"total": 0, "mentions": 0, "other": 0}
+
+
 # ── Notification API ─────────────────────────────────────────────────────────
 
 
@@ -258,6 +300,27 @@ async def test_mark_all_as_read_api(db, app_client, mock_valkey, test_user, test
     for n in resp2.json():
         assert n["read"] is True
 
+
+
+async def test_unread_count_api(db, app_client, mock_valkey, test_user, test_user_b):
+    client = authed_client_for(app_client, mock_valkey, test_user)
+
+    from app.services.notification_service import create_notification
+    await create_notification(db, "mention", test_user.actor_id, test_user_b.actor_id)
+    await create_notification(db, "follow", test_user.actor_id, test_user_b.actor_id)
+    await db.commit()
+
+    resp = await client.get("/api/v1/notifications/unread_count")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["total"] == 2
+    assert data["mentions"] == 1
+    assert data["other"] == 1
+
+
+async def test_unread_count_requires_auth(app_client):
+    resp = await app_client.get("/api/v1/notifications/unread_count")
+    assert resp.status_code == 401
 
 
 async def test_reply_with_mention_no_duplicate(db, app_client, mock_valkey, test_user, test_user_b):
