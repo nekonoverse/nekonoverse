@@ -26,6 +26,9 @@ export default function Profile() {
   const [account, setAccount] = createSignal<Account | null>(null);
   const [notes, setNotes] = createSignal<Note[]>([]);
   const [error, setError] = createSignal("");
+  const [pinnedExpanded, setPinnedExpanded] = createSignal(
+    localStorage.getItem("pinnedPostsExpanded") !== "false"
+  );
 
   // Infinite scroll state
   const [loadingMore, setLoadingMore] = createSignal(false);
@@ -750,19 +753,31 @@ export default function Profile() {
 
                 <Show when={notes().filter((n) => n.pinned).length > 0}>
                   <div class="profile-posts">
-                    <h3>{t("note.pinnedPosts")}</h3>
-                    <For each={notes().filter((n) => n.pinned)}>
-                      {(note) => (
-                        <NoteCard
-                          note={note}
-                          onReactionUpdate={() => refreshNote(note.id)}
-                          onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
-                          onReply={(n) => setReplyTarget(n)}
-                          onQuote={(n) => setQuoteTarget(n)}
-                          onThreadOpen={(id) => setThreadNoteId(id)}
-                        />
-                      )}
-                    </For>
+                    <h3
+                      class="pinned-posts-header"
+                      onClick={() => {
+                        const next = !pinnedExpanded();
+                        setPinnedExpanded(next);
+                        localStorage.setItem("pinnedPostsExpanded", String(next));
+                      }}
+                    >
+                      <span class="pinned-toggle-icon">{pinnedExpanded() ? "▼" : "▶"}</span>
+                      {t("note.pinnedPosts")} ({notes().filter((n) => n.pinned).length})
+                    </h3>
+                    <Show when={pinnedExpanded()}>
+                      <For each={notes().filter((n) => n.pinned)}>
+                        {(note) => (
+                          <NoteCard
+                            note={note}
+                            onReactionUpdate={() => refreshNote(note.id)}
+                            onDelete={(id) => setNotes((prev) => prev.filter((n) => n.id !== id))}
+                            onReply={(n) => setReplyTarget(n)}
+                            onQuote={(n) => setQuoteTarget(n)}
+                            onThreadOpen={(id) => setThreadNoteId(id)}
+                          />
+                        )}
+                      </For>
+                    </Show>
                   </div>
                 </Show>
                 <div class="profile-posts">
