@@ -1,8 +1,20 @@
-import { createSignal, createEffect, on, Show } from "solid-js";
+import { createSignal, createEffect, on, onMount, onCleanup, Show } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { register } from "@nekonoverse/ui/stores/auth";
 import { checkUsernameAvailable } from "@nekonoverse/ui/api/accounts";
+import { turnstileSiteKey } from "@nekonoverse/ui/stores/instance";
 import { useI18n } from "@nekonoverse/ui/i18n";
+
+declare global {
+  interface Window {
+    turnstile?: {
+      render: (container: string | HTMLElement, options: Record<string, unknown>) => string;
+      remove: (widgetId: string) => void;
+      getResponse: (widgetId: string) => string | undefined;
+      reset: (widgetId: string) => void;
+    };
+  }
+}
 
 interface RegisterFormProps {
   inviteRequired?: boolean;
@@ -20,8 +32,11 @@ export default function RegisterForm(props: RegisterFormProps) {
   const [loading, setLoading] = createSignal(false);
   const [pending, setPending] = createSignal(false);
   const [usernameStatus, setUsernameStatus] = createSignal<"idle" | "checking" | "available" | "taken">("idle");
+  const [captchaToken, setCaptchaToken] = createSignal("");
 
   let checkTimer: ReturnType<typeof setTimeout> | undefined;
+  let turnstileWidgetId: string | undefined;
+  let turnstileContainer: HTMLDivElement | undefined;
 
   createEffect(on(username, (val) => {
     clearTimeout(checkTimer);
@@ -43,6 +58,49 @@ export default function RegisterForm(props: RegisterFormProps) {
     }, 500);
   }));
 
+  // Turnstile dynamic loading
+  onMount(() => {
+    const siteKey = turnstileSiteKey();
+    if (!siteKey) return;
+
+    const renderWidget = () => {
+      if (!window.turnstile || !turnstileContainer) return;
+      turnstileWidgetId = window.turnstile.render(turnstileContainer, {
+        sitekey: siteKey,
+        callback: (token: string) => setCaptchaToken(token),
+        "expired-callback": () => setCaptchaToken(""),
+      });
+    };
+
+    if (window.turnstile) {
+      renderWidget();
+    } else {
+      if (!document.getElementById("cf-turnstile-script")) {
+        const script = document.createElement("script");
+        script.id = "cf-turnstile-script";
+        script.src = "https://challenges.cloudflare.com/turnstile/v0/api.js?render=explicit";
+        script.async = true;
+        script.onload = () => renderWidget();
+        document.head.appendChild(script);
+      } else {
+        // Script already loading, poll for availability
+        const poll = setInterval(() => {
+          if (window.turnstile) {
+            clearInterval(poll);
+            renderWidget();
+          }
+        }, 100);
+        onCleanup(() => clearInterval(poll));
+      }
+    }
+  });
+
+  onCleanup(() => {
+    if (turnstileWidgetId && window.turnstile) {
+      window.turnstile.remove(turnstileWidgetId);
+    }
+  });
+
   const navigate = useNavigate();
 
   const handleSubmit = async (e: Event) => {
@@ -56,6 +114,7 @@ export default function RegisterForm(props: RegisterFormProps) {
         password(),
         inviteCode() || undefined,
         reason() || undefined,
+        captchaToken() || undefined,
       );
       if (result.pending) {
         setPending(true);
@@ -64,6 +123,11 @@ export default function RegisterForm(props: RegisterFormProps) {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("auth.registerFailed"));
+      // Reset Turnstile widget on failure so user can retry
+      if (turnstileWidgetId && window.turnstile) {
+        window.turnstile.reset(turnstileWidgetId);
+        setCaptchaToken("");
+      }
     } finally {
       setLoading(false);
     }
@@ -158,12 +222,15 @@ export default function RegisterForm(props: RegisterFormProps) {
             />
           </div>
         </Show>
+        <Show when={turnstileSiteKey()}>
+          <div ref={turnstileContainer} class="turnstile-container" />
+        </Show>
         <p class="legal-links">
           <a href="/terms" target="_blank">{t("legal.terms")}</a>
           {" ・ "}
           <a href="/privacy" target="_blank">{t("legal.privacy")}</a>
         </p>
-        <button type="submit" disabled={loading() || usernameStatus() === "taken"}>
+        <button type="submit" disabled={loading() || usernameStatus() === "taken" || (!!turnstileSiteKey() && !captchaToken())}>
           {loading() ? t("auth.registering") : t("common.register")}
         </button>
         <p class="alt-action">

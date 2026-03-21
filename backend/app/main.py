@@ -345,6 +345,8 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         resp["thumbnail"] = {"url": thumbnail_url}
     if theme_color:
         resp["theme_color"] = theme_color
+    if settings.turnstile_site_key:
+        resp["turnstile_site_key"] = settings.turnstile_site_key
 
     # Legal page URLs
     try:
@@ -525,6 +527,8 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
 
     if vapid_key:
         resp["configuration"]["vapid"] = {"public_key": vapid_key}
+    if settings.turnstile_site_key:
+        resp["turnstile_site_key"] = settings.turnstile_site_key
 
     try:
         await _valkey2.set(_cache_key2, _json2.dumps(resp), ex=120)

@@ -102,6 +102,24 @@ async def register(
             detail="Too many registration attempts. Please try again later.",
         )
 
+    # Turnstile CAPTCHA verification (when configured)
+    if settings.turnstile_secret_key:
+        if not body.captcha_token:
+            raise HTTPException(status_code=422, detail="CAPTCHA token required")
+        from app.utils.http_client import make_async_client
+
+        async with make_async_client(timeout=10.0, use_proxy=False) as turnstile_client:
+            ts_resp = await turnstile_client.post(
+                "https://challenges.cloudflare.com/turnstile/v0/siteverify",
+                data={
+                    "secret": settings.turnstile_secret_key,
+                    "response": body.captcha_token,
+                    "remoteip": client_ip,
+                },
+            )
+        if not ts_resp.json().get("success"):
+            raise HTTPException(status_code=422, detail="CAPTCHA verification failed")
+
     # Determine registration mode
     mode_setting = await get_setting(db, "registration_mode")
     if mode_setting is not None:
