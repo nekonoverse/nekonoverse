@@ -1777,8 +1777,8 @@ a:hover {
 }
 
 .reaction-badge .twemoji {
-  height: 1.4em;
-  width: 1.4em;
+  height: 1.2em;
+  width: 1.2em;
 }
 
 .reaction-badge:hover {
@@ -2750,7 +2750,7 @@ a:hover {
 }
 
 .reaction-badge .custom-emoji {
-  height: 1.4em;
+  height: 1.5em;
 }
 
 /* 長い絵文字の表示モード: 共通 — バッジを親幅に収める */
