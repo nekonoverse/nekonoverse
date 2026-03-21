@@ -119,6 +119,9 @@ export default function LoginForm() {
         <button type="submit" disabled={loading()}>
           {loading() ? t("auth.loggingIn") : t("common.login")}
         </button>
+        <p class="alt-action" style={{ "margin-top": "4px", "font-size": "0.85em" }}>
+          <a href="/forgot-password">{t("auth.forgotPassword" as any)}</a>
+        </p>
         <Show when={isPasskeySupported()}>
           <div class="passkey-divider">
             <span>{t("auth.or")}</span>

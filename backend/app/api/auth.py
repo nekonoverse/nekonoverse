@@ -184,6 +184,16 @@ async def register(
         await redeem_invitation(db, invite, user)
         await db.commit()
 
+    # Send verification email if SMTP is configured
+    if settings.email_enabled:
+        try:
+            from app.services.email_service import send_verification_email
+
+            await send_verification_email(db, user)
+            await db.commit()
+        except Exception:
+            pass  # Don't fail registration if email fails
+
     # 登録レートリミットのカウントを増加
     await valkey.incr(reg_key)
     await valkey.expire(reg_key, REGISTER_LOCKOUT_TTL)
@@ -452,6 +462,7 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
         "header_static": media_proxy_url(actor.header_url) or "",
         "url": f"{settings.server_url}/@{actor.username}",
         "email": user.email,
+        "email_verified": user.email_verified,
         "created_at": _to_mastodon_datetime(user.created_at),
         "bot": actor.is_bot,
         "group": actor.type == "Group",

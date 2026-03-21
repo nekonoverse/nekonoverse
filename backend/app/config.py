@@ -26,6 +26,14 @@ class Settings(BaseSettings):
     summary_proxy_url: str | None = None
     summary_proxy_uds: str | None = None
 
+    # SMTP (optional — メール機能は設定時のみ有効)
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_user: str | None = None
+    smtp_password: str | None = None
+    smtp_from: str | None = None  # 未設定時は noreply@{domain}
+    smtp_use_tls: bool = True  # STARTTLS
+
     # Cloudflare Turnstile CAPTCHA (optional)
     turnstile_site_key: str | None = None
     turnstile_secret_key: str | None = None
@@ -71,6 +79,14 @@ class Settings(BaseSettings):
     @property
     def media_proxy_transform_enabled(self) -> bool:
         return bool(self.media_proxy_transform_url or self.media_proxy_transform_uds)
+
+    @property
+    def email_enabled(self) -> bool:
+        return bool(self.smtp_host)
+
+    @property
+    def email_from(self) -> str:
+        return self.smtp_from or f"noreply@{self.domain}"
 
     @property
     def media_proxy_transform_base_url(self) -> str:
