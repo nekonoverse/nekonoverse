@@ -15,6 +15,11 @@ from app.models.user import User
 router = APIRouter(prefix="/api/v1", tags=["email"])
 
 
+class ChangeEmailRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
 class ConfirmEmailRequest(BaseModel):
     token: str
     uid: UUID
@@ -28,6 +33,36 @@ class ResetPasswordRequest(BaseModel):
     token: str
     uid: UUID
     password: str
+
+
+@router.post("/email/change")
+async def change_email(
+    body: ChangeEmailRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Change email address. Requires password confirmation."""
+    if not bcrypt.checkpw(body.password.encode(), user.password_hash.encode()):
+        raise HTTPException(status_code=403, detail="Incorrect password")
+
+    # Check if email is already in use by another user
+    result = await db.execute(
+        select(User).where(User.email == body.email, User.id != user.id)
+    )
+    if result.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail="Email already in use")
+
+    user.email = body.email
+    user.email_verified = False
+    user.email_verification_token = None
+
+    if settings.email_enabled:
+        from app.services.email_service import send_verification_email
+
+        await send_verification_email(db, user)
+
+    await db.commit()
+    return {"message": "Email updated. Please check your inbox for verification."}
 
 
 @router.post("/email/verify")
