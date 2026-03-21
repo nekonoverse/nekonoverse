@@ -73,6 +73,11 @@ async def username_available(
     if not re.match(r"^[a-zA-Z0-9_]+$", username) or len(username) < 1:
         return {"available": False}
 
+    from app.services.user_service import is_reserved_username
+
+    if is_reserved_username(username):
+        return {"available": False}
+
     result = await db.execute(
         select(Actor.id).where(
             func.lower(Actor.username) == username.lower(),

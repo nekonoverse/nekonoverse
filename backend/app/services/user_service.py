@@ -10,6 +10,28 @@ from app.models.actor import Actor
 from app.models.user import User
 from app.utils.crypto import generate_rsa_keypair
 
+# ユーザー登録で使用できない予約語（すべて小文字で比較）
+RESERVED_USERNAMES: frozenset[str] = frozenset({
+    # システム関連
+    "system", "nekonoverse", "admin", "administrator", "moderator",
+    "instance", "relay", "root",
+    # ActivityPub関連
+    "actor", "inbox", "outbox", "followers", "following",
+    "featured", "collections",
+    # ルーティング衝突
+    "api", "auth", "oauth", "media", "users", "notes",
+    "notifications", "settings", "about", "search", "explore",
+    "tags", "nodeinfo", "well_known",
+    # なりすまし防止
+    "support", "help", "security", "abuse",
+    "postmaster", "webmaster", "noreply", "no_reply",
+})
+
+
+def is_reserved_username(username: str) -> bool:
+    """Check if a username is reserved (case-insensitive)."""
+    return username.lower() in RESERVED_USERNAMES
+
 
 async def create_user(
     db: AsyncSession,
@@ -22,6 +44,8 @@ async def create_user(
     registration_reason: str | None = None,
 ) -> User:
     username = username.lower()
+    if is_reserved_username(username):
+        raise ValueError("This username is reserved")
     # Check if username or email already exists
     existing_actor = await db.execute(
         select(Actor).where(Actor.username == username, Actor.domain.is_(None))
