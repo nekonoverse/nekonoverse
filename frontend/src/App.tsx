@@ -1,7 +1,7 @@
 import { Router, Route, useIsRouting } from "@solidjs/router";
 import { lazy, onMount, onCleanup, createEffect, createSignal, Show, Suspense, type ParentProps } from "solid-js";
 import { I18nProvider } from "@nekonoverse/ui/i18n";
-import { initTheme } from "@nekonoverse/ui/stores/theme";
+import { initTheme, inputMode } from "@nekonoverse/ui/stores/theme";
 import { fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
 import {
   instance,
@@ -12,6 +12,7 @@ import {
 import Navbar from "./components/layout/Navbar";
 import SwipeBack from "./components/SwipeBack";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";
+import InputModeModal from "./components/InputModeModal";
 
 initTheme();
 checkClientVersion();
@@ -100,9 +101,14 @@ function Layout(props: ParentProps) {
 }
 
 export default function App() {
+  const [showInputModal, setShowInputModal] = createSignal(inputMode() === null);
+
   return (
     <I18nProvider>
       <PWAUpdateBanner />
+      <Show when={showInputModal()}>
+        <InputModeModal onClose={() => setShowInputModal(false)} />
+      </Show>
       <Router root={Layout}>
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />

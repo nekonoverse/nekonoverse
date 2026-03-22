@@ -21,6 +21,7 @@ import {
 } from "@nekonoverse/ui/utils/recentEmojis";
 import Emoji from "../Emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
+import { isTouchMode } from "@nekonoverse/ui/stores/theme";
 
 // スクロールで近づいた時だけ中身をレンダリングするコンポーネント
 function LazyCategory(props: {
@@ -71,12 +72,10 @@ export default function EmojiPicker(props: Props) {
   const [recentEmojis, setRecentEmojis] =
     createSignal<RecentEmoji[]>(getRecentEmojis());
 
-  // iOSのゴーストタップ防止: タッチデバイスでのみ300ms間クリックをブロック
-  const isTouchDevice =
-    typeof window !== "undefined" &&
-    ("ontouchstart" in window || navigator.maxTouchPoints > 0);
-  const [ready, setReady] = createSignal(!isTouchDevice);
-  const readyTimer = isTouchDevice
+  // iOSのゴーストタップ防止: タッチモードでのみ300ms間クリックをブロック
+  const touch = isTouchMode();
+  const [ready, setReady] = createSignal(!touch);
+  const readyTimer = touch
     ? setTimeout(() => setReady(true), 300)
     : undefined;
   onCleanup(() => {

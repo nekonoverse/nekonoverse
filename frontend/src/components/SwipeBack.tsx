@@ -1,16 +1,12 @@
 import { createSignal, onCleanup, Show } from "solid-js";
-
-// Detect touch-primary device (no hover capability)
-const isTouchDevice = () =>
-  typeof window !== "undefined" &&
-  (("ontouchstart" in window) || window.matchMedia("(hover: none)").matches);
+import { isTouchMode } from "@nekonoverse/ui/stores/theme";
 
 const EDGE_ZONE = 50;       // px from left edge
 const THRESHOLD = 100;      // px to trigger back
 const ANGLE_LIMIT = 30;     // degrees — horizontal lock
 
 export default function SwipeBack() {
-  if (!isTouchDevice()) return null;
+  if (!isTouchMode()) return null;
 
   const [active, setActive] = createSignal(false);
   const [offsetX, setOffsetX] = createSignal(0);
