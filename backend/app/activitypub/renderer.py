@@ -2,6 +2,7 @@
 
 from datetime import datetime
 
+from app.activitypub import resolve_source_media_type
 from app.config import settings
 from app.models.actor import Actor
 from app.models.note import Note
@@ -142,7 +143,10 @@ def render_note(note: Note) -> dict:
     if getattr(note, "updated_at", None):
         data["updated"] = _iso_z(note.updated_at)
     if note.source:
-        data["source"] = {"content": note.source, "mediaType": "text/plain"}
+        user = getattr(note.actor, "local_user", None)
+        prefs = user.preferences if user else None
+        media_type = resolve_source_media_type(note.source, prefs)
+        data["source"] = {"content": note.source, "mediaType": media_type}
         data["_misskey_content"] = note.source
     if note.sensitive:
         data["sensitive"] = True

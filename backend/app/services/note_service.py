@@ -8,6 +8,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.activitypub import extract_mfm_source
 from app.config import settings
 from app.models.actor import Actor
 from app.models.note import Note
@@ -925,14 +926,7 @@ async def fetch_remote_note(
         if not isinstance(raw_content, str):
             raw_content = ""
     content = sanitize_html(raw_content)
-    source_data = data.get("source")
-    source = None
-    if isinstance(source_data, dict):
-        source = source_data.get("content")
-    if source is None:
-        misskey_content = data.get("_misskey_content")
-        if isinstance(misskey_content, str):
-            source = misskey_content
+    source = extract_mfm_source(data)
 
     # 可視性判定
     to_list = data.get("to", [])

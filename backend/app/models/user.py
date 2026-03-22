@@ -49,6 +49,7 @@ class User(Base):
     password_reset_sent_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True, default=None
     )
+    preferences: Mapped[dict | None] = mapped_column(JSON, nullable=True, default=None)
     approval_status: Mapped[str] = mapped_column(
         String(20),
         default="approved",
