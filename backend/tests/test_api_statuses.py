@@ -631,3 +631,53 @@ async def test_unpin_not_found(authed_client, mock_valkey):
 async def test_pin_unauthenticated(app_client, mock_valkey):
     resp = await app_client.post(f"/api/v1/statuses/{uuid.uuid4()}/pin")
     assert resp.status_code == 401
+
+
+# --- IDOR tests ---
+
+
+async def test_delete_status_not_owner(authed_client, test_user_b, db, app_client, mock_valkey):
+    """Cannot delete another user's note."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Not yours to delete", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.delete(f"/api/v1/statuses/{note_id}")
+    assert resp.status_code == 403
+
+
+async def test_pin_status_not_owner(authed_client, test_user_b, db, app_client, mock_valkey):
+    """Cannot pin another user's note."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Not yours to pin", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.post(f"/api/v1/statuses/{note_id}/pin")
+    assert resp.status_code == 422
+    assert "own" in resp.json()["detail"].lower()
+
+
+async def test_unpin_status_not_owner(authed_client, test_user_b, db, app_client, mock_valkey):
+    """Cannot unpin another user's note (returns 422 since it's not in their pins)."""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Not yours to unpin", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    await authed_client.post(f"/api/v1/statuses/{note_id}/pin")
+
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.post(f"/api/v1/statuses/{note_id}/unpin")
+    assert resp.status_code == 422

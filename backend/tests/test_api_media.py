@@ -163,3 +163,44 @@ async def test_upload_audio_mp3(mock_s3, authed_client, test_user):
     data = resp.json()
     assert data["type"] == "audio"
     assert data["id"]
+
+
+# --- IDOR tests ---
+
+
+@patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
+async def test_delete_media_other_user(
+    mock_s3, authed_client, test_user_b, app_client, mock_valkey
+):
+    """Cannot delete another user's media."""
+    mock_s3.return_value = "etag"
+    upload_resp = await authed_client.post(
+        "/api/v1/media",
+        files={"file": ("test.png", BytesIO(PNG_1x1), "image/png")},
+    )
+    file_id = upload_resp.json()["id"]
+
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.delete(f"/api/v1/media/{file_id}")
+    assert resp.status_code == 404
+
+
+@patch("app.services.drive_service.upload_file", new_callable=AsyncMock)
+async def test_put_media_other_user(
+    mock_s3, authed_client, test_user_b, app_client, mock_valkey
+):
+    """Cannot update another user's media description."""
+    mock_s3.return_value = "etag"
+    upload_resp = await authed_client.post(
+        "/api/v1/media",
+        files={"file": ("test.png", BytesIO(PNG_1x1), "image/png")},
+    )
+    file_id = upload_resp.json()["id"]
+
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.put(f"/api/v1/media/{file_id}", json={"description": "hijacked"})
+    assert resp.status_code == 404
