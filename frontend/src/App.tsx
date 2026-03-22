@@ -1,7 +1,7 @@
 import { Router, Route, useIsRouting } from "@solidjs/router";
 import { lazy, onMount, onCleanup, createEffect, createSignal, Show, Suspense, type ParentProps } from "solid-js";
 import { I18nProvider } from "@nekonoverse/ui/i18n";
-import { initTheme, inputMode } from "@nekonoverse/ui/stores/theme";
+import { initTheme } from "@nekonoverse/ui/stores/theme";
 import { fetchCurrentUser, currentUser } from "@nekonoverse/ui/stores/auth";
 import {
   instance,
@@ -101,8 +101,9 @@ function Layout(props: ParentProps) {
 }
 
 export default function App() {
-  const [dismissed, setDismissed] = createSignal(false);
-  const needsInputMode = () => !dismissed() && inputMode() === null && !!currentUser();
+  const alreadySet = localStorage.getItem("nekonoverse:input-mode") !== null;
+  const [dismissed, setDismissed] = createSignal(alreadySet);
+  const needsInputMode = () => !dismissed() && !!currentUser();
 
   return (
     <I18nProvider>
