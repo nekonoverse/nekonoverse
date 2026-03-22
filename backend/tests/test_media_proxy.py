@@ -29,7 +29,7 @@ def test_proxy_url_empty():
 def test_proxy_url_remote_signed():
     """Remote URLs should be rewritten to proxy URL with HMAC."""
     result = media_proxy_url("https://remote.example/img.png")
-    assert result.startswith("/api/v1/media/proxy?url=")
+    assert "/api/v1/media/proxy?url=" in result
     assert "&h=" in result
     # Extract h param
     h = result.split("&h=")[1]
@@ -247,5 +247,5 @@ async def test_attachment_url_proxied(authed_client, db, mock_valkey):
     data = resp.json()
     assert len(data["media_attachments"]) == 1
     media_url = data["media_attachments"][0]["url"]
-    assert media_url.startswith("/api/v1/media/proxy?url=")
+    assert "/api/v1/media/proxy?url=" in media_url
     assert "media.example" in media_url

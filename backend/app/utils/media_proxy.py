@@ -31,7 +31,7 @@ def media_proxy_url(
     h = _hmac.new(
         _media_proxy_signing_key(), original_url.encode(), hashlib.sha256,
     ).hexdigest()[:32]
-    url = f"/api/v1/media/proxy?url={quote(original_url, safe='')}&h={h}"
+    url = f"{settings.server_url}/api/v1/media/proxy?url={quote(original_url, safe='')}&h={h}"
     if variant:
         url += f"&{variant}=1"
     if static:
