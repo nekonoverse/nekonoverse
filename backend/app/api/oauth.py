@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlparse
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
-from fastapi.responses import HTMLResponse, RedirectResponse
+from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,76 @@ TOKEN_LIFETIME = timedelta(days=90)
 # OAuthレート制限
 OAUTH_MAX_ATTEMPTS = 20
 OAUTH_LOCKOUT_TTL = 300  # 5 minutes
+
+# Passkey JS を外部ファイルとして配信 (CSP の script-src 'self' 対応)
+PASSKEY_JS = """\
+function b64url(buf) {
+  var b = new Uint8Array(buf), s = "";
+  for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
+  return btoa(s).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=/g, "");
+}
+function b64dec(s) {
+  s = s.replace(/-/g, "+").replace(/_/g, "/");
+  while (s.length % 4) s += "=";
+  var bin = atob(s), a = new Uint8Array(bin.length);
+  for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
+  return a.buffer;
+}
+async function passkeyLogin() {
+  var errEl = document.getElementById("passkey-error");
+  errEl.style.display = "none";
+  try {
+    var resp = await fetch("/api/v1/passkey/authenticate/options", {method:"POST"});
+    if (!resp.ok) throw new Error("Failed to get options");
+    var opts = await resp.json();
+    var cid = opts.challengeId;
+    delete opts.challengeId;
+    opts.challenge = b64dec(opts.challenge);
+    if (opts.allowCredentials) {
+      opts.allowCredentials = opts.allowCredentials.map(function(c) {
+        return Object.assign({}, c, {id: b64dec(c.id), type: "public-key"});
+      });
+    }
+    var cred = await navigator.credentials.get({publicKey: opts});
+    if (!cred) throw new Error("Cancelled");
+    var r = cred.response;
+    var payload = JSON.stringify({
+      challengeId: cid, id: cred.id, rawId: b64url(cred.rawId),
+      type: cred.type,
+      response: {
+        authenticatorData: b64url(r.authenticatorData),
+        clientDataJSON: b64url(r.clientDataJSON),
+        signature: b64url(r.signature),
+        userHandle: r.userHandle ? b64url(r.userHandle) : null
+      }
+    });
+    document.getElementById("passkey_credential").value = payload;
+    document.getElementById("username").removeAttribute("required");
+    document.getElementById("password").removeAttribute("required");
+    document.getElementById("login-form").submit();
+  } catch(e) {
+    errEl.textContent = e.message || "Passkey authentication failed";
+    errEl.style.display = "block";
+  }
+}
+document.addEventListener("DOMContentLoaded", function() {
+  if (window.PublicKeyCredential) {
+    document.getElementById("passkey-section").style.display = "block";
+  }
+  var btn = document.getElementById("passkey-btn");
+  if (btn) btn.addEventListener("click", passkeyLogin);
+});
+"""
+
+
+@router.get("/oauth/passkey.js")
+async def passkey_js():
+    """Serve passkey authentication script as external JS (CSP compatible)."""
+    return Response(
+        content=PASSKEY_JS,
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
 
 
 def _hash_token(token: str) -> str:
@@ -666,63 +736,10 @@ button:hover {{ background: #4f50e6; }}
 </form>
 <div id="passkey-section" style="display:none">
 <div class="divider">or</div>
-<button id="passkey-btn" onclick="passkeyLogin()">Sign in with Passkey</button>
+<button id="passkey-btn" type="button">Sign in with Passkey</button>
 <p id="passkey-error"></p>
 </div>
-<script>
-function b64url(buf) {{
-  var b = new Uint8Array(buf), s = "";
-  for (var i = 0; i < b.length; i++) s += String.fromCharCode(b[i]);
-  return btoa(s).replace(/\\+/g, "-").replace(/\\//g, "_").replace(/=/g, "");
-}}
-function b64dec(s) {{
-  s = s.replace(/-/g, "+").replace(/_/g, "/");
-  while (s.length % 4) s += "=";
-  var bin = atob(s), a = new Uint8Array(bin.length);
-  for (var i = 0; i < bin.length; i++) a[i] = bin.charCodeAt(i);
-  return a.buffer;
-}}
-async function passkeyLogin() {{
-  var errEl = document.getElementById("passkey-error");
-  errEl.style.display = "none";
-  try {{
-    var resp = await fetch("/api/v1/passkey/authenticate/options", {{method:"POST"}});
-    if (!resp.ok) throw new Error("Failed to get options");
-    var opts = await resp.json();
-    var cid = opts.challengeId;
-    delete opts.challengeId;
-    opts.challenge = b64dec(opts.challenge);
-    if (opts.allowCredentials) {{
-      opts.allowCredentials = opts.allowCredentials.map(function(c) {{
-        return Object.assign({{}}, c, {{id: b64dec(c.id), type: "public-key"}});
-      }});
-    }}
-    var cred = await navigator.credentials.get({{publicKey: opts}});
-    if (!cred) throw new Error("Cancelled");
-    var r = cred.response;
-    var payload = JSON.stringify({{
-      challengeId: cid, id: cred.id, rawId: b64url(cred.rawId),
-      type: cred.type,
-      response: {{
-        authenticatorData: b64url(r.authenticatorData),
-        clientDataJSON: b64url(r.clientDataJSON),
-        signature: b64url(r.signature),
-        userHandle: r.userHandle ? b64url(r.userHandle) : null
-      }}
-    }});
-    document.getElementById("passkey_credential").value = payload;
-    document.getElementById("username").removeAttribute("required");
-    document.getElementById("password").removeAttribute("required");
-    document.getElementById("login-form").submit();
-  }} catch(e) {{
-    errEl.textContent = e.message || "Passkey authentication failed";
-    errEl.style.display = "block";
-  }}
-}}
-if (window.PublicKeyCredential) {{
-  document.getElementById("passkey-section").style.display = "block";
-}}
-</script>
+<script src="/oauth/passkey.js"></script>
 </body></html>"""
     )
 
