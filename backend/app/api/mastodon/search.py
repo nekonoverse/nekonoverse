@@ -41,7 +41,7 @@ async def search(
 
     if search_statuses:
         actor_id = user.actor_id if user else None
-        statuses = await _search_statuses(db, q, limit, actor_id)
+        statuses = await _search_statuses(db, q, limit, actor_id, resolve)
 
     if search_hashtags:
         hashtags = await _search_hashtags(db, q, limit)
@@ -96,10 +96,34 @@ async def _search_accounts(
 
 
 async def _search_statuses(
-    db: AsyncSession, q: str, limit: int, current_actor_id=None
+    db: AsyncSession,
+    q: str,
+    limit: int,
+    current_actor_id=None,
+    resolve: bool = False,
 ) -> list[dict]:
-    """Search public statuses by content."""
+    """Search public statuses by content or resolve by URL."""
     from app.api.mastodon.statuses import notes_to_responses
+
+    # URL形式の場合はリモートノート照会を試みる
+    url = q.strip()
+    if resolve and url.startswith("https://"):
+        from app.services.note_service import fetch_remote_note, get_note_by_ap_id
+
+        note = await get_note_by_ap_id(db, url)
+        if not note:
+            try:
+                note = await fetch_remote_note(db, url)
+            except Exception:
+                pass
+        if note:
+            reactions_map = await get_reaction_summaries(
+                db, [note.id], current_actor_id
+            )
+            return await notes_to_responses(
+                [note], reactions_map, db, actor_id=current_actor_id
+            )
+        return []
 
     pattern = f"%{_escape_like(q)}%"
     query = (
@@ -123,7 +147,9 @@ async def _search_statuses(
 
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(db, note_ids, current_actor_id)
-    return await notes_to_responses(notes, reactions_map, db, actor_id=current_actor_id)
+    return await notes_to_responses(
+        notes, reactions_map, db, actor_id=current_actor_id
+    )
 
 
 async def _search_hashtags(db: AsyncSession, q: str, limit: int) -> list[dict]:

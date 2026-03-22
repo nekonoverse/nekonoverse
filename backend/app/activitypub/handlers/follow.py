@@ -76,36 +76,57 @@ async def handle_follow(db: AsyncSession, activity: dict):
         logger.info("Auto-accepted follow from %s to %s", actor_ap_id, target_ap_id)
 
 
-async def handle_accept(db: AsyncSession, activity: dict):
-    """Handle Accept(Follow) -- remote server accepted our follow request."""
+async def _resolve_follow_from_object(
+    db: AsyncSession, activity: dict
+) -> Follow | None:
+    """Resolve Follow record from Accept/Reject object (dict or string URI)."""
+    accept_actor = activity.get("actor")
     inner = activity.get("object")
+
+    if isinstance(inner, str):
+        # object is a URI reference to the Follow activity (e.g. Mitra)
+        if not accept_actor:
+            logger.warning("Accept/Reject missing actor field for string object %s", inner)
+            return None
+        result = await db.execute(select(Follow).where(Follow.ap_id == inner))
+        follow = result.scalar_one_or_none()
+        if not follow:
+            logger.warning("No follow found for ap_id %s", inner)
+            return None
+        # Verify Accept/Reject actor matches the follow target
+        target = await get_actor_by_ap_id(db, accept_actor)
+        if not target or target.id != follow.following_id:
+            logger.warning(
+                "Accept/Reject actor mismatch: actor=%s does not match follow target",
+                accept_actor,
+            )
+            return None
+        return follow
+
     if not isinstance(inner, dict):
-        return
+        return None
 
     if inner.get("type") != "Follow":
-        return
+        return None
 
     # M-16: Accept actorがフォロー先(inner object)と一致するか検証
-    accept_actor = activity.get("actor")
     target_ap_id = inner.get("object")
     if accept_actor and target_ap_id and accept_actor != target_ap_id:
         logger.warning(
-            "Accept actor mismatch: accept.actor=%s, follow.object=%s",
+            "Accept/Reject actor mismatch: actor=%s, follow.object=%s",
             accept_actor,
             target_ap_id,
         )
-        return
+        return None
 
     actor_ap_id = inner.get("actor")
-
     if not actor_ap_id or not target_ap_id:
-        return
+        return None
 
     follower = await get_actor_by_ap_id(db, actor_ap_id)
     target = await get_actor_by_ap_id(db, target_ap_id)
-
     if not follower or not target:
-        return
+        return None
 
     result = await db.execute(
         select(Follow).where(
@@ -113,52 +134,22 @@ async def handle_accept(db: AsyncSession, activity: dict):
             Follow.following_id == target.id,
         )
     )
-    follow = result.scalar_one_or_none()
+    return result.scalar_one_or_none()
+
+
+async def handle_accept(db: AsyncSession, activity: dict):
+    """Handle Accept(Follow) -- remote server accepted our follow request."""
+    follow = await _resolve_follow_from_object(db, activity)
     if follow:
         follow.accepted = True
         await db.commit()
-        logger.info("Follow accepted: %s -> %s", actor_ap_id, target_ap_id)
+        logger.info("Follow accepted: follow.ap_id=%s", follow.ap_id)
 
 
 async def handle_reject(db: AsyncSession, activity: dict):
     """Handle Reject(Follow) -- remote server rejected our follow request."""
-    inner = activity.get("object")
-    if not isinstance(inner, dict):
-        return
-
-    if inner.get("type") != "Follow":
-        return
-
-    # M-16: Reject actorがフォロー先(inner object)と一致するか検証
-    reject_actor = activity.get("actor")
-    target_ap_id = inner.get("object")
-    if reject_actor and target_ap_id and reject_actor != target_ap_id:
-        logger.warning(
-            "Reject actor mismatch: reject.actor=%s, follow.object=%s",
-            reject_actor,
-            target_ap_id,
-        )
-        return
-
-    actor_ap_id = inner.get("actor")
-
-    if not actor_ap_id or not target_ap_id:
-        return
-
-    follower = await get_actor_by_ap_id(db, actor_ap_id)
-    target = await get_actor_by_ap_id(db, target_ap_id)
-
-    if not follower or not target:
-        return
-
-    result = await db.execute(
-        select(Follow).where(
-            Follow.follower_id == follower.id,
-            Follow.following_id == target.id,
-        )
-    )
-    follow = result.scalar_one_or_none()
+    follow = await _resolve_follow_from_object(db, activity)
     if follow:
         await db.delete(follow)
         await db.commit()
-        logger.info("Follow rejected: %s -> %s", actor_ap_id, target_ap_id)
+        logger.info("Follow rejected: follow.ap_id=%s", follow.ap_id)

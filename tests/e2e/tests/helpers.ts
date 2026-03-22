@@ -6,6 +6,9 @@ import { type Page, type APIRequestContext, expect } from "@playwright/test";
  * verify_credentials API call to confirm the session is established.
  */
 export async function loginAsAdmin(page: Page) {
+  await page.addInitScript(() =>
+    localStorage.setItem("nekonoverse:input-mode", "auto"),
+  );
   await page.goto("/login");
   await page.waitForSelector("#username", { timeout: 15_000 });
   await page.fill("#username", "admin");
@@ -178,6 +181,9 @@ export async function loginAsUser(
   username: string,
   password: string,
 ) {
+  await page.addInitScript(() =>
+    localStorage.setItem("nekonoverse:input-mode", "auto"),
+  );
   await page.goto("/login");
   await page.waitForSelector("#username", { timeout: 15_000 });
   await page.fill("#username", username);

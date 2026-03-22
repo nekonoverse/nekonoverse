@@ -1,7 +1,6 @@
 """Drive file management service."""
 
 import base64
-import io
 import logging
 import math
 import uuid
@@ -26,7 +25,35 @@ ALLOWED_IMAGE_TYPES = {
     "image/apng",
 }
 
-MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+ALLOWED_VIDEO_TYPES = {
+    "video/mp4",
+    "video/webm",
+    "video/quicktime",
+    "video/x-matroska",
+}
+
+ALLOWED_AUDIO_TYPES = {
+    "audio/mpeg",
+    "audio/ogg",
+    "audio/wav",
+    "audio/flac",
+    "audio/aac",
+    "audio/webm",
+    "audio/mp4",
+}
+
+ALLOWED_MEDIA_TYPES = ALLOWED_IMAGE_TYPES | ALLOWED_VIDEO_TYPES | ALLOWED_AUDIO_TYPES
+
+def _max_image_size() -> int:
+    return settings.max_image_size_mb * 1024 * 1024
+
+
+def _max_video_size() -> int:
+    return settings.max_video_size_mb * 1024 * 1024
+
+
+def _max_audio_size() -> int:
+    return settings.max_audio_size_mb * 1024 * 1024
 
 # マジックバイト: MIMEタイプと実際のファイルヘッダーの対応
 _MAGIC_BYTES: dict[str, list[bytes]] = {
@@ -37,16 +64,32 @@ _MAGIC_BYTES: dict[str, list[bytes]] = {
     "image/webp": [b"RIFF"],  # RIFF????WEBP
     # L-12: AVIFのftypボックスチェック追加
     "image/avif": [b"\x00\x00\x00"],  # ftypボックス (先頭4バイトはサイズ、8-11バイトが"ftyp")
+    # Video
+    "video/webm": [b"\x1a\x45\xdf\xa3"],  # EBML header (Matroska/WebM)
+    "video/x-matroska": [b"\x1a\x45\xdf\xa3"],
+    # Audio
+    "audio/mpeg": [b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"],  # ID3 tag or MPEG sync
+    "audio/ogg": [b"OggS"],
+    "audio/wav": [b"RIFF"],  # RIFF????WAVE
+    "audio/flac": [b"fLaC"],
+    "audio/webm": [b"\x1a\x45\xdf\xa3"],
 }
 
 
 def _validate_magic_bytes(data: bytes, mime_type: str) -> None:
     """Validate that file content matches the declared MIME type."""
-    # L-12: AVIFのftypボックス検証
-    if mime_type == "image/avif":
+    # ftyp ボックスベースのフォーマット (AVIF, MP4, QuickTime, AAC/M4A)
+    _FTYP_BRANDS: dict[str, set[bytes]] = {
+        "image/avif": {b"avif", b"avis", b"mif1"},
+        "video/mp4": {b"isom", b"iso2", b"iso5", b"iso6", b"mp41", b"mp42", b"avc1", b"dash"},
+        "video/quicktime": {b"qt  "},
+        "audio/aac": {b"isom", b"iso2", b"M4A ", b"mp42"},
+        "audio/mp4": {b"isom", b"iso2", b"M4A ", b"mp42"},
+    }
+    brands = _FTYP_BRANDS.get(mime_type)
+    if brands is not None:
         if len(data) >= 12 and data[4:8] == b"ftyp":
-            ftyp_brand = data[8:12]
-            if ftyp_brand in (b"avif", b"avis", b"mif1"):
+            if data[8:12] in brands:
                 return
         raise ValueError(f"File content does not match declared type {mime_type}")
 
@@ -148,10 +191,17 @@ async def upload_drive_file(
     description: str | None = None,
     server_file: bool = False,
 ) -> DriveFile:
-    if len(data) > MAX_FILE_SIZE:
-        raise ValueError(f"File too large (max {MAX_FILE_SIZE // 1024 // 1024} MB)")
+    # ファイルサイズ上限をMIMEタイプに応じて分岐
+    if mime_type.startswith("video/"):
+        max_size = _max_video_size()
+    elif mime_type.startswith("audio/"):
+        max_size = _max_audio_size()
+    else:
+        max_size = _max_image_size()
+    if len(data) > max_size:
+        raise ValueError(f"File too large (max {max_size // 1024 // 1024} MB)")
 
-    if mime_type not in ALLOWED_IMAGE_TYPES:
+    if mime_type not in ALLOWED_MEDIA_TYPES:
         raise ValueError(f"Unsupported file type: {mime_type}")
 
     # Quota check (skip for server files)
@@ -165,15 +215,19 @@ async def upload_drive_file(
     # マジックバイト検証: 申告されたMIMEタイプと実際のファイル内容が一致するか確認
     _validate_magic_bytes(data, mime_type)
 
-    # Strip EXIF metadata before storing (defense-in-depth for privacy)
-    data = strip_exif(data, mime_type)
+    # Strip EXIF metadata before storing (defense-in-depth for privacy, images only)
+    if mime_type.startswith("image/"):
+        data = strip_exif(data, mime_type)
 
     file_id = uuid.uuid4()
     ext = _extension_for_mime(mime_type)
     prefix = "server" if server_file else f"u/{owner.id}" if owner else "server"
     s3_key = f"{prefix}/{file_id}{ext}"
 
-    width, height = _get_image_dimensions(data, mime_type)
+    # 画像のみ寸法を抽出（動画・音声はNone）
+    width, height = (
+        _get_image_dimensions(data, mime_type) if mime_type.startswith("image/") else (None, None)
+    )
 
     await upload_file(s3_key, data, mime_type)
 
@@ -331,6 +385,17 @@ def _extension_for_mime(mime_type: str) -> str:
         "image/webp": ".webp",
         "image/avif": ".avif",
         "image/apng": ".apng",
+        "video/mp4": ".mp4",
+        "video/webm": ".webm",
+        "video/quicktime": ".mov",
+        "video/x-matroska": ".mkv",
+        "audio/mpeg": ".mp3",
+        "audio/ogg": ".ogg",
+        "audio/wav": ".wav",
+        "audio/flac": ".flac",
+        "audio/aac": ".aac",
+        "audio/webm": ".weba",
+        "audio/mp4": ".m4a",
     }.get(mime_type, "")
 
 

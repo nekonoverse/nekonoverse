@@ -173,6 +173,18 @@ async def test_instance_has_configuration(app_client, mock_valkey):
     assert "polls" in body["configuration"]
 
 
+async def test_instance_media_size_limits(app_client, mock_valkey):
+    """GET /api/v1/instance returns configured media size limits."""
+    resp = await app_client.get("/api/v1/instance")
+    assert resp.status_code == 200
+    ma = resp.json()["configuration"]["media_attachments"]
+    assert ma["image_size_limit"] == 10 * 1024 * 1024
+    assert ma["video_size_limit"] == 40 * 1024 * 1024
+    assert ma["audio_size_limit"] == 10 * 1024 * 1024
+    assert "video/mp4" in ma["supported_mime_types"]
+    assert "audio/mpeg" in ma["supported_mime_types"]
+
+
 async def test_instance_has_rules_and_contact(app_client, mock_valkey):
     """GET /api/v1/instance includes rules and contact."""
     resp = await app_client.get("/api/v1/instance")

@@ -8,11 +8,12 @@ import {
   timeFormat, setTimeFormat,
   cursorStyle, setCursorStyle,
   wideEmojiStyle, setWideEmojiStyle,
+  inputMode, setInputMode,
   hideNonFollowedReplies, setHideNonFollowedReplies,
   nyaizeEnabled, setNyaizeEnabled,
   reduceMfmMotion, setReduceMfmMotion,
   FONT_FAMILY_MAP,
-  type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle, type WideEmojiStyle,
+  type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle, type WideEmojiStyle, type InputMode,
 } from "@nekonoverse/ui/stores/theme";
 import {
   defaultVisibility, setDefaultVisibility,
@@ -280,6 +281,24 @@ function AppearanceTab() {
             <button
               class={`theme-btn${wideEmojiStyle() === item.key ? " theme-active" : ""}`}
               onClick={() => setWideEmojiStyle(item.key)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.inputMode" as any)}</h3>
+        <div class="theme-selector">
+          {([
+            { key: "auto" as InputMode, label: t("settings.inputModeAuto" as any) },
+            { key: "touch" as InputMode, label: t("settings.inputModeTouch" as any) },
+            { key: "pc" as InputMode, label: t("settings.inputModePc" as any) },
+          ]).map((item) => (
+            <button
+              class={`theme-btn${(inputMode() ?? "auto") === item.key ? " theme-active" : ""}`}
+              onClick={() => setInputMode(item.key)}
             >
               {item.label}
             </button>

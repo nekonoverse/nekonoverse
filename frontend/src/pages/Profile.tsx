@@ -1,5 +1,5 @@
 import { createSignal, createResource, createEffect, on, onMount, onCleanup, Show, For, Index, batch } from "solid-js";
-import { A, useParams } from "@solidjs/router";
+import { A, useNavigate, useParams } from "@solidjs/router";
 import { lookupAccount, getAccountStatuses, getRelationship, followAccount, unfollowAccount, blockAccount, unblockAccount, muteAccount, unmuteAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { updateAvatar, updateHeader, updateProfile, deleteAvatar, deleteHeader, updateHeaderFocus } from "@nekonoverse/ui/api/settings";
 import HeaderCropPicker from "../components/HeaderCropPicker";
@@ -17,11 +17,13 @@ import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
+import { mentionify } from "@nekonoverse/ui/utils/mentionify";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 
 export default function Profile() {
   const { t } = useI18n();
+  const navigate = useNavigate();
   const params = useParams<{ acct: string }>();
   const [account, setAccount] = createSignal<Account | null>(null);
   const [notes, setNotes] = createSignal<Note[]>([]);
@@ -382,6 +384,12 @@ export default function Profile() {
     } catch {}
   };
 
+  const handlePinChange = (noteId: string, pinned: boolean) => {
+    setNotes((prev) => prev.map((n) =>
+      n.id === noteId ? { ...n, pinned } : n
+    ));
+  };
+
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
@@ -721,6 +729,7 @@ export default function Profile() {
                     <Show when={acc.note}>
                       <p class="profile-bio" ref={(el) => {
                         el.innerHTML = sanitizeHtml(acc.note);
+                        mentionify(el, navigate);
                         if (acc.emojis) emojify(el, acc.emojis);
                         twemojify(el);
                         externalLinksNewTab(el);
@@ -734,6 +743,7 @@ export default function Profile() {
                               <dt class="profile-field-label">{field.name}</dt>
                               <dd class="profile-field-value" ref={(el) => {
                                 el.innerHTML = sanitizeHtml(field.value);
+                                mentionify(el, navigate);
                                 if (acc.emojis) emojify(el, acc.emojis);
                                 twemojify(el);
                                 externalLinksNewTab(el);
@@ -774,6 +784,7 @@ export default function Profile() {
                             onReply={(n) => setReplyTarget(n)}
                             onQuote={(n) => setQuoteTarget(n)}
                             onThreadOpen={(id) => setThreadNoteId(id)}
+                            onPinChange={handlePinChange}
                           />
                         )}
                       </For>
@@ -795,6 +806,7 @@ export default function Profile() {
                           onReply={(n) => setReplyTarget(n)}
                           onQuote={(n) => setQuoteTarget(n)}
                           onThreadOpen={(id) => setThreadNoteId(id)}
+                          onPinChange={handlePinChange}
                         />
                       )}
                     </For>
