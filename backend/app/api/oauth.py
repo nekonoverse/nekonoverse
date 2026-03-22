@@ -88,6 +88,33 @@ document.addEventListener("DOMContentLoaded", function() {
 """
 
 
+# OOB 認可コードページのコピーボタン用 JS
+OOB_JS = """\
+document.addEventListener("DOMContentLoaded", function() {
+  var btn = document.getElementById("copy-btn");
+  if (!btn) return;
+  var code = document.getElementById("oob-code");
+  if (!code) return;
+  btn.addEventListener("click", function() {
+    navigator.clipboard.writeText(code.textContent).then(function() {
+      btn.textContent = "Copied!";
+      setTimeout(function() { btn.textContent = "Copy"; }, 2000);
+    });
+  });
+});
+"""
+
+
+@router.get("/oauth/oob.js")
+async def oob_js():
+    """Serve OOB copy button script as external JS (CSP compatible)."""
+    return Response(
+        content=OOB_JS,
+        media_type="application/javascript",
+        headers={"Cache-Control": "public, max-age=86400"},
+    )
+
+
 @router.get("/oauth/passkey.js")
 async def passkey_js():
     """Serve passkey authentication script as external JS (CSP compatible)."""
@@ -209,6 +236,7 @@ async def authorize_form(
     state: str | None = Query(None),
     code_challenge: str | None = Query(None),
     code_challenge_method: str | None = Query(None),
+    prompt: str | None = Query(None),
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
@@ -232,8 +260,10 @@ async def authorize_form(
     if parsed_redirect.scheme in _blocked_schemes:
         raise HTTPException(status_code=400, detail="Invalid redirect_uri scheme")
 
-    # セッションからユーザーを取得
-    user_id = await _get_session_user_id(request)
+    # セッションからユーザーを取得 (prompt=login の場合はスキップ)
+    user_id = None
+    if prompt != "login":
+        user_id = await _get_session_user_id(request)
 
     if not user_id:
         # 未ログイン: ログインフォームを表示
@@ -251,6 +281,11 @@ async def authorize_form(
         )
 
     # H-1: ログイン済みでも必ず同意画面を表示する (自動認可を廃止)
+    from app.services.user_service import get_user_by_id
+
+    user = await get_user_by_id(db, user_id)
+    username = user.actor.username if user and user.actor else None
+
     csrf_token = await _generate_csrf_token()
     return _render_consent_form(
         app_name=app.name,
@@ -262,6 +297,7 @@ async def authorize_form(
         code_challenge=code_challenge,
         code_challenge_method=code_challenge_method,
         csrf_token=csrf_token,
+        username=username,
     )
 
 
@@ -606,11 +642,17 @@ body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0
 .code {{ font-family: monospace; font-size: 18px; padding: 12px;
   background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px;
   word-break: break-all; user-select: all; text-align: center; }}
+#copy-btn {{ margin-top: 12px; padding: 8px 16px; width: 100%;
+  background: #6364ff; color: white; border: none; border-radius: 4px;
+  font-size: 15px; cursor: pointer; }}
+#copy-btn:hover {{ background: #4f50e6; }}
 </style></head><body>
 <h2>Authorization successful</h2>
 <p>Copy this authorization code and paste it into your application:</p>
-<div class="code">{esc(code)}</div>
+<div id="oob-code" class="code">{esc(code)}</div>
+<button id="copy-btn">Copy</button>
 <p>You can close this window after copying the code.</p>
+<script src="/oauth/oob.js"></script>
 </body></html>""")
 
 
@@ -755,6 +797,7 @@ def _render_consent_form(
     code_challenge: str | None,
     code_challenge_method: str | None,
     csrf_token: str = "",
+    username: str | None = None,
 ) -> HTMLResponse:
     """Render a consent form for logged-in users to authorize an app."""
     esc = html_mod.escape
@@ -781,6 +824,29 @@ def _render_consent_form(
     scope_list = scope.split()
     scope_items = "\n".join(f"<li>{esc(s)}</li>" for s in scope_list)
 
+    # Switch Account リンク
+    switch_html = ""
+    if username:
+        switch_params = urlencode({
+            "response_type": response_type,
+            "client_id": client_id,
+            "redirect_uri": redirect_uri,
+            "scope": scope,
+            "prompt": "login",
+        })
+        if state:
+            switch_params += "&" + urlencode({"state": state})
+        if code_challenge:
+            switch_params += "&" + urlencode({"code_challenge": code_challenge})
+        if code_challenge_method:
+            switch_params += "&" + urlencode(
+                {"code_challenge_method": code_challenge_method}
+            )
+        switch_html = (
+            f'<p class="logged-in">Logged in as <strong>@{esc(username)}</strong>'
+            f' &mdash; <a href="/oauth/authorize?{switch_params}">Switch account</a></p>'
+        )
+
     return HTMLResponse(
         f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -789,6 +855,8 @@ def _render_consent_form(
 body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0 16px; }}
 h2 {{ margin-bottom: 4px; }}
 .app-name {{ color: #666; margin-top: 0; font-size: 1.1em; }}
+.logged-in {{ color: #555; font-size: 14px; margin-top: 12px; }}
+.logged-in a {{ color: #6364ff; }}
 ul {{ padding-left: 20px; }}
 button {{ margin-top: 16px; padding: 10px 20px; width: 100%;
   background: #6364ff; color: white; border: none; border-radius: 4px;
@@ -799,6 +867,7 @@ button:hover {{ background: #4f50e6; }}
 </style></head><body>
 <h2>Authorize application</h2>
 <p class="app-name">{esc(app_name)}</p>
+{switch_html}
 <p>This application requests the following permissions:</p>
 <ul>{scope_items}</ul>
 <form method="POST" action="/oauth/authorize">
