@@ -2,7 +2,7 @@ import { Router, Route, useIsRouting } from "@solidjs/router";
 import { lazy, onMount, onCleanup, createEffect, createSignal, Show, Suspense, type ParentProps } from "solid-js";
 import { I18nProvider } from "@nekonoverse/ui/i18n";
 import { initTheme, inputMode } from "@nekonoverse/ui/stores/theme";
-import { fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
+import { fetchCurrentUser, currentUser } from "@nekonoverse/ui/stores/auth";
 import {
   instance,
   fetchInstance,
@@ -101,13 +101,14 @@ function Layout(props: ParentProps) {
 }
 
 export default function App() {
-  const [showInputModal, setShowInputModal] = createSignal(inputMode() === null);
+  const [dismissed, setDismissed] = createSignal(false);
+  const needsInputMode = () => !dismissed() && inputMode() === null && !!currentUser();
 
   return (
     <I18nProvider>
       <PWAUpdateBanner />
-      <Show when={showInputModal()}>
-        <InputModeModal onClose={() => setShowInputModal(false)} />
+      <Show when={needsInputMode()}>
+        <InputModeModal onClose={() => setDismissed(true)} />
       </Show>
       <Router root={Layout}>
         <Route path="/" component={Home} />
