@@ -85,20 +85,22 @@ async def _resolve_follow_from_object(
 
     if isinstance(inner, str):
         # object is a URI reference to the Follow activity (e.g. Mitra)
+        if not accept_actor:
+            logger.warning("Accept/Reject missing actor field for string object %s", inner)
+            return None
         result = await db.execute(select(Follow).where(Follow.ap_id == inner))
         follow = result.scalar_one_or_none()
         if not follow:
             logger.warning("No follow found for ap_id %s", inner)
             return None
         # Verify Accept/Reject actor matches the follow target
-        if accept_actor:
-            target = await get_actor_by_ap_id(db, accept_actor)
-            if not target or target.id != follow.following_id:
-                logger.warning(
-                    "Accept/Reject actor mismatch: actor=%s does not match follow target",
-                    accept_actor,
-                )
-                return None
+        target = await get_actor_by_ap_id(db, accept_actor)
+        if not target or target.id != follow.following_id:
+            logger.warning(
+                "Accept/Reject actor mismatch: actor=%s does not match follow target",
+                accept_actor,
+            )
+            return None
         return follow
 
     if not isinstance(inner, dict):
