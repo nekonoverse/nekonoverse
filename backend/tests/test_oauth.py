@@ -342,6 +342,112 @@ async def test_revoke_nonexistent_token_valid_client(app_client, db, mock_valkey
     assert resp.status_code == 200
 
 
+# ── GET /oauth/oob.js ─────────────────────────────────────────────────
+
+
+async def test_oauth_oob_js_endpoint(app_client):
+    """oob.js is served as external JavaScript (CSP compatible)."""
+    resp = await app_client.get("/oauth/oob.js")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/javascript")
+    assert "copy-btn" in resp.text
+    assert "DOMContentLoaded" in resp.text
+
+
+async def test_oob_page_has_copy_button(app_client, db, mock_valkey, test_user):
+    """OOB authorization code page includes a copy button and oob.js."""
+    app_data = await _create_oob_app(app_client, mock_valkey)
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-oob-copy")
+
+    # Get consent form, extract CSRF, POST to get OOB page
+    consent_resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "response_type": "code",
+            "scope": "read write",
+        },
+        follow_redirects=False,
+    )
+    assert consent_resp.status_code == 200
+    import re
+    csrf_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', consent_resp.text)
+    assert csrf_match
+
+    original_get = mock_valkey.get
+    async def _csrf_aware_get(key):
+        if key.startswith("csrf:"):
+            return "1"
+        return await original_get(key)
+    mock_valkey.get = _csrf_aware_get
+
+    auth_resp = await app_client.post(
+        "/oauth/authorize",
+        data={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "scope": "read write",
+            "response_type": "code",
+            "csrf_token": csrf_match.group(1),
+        },
+        follow_redirects=False,
+    )
+    mock_valkey.get = original_get
+
+    assert auth_resp.status_code == 200
+    assert 'id="copy-btn"' in auth_resp.text
+    assert 'src="/oauth/oob.js"' in auth_resp.text
+    assert 'id="oob-code"' in auth_resp.text
+
+
+# ── Consent form: username + Switch Account ──────────────────────────
+
+
+async def test_consent_form_shows_username(app_client, db, mock_valkey, test_user):
+    """Consent form shows the logged-in username and Switch Account link."""
+    app_data = await _create_test_app(app_client, mock_valkey)
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-username")
+
+    resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "http://localhost:3000/callback",
+            "response_type": "code",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    assert f"@{test_user.actor.username}" in resp.text
+    assert "Switch account" in resp.text
+    assert "prompt=login" in resp.text
+
+
+async def test_prompt_login_forces_login_form(app_client, db, mock_valkey, test_user):
+    """prompt=login shows login form even when logged in."""
+    app_data = await _create_test_app(app_client, mock_valkey)
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-prompt")
+
+    resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "http://localhost:3000/callback",
+            "response_type": "code",
+            "prompt": "login",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    assert "log in" in resp.text.lower()
+    # Should NOT show consent form
+    assert "Switch account" not in resp.text
+
+
 # ── GET /oauth/passkey.js ─────────────────────────────────────────────
 
 
