@@ -340,3 +340,99 @@ async def test_revoke_nonexistent_token_valid_client(app_client, db, mock_valkey
         },
     )
     assert resp.status_code == 200
+
+
+# ── OOB (Out-of-Band) flow ───────────────────────────────────────────
+
+
+async def _create_oob_app(app_client, mock_valkey):
+    """Create an OAuth app with OOB redirect_uri."""
+    resp = await app_client.post(
+        "/api/v1/apps",
+        json={
+            "client_name": "OOBTestApp",
+            "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
+            "scopes": "read write",
+        },
+    )
+    assert resp.status_code == 200
+    return resp.json()
+
+
+async def test_oob_authorize_shows_code_page(app_client, db, mock_valkey, test_user):
+    """OOB flow: after login, display authorization code on page instead of redirect."""
+    app_data = await _create_oob_app(app_client, mock_valkey)
+
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-oob-session")
+
+    # Get consent form
+    consent_resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "response_type": "code",
+            "scope": "read write",
+        },
+        follow_redirects=False,
+    )
+    assert consent_resp.status_code == 200
+    csrf_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', consent_resp.text)
+    assert csrf_match
+    csrf_token = csrf_match.group(1)
+
+    original_get = mock_valkey.get
+    async def _csrf_aware_get(key):
+        if key.startswith("csrf:"):
+            return "1"
+        return await original_get(key)
+    mock_valkey.get = _csrf_aware_get
+
+    # Submit consent — should return HTML page with code, NOT a redirect
+    auth_resp = await app_client.post(
+        "/oauth/authorize",
+        data={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "scope": "read write",
+            "response_type": "code",
+            "csrf_token": csrf_token,
+        },
+        follow_redirects=False,
+    )
+    mock_valkey.get = original_get
+
+    assert auth_resp.status_code == 200
+    assert "Authorization successful" in auth_resp.text
+    assert "Authorization Code" in auth_resp.text
+
+    # Extract the code from the page
+    code_match = re.search(r'class="code">([^<]+)<', auth_resp.text)
+    assert code_match
+    code = code_match.group(1)
+    assert len(code) > 10  # sanity check
+
+    return app_data, code
+
+
+async def test_oob_token_exchange(app_client, db, mock_valkey, test_user):
+    """OOB flow: code displayed on page can be exchanged for a token."""
+    app_data, code = await test_oob_authorize_shows_code_page(
+        app_client, db, mock_valkey, test_user
+    )
+
+    resp = await app_client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": app_data["client_id"],
+            "client_secret": app_data["client_secret"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["access_token"]
+    assert data["token_type"] == "Bearer"
