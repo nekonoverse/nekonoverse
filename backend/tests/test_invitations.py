@@ -174,3 +174,45 @@ async def test_register_open_mode_no_invite_needed(app_client, db, mock_valkey):
         "password": "password1234",
     })
     assert resp.status_code == 201
+
+
+# --- IDOR tests ---
+
+
+async def test_delete_invite_other_user(app_client, db, mock_valkey):
+    """Non-admin cannot delete another user's invite code."""
+    from app.services.server_settings_service import set_setting
+
+    # Allow regular users to create invites
+    await set_setting(db, "invite_create_role", "user")
+    await db.commit()
+
+    user_a = await _make_user(db, mock_valkey, app_client, username="invuser_a")
+
+    # side_effect: return user ID for session lookup, None for settings (fall through to DB)
+    user_a_id = str(user_a.id)
+
+    async def get_side_effect_a(key):
+        if key.startswith("setting:"):
+            return None
+        return user_a_id
+
+    mock_valkey.get = AsyncMock(side_effect=get_side_effect_a)
+
+    create_resp = await app_client.post("/api/v1/invites")
+    assert create_resp.status_code == 201
+    code = create_resp.json()["code"]
+
+    # Switch to user B
+    user_b = await _make_user(db, mock_valkey, app_client, username="invuser_b")
+    user_b_id = str(user_b.id)
+
+    async def get_side_effect_b(key):
+        if key.startswith("setting:"):
+            return None
+        return user_b_id
+
+    mock_valkey.get = AsyncMock(side_effect=get_side_effect_b)
+
+    resp = await app_client.delete(f"/api/v1/invites/{code}")
+    assert resp.status_code == 404
