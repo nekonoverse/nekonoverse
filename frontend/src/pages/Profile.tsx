@@ -794,10 +794,10 @@ export default function Profile() {
                 <div class="profile-posts">
                   <h3>{t("profile.posts")}</h3>
                   <Show
-                    when={notes().length > 0}
+                    when={notes().filter((n) => !n.pinned).length > 0}
                     fallback={<p class="empty">{t("profile.noPostsYet")}</p>}
                   >
-                    <For each={notes()}>
+                    <For each={notes().filter((n) => !n.pinned)}>
                       {(note) => (
                         <NoteCard
                           note={note}
@@ -814,7 +814,7 @@ export default function Profile() {
                     <Show when={loadingMore()}>
                       <p class="timeline-loading">{t("timeline.loadingMore")}</p>
                     </Show>
-                    <Show when={!hasMore() && notes().length > 0}>
+                    <Show when={!hasMore() && notes().filter((n) => !n.pinned).length > 0}>
                       <p class="timeline-end">{t("timeline.noMore")}</p>
                     </Show>
                   </Show>

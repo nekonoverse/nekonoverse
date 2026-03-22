@@ -644,6 +644,8 @@ export const neko: Dictionary = {
   "settings.reactionConfirmReset": "かくにんをまたひょうじするにゃ",
   "settings.mfmMotion": "MFMアニメーションにゃ",
   "settings.reduceMfmMotion": "うごくMFMをとめるにゃ",
+  "settings.mediaDisplay": "めでぃあひょうじにゃ",
+  "settings.cropShadow": "きりぬきがぞうにかげをつけるにゃ",
   "settings.tabEmail": "めーるにゃ",
   "settings.descEmail": "めーるにんしょうとあどれすかんりにゃ",
   "email.title": "めーるあどれすにゃ",

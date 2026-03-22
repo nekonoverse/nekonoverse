@@ -249,28 +249,26 @@ export default function ReactionBar(props: Props) {
     if (hoverShowTimer) { clearTimeout(hoverShowTimer); hoverShowTimer = null; }
     hoverShowTimer = setTimeout(async () => {
       hoverShowTimer = null;
-      setHoverGroup(group);
-      setHoverLoading(true);
-      setHoverUsers([]);
+      let users: ReactionUser[] = [];
       try {
         const allUsers = await Promise.all(
           group.members.map((m) => getReactedBy(props.noteId, m.emoji)),
         );
         const seen = new Set<string>();
-        const uniqueUsers: ReactionUser[] = [];
-        for (const users of allUsers) {
-          for (const u of users) {
+        for (const list of allUsers) {
+          for (const u of list) {
             if (!seen.has(u.actor.id)) {
               seen.add(u.actor.id);
-              uniqueUsers.push(u);
+              users.push(u);
             }
           }
         }
-        setHoverUsers(uniqueUsers);
       } catch {
-        setHoverUsers([]);
+        // ignore
       }
+      setHoverUsers(users);
       setHoverLoading(false);
+      setHoverGroup(group);
     }, 300);
   };
 

@@ -140,7 +140,11 @@ const [reduceMfmMotion, setReduceMfmMotionSignal] = createSignal<boolean>(
   localStorage.getItem("nekonoverse:reduce-mfm-motion") === "true"
 );
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, inputMode, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion };
+const [cropShadow, setCropShadowSignal] = createSignal<boolean>(
+  localStorage.getItem("nekonoverse:crop-shadow") !== "false"
+);
+
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, inputMode, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion, cropShadow };
 
 export function isTouchMode(): boolean {
   const mode = inputMode();
@@ -213,11 +217,25 @@ export function setReduceMfmMotion(v: boolean) {
   applyReduceMfmMotion(v);
 }
 
+export function setCropShadow(v: boolean) {
+  setCropShadowSignal(v);
+  localStorage.setItem("nekonoverse:crop-shadow", String(v));
+  applyCropShadow(v);
+}
+
 function applyReduceMfmMotion(v: boolean) {
   if (v) {
     document.documentElement.setAttribute("data-reduce-mfm-motion", "");
   } else {
     document.documentElement.removeAttribute("data-reduce-mfm-motion");
+  }
+}
+
+function applyCropShadow(v: boolean) {
+  if (v) {
+    document.documentElement.removeAttribute("data-crop-shadow");
+  } else {
+    document.documentElement.setAttribute("data-crop-shadow", "off");
   }
 }
 
@@ -228,4 +246,5 @@ export function initTheme() {
   applyCursorStyle(cursorStyle());
   applyWideEmojiStyle(wideEmojiStyle());
   applyReduceMfmMotion(reduceMfmMotion());
+  applyCropShadow(cropShadow());
 }

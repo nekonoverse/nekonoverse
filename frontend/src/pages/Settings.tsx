@@ -12,6 +12,7 @@ import {
   hideNonFollowedReplies, setHideNonFollowedReplies,
   nyaizeEnabled, setNyaizeEnabled,
   reduceMfmMotion, setReduceMfmMotion,
+  cropShadow, setCropShadow,
   FONT_FAMILY_MAP,
   type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle, type WideEmojiStyle, type InputMode,
 } from "@nekonoverse/ui/stores/theme";
@@ -330,6 +331,18 @@ function AppearanceTab() {
             onChange={(e) => setReduceMfmMotion(e.currentTarget.checked)}
           />
           {t("settings.reduceMfmMotion" as any)}
+        </label>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("settings.mediaDisplay" as any)}</h3>
+        <label class="toggle-label">
+          <input
+            type="checkbox"
+            checked={cropShadow()}
+            onChange={(e) => setCropShadow(e.currentTarget.checked)}
+          />
+          {t("settings.cropShadow" as any)}
         </label>
       </div>
 

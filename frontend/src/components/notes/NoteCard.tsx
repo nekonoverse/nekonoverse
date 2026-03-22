@@ -515,16 +515,16 @@ export default function NoteCard(props: Props) {
     if (hoverShowTimer) { clearTimeout(hoverShowTimer); hoverShowTimer = null; }
     hoverShowTimer = setTimeout(async () => {
       hoverShowTimer = null;
-      setHoverTarget(target);
-      setHoverTitle(title);
-      setHoverLoading(true);
-      setHoverUsers([]);
+      let users: ActionByUser[] = [];
       try {
-        setHoverUsers(await fetcher());
+        users = await fetcher();
       } catch {
-        setHoverUsers([]);
+        // ignore
       }
+      setHoverTitle(title);
+      setHoverUsers(users);
       setHoverLoading(false);
+      setHoverTarget(target);
     }, 300);
   };
 
@@ -1097,13 +1097,13 @@ export default function NoteCard(props: Props) {
             </button>
             <div
               class="action-popover-wrapper"
-              onMouseEnter={() => { if (!isTouchMode()) startActionHover("boost", t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
+              onMouseEnter={() => { if (!isTouchMode() && boostCount() > 0) startActionHover("boost", t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
               onMouseLeave={() => { if (!isTouchMode()) scheduleHideHover(); }}
             >
               <button
                 class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${note().visibility === "private" || note().visibility === "direct" ? " disabled" : ""}`}
                 onClick={handleBoost}
-                onTouchStart={() => { if (isTouchMode()) startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
+                onTouchStart={() => { if (isTouchMode() && boostCount() > 0) startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
                 onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
                 onContextMenu={(e) => e.preventDefault()}
                 disabled={boostLoading() || note().visibility === "private" || note().visibility === "direct"}
@@ -1189,13 +1189,13 @@ export default function NoteCard(props: Props) {
             </button>
             <div
               class="action-popover-wrapper"
-              onMouseEnter={() => { if (!isTouchMode()) startActionHover("fav", t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id)); }}
+              onMouseEnter={() => { if (!isTouchMode() && favCount() > 0) startActionHover("fav", t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id)); }}
               onMouseLeave={() => { if (!isTouchMode()) scheduleHideHover(); }}
             >
               <button
                 class={`note-action-btn note-fav-btn${favourited() ? " favourited" : ""}`}
                 onClick={handleFavourite}
-                onTouchStart={() => { if (isTouchMode()) startActionLongPress(t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id)); }}
+                onTouchStart={() => { if (isTouchMode() && favCount() > 0) startActionLongPress(t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id)); }}
                 onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
                 onContextMenu={(e) => e.preventDefault()}
                 title={t(favourited() ? "favourite.remove" : "favourite.add")}

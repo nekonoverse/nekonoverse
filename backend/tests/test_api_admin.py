@@ -370,3 +370,25 @@ async def test_server_files_forbidden_non_admin(app_client, db, mock_valkey):
     await make_regular(db, mock_valkey, app_client)
     resp = await app_client.get("/api/v1/admin/server-files")
     assert resp.status_code == 403
+
+
+# ── IDOR / Permission tests ───────────────────────────────────────────
+
+
+async def test_change_role_forbidden_non_admin(app_client, db, mock_valkey):
+    """Non-admin cannot change user roles."""
+    import uuid
+    user = await make_regular(db, mock_valkey, app_client)
+    resp = await app_client.patch(
+        f"/api/v1/admin/users/{uuid.uuid4()}/role",
+        json={"role": "admin"},
+    )
+    assert resp.status_code == 403
+
+
+async def test_admin_delete_note_forbidden_non_admin(app_client, db, mock_valkey):
+    """Non-admin cannot delete notes via admin endpoint."""
+    import uuid
+    await make_regular(db, mock_valkey, app_client)
+    resp = await app_client.delete(f"/api/v1/admin/notes/{uuid.uuid4()}")
+    assert resp.status_code == 403

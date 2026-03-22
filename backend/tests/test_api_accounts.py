@@ -263,7 +263,8 @@ async def test_get_account_avatar_fallback(app_client, test_user, mock_valkey):
     resp = await app_client.get(f"/api/v1/accounts/{test_user.actor_id}")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["avatar"] == "/default-avatar.svg"
+    assert data["avatar"].endswith("/default-avatar.svg")
+    assert data["avatar"].startswith("http")
 
 
 # --- Block/Unblock tests ---
