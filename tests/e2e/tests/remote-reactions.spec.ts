@@ -210,7 +210,7 @@ test.describe("Remote reaction display", () => {
     await expect(badge).toContainText("1");
   });
 
-  test("long-press on reaction badge opens reacted-by modal", async ({
+  test("hover on reaction badge shows reacted-by popover", async ({
     page,
     browser,
   }) => {
@@ -243,20 +243,14 @@ test.describe("Remote reaction display", () => {
     const badge = noteCard.locator(".reaction-badge").first();
     await expect(badge).toBeVisible({ timeout: 5_000 });
 
-    // 長押し (500ms+) でモーダルが開く
-    const box = await badge.boundingBox();
-    expect(box).not.toBeNull();
-    await page.mouse.move(box!.x + box!.width / 2, box!.y + box!.height / 2);
-    await page.mouse.down();
-    await page.waitForTimeout(700);
-    await page.mouse.up();
+    // ホバーでポップオーバーが表示される (PCモード)
+    await badge.hover();
 
-    // reacted-by モーダルが表示される
-    const modal = page.locator(".reacted-by-list");
-    await expect(modal).toBeVisible({ timeout: 5_000 });
+    const popover = page.locator(".action-popover");
+    await expect(popover).toBeVisible({ timeout: 5_000 });
 
     // リアクションしたユーザーが表示される
-    const item = page.locator(".reacted-by-item").first();
+    const item = popover.locator(".reacted-by-item").first();
     await expect(item).toBeVisible({ timeout: 5_000 });
     await expect(item.locator(".reacted-by-handle")).toContainText(
       `@lp${uid}`,
