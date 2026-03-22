@@ -7046,6 +7046,19 @@ a:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.search-modal-result-preview,
+.search-result-preview {
+  color: var(--text-secondary);
+  font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  display: block;
+}
+.search-modal-result-preview *,
+.search-result-preview * {
+  display: inline;
+}
 
 @media (max-width: 600px) {
   .search-modal-overlay {

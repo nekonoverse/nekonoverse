@@ -249,6 +249,44 @@ async def test_search_all(authed_client, mock_valkey):
     assert "hashtags" in body
 
 
+async def test_search_url_resolve_returns_status(
+    authed_client, db, mock_valkey
+):
+    """GET /api/v2/search with URL + resolve=true looks up notes by URL."""
+    # まずノートを作成
+    create_resp = await authed_client.post(
+        "/api/v1/statuses", json={"content": "url resolve test", "visibility": "public"}
+    )
+    note_id = create_resp.json()["id"]
+
+    # ノートの ap_id をDBから取得
+    from app.services.note_service import get_note_by_id
+
+    note = await get_note_by_id(db, uuid.UUID(note_id))
+    assert note is not None
+
+    # ap_id で検索（ローカルノートなのでfetch不要）
+    resp = await authed_client.get(
+        f"/api/v2/search?q={note.ap_id}&type=statuses&resolve=true"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert len(body["statuses"]) == 1
+    assert body["statuses"][0]["id"] == note_id
+
+
+async def test_search_url_without_resolve_skips_fetch(
+    authed_client, mock_valkey
+):
+    """GET /api/v2/search with URL but resolve=false does not fetch remote."""
+    resp = await authed_client.get(
+        "/api/v2/search?q=https://remote.example/notes/abc&type=statuses"
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["statuses"] == []
+
+
 async def test_search_empty_query(authed_client, mock_valkey):
     """GET /api/v2/search with empty query returns 422."""
     resp = await authed_client.get("/api/v2/search?q=")

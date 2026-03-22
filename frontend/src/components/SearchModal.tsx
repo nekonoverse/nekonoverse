@@ -1,8 +1,11 @@
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { searchAccounts, type Account } from "@nekonoverse/ui/api/accounts";
+import { searchV2 } from "@nekonoverse/ui/api/search";
+import type { Note } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 
 interface Props {
   onClose: () => void;
@@ -12,7 +15,8 @@ export default function SearchModal(props: Props) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [query, setQuery] = createSignal("");
-  const [results, setResults] = createSignal<Account[]>([]);
+  const [accountResults, setAccountResults] = createSignal<Account[]>([]);
+  const [noteResults, setNoteResults] = createSignal<Note[]>([]);
   const [searched, setSearched] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [resolving, setResolving] = createSignal(false);
@@ -40,7 +44,8 @@ export default function SearchModal(props: Props) {
   const performSearch = async (q: string, resolve: boolean) => {
     const cleaned = q.trim().replace(/^@/, "");
     if (!cleaned) {
-      setResults([]);
+      setAccountResults([]);
+      setNoteResults([]);
       setSearched(false);
       setLoading(false);
       setResolving(false);
@@ -49,14 +54,30 @@ export default function SearchModal(props: Props) {
 
     setLoading(true);
     try {
-      const data = await searchAccounts(cleaned, resolve);
-      // If lookup-style query (user@domain) resolves to exactly 1 result, navigate directly
-      if (resolve && cleaned.includes("@") && data.length === 1) {
-        navigate(`/@${data[0].acct}`);
-        props.onClose();
-        return;
+      if (resolve) {
+        // resolve 時は v2 search を使い、ユーザーとノートの両方を検索
+        const data = await searchV2(cleaned, true);
+        // URL照会でノート1件のみ → 直接遷移
+        if (cleaned.startsWith("https://") && data.statuses.length === 1) {
+          navigate(`/notes/${data.statuses[0].id}`);
+          props.onClose();
+          return;
+        }
+        // user@domain照会でユーザー1件のみ → 直接遷移
+        if (cleaned.includes("@") && !cleaned.startsWith("https://")
+            && data.accounts.length === 1) {
+          navigate(`/@${data.accounts[0].acct}`);
+          props.onClose();
+          return;
+        }
+        setAccountResults(data.accounts);
+        setNoteResults(data.statuses);
+      } else {
+        // 入力中はローカルユーザー検索のみ（軽量）
+        const data = await searchAccounts(cleaned, false);
+        setAccountResults(data);
+        setNoteResults([]);
       }
-      setResults(data);
       setSearched(true);
     } catch {
       // Ignore errors silently
@@ -71,7 +92,8 @@ export default function SearchModal(props: Props) {
     clearTimeout(debounceTimer);
 
     if (!q.trim()) {
-      setResults([]);
+      setAccountResults([]);
+      setNoteResults([]);
       setSearched(false);
       setLoading(false);
       setResolving(false);
@@ -84,19 +106,24 @@ export default function SearchModal(props: Props) {
     }, 300);
   });
 
-  // Submit triggers a resolve search (for remote users)
+  // Submit triggers a resolve search (for remote users/notes)
   const handleSubmit = (e: Event) => {
     e.preventDefault();
     clearTimeout(debounceTimer);
     const q = query().trim();
     if (!q) return;
-    setResolving(q.includes("@"));
+    setResolving(q.includes("@") || q.startsWith("https://"));
     setLoading(true);
     performSearch(q, true);
   };
 
-  const handleResultClick = (acct: string) => {
+  const handleAccountClick = (acct: string) => {
     navigate(`/@${acct}`);
+    props.onClose();
+  };
+
+  const handleNoteClick = (noteId: string) => {
+    navigate(`/notes/${noteId}`);
     props.onClose();
   };
 
@@ -105,6 +132,8 @@ export default function SearchModal(props: Props) {
       props.onClose();
     }
   };
+
+  const hasResults = () => accountResults().length > 0 || noteResults().length > 0;
 
   return (
     <div class="search-modal-overlay" onClick={handleBackdropClick}>
@@ -158,15 +187,15 @@ export default function SearchModal(props: Props) {
           </Show>
           <Show when={!loading() && searched()}>
             <Show
-              when={results().length > 0}
+              when={hasResults()}
               fallback={<p class="search-modal-status">{t("search.noResults")}</p>}
             >
               <div class="search-modal-results">
-                <For each={results()}>
+                <For each={accountResults()}>
                   {(acc) => (
                     <button
                       class="search-modal-result-item"
-                      onClick={() => handleResultClick(acc.acct)}
+                      onClick={() => handleAccountClick(acc.acct)}
                     >
                       <img
                         class="search-modal-result-avatar"
@@ -176,6 +205,29 @@ export default function SearchModal(props: Props) {
                       <div class="search-modal-result-info">
                         <strong>{acc.display_name || acc.username}</strong>
                         <span class="search-modal-result-handle">@{acc.acct}</span>
+                      </div>
+                    </button>
+                  )}
+                </For>
+                <For each={noteResults()}>
+                  {(note) => (
+                    <button
+                      class="search-modal-result-item"
+                      onClick={() => handleNoteClick(note.id)}
+                    >
+                      <img
+                        class="search-modal-result-avatar"
+                        src={note.account.avatar || defaultAvatar()}
+                        alt=""
+                      />
+                      <div class="search-modal-result-info">
+                        <strong>{note.account.display_name || note.account.username}</strong>
+                        <span
+                          class="search-modal-result-preview"
+                          ref={(el) => {
+                            el.innerHTML = sanitizeHtml(note.content);
+                          }}
+                        />
                       </div>
                     </button>
                   )}
