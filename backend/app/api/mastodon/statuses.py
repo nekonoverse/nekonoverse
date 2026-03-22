@@ -365,7 +365,7 @@ async def note_to_response(
 
     from app.config import settings as app_settings
 
-    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or "/default-avatar.svg"
+    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or f"{app_settings.server_url}/default-avatar.svg"
     header = media_proxy_url(actor.header_url) or ""
     acct = actor.username if not actor.domain else f"{actor.username}@{actor.domain}"
     actor_url = (
@@ -1201,6 +1201,7 @@ async def reacted_by(
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
+    from app.config import settings as _settings
     from app.models.reaction import Reaction
 
     note = await get_note_by_id(db, note_id)
@@ -1267,7 +1268,7 @@ async def reacted_by(
                 id=r.actor.id,
                 username=r.actor.username,
                 display_name=r.actor.display_name,
-                avatar_url=media_proxy_url(r.actor.avatar_url, variant="avatar") or "/default-avatar.svg",
+                avatar_url=media_proxy_url(r.actor.avatar_url, variant="avatar") or f"{_settings.server_url}/default-avatar.svg",
                 ap_id=r.actor.ap_id,
                 domain=r.actor.domain,
                 emojis=actor_emojis,

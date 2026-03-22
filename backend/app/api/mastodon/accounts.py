@@ -13,6 +13,7 @@ from app.models.note import Note
 from app.models.user import User
 from app.services.follow_service import follow_actor, get_follow_counts, unfollow_actor
 from app.services.note_service import get_statuses_count
+from app.config import settings
 from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
@@ -131,7 +132,7 @@ async def _actor_to_account(
 ) -> dict:
     import re
 
-    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or "/default-avatar.svg"
+    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or f"{settings.server_url}/default-avatar.svg"
     avatar_static = media_proxy_url(actor.avatar_url, variant="avatar", static=True) or avatar
     header = media_proxy_url(actor.header_url) or ""
     data = {
@@ -205,8 +206,8 @@ def _actor_to_limited_account(actor: Actor) -> dict:
         "display_name": actor.display_name or "",
         "note": "",
         "uri": actor.ap_id,
-        "avatar": "/default-avatar.svg",
-        "avatar_static": "/default-avatar.svg",
+        "avatar": f"{settings.server_url}/default-avatar.svg",
+        "avatar_static": f"{settings.server_url}/default-avatar.svg",
         "header": "",
         "header_static": "",
         "url": actor.ap_id,

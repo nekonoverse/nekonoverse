@@ -120,12 +120,12 @@ async def _notification_to_response(
             db, notif.sender.display_name, notif.sender.domain
         )
         sender = notif.sender
-        avatar = media_proxy_url(sender.avatar_url, variant="avatar") or "/default-avatar.svg"
+        from app.config import settings as app_settings
+        avatar = media_proxy_url(sender.avatar_url, variant="avatar") or f"{app_settings.server_url}/default-avatar.svg"
         header = media_proxy_url(sender.header_url) or ""
         acct = (
             f"{sender.username}@{sender.domain}" if sender.domain else sender.username
         )
-        from app.config import settings as app_settings
 
         actor_url = (
             f"{app_settings.server_url}/@{sender.username}"
