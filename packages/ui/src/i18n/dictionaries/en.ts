@@ -646,6 +646,8 @@ export const en: Dictionary = {
   "settings.reactionConfirmReset": "Re-enable confirmation dialog",
   "settings.mfmMotion": "MFM Animation",
   "settings.reduceMfmMotion": "Disable animated MFM",
+  "settings.mediaDisplay": "Media Display",
+  "settings.cropShadow": "Show shadow on cropped images",
   "settings.tabEmail": "Email",
   "settings.descEmail": "Email verification and address management",
   "email.title": "Email Address",
