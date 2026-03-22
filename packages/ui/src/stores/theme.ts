@@ -6,6 +6,7 @@ export type FontFamily = "noto" | "hiragino" | "yu-mac" | "yu-win" | "meiryo" | 
 export type TimeFormat = "absolute" | "relative" | "combined" | "unixtime";
 export type CursorStyle = "default" | "paw";
 export type WideEmojiStyle = "shrink" | "blur" | "overflow";
+export type InputMode = "auto" | "touch" | "pc";
 
 const THEMES: Theme[] = ["dark", "light", "novel"];
 const FONT_SIZES: FontSize[] = ["small", "medium", "large", "xlarge", "xxlarge"];
@@ -13,6 +14,7 @@ const FONT_FAMILIES: FontFamily[] = ["noto", "hiragino", "yu-mac", "yu-win", "me
 const TIME_FORMATS: TimeFormat[] = ["absolute", "relative", "combined", "unixtime"];
 const CURSOR_STYLES: CursorStyle[] = ["default", "paw"];
 const WIDE_EMOJI_STYLES: WideEmojiStyle[] = ["shrink", "blur", "overflow"];
+const INPUT_MODES: InputMode[] = ["auto", "touch", "pc"];
 const FONT_SIZE_MAP: Record<FontSize, string> = {
   small: "14px",
   medium: "16px",
@@ -70,6 +72,17 @@ function loadWideEmojiStyle(): WideEmojiStyle {
   return "overflow";
 }
 
+function loadInputMode(): InputMode | null {
+  const saved = localStorage.getItem("nekonoverse:input-mode");
+  if (saved && INPUT_MODES.includes(saved as InputMode)) return saved as InputMode;
+  return null;
+}
+
+function detectTouchDevice(): boolean {
+  return typeof window !== "undefined"
+    && (("ontouchstart" in window) || window.matchMedia("(hover: none)").matches);
+}
+
 function applyTheme(t: Theme) {
   if (t === "dark") {
     document.documentElement.removeAttribute("data-theme");
@@ -113,6 +126,8 @@ const [timeFormat, setTimeFormatSignal] = createSignal<TimeFormat>(loadTimeForma
 const [cursorStyle, setCursorStyleSignal] = createSignal<CursorStyle>(loadCursorStyle());
 const [wideEmojiStyle, setWideEmojiStyleSignal] = createSignal<WideEmojiStyle>(loadWideEmojiStyle());
 
+const [inputMode, setInputModeSignal] = createSignal<InputMode | null>(loadInputMode());
+
 const [hideNonFollowedReplies, setHideNonFollowedRepliesSignal] = createSignal<boolean>(
   localStorage.getItem("nekonoverse:hide-non-followed-replies") !== "false"
 );
@@ -125,7 +140,14 @@ const [reduceMfmMotion, setReduceMfmMotionSignal] = createSignal<boolean>(
   localStorage.getItem("nekonoverse:reduce-mfm-motion") === "true"
 );
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion };
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, inputMode, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion };
+
+export function isTouchMode(): boolean {
+  const mode = inputMode();
+  if (mode === "touch") return true;
+  if (mode === "pc") return false;
+  return detectTouchDevice();
+}
 
 export function setTheme(t: Theme) {
   setThemeSignal(t);
@@ -168,6 +190,11 @@ export function setWideEmojiStyle(s: WideEmojiStyle) {
   setWideEmojiStyleSignal(s);
   localStorage.setItem("wideEmojiStyle", s);
   applyWideEmojiStyle(s);
+}
+
+export function setInputMode(m: InputMode) {
+  setInputModeSignal(m);
+  localStorage.setItem("nekonoverse:input-mode", m);
 }
 
 export function setHideNonFollowedReplies(v: boolean) {

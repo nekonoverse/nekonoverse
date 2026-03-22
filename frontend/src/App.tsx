@@ -2,7 +2,7 @@ import { Router, Route, useIsRouting } from "@solidjs/router";
 import { lazy, onMount, onCleanup, createEffect, createSignal, Show, Suspense, type ParentProps } from "solid-js";
 import { I18nProvider } from "@nekonoverse/ui/i18n";
 import { initTheme } from "@nekonoverse/ui/stores/theme";
-import { fetchCurrentUser } from "@nekonoverse/ui/stores/auth";
+import { fetchCurrentUser, currentUser } from "@nekonoverse/ui/stores/auth";
 import {
   instance,
   fetchInstance,
@@ -12,6 +12,7 @@ import {
 import Navbar from "./components/layout/Navbar";
 import SwipeBack from "./components/SwipeBack";
 import PWAUpdateBanner from "./components/PWAUpdateBanner";
+import InputModeModal from "./components/InputModeModal";
 
 initTheme();
 checkClientVersion();
@@ -100,9 +101,16 @@ function Layout(props: ParentProps) {
 }
 
 export default function App() {
+  const alreadySet = localStorage.getItem("nekonoverse:input-mode") !== null;
+  const [dismissed, setDismissed] = createSignal(alreadySet);
+  const needsInputMode = () => !dismissed() && !!currentUser();
+
   return (
     <I18nProvider>
       <PWAUpdateBanner />
+      <Show when={needsInputMode()}>
+        <InputModeModal onClose={() => setDismissed(true)} />
+      </Show>
       <Router root={Layout}>
         <Route path="/" component={Home} />
         <Route path="/login" component={Login} />

@@ -10,6 +10,7 @@ import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 import { activateTouchGuard } from "../utils/touchGuard";
+import { isTouchMode } from "@nekonoverse/ui/stores/theme";
 
 interface Props {
   actorId: string;
@@ -27,11 +28,6 @@ function cacheSet(key: string, value: Account) {
   }
   cache.set(key, value);
 }
-
-// Detect touch-primary device (no hover capability)
-const isTouchDevice = () =>
-  typeof window !== "undefined" &&
-  (("ontouchstart" in window) || window.matchMedia("(hover: none)").matches);
 
 export default function UserHoverCard(props: Props) {
   const { t } = useI18n();
@@ -62,7 +58,7 @@ export default function UserHoverCard(props: Props) {
 
   // --- Click handler: desktop only (タッチデバイスはtouchイベントで処理) ---
   const handleClick = (e: MouseEvent) => {
-    if (isTouchDevice()) {
+    if (isTouchMode()) {
       e.preventDefault();
       return;
     }
@@ -85,7 +81,7 @@ export default function UserHoverCard(props: Props) {
 
   // --- Desktop: mouse hover handlers ---
   const handleMouseEnter = () => {
-    if (isTouchDevice()) return;
+    if (isTouchMode()) return;
     clearTimeout(hideTimer);
     showTimer = window.setTimeout(() => {
       setVisible(true);
@@ -94,14 +90,14 @@ export default function UserHoverCard(props: Props) {
   };
 
   const handleMouseLeave = () => {
-    if (isTouchDevice()) return;
+    if (isTouchMode()) return;
     clearTimeout(showTimer);
     hideTimer = window.setTimeout(() => setVisible(false), 200);
   };
 
   // --- Touch: long-press handlers ---
   const handleTouchStart = (e: TouchEvent) => {
-    if (!isTouchDevice()) return;
+    if (!isTouchMode()) return;
     longPressTriggered = false;
     longPressTimer = window.setTimeout(() => {
       longPressTriggered = true;
@@ -114,7 +110,7 @@ export default function UserHoverCard(props: Props) {
   };
 
   const handleTouchEnd = (e: TouchEvent) => {
-    if (!isTouchDevice()) return;
+    if (!isTouchMode()) return;
     clearTimeout(longPressTimer);
     if (longPressTriggered) {
       // Prevent the tap from navigating to the profile after long-press
@@ -214,7 +210,7 @@ export default function UserHoverCard(props: Props) {
     >
       {props.children}
       {/* Mobile backdrop overlay for tap-outside-to-close (rendered outside wrapper via portal-like fixed positioning) */}
-      <Show when={visible() && isTouchDevice()}>
+      <Show when={visible() && isTouchMode()}>
         <div
           class="hover-card-backdrop"
           onTouchStart={(e) => { e.stopPropagation(); }}
@@ -224,7 +220,7 @@ export default function UserHoverCard(props: Props) {
       </Show>
       <Show when={visible()}>
         <div
-          class={`hover-card${isTouchDevice() ? " hover-card-touch" : ""}`}
+          class={`hover-card${isTouchMode() ? " hover-card-touch" : ""}`}
           ref={adjustCardPosition}
           onMouseEnter={() => clearTimeout(hideTimer)}
           onMouseLeave={handleMouseLeave}

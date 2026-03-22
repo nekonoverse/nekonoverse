@@ -5,7 +5,11 @@
  * On mobile, when a long-press triggers a modal that appears under the
  * finger, releasing the finger synthesizes a click on the modal element.
  * This utility prevents that ghost tap.
+ *
+ * In PC mode the guard is a no-op because ghost taps do not occur.
  */
+
+import { isTouchMode } from "@nekonoverse/ui/stores/theme";
 
 let guardHandler: ((e: Event) => void) | null = null;
 let cleanupTimer: ReturnType<typeof setTimeout> | undefined;
@@ -38,6 +42,7 @@ function removeGuard() {
 
 /** Call this when a long-press opens a modal to block ghost taps. */
 export function activateTouchGuard() {
+  if (!isTouchMode()) return;
   removeGuard();
 
   guardHandler = (e: Event) => {
