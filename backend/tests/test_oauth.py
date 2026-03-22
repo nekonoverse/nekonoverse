@@ -342,6 +342,39 @@ async def test_revoke_nonexistent_token_valid_client(app_client, db, mock_valkey
     assert resp.status_code == 200
 
 
+# ── GET /oauth/passkey.js ─────────────────────────────────────────────
+
+
+async def test_oauth_passkey_js_endpoint(app_client):
+    """passkey.js is served as external JavaScript (CSP compatible)."""
+    resp = await app_client.get("/oauth/passkey.js")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/javascript")
+    assert "Cache-Control" in resp.headers
+    assert "passkeyLogin" in resp.text
+    assert "DOMContentLoaded" in resp.text
+
+
+async def test_login_form_uses_external_passkey_js(app_client, db, mock_valkey):
+    """Login form references external passkey.js instead of inline script."""
+    app_data = await _create_test_app(app_client, mock_valkey)
+    resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "http://localhost:3000/callback",
+            "response_type": "code",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    # External script tag is present
+    assert 'src="/oauth/passkey.js"' in resp.text
+    # No inline script or onclick handler
+    assert "onclick=" not in resp.text
+    assert "function passkeyLogin" not in resp.text
+
+
 # ── OOB (Out-of-Band) flow ───────────────────────────────────────────
 
 
