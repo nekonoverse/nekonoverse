@@ -488,7 +488,7 @@ async def _issue_authorization_code(
     state: str | None,
     code_challenge: str | None,
     code_challenge_method: str | None,
-) -> RedirectResponse:
+) -> RedirectResponse | HTMLResponse:
     """Generate an authorization code and redirect to the client."""
     from app.services.user_service import get_user_by_id
 
@@ -514,12 +514,34 @@ async def _issue_authorization_code(
     db.add(auth_code)
     await db.commit()
 
+    if redirect_uri == "urn:ietf:wg:oauth:2.0:oob":
+        return _render_oob_page(code=code)
+
     separator = "&" if "?" in redirect_uri else "?"
     location = f"{redirect_uri}{separator}code={code}"
     if state:
         location += "&" + urlencode({"state": state})
 
     return RedirectResponse(location, status_code=302)
+
+
+def _render_oob_page(*, code: str) -> HTMLResponse:
+    """Render a page that displays the authorization code for OOB flow."""
+    esc = html_mod.escape
+    return HTMLResponse(f"""<!DOCTYPE html>
+<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Authorization Code</title>
+<style>
+body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0 16px; }}
+.code {{ font-family: monospace; font-size: 18px; padding: 12px;
+  background: #f5f5f5; border: 1px solid #ddd; border-radius: 4px;
+  word-break: break-all; user-select: all; text-align: center; }}
+</style></head><body>
+<h2>Authorization successful</h2>
+<p>Copy this authorization code and paste it into your application:</p>
+<div class="code">{esc(code)}</div>
+<p>You can close this window after copying the code.</p>
+</body></html>""")
 
 
 def _render_totp_form(
