@@ -65,7 +65,8 @@ async def test_account_hidden_for_unauthenticated(app_client, db, mock_valkey):
     assert data["limited"] is True
     assert data["note"] == ""
     assert data["fields"] == []
-    assert data["avatar"] == "/default-avatar.svg"
+    assert data["avatar"].endswith("/default-avatar.svg")
+    assert data["avatar"].startswith("http")
 
 
 async def test_account_visible_for_authenticated(authed_client, db, test_user, mock_valkey):

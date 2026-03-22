@@ -400,6 +400,7 @@ async def get_account_storage(
 
 
 DEFAULT_AVATAR_PATH = "/default-avatar.svg"
+DEFAULT_AVATAR_URL = f"{settings.server_url}/default-avatar.svg"
 
 
 def _focal_from_drive_file(drive_file) -> FocalPoint | None:
@@ -456,8 +457,8 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
         "display_name": actor.display_name or "",
         "note": actor.summary or "",
         "uri": actor.ap_id,
-        "avatar": media_proxy_url(actor.avatar_url, variant="avatar") or DEFAULT_AVATAR_PATH,
-        "avatar_static": media_proxy_url(actor.avatar_url, variant="avatar", static=True) or DEFAULT_AVATAR_PATH,
+        "avatar": media_proxy_url(actor.avatar_url, variant="avatar") or DEFAULT_AVATAR_URL,
+        "avatar_static": media_proxy_url(actor.avatar_url, variant="avatar", static=True) or DEFAULT_AVATAR_URL,
         "header": media_proxy_url(actor.header_url) or "",
         "header_static": media_proxy_url(actor.header_url) or "",
         "url": f"{settings.server_url}/@{actor.username}",
