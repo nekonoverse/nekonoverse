@@ -1,0 +1,25 @@
+database_url: postgres://mitra:testpass@postgres-mitra:5432/mitra
+
+storage_dir: /var/lib/mitra
+web_client_dir: /var/lib/mitra/www
+
+http_host: '0.0.0.0'
+http_port: 8383
+
+instance_uri: https://mitra
+instance_title: "Mitra Test"
+instance_short_description: "Federation test instance"
+instance_description: "Mitra federation test instance for Nekonoverse"
+instance_timeline_public: true
+
+registration:
+  type: open
+  default_role: user
+
+federation:
+  enabled: true
+  ssrf_protection_enabled: false
+
+retention:
+  extraneous_posts: 50
+  empty_profiles: 150

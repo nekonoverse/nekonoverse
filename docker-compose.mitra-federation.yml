@@ -1,0 +1,168 @@
+services:
+  # ── Certificate Generator ──────────────────────────────────
+  certs:
+    image: alpine:3.21
+    command: >
+      sh -c "apk add --no-cache openssl >/dev/null 2>&1 && /gen-certs.sh"
+    volumes:
+      - certs:/certs
+      - ./tests/mitra-federation/gen-certs.sh:/gen-certs.sh:ro
+
+  # ── Nekonoverse Instance ───────────────────────────────────
+  postgres-neko:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: nekonoverse
+      POSTGRES_USER: nekonoverse
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U nekonoverse
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mitra-fed
+
+  valkey-neko:
+    image: valkey/valkey:8-alpine
+    healthcheck:
+      test: valkey-cli ping
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mitra-fed
+
+  app-neko:
+    build: ./backend
+    command: >
+      sh -c "alembic upgrade head && uvicorn app.main:app --host 0.0.0.0 --port 8000 --log-level info"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
+    depends_on:
+      postgres-neko:
+        condition: service_healthy
+      valkey-neko:
+        condition: service_healthy
+    healthcheck:
+      test: python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v1/health')"
+      interval: 3s
+      timeout: 5s
+      retries: 15
+    networks:
+      - mitra-fed
+
+  worker-neko:
+    build: ./backend
+    command: python -m app.worker.main
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@postgres-neko:5432/nekonoverse
+      VALKEY_URL: valkey://valkey-neko:6379/0
+      DOMAIN: nekonoverse
+      SECRET_KEY: test-secret-key-neko
+      FRONTEND_URL: https://nekonoverse
+      DEBUG: "true"
+      REGISTRATION_OPEN: "true"
+      SKIP_SSL_VERIFY: "true"
+      ALLOW_PRIVATE_NETWORKS: "true"
+    depends_on:
+      app-neko:
+        condition: service_healthy
+    networks:
+      - mitra-fed
+
+  nginx-neko:
+    image: nginx:alpine
+    volumes:
+      - ./tests/mitra-federation/nginx-neko-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      app-neko:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+    networks:
+      mitra-fed:
+        aliases:
+          - nekonoverse
+
+  # ── Mitra Instance ─────────────────────────────────────────
+  postgres-mitra:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: mitra
+      POSTGRES_USER: mitra
+      POSTGRES_PASSWORD: testpass
+    healthcheck:
+      test: pg_isready -U mitra
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    networks:
+      - mitra-fed
+
+  mitra-app:
+    image: bleakfuture0/mitra:latest
+    entrypoint: ["/custom-entrypoint.sh"]
+    environment:
+      CONFIG_PATH: /etc/mitra/config.yaml
+    volumes:
+      - ./tests/mitra-federation/mitra-config.yaml:/etc/mitra/config.yaml:ro
+      - ./tests/mitra-federation/mitra-entrypoint.sh:/custom-entrypoint.sh:ro
+      - certs:/certs:ro
+      - mitra-storage:/var/lib/mitra
+    depends_on:
+      postgres-mitra:
+        condition: service_healthy
+      certs:
+        condition: service_completed_successfully
+    networks:
+      - mitra-fed
+
+  nginx-mitra:
+    image: nginx:alpine
+    volumes:
+      - ./tests/mitra-federation/nginx-mitra-ssl.conf:/etc/nginx/nginx.conf:ro
+      - certs:/certs:ro
+    depends_on:
+      - mitra-app
+      - certs
+    networks:
+      mitra-fed:
+        aliases:
+          - mitra
+
+  # ── Test Runner ────────────────────────────────────────────
+  test-runner:
+    profiles: ["test"]
+    build: ./tests/mitra-federation
+    environment:
+      NEKO_URL: https://nekonoverse
+      MITRA_URL: https://mitra
+      NEKO_DOMAIN: nekonoverse
+      MITRA_DOMAIN: mitra
+    depends_on:
+      nginx-neko:
+        condition: service_started
+      nginx-mitra:
+        condition: service_started
+      worker-neko:
+        condition: service_started
+    networks:
+      - mitra-fed
+
+volumes:
+  certs:
+  mitra-storage:
+
+networks:
+  mitra-fed:
+    driver: bridge
