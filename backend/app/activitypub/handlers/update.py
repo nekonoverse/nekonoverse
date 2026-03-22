@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.activitypub import extract_mfm_source
 from app.services.actor_service import get_actor_by_ap_id, upsert_remote_actor
 from app.services.note_service import get_note_by_ap_id
 from app.utils.sanitize import sanitize_html
@@ -61,10 +62,7 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
     # Detect content changes
     new_content = data.get("content")
     new_sanitized = sanitize_html(new_content) if new_content else None
-    new_source = None
-    source_data = data.get("source")
-    if isinstance(source_data, dict):
-        new_source = source_data.get("content")
+    new_source = extract_mfm_source(data)
     new_spoiler = data.get("summary", note.spoiler_text)
 
     content_changed = (

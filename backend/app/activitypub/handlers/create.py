@@ -5,6 +5,7 @@ import math
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.activitypub import extract_mfm_source
 from app.config import settings
 from app.models.note import Note
 from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
@@ -57,16 +58,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         return
 
     content = sanitize_html(note_data.get("content", ""))
-    source_data = note_data.get("source")
-    source = None
-    if isinstance(source_data, dict):
-        source = source_data.get("content")
-
-    # Misskey fallback: _misskey_content
-    if source is None:
-        misskey_content = note_data.get("_misskey_content")
-        if isinstance(misskey_content, str):
-            source = misskey_content
+    source = extract_mfm_source(note_data)
 
     # Determine visibility
     to_list = note_data.get("to", [])
