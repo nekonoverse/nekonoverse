@@ -2697,6 +2697,57 @@ a:hover {
   white-space: nowrap;
 }
 
+/* Action popover (PC hover) */
+.action-popover-wrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.action-popover {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 300;
+  width: 280px;
+  max-height: 300px;
+  overflow-y: auto;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  padding: 8px 0;
+}
+
+.action-popover .reacted-by-item {
+  padding: 6px 12px;
+}
+
+.action-popover .reacted-by-avatar {
+  width: 28px;
+  height: 28px;
+}
+
+.action-popover .reacted-by-display {
+  font-size: 0.85rem;
+}
+
+.action-popover .reacted-by-handle {
+  font-size: 0.75rem;
+}
+
+.action-popover-title {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 4px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 /* Emoji Picker */
 .emoji-picker {
   position: absolute;

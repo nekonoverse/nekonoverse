@@ -14,6 +14,7 @@ import { importedShortcodes } from "@nekonoverse/ui/api/emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 import { activateTouchGuard } from "../../utils/touchGuard";
+import { isTouchMode } from "@nekonoverse/ui/stores/theme";
 
 interface Props {
   noteId: string;
@@ -54,6 +55,13 @@ export default function ReactionBar(props: Props) {
 
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let didLongPress = false;
+
+  // Hover popover (PC mode)
+  const [hoverGroup, setHoverGroup] = createSignal<GroupedReaction | null>(null);
+  const [hoverUsers, setHoverUsers] = createSignal<ReactionUser[]>([]);
+  const [hoverLoading, setHoverLoading] = createSignal(false);
+  let hoverShowTimer: ReturnType<typeof setTimeout> | null = null;
+  let hoverHideTimer: ReturnType<typeof setTimeout> | null = null;
 
   // pHash-based grouping
   const [hashMap, setHashMap] = createSignal<Map<string, string>>(
@@ -235,7 +243,55 @@ export default function ReactionBar(props: Props) {
     }
   };
 
-  onCleanup(() => cancelLongPress());
+  const startReactionHover = (group: GroupedReaction) => {
+    if (hoverHideTimer) { clearTimeout(hoverHideTimer); hoverHideTimer = null; }
+    if (hoverGroup()?.displayEmoji === group.displayEmoji) return;
+    if (hoverShowTimer) { clearTimeout(hoverShowTimer); hoverShowTimer = null; }
+    hoverShowTimer = setTimeout(async () => {
+      hoverShowTimer = null;
+      setHoverGroup(group);
+      setHoverLoading(true);
+      setHoverUsers([]);
+      try {
+        const allUsers = await Promise.all(
+          group.members.map((m) => getReactedBy(props.noteId, m.emoji)),
+        );
+        const seen = new Set<string>();
+        const uniqueUsers: ReactionUser[] = [];
+        for (const users of allUsers) {
+          for (const u of users) {
+            if (!seen.has(u.actor.id)) {
+              seen.add(u.actor.id);
+              uniqueUsers.push(u);
+            }
+          }
+        }
+        setHoverUsers(uniqueUsers);
+      } catch {
+        setHoverUsers([]);
+      }
+      setHoverLoading(false);
+    }, 300);
+  };
+
+  const scheduleHideHover = () => {
+    if (hoverShowTimer) { clearTimeout(hoverShowTimer); hoverShowTimer = null; }
+    hoverHideTimer = setTimeout(() => {
+      hoverHideTimer = null;
+      setHoverGroup(null);
+      setHoverUsers([]);
+    }, 200);
+  };
+
+  const cancelHideHover = () => {
+    if (hoverHideTimer) { clearTimeout(hoverHideTimer); hoverHideTimer = null; }
+  };
+
+  onCleanup(() => {
+    cancelLongPress();
+    if (hoverShowTimer) clearTimeout(hoverShowTimer);
+    if (hoverHideTimer) clearTimeout(hoverHideTimer);
+  });
 
   const ignoresReactions = () => props.serverSoftware === "mastodon";
 
@@ -269,19 +325,61 @@ export default function ReactionBar(props: Props) {
     <>
       <div class="reaction-bar">
         {grouped().map((g) => (
-          <button
-            class={badgeClass(g)}
-            ref={checkEmojiOverflow}
-            onClick={() => handleReaction(g)}
-            onMouseDown={() => startLongPress(g)}
-            onMouseUp={cancelLongPress}
-            onMouseLeave={cancelLongPress}
-            onTouchStart={() => startLongPress(g)}
-            onTouchEnd={(e) => { cancelLongPress(); if (didLongPress) { e.preventDefault(); } }}
-            onContextMenu={(e) => e.preventDefault()}
+          <div
+            class="action-popover-wrapper"
+            onMouseEnter={() => { if (!isTouchMode()) startReactionHover(g); }}
+            onMouseLeave={() => { if (!isTouchMode()) scheduleHideHover(); }}
           >
-            <Emoji emoji={g.displayEmoji} url={g.displayUrl} /> {g.count}
-          </button>
+            <button
+              class={badgeClass(g)}
+              ref={checkEmojiOverflow}
+              onClick={() => handleReaction(g)}
+              onTouchStart={() => { if (isTouchMode()) startLongPress(g); }}
+              onTouchEnd={(e) => { cancelLongPress(); if (didLongPress) { e.preventDefault(); } }}
+              onContextMenu={(e) => e.preventDefault()}
+            >
+              <Emoji emoji={g.displayEmoji} url={g.displayUrl} /> {g.count}
+            </button>
+            <Show when={hoverGroup()?.displayEmoji === g.displayEmoji}>
+              <div
+                class="action-popover"
+                onMouseEnter={cancelHideHover}
+                onMouseLeave={scheduleHideHover}
+              >
+                <div class="action-popover-title">
+                  <Emoji emoji={g.displayEmoji} url={g.displayUrl} />
+                  <Show when={g.displayEmoji.startsWith(":")}>
+                    <span>{g.displayEmoji.replace(/@[^:]+/, "")}</span>
+                  </Show>
+                </div>
+                <Show when={hoverLoading()}>
+                  <div style="padding: 12px; text-align: center; color: var(--text-secondary)">{t("common.loading")}</div>
+                </Show>
+                <Show when={!hoverLoading() && hoverUsers().length === 0}>
+                  <div style="padding: 12px; text-align: center; color: var(--text-secondary)">—</div>
+                </Show>
+                <For each={hoverUsers()}>
+                  {(ru) => {
+                    const handle = ru.actor.domain
+                      ? `@${ru.actor.username}@${ru.actor.domain}`
+                      : `@${ru.actor.username}`;
+                    return (
+                      <button
+                        class="reacted-by-item"
+                        onClick={() => { setHoverGroup(null); navigate(`/${handle}`); }}
+                      >
+                        <img class="reacted-by-avatar" src={ru.actor.avatar_url || defaultAvatar()} alt="" />
+                        <div class="reacted-by-names">
+                          <span class="reacted-by-display">{ru.actor.display_name || ru.actor.username}</span>
+                          <span class="reacted-by-handle">{handle}</span>
+                        </div>
+                      </button>
+                    );
+                  }}
+                </For>
+              </div>
+            </Show>
+          </div>
         ))}
         <button
           class={`reaction-add-btn${ignoresReactions() ? " reaction-not-delivered" : ""}`}
