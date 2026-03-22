@@ -340,3 +340,238 @@ async def test_revoke_nonexistent_token_valid_client(app_client, db, mock_valkey
         },
     )
     assert resp.status_code == 200
+
+
+# ── GET /oauth/oob.js ─────────────────────────────────────────────────
+
+
+async def test_oauth_oob_js_endpoint(app_client):
+    """oob.js is served as external JavaScript (CSP compatible)."""
+    resp = await app_client.get("/oauth/oob.js")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/javascript")
+    assert "copy-btn" in resp.text
+    assert "DOMContentLoaded" in resp.text
+
+
+async def test_oob_page_has_copy_button(app_client, db, mock_valkey, test_user):
+    """OOB authorization code page includes a copy button and oob.js."""
+    app_data = await _create_oob_app(app_client, mock_valkey)
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-oob-copy")
+
+    # Get consent form, extract CSRF, POST to get OOB page
+    consent_resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "response_type": "code",
+            "scope": "read write",
+        },
+        follow_redirects=False,
+    )
+    assert consent_resp.status_code == 200
+    import re
+    csrf_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', consent_resp.text)
+    assert csrf_match
+
+    original_get = mock_valkey.get
+    async def _csrf_aware_get(key):
+        if key.startswith("csrf:"):
+            return "1"
+        return await original_get(key)
+    mock_valkey.get = _csrf_aware_get
+
+    auth_resp = await app_client.post(
+        "/oauth/authorize",
+        data={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "scope": "read write",
+            "response_type": "code",
+            "csrf_token": csrf_match.group(1),
+        },
+        follow_redirects=False,
+    )
+    mock_valkey.get = original_get
+
+    assert auth_resp.status_code == 200
+    assert 'id="copy-btn"' in auth_resp.text
+    assert 'src="/oauth/oob.js"' in auth_resp.text
+    assert 'id="oob-code"' in auth_resp.text
+
+
+# ── Consent form: username + Switch Account ──────────────────────────
+
+
+async def test_consent_form_shows_username(app_client, db, mock_valkey, test_user):
+    """Consent form shows the logged-in username and Switch Account link."""
+    app_data = await _create_test_app(app_client, mock_valkey)
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-username")
+
+    resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "http://localhost:3000/callback",
+            "response_type": "code",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    assert f"@{test_user.actor.username}" in resp.text
+    assert "Switch account" in resp.text
+    assert "prompt=login" in resp.text
+
+
+async def test_prompt_login_forces_login_form(app_client, db, mock_valkey, test_user):
+    """prompt=login shows login form even when logged in."""
+    app_data = await _create_test_app(app_client, mock_valkey)
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-prompt")
+
+    resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "http://localhost:3000/callback",
+            "response_type": "code",
+            "prompt": "login",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    assert "log in" in resp.text.lower()
+    # Should NOT show consent form
+    assert "Switch account" not in resp.text
+
+
+# ── GET /oauth/passkey.js ─────────────────────────────────────────────
+
+
+async def test_oauth_passkey_js_endpoint(app_client):
+    """passkey.js is served as external JavaScript (CSP compatible)."""
+    resp = await app_client.get("/oauth/passkey.js")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("application/javascript")
+    assert "Cache-Control" in resp.headers
+    assert "passkeyLogin" in resp.text
+    assert "DOMContentLoaded" in resp.text
+
+
+async def test_login_form_uses_external_passkey_js(app_client, db, mock_valkey):
+    """Login form references external passkey.js instead of inline script."""
+    app_data = await _create_test_app(app_client, mock_valkey)
+    resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "http://localhost:3000/callback",
+            "response_type": "code",
+        },
+        follow_redirects=False,
+    )
+    assert resp.status_code == 200
+    # External script tag is present
+    assert 'src="/oauth/passkey.js"' in resp.text
+    # No inline script or onclick handler
+    assert "onclick=" not in resp.text
+    assert "function passkeyLogin" not in resp.text
+
+
+# ── OOB (Out-of-Band) flow ───────────────────────────────────────────
+
+
+async def _create_oob_app(app_client, mock_valkey):
+    """Create an OAuth app with OOB redirect_uri."""
+    resp = await app_client.post(
+        "/api/v1/apps",
+        json={
+            "client_name": "OOBTestApp",
+            "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
+            "scopes": "read write",
+        },
+    )
+    assert resp.status_code == 200
+    return resp.json()
+
+
+async def test_oob_authorize_shows_code_page(app_client, db, mock_valkey, test_user):
+    """OOB flow: after login, display authorization code on page instead of redirect."""
+    app_data = await _create_oob_app(app_client, mock_valkey)
+
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+    app_client.cookies.set("nekonoverse_session", "test-oob-session")
+
+    # Get consent form
+    consent_resp = await app_client.get(
+        "/oauth/authorize",
+        params={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "response_type": "code",
+            "scope": "read write",
+        },
+        follow_redirects=False,
+    )
+    assert consent_resp.status_code == 200
+    csrf_match = re.search(r'name="csrf_token"\s+value="([^"]+)"', consent_resp.text)
+    assert csrf_match
+    csrf_token = csrf_match.group(1)
+
+    original_get = mock_valkey.get
+    async def _csrf_aware_get(key):
+        if key.startswith("csrf:"):
+            return "1"
+        return await original_get(key)
+    mock_valkey.get = _csrf_aware_get
+
+    # Submit consent — should return HTML page with code, NOT a redirect
+    auth_resp = await app_client.post(
+        "/oauth/authorize",
+        data={
+            "client_id": app_data["client_id"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+            "scope": "read write",
+            "response_type": "code",
+            "csrf_token": csrf_token,
+        },
+        follow_redirects=False,
+    )
+    mock_valkey.get = original_get
+
+    assert auth_resp.status_code == 200
+    assert "Authorization successful" in auth_resp.text
+    assert "Authorization Code" in auth_resp.text
+
+    # Extract the code from the page
+    code_match = re.search(r'class="code">([^<]+)<', auth_resp.text)
+    assert code_match
+    code = code_match.group(1)
+    assert len(code) > 10  # sanity check
+
+    return app_data, code
+
+
+async def test_oob_token_exchange(app_client, db, mock_valkey, test_user):
+    """OOB flow: code displayed on page can be exchanged for a token."""
+    app_data, code = await test_oob_authorize_shows_code_page(
+        app_client, db, mock_valkey, test_user
+    )
+
+    resp = await app_client.post(
+        "/oauth/token",
+        data={
+            "grant_type": "authorization_code",
+            "code": code,
+            "client_id": app_data["client_id"],
+            "client_secret": app_data["client_secret"],
+            "redirect_uri": "urn:ietf:wg:oauth:2.0:oob",
+        },
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["access_token"]
+    assert data["token_type"] == "Bearer"

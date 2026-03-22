@@ -1,3 +1,20 @@
+## [20260322-4](https://github.com/nekonoverse/nekonoverse/releases/tag/20260322-4) — 2026-03-22
+
+### 追加
+
+- **OOB 認可コードページにコピーボタン** — OAuth OOB フローで表示される認可コードをワンクリックでコピー可能に (#792, #793)
+- **OAuth 同意画面に Switch Account** — ログイン中のユーザー名を表示し、別アカウントへの切り替えリンクを追加 (`prompt=login` パラメータ対応) (#792, #793)
+- **OAuth authorize URL 生成スクリプト** — `scripts/oauth-url.sh` でアプリ登録から authorize URL 生成までをワンライナーで実行可能
+
+### 修正
+
+- **OAuth パスキー JS を外部化 (CSP 対応)** — インラインスクリプトを `GET /oauth/passkey.js` に外部化し、CSP `script-src 'self'` 環境でパスキーボタンが表示されない問題を修正 (#790, #791)
+- **OAuth OOB フロー対応** — `urn:ietf:wg:oauth:2.0:oob` で認可コードを画面表示するように修正 (#788)
+- **nginx: /oauth/ パスの静的アセット誤マッチ** — `.js` 正規表現 location が `/oauth/passkey.js` を横取りして 404 になる問題を `^~` プレフィックスで修正
+- **source.mediaType に基づく MFM 判定** — 送信 mediaType をユーザー設定に基づいて判定 (#782, #786)
+
+---
+
 ## [20260322-3](https://github.com/nekonoverse/nekonoverse/releases/tag/20260322-3) — 2026-03-22
 
 ### 追加

@@ -89,6 +89,30 @@ export async function updateHeaderFocus(x: number, y: number): Promise<CurrentUs
   });
 }
 
+// Server-side preferences
+
+export type SourceMediaType = "auto" | "mfm" | "plain";
+
+export interface ServerPreferences {
+  "posting:default:visibility": string;
+  "posting:default:sensitive": boolean;
+  "posting:default:language": string | null;
+  "reading:expand:media": string;
+  "reading:expand:spoilers": boolean;
+  "posting:source_media_type": SourceMediaType;
+}
+
+export async function getPreferences(): Promise<ServerPreferences> {
+  return apiRequest<ServerPreferences>("/api/v1/preferences", { method: "GET" });
+}
+
+export async function updateSourceMediaType(value: SourceMediaType): Promise<ServerPreferences> {
+  return apiRequest<ServerPreferences>("/api/v1/preferences", {
+    method: "PATCH",
+    body: { "posting:source_media_type": value },
+  });
+}
+
 export async function changePassword(currentPassword: string, newPassword: string): Promise<void> {
   await apiRequest("/api/v1/auth/change_password", {
     method: "POST",

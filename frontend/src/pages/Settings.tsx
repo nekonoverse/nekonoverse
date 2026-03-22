@@ -22,7 +22,7 @@ import {
 import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "@nekonoverse/ui/stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
-import { changePassword, startExport, getExportStatus, type DataExportStatus } from "@nekonoverse/ui/api/settings";
+import { changePassword, startExport, getExportStatus, getPreferences, updateSourceMediaType, type DataExportStatus, type SourceMediaType } from "@nekonoverse/ui/api/settings";
 import { getAuthorizedApps, revokeAuthorizedApp, type AuthorizedApp } from "@nekonoverse/ui/api/authorizedApps";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type LoginHistoryEntry } from "@nekonoverse/ui/api/sessions";
@@ -339,6 +339,23 @@ function AppearanceTab() {
 
 function PostingTab() {
   const { t } = useI18n();
+  const [sourceMediaType, setSourceMediaType] = createSignal<SourceMediaType>("auto");
+  const [sourceMediaTypeLoading, setSourceMediaTypeLoading] = createSignal(true);
+
+  onMount(async () => {
+    try {
+      const prefs = await getPreferences();
+      setSourceMediaType(prefs["posting:source_media_type"] || "auto");
+    } catch { /* use default */ }
+    setSourceMediaTypeLoading(false);
+  });
+
+  const handleSourceMediaTypeChange = async (value: SourceMediaType) => {
+    setSourceMediaType(value);
+    try {
+      await updateSourceMediaType(value);
+    } catch { /* ignore */ }
+  };
 
   return (
     <div class="settings-section">
@@ -356,6 +373,18 @@ function PostingTab() {
         />
         {t("settings.rememberVisibility")}
       </label>
+      <h3>{t("settings.sourceMediaType" as any)}</h3>
+      <p class="settings-description">{t("settings.sourceMediaTypeDescription" as any)}</p>
+      <Show when={!sourceMediaTypeLoading()}>
+        <select
+          value={sourceMediaType()}
+          onChange={(e) => handleSourceMediaTypeChange(e.currentTarget.value as SourceMediaType)}
+        >
+          <option value="auto">{t("settings.sourceMediaTypeAuto" as any)}</option>
+          <option value="mfm">{t("settings.sourceMediaTypeMfm" as any)}</option>
+          <option value="plain">{t("settings.sourceMediaTypePlain" as any)}</option>
+        </select>
+      </Show>
       <h3>{t("settings.timeline")}</h3>
       <label class="toggle-label">
         <input

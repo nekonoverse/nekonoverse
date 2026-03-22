@@ -263,6 +263,189 @@ async def test_handle_create_source_takes_priority(db, mock_valkey):
     assert note.source == "From source field"
 
 
+async def test_handle_create_source_html_mediatype_ignored(db, mock_valkey):
+    """source with mediaType text/html should NOT be stored as MFM source."""
+    from app.activitypub.handlers.create import handle_create
+
+    remote_actor = await make_remote_actor(db, username="html_src", domain="html.example")
+    await db.commit()
+
+    note_ap_id = "http://html.example/notes/html-source"
+    activity = {
+        "type": "Create",
+        "actor": remote_actor.ap_id,
+        "object": {
+            "id": note_ap_id,
+            "type": "Note",
+            "attributedTo": remote_actor.ap_id,
+            "content": "<p>Hello <b>world</b></p>",
+            "source": {"content": "<p>Hello <b>world</b></p>", "mediaType": "text/html"},
+            "published": "2026-03-06T12:00:00Z",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [],
+        },
+    }
+
+    await handle_create(db, activity)
+
+    from app.services.note_service import get_note_by_ap_id
+    note = await get_note_by_ap_id(db, note_ap_id)
+    assert note is not None
+    assert note.source is None
+
+
+async def test_handle_create_source_bbcode_mediatype_ignored(db, mock_valkey):
+    """source with mediaType text/bbcode should NOT be stored as MFM source."""
+    from app.activitypub.handlers.create import handle_create
+
+    remote_actor = await make_remote_actor(db, username="bb_src", domain="bb.example")
+    await db.commit()
+
+    note_ap_id = "http://bb.example/notes/bbcode-source"
+    activity = {
+        "type": "Create",
+        "actor": remote_actor.ap_id,
+        "object": {
+            "id": note_ap_id,
+            "type": "Note",
+            "attributedTo": remote_actor.ap_id,
+            "content": "<p>Hello <b>world</b></p>",
+            "source": {"content": "[b]Hello[/b] world", "mediaType": "text/bbcode"},
+            "published": "2026-03-06T12:00:00Z",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [],
+        },
+    }
+
+    await handle_create(db, activity)
+
+    from app.services.note_service import get_note_by_ap_id
+    note = await get_note_by_ap_id(db, note_ap_id)
+    assert note is not None
+    assert note.source is None
+
+
+async def test_handle_create_source_mfm_mediatype_stored(db, mock_valkey):
+    """source with mediaType text/x.misskeymarkdown should be stored."""
+    from app.activitypub.handlers.create import handle_create
+
+    remote_actor = await make_remote_actor(db, username="mfm_src", domain="mfm.example")
+    await db.commit()
+
+    note_ap_id = "http://mfm.example/notes/mfm-source"
+    activity = {
+        "type": "Create",
+        "actor": remote_actor.ap_id,
+        "object": {
+            "id": note_ap_id,
+            "type": "Note",
+            "attributedTo": remote_actor.ap_id,
+            "content": "<p>Hello <b>world</b></p>",
+            "source": {"content": "Hello **world**", "mediaType": "text/x.misskeymarkdown"},
+            "published": "2026-03-06T12:00:00Z",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [],
+        },
+    }
+
+    await handle_create(db, activity)
+
+    from app.services.note_service import get_note_by_ap_id
+    note = await get_note_by_ap_id(db, note_ap_id)
+    assert note is not None
+    assert note.source == "Hello **world**"
+
+
+async def test_handle_create_source_no_mediatype_stored(db, mock_valkey):
+    """source without mediaType should be stored (defaults to MFM-safe)."""
+    from app.activitypub.handlers.create import handle_create
+
+    remote_actor = await make_remote_actor(db, username="nomt_src", domain="nomt.example")
+    await db.commit()
+
+    note_ap_id = "http://nomt.example/notes/no-mediatype"
+    activity = {
+        "type": "Create",
+        "actor": remote_actor.ap_id,
+        "object": {
+            "id": note_ap_id,
+            "type": "Note",
+            "attributedTo": remote_actor.ap_id,
+            "content": "<p>Hello world</p>",
+            "source": {"content": "Hello world"},
+            "published": "2026-03-06T12:00:00Z",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [],
+        },
+    }
+
+    await handle_create(db, activity)
+
+    from app.services.note_service import get_note_by_ap_id
+    note = await get_note_by_ap_id(db, note_ap_id)
+    assert note is not None
+    assert note.source == "Hello world"
+
+
+async def test_handle_create_html_source_misskey_fallback(db, mock_valkey):
+    """When source is text/html but _misskey_content exists, use _misskey_content."""
+    from app.activitypub.handlers.create import handle_create
+
+    remote_actor = await make_remote_actor(db, username="htmlmk", domain="htmlmk.example")
+    await db.commit()
+
+    note_ap_id = "http://htmlmk.example/notes/html-with-misskey"
+    activity = {
+        "type": "Create",
+        "actor": remote_actor.ap_id,
+        "object": {
+            "id": note_ap_id,
+            "type": "Note",
+            "attributedTo": remote_actor.ap_id,
+            "content": "<p>Hello</p>",
+            "source": {"content": "<p>Hello</p>", "mediaType": "text/html"},
+            "_misskey_content": "Hello",
+            "published": "2026-03-06T12:00:00Z",
+            "to": ["https://www.w3.org/ns/activitystreams#Public"],
+            "cc": [],
+        },
+    }
+
+    await handle_create(db, activity)
+
+    from app.services.note_service import get_note_by_ap_id
+    note = await get_note_by_ap_id(db, note_ap_id)
+    assert note is not None
+    assert note.source == "Hello"
+
+
+# --- resolve_source_media_type ---
+
+
+def test_resolve_source_media_type_auto_plain():
+    """Auto mode with plain text returns text/plain."""
+    from app.activitypub import resolve_source_media_type
+    assert resolve_source_media_type("Hello world") == "text/plain"
+
+
+def test_resolve_source_media_type_auto_mfm():
+    """Auto mode with MFM function syntax returns text/x.misskeymarkdown."""
+    from app.activitypub import resolve_source_media_type
+    assert resolve_source_media_type("$[spin Hello]") == "text/x.misskeymarkdown"
+
+
+def test_resolve_source_media_type_pref_mfm():
+    """Preference mfm always returns text/x.misskeymarkdown."""
+    from app.activitypub import resolve_source_media_type
+    assert resolve_source_media_type("Hello", {"source_media_type": "mfm"}) == "text/x.misskeymarkdown"
+
+
+def test_resolve_source_media_type_pref_plain():
+    """Preference plain always returns text/plain."""
+    from app.activitypub import resolve_source_media_type
+    assert resolve_source_media_type("$[spin Hello]", {"source_media_type": "plain"}) == "text/plain"
+
+
 # --- Incoming Create with Emoji tags ---
 
 

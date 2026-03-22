@@ -75,13 +75,50 @@ async def verify_app_credentials(
 async def get_preferences(
     user: User = Depends(get_current_user),
 ):
-    """Return user preferences (defaults for now)."""
+    """Return user preferences."""
+    prefs = user.preferences or {}
     return {
         "posting:default:visibility": "public",
         "posting:default:sensitive": False,
         "posting:default:language": None,
         "reading:expand:media": "default",
         "reading:expand:spoilers": False,
+        "posting:source_media_type": prefs.get("source_media_type", "auto"),
+    }
+
+
+@router.patch("/api/v1/preferences")
+async def update_preferences(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update user preferences."""
+    body = await request.json()
+    prefs = dict(user.preferences or {})
+
+    _VALID_SOURCE_MEDIA_TYPES = {"auto", "mfm", "plain"}
+    smt = body.get("posting:source_media_type")
+    if smt is not None:
+        if smt not in _VALID_SOURCE_MEDIA_TYPES:
+            from fastapi import HTTPException
+
+            raise HTTPException(
+                status_code=422,
+                detail=f"Invalid source_media_type: must be one of {_VALID_SOURCE_MEDIA_TYPES}",
+            )
+        prefs["source_media_type"] = smt
+
+    user.preferences = prefs
+    await db.commit()
+
+    return {
+        "posting:default:visibility": "public",
+        "posting:default:sensitive": False,
+        "posting:default:language": None,
+        "reading:expand:media": "default",
+        "reading:expand:spoilers": False,
+        "posting:source_media_type": prefs.get("source_media_type", "auto"),
     }
 
 

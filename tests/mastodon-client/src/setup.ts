@@ -93,7 +93,8 @@ export async function getAccessToken(
     code = url.searchParams.get("code")!;
   } else {
     const body = await authResp.text();
-    const match = body.match(/code=([^&"<\s]+)/);
+    // Try code= param first (redirect-style), then OOB page class="code">
+    const match = body.match(/code=([^&"<\s]+)/) || body.match(/class="code">([^<]+)</);
     if (!match) {
       throw new Error(`Could not extract auth code. Status: ${authResp.status}, Body: ${body.slice(0, 500)}`);
     }
