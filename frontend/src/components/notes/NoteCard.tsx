@@ -33,7 +33,7 @@ import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "@nekonoverse/ui/utils/mentionify";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
-import { timeFormat, nyaizeEnabled } from "@nekonoverse/ui/stores/theme";
+import { timeFormat, nyaizeEnabled, isTouchMode } from "@nekonoverse/ui/stores/theme";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { renderMfm } from "@nekonoverse/ui/utils/mfm";
@@ -295,6 +295,14 @@ export default function NoteCard(props: Props) {
   let actionLongPressTimer: ReturnType<typeof setTimeout> | null = null;
   let actionDidLongPress = false;
 
+  // Hover popover for boost/fav (PC mode)
+  const [hoverTarget, setHoverTarget] = createSignal<"boost" | "fav" | null>(null);
+  const [hoverTitle, setHoverTitle] = createSignal("");
+  const [hoverUsers, setHoverUsers] = createSignal<ActionByUser[]>([]);
+  const [hoverLoading, setHoverLoading] = createSignal(false);
+  let hoverShowTimer: ReturnType<typeof setTimeout> | null = null;
+  let hoverHideTimer: ReturnType<typeof setTimeout> | null = null;
+
   // If this is a reblog, the displayed note is the inner one
   const isReblog = () => !!props.note.reblog;
   const displayNote = () => props.note.reblog || props.note;
@@ -496,6 +504,47 @@ export default function NoteCard(props: Props) {
       actionLongPressTimer = null;
     }
   };
+
+  const startActionHover = (
+    target: "boost" | "fav",
+    title: string,
+    fetcher: () => Promise<ActionByUser[]>,
+  ) => {
+    if (hoverHideTimer) { clearTimeout(hoverHideTimer); hoverHideTimer = null; }
+    if (hoverTarget() === target) return;
+    if (hoverShowTimer) { clearTimeout(hoverShowTimer); hoverShowTimer = null; }
+    hoverShowTimer = setTimeout(async () => {
+      hoverShowTimer = null;
+      setHoverTarget(target);
+      setHoverTitle(title);
+      setHoverLoading(true);
+      setHoverUsers([]);
+      try {
+        setHoverUsers(await fetcher());
+      } catch {
+        setHoverUsers([]);
+      }
+      setHoverLoading(false);
+    }, 300);
+  };
+
+  const scheduleHideHover = () => {
+    if (hoverShowTimer) { clearTimeout(hoverShowTimer); hoverShowTimer = null; }
+    hoverHideTimer = setTimeout(() => {
+      hoverHideTimer = null;
+      setHoverTarget(null);
+      setHoverUsers([]);
+    }, 200);
+  };
+
+  const cancelHideHover = () => {
+    if (hoverHideTimer) { clearTimeout(hoverHideTimer); hoverHideTimer = null; }
+  };
+
+  onCleanup(() => {
+    if (hoverShowTimer) clearTimeout(hoverShowTimer);
+    if (hoverHideTimer) clearTimeout(hoverHideTimer);
+  });
 
   onCleanup(() => cancelActionLongPress());
 
@@ -1046,41 +1095,73 @@ export default function NoteCard(props: Props) {
                 <span class="note-action-count">{note().replies_count}</span>
               </Show>
             </button>
-            <button
-              class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${note().visibility === "private" || note().visibility === "direct" ? " disabled" : ""}`}
-              onClick={handleBoost}
-              onMouseDown={() => startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id))}
-              onMouseUp={cancelActionLongPress}
-              onMouseLeave={cancelActionLongPress}
-              onTouchStart={() => startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id))}
-              onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
-              onContextMenu={(e) => e.preventDefault()}
-              disabled={boostLoading() || note().visibility === "private" || note().visibility === "direct"}
-              title={
-                note().visibility === "private" || note().visibility === "direct"
-                  ? t("boost.cannotRenote")
-                  : t(boosted() ? "boost.unboost" : "boost.boost")
-              }
+            <div
+              class="action-popover-wrapper"
+              onMouseEnter={() => { if (!isTouchMode()) startActionHover("boost", t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
+              onMouseLeave={() => { if (!isTouchMode()) scheduleHideHover(); }}
             >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+              <button
+                class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${note().visibility === "private" || note().visibility === "direct" ? " disabled" : ""}`}
+                onClick={handleBoost}
+                onTouchStart={() => { if (isTouchMode()) startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
+                onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
+                onContextMenu={(e) => e.preventDefault()}
+                disabled={boostLoading() || note().visibility === "private" || note().visibility === "direct"}
+                title={
+                  note().visibility === "private" || note().visibility === "direct"
+                    ? t("boost.cannotRenote")
+                    : t(boosted() ? "boost.unboost" : "boost.boost")
+                }
               >
-                <polyline points="17 1 21 5 17 9" />
-                <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                <polyline points="7 23 3 19 7 15" />
-                <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-              </svg>
-              <Show when={boostCount() > 0}>
-                <span class="note-action-count">{boostCount()}</span>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill="none"
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polyline points="17 1 21 5 17 9" />
+                  <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                  <polyline points="7 23 3 19 7 15" />
+                  <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                </svg>
+                <Show when={boostCount() > 0}>
+                  <span class="note-action-count">{boostCount()}</span>
+                </Show>
+              </button>
+              <Show when={hoverTarget() === "boost"}>
+                <div
+                  class="action-popover"
+                  onMouseEnter={cancelHideHover}
+                  onMouseLeave={scheduleHideHover}
+                >
+                  <div class="action-popover-title">{hoverTitle()}</div>
+                  <Show when={hoverLoading()}>
+                    <div style="padding: 12px; text-align: center; color: var(--text-secondary)">{t("common.loading")}</div>
+                  </Show>
+                  <Show when={!hoverLoading() && hoverUsers().length === 0}>
+                    <div style="padding: 12px; text-align: center; color: var(--text-secondary)">—</div>
+                  </Show>
+                  <For each={hoverUsers()}>
+                    {(u) => (
+                      <button
+                        class="reacted-by-item"
+                        onClick={() => { setHoverTarget(null); navigate(`/@${u.acct}`); }}
+                      >
+                        <img class="reacted-by-avatar" src={u.avatar || defaultAvatar()} alt="" />
+                        <div class="reacted-by-names">
+                          <span class="reacted-by-display">{u.display_name || u.username}</span>
+                          <span class="reacted-by-handle">@{u.acct}</span>
+                        </div>
+                      </button>
+                    )}
+                  </For>
+                </div>
               </Show>
-            </button>
+            </div>
             <button
               class={`note-action-btn note-quote-btn${note().visibility === "private" || note().visibility === "direct" ? " disabled" : ""}`}
               onClick={handleQuote}
@@ -1106,33 +1187,65 @@ export default function NoteCard(props: Props) {
                 <path d="M8 13h4" />
               </svg>
             </button>
-            <button
-              class={`note-action-btn note-fav-btn${favourited() ? " favourited" : ""}`}
-              onClick={handleFavourite}
-              onMouseDown={() => startActionLongPress(t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id))}
-              onMouseUp={cancelActionLongPress}
-              onMouseLeave={cancelActionLongPress}
-              onTouchStart={() => startActionLongPress(t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id))}
-              onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
-              onContextMenu={(e) => e.preventDefault()}
-              title={t(favourited() ? "favourite.remove" : "favourite.add")}
+            <div
+              class="action-popover-wrapper"
+              onMouseEnter={() => { if (!isTouchMode()) startActionHover("fav", t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id)); }}
+              onMouseLeave={() => { if (!isTouchMode()) scheduleHideHover(); }}
             >
-              <svg
-                width="18"
-                height="18"
-                viewBox="0 0 24 24"
-                fill={favourited() ? "currentColor" : "none"}
-                stroke="currentColor"
-                stroke-width="2"
-                stroke-linecap="round"
-                stroke-linejoin="round"
+              <button
+                class={`note-action-btn note-fav-btn${favourited() ? " favourited" : ""}`}
+                onClick={handleFavourite}
+                onTouchStart={() => { if (isTouchMode()) startActionLongPress(t("favourite.favouritedBy" as any), () => getFavouritedBy(displayNote().id)); }}
+                onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
+                onContextMenu={(e) => e.preventDefault()}
+                title={t(favourited() ? "favourite.remove" : "favourite.add")}
               >
-                <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
-              </svg>
-              <Show when={favCount() > 0}>
-                <span class="note-action-count">{favCount()}</span>
+                <svg
+                  width="18"
+                  height="18"
+                  viewBox="0 0 24 24"
+                  fill={favourited() ? "currentColor" : "none"}
+                  stroke="currentColor"
+                  stroke-width="2"
+                  stroke-linecap="round"
+                  stroke-linejoin="round"
+                >
+                  <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2" />
+                </svg>
+                <Show when={favCount() > 0}>
+                  <span class="note-action-count">{favCount()}</span>
+                </Show>
+              </button>
+              <Show when={hoverTarget() === "fav"}>
+                <div
+                  class="action-popover"
+                  onMouseEnter={cancelHideHover}
+                  onMouseLeave={scheduleHideHover}
+                >
+                  <div class="action-popover-title">{hoverTitle()}</div>
+                  <Show when={hoverLoading()}>
+                    <div style="padding: 12px; text-align: center; color: var(--text-secondary)">{t("common.loading")}</div>
+                  </Show>
+                  <Show when={!hoverLoading() && hoverUsers().length === 0}>
+                    <div style="padding: 12px; text-align: center; color: var(--text-secondary)">—</div>
+                  </Show>
+                  <For each={hoverUsers()}>
+                    {(u) => (
+                      <button
+                        class="reacted-by-item"
+                        onClick={() => { setHoverTarget(null); navigate(`/@${u.acct}`); }}
+                      >
+                        <img class="reacted-by-avatar" src={u.avatar || defaultAvatar()} alt="" />
+                        <div class="reacted-by-names">
+                          <span class="reacted-by-display">{u.display_name || u.username}</span>
+                          <span class="reacted-by-handle">@{u.acct}</span>
+                        </div>
+                      </button>
+                    )}
+                  </For>
+                </div>
               </Show>
-            </button>
+            </div>
             <button
               class={`note-action-btn note-bookmark-btn${bookmarked() ? " bookmarked" : ""}`}
               onClick={handleBookmark}
