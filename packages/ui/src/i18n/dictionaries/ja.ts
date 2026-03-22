@@ -642,6 +642,8 @@ export const ja = {
   "settings.reactionConfirmReset": "確認ダイアログを再表示する",
   "settings.mfmMotion": "MFMアニメーション",
   "settings.reduceMfmMotion": "動きのあるMFMを無効にする",
+  "settings.mediaDisplay": "メディア表示",
+  "settings.cropShadow": "トリミングされた画像に影を表示する",
   "settings.tabEmail": "メール",
   "settings.descEmail": "メール認証とアドレス管理",
   "email.title": "メールアドレス",

@@ -1577,14 +1577,18 @@ a:hover {
 
 .note-media-item[data-crop="vertical"]::after {
   background: linear-gradient(to bottom,
-    rgba(0, 0, 0, 0.12) 0%, transparent 12%,
-    transparent 88%, rgba(0, 0, 0, 0.12) 100%);
+    rgba(0, 0, 0, 0.06) 0%, transparent 12%,
+    transparent 88%, rgba(0, 0, 0, 0.06) 100%);
 }
 
 .note-media-item[data-crop="horizontal"]::after {
   background: linear-gradient(to right,
-    rgba(0, 0, 0, 0.12) 0%, transparent 12%,
-    transparent 88%, rgba(0, 0, 0, 0.12) 100%);
+    rgba(0, 0, 0, 0.06) 0%, transparent 12%,
+    transparent 88%, rgba(0, 0, 0, 0.06) 100%);
+}
+
+[data-crop-shadow="off"] .note-media-item[data-crop]::after {
+  display: none;
 }
 
 .note-media-item img {
