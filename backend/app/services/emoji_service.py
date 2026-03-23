@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 
@@ -5,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.custom_emoji import CustomEmoji
+
+logger = logging.getLogger(__name__)
 
 _SHORTCODE_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _SHORTCODE_MAX_LEN = 255
@@ -192,6 +195,54 @@ async def upsert_remote_emoji(
     db.add(emoji)
     await db.flush()
     return emoji
+
+
+async def fetch_and_cache_remote_emoji(
+    db: AsyncSession, shortcode: str, domain: str
+) -> CustomEmoji | None:
+    """Fetch a remote custom emoji from the instance API and cache it.
+
+    Tries GET https://{domain}/api/v1/custom_emojis to find the emoji.
+    Returns the cached CustomEmoji or None if not found / fetch failed.
+    """
+    existing = await get_custom_emoji(db, shortcode, domain)
+    if existing:
+        return existing
+
+    try:
+        from app.utils.http_client import make_async_client
+        from app.utils.network import is_safe_url
+
+        url = f"https://{domain}/api/v1/custom_emojis"
+        if not is_safe_url(url):
+            return None
+
+        async with make_async_client(timeout=5.0, follow_redirects=True) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+
+        emojis = resp.json()
+        if not isinstance(emojis, list):
+            return None
+
+        for entry in emojis:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("shortcode") == shortcode:
+                emoji_url = entry.get("url")
+                if not emoji_url:
+                    return None
+                return await upsert_remote_emoji(
+                    db,
+                    shortcode,
+                    domain,
+                    emoji_url,
+                    static_url=entry.get("static_url"),
+                    category=entry.get("category"),
+                )
+    except Exception:
+        logger.debug("Failed to fetch remote emoji :%s: from %s", shortcode, domain)
+    return None
 
 
 async def list_local_emojis(db: AsyncSession) -> list[CustomEmoji]:
