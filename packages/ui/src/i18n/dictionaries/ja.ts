@@ -707,6 +707,8 @@ export const ja = {
   "admin.vapidGenerate": "新しいVAPID鍵を生成",
   "admin.vapidConfirmGenerate": "新しいVAPID鍵を生成しますか？既存の購読は無効になります。",
   "admin.vapidGenerateWarning": "鍵を再生成すると、既存のプッシュ通知の購読はすべて無効になります。ユーザーは再度購読する必要があります。",
+  "admin.katexSettings": "KaTeX数式設定",
+  "admin.katexEnabled": "KaTeX数式レンダリングを有効にする",
   "admin.timelineSettings": "タイムライン設定",
   "admin.timelineDefaultLimit": "デフォルト取得件数",
   "admin.timelineMaxLimit": "最大取得件数",

@@ -255,6 +255,14 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
+    katex_enabled = False
+    try:
+        katex_val = await get_setting(db, "katex_enabled")
+        if katex_val == "true":
+            katex_enabled = True
+    except Exception:
+        pass
+
     # サーバー統計を実際のデータベースから取得
     user_count = 0
     status_count = 0
@@ -353,6 +361,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         resp["theme_color"] = theme_color
     if settings.turnstile_site_key:
         resp["turnstile_site_key"] = settings.turnstile_site_key
+    resp["katex_enabled"] = katex_enabled
 
     # Legal page URLs
     try:
@@ -423,6 +432,14 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
             if reg is not None:
                 registration_open = reg == "true"
             registration_mode = "open" if registration_open else "closed"
+    except Exception:
+        pass
+
+    katex_enabled = False
+    try:
+        katex_val = await get_setting(db, "katex_enabled")
+        if katex_val == "true":
+            katex_enabled = True
     except Exception:
         pass
 
@@ -539,6 +556,7 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         resp["configuration"]["vapid"] = {"public_key": vapid_key}
     if settings.turnstile_site_key:
         resp["turnstile_site_key"] = settings.turnstile_site_key
+    resp["katex_enabled"] = katex_enabled
 
     try:
         await _valkey2.set(_cache_key2, _json2.dumps(resp), ex=120)

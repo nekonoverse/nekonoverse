@@ -709,6 +709,8 @@ export const neko: Dictionary = {
   "admin.vapidGenerate": "あたらしいVAPIDかぎをせいせいにゃ",
   "admin.vapidConfirmGenerate": "あたらしいVAPIDかぎをせいせいするにゃ？きぞんのこうどくはむこうになるにゃ。",
   "admin.vapidGenerateWarning": "かぎをさいせいせいすると、きぞんのプッシュつうちこうどくはぜんぶむこうになるにゃ。ユーザーはもういちどこうどくするひつようがあるにゃ。",
+  "admin.katexSettings": "KaTeXすうしきせっていにゃ",
+  "admin.katexEnabled": "KaTeXすうしきれんだりんぐをゆうこうにするにゃ",
   "admin.timelineSettings": "タイムラインせっていにゃ",
   "admin.timelineDefaultLimit": "デフォルトしゅとくけんすうにゃ",
   "admin.timelineMaxLimit": "さいだいしゅとくけんすうにゃ",

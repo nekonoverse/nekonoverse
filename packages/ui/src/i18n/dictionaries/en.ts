@@ -711,6 +711,8 @@ export const en: Dictionary = {
   "admin.vapidGenerate": "Generate New VAPID Key",
   "admin.vapidConfirmGenerate": "Generate a new VAPID key? Existing subscriptions will be invalidated.",
   "admin.vapidGenerateWarning": "Regenerating the key will invalidate all existing push notification subscriptions. Users will need to re-subscribe.",
+  "admin.katexSettings": "KaTeX Math Settings",
+  "admin.katexEnabled": "Enable KaTeX math rendering",
   "admin.timelineSettings": "Timeline Settings",
   "admin.timelineDefaultLimit": "Default fetch count",
   "admin.timelineMaxLimit": "Maximum fetch count",

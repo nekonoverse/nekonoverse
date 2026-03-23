@@ -1,3 +1,4 @@
+import katex from "katex";
 import * as mfm from "mfm-js";
 import type { MfmNode } from "mfm-js";
 import type { CustomEmoji } from "../types/emoji";
@@ -136,19 +137,25 @@ function renderNode(
     }
 
     case "mathInline": {
-      const el = document.createElement("code");
+      const el = document.createElement("span");
       el.className = "mfm-math-inline";
-      el.textContent = node.props.formula;
+      try {
+        katex.render(node.props.formula, el, { throwOnError: false, displayMode: false });
+      } catch {
+        el.textContent = node.props.formula;
+      }
       return el;
     }
 
     case "mathBlock": {
-      const pre = document.createElement("pre");
-      pre.className = "mfm-math-block";
-      const code = document.createElement("code");
-      code.textContent = node.props.formula;
-      pre.appendChild(code);
-      return pre;
+      const el = document.createElement("div");
+      el.className = "mfm-math-block";
+      try {
+        katex.render(node.props.formula, el, { throwOnError: false, displayMode: true });
+      } catch {
+        el.textContent = node.props.formula;
+      }
+      return el;
     }
 
     case "link": {

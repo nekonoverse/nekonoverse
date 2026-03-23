@@ -19,6 +19,7 @@ class ServerSettingsResponse(BaseModel):
     vapid_public_key: str | None = None
     timeline_default_limit: int = 20
     timeline_max_limit: int = 40
+    katex_enabled: bool = False
 
 
 class ServerSettingsUpdate(BaseModel):
@@ -36,6 +37,7 @@ class ServerSettingsUpdate(BaseModel):
     push_enabled: bool | None = None
     timeline_default_limit: int | None = Field(None, ge=1, le=1000)
     timeline_max_limit: int | None = Field(None, ge=1, le=1000)
+    katex_enabled: bool | None = None
 
 
 class PendingRegistrationResponse(BaseModel):

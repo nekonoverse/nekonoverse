@@ -21,6 +21,7 @@ export interface ServerSettings {
   vapid_public_key: string | null;
   timeline_default_limit: number;
   timeline_max_limit: number;
+  katex_enabled: boolean;
 }
 
 export interface AdminUser {
