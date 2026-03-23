@@ -69,6 +69,7 @@ export const ja = {
   "composer.sensitive": "センシティブな内容としてマーク",
   "composer.cw": "コンテンツ警告",
   "composer.cwPlaceholder": "警告文を入力...",
+  "composer.visibilityWiderWarning": "返信先より広い公開範囲が選択されています",
   "lang.ja": "日本語",
   "lang.en": "English",
   "auth.or": "または",

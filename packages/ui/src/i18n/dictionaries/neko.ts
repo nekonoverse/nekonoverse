@@ -71,6 +71,7 @@ export const neko: Dictionary = {
   "composer.sensitive": "センシティブにゃないようにゃ",
   "composer.cw": "コンテンツけいこくにゃ",
   "composer.cwPlaceholder": "けいこくぶんにゃ...",
+  "composer.visibilityWiderWarning": "へんしんさきよりひろいこうかいはんいがせんたくされてるにゃ",
   "lang.ja": "日本語",
   "lang.en": "English",
   "auth.or": "または",

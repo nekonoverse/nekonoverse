@@ -592,6 +592,58 @@ async def test_bookmark_unauthenticated(app_client, mock_valkey):
 # --- Pin/Unpin tests ---
 
 
+async def test_reply_visibility_followers_to_public(authed_client, mock_valkey):
+    """Replying to a followers-only note with public visibility is allowed by backend."""
+    parent = await authed_client.post("/api/v1/statuses", json={
+        "content": "Followers only", "visibility": "followers"
+    })
+    parent_id = parent.json()["id"]
+
+    resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public reply", "visibility": "public",
+        "in_reply_to_id": parent_id,
+    })
+    assert resp.status_code == 201
+    assert resp.json()["visibility"] == "public"
+
+
+async def test_reply_visibility_preserved(authed_client, mock_valkey):
+    """Reply visibility is preserved as-is (backend does not restrict)."""
+    combos = [
+        ("public", "public"),
+        ("public", "unlisted"),
+        ("public", "followers"),
+        ("public", "direct"),
+        ("unlisted", "public"),
+        ("followers", "public"),
+        ("direct", "public"),
+    ]
+    # "followers" maps to "private" in the API response
+    vis_response_map = {
+        "public": "public",
+        "unlisted": "unlisted",
+        "followers": "private",
+        "direct": "direct",
+    }
+    for parent_vis, reply_vis in combos:
+        parent = await authed_client.post("/api/v1/statuses", json={
+            "content": f"Parent {parent_vis}", "visibility": parent_vis,
+        })
+        parent_id = parent.json()["id"]
+
+        resp = await authed_client.post("/api/v1/statuses", json={
+            "content": f"Reply {reply_vis}",
+            "visibility": reply_vis,
+            "in_reply_to_id": parent_id,
+        })
+        assert resp.status_code == 201, (
+            f"Failed: parent={parent_vis}, reply={reply_vis}"
+        )
+        assert resp.json()["visibility"] == vis_response_map[reply_vis], (
+            f"Visibility mismatch: parent={parent_vis}, reply={reply_vis}"
+        )
+
+
 async def test_pin_status(authed_client, mock_valkey):
     create_resp = await authed_client.post("/api/v1/statuses", json={
         "content": "Pin me", "visibility": "public"

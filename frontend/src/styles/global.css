@@ -6753,6 +6753,30 @@ a:hover {
   color: var(--text-primary);
 }
 
+/* Composer visibility warning banner */
+.composer-visibility-warning {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: rgba(255, 152, 0, 0.15);
+  border: 1px solid rgba(255, 152, 0, 0.4);
+  border-radius: var(--radius);
+  font-size: 0.82em;
+  color: #e68a00;
+  margin-top: 6px;
+}
+
+[data-theme="light"] .composer-visibility-warning {
+  background: rgba(255, 152, 0, 0.1);
+  color: #b36b00;
+}
+
+.composer-visibility-warning-icon {
+  flex-shrink: 0;
+  font-size: 1.1em;
+}
+
 /* Swipe-back gesture indicator */
 .swipe-back-indicator {
   position: fixed;
