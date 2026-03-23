@@ -363,8 +363,9 @@ export default function NoteComposer(props: Props) {
     <form
       onSubmit={handleSubmit}
       class={`note-composer${dragging() ? " drag-over" : ""}`}
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(true); }}
       onDragLeave={(e) => {
+        e.stopPropagation();
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
       }}
       onDrop={(e) => {
