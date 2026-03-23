@@ -99,10 +99,18 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
+    features = ["emoji_reactions"]
+    try:
+        katex_val = await get_setting(db, "katex_enabled")
+        if katex_val == "true":
+            features.append("katex")
+    except Exception:
+        pass
+
     metadata = {
         "nodeName": node_name,
         "nodeDescription": node_description,
-        "features": ["emoji_reactions"],
+        "features": features,
     }
     if node_icon_url:
         metadata["iconUrl"] = node_icon_url

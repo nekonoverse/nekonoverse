@@ -396,6 +396,7 @@ function ServerSettingsTab() {
   const [generatingKey, setGeneratingKey] = createSignal(false);
   const [tlDefault, setTlDefault] = createSignal(20);
   const [tlMax, setTlMax] = createSignal(40);
+  const [katexEnabled, setKatexEnabled] = createSignal(false);
   let iconInput!: HTMLInputElement;
 
   // Use createEffect for reliable initialization inside Switch/Match
@@ -420,6 +421,7 @@ function ServerSettingsTab() {
           setVapidKey(s.vapid_public_key ?? null);
           setTlDefault(s.timeline_default_limit ?? 20);
           setTlMax(s.timeline_max_limit ?? 40);
+          setKatexEnabled(s.katex_enabled ?? false);
         } catch (e) {
           console.error("Failed to load server settings:", e);
         }
@@ -443,6 +445,7 @@ function ServerSettingsTab() {
         push_enabled: pushEnabled(),
         timeline_default_limit: tlDefault(),
         timeline_max_limit: tlMax(),
+        katex_enabled: katexEnabled(),
       } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
@@ -627,6 +630,23 @@ function ServerSettingsTab() {
         <p style={{ "font-size": "0.85em", color: "var(--text-muted)", "margin-top": "8px" }}>
           {t("admin.vapidGenerateWarning")}
         </p>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("admin.katexSettings")}</h3>
+        <div class="settings-form-group">
+          <label style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+            <input
+              type="checkbox"
+              checked={katexEnabled()}
+              onChange={(e) => setKatexEnabled(e.currentTarget.checked)}
+            />
+            {t("admin.katexEnabled")}
+          </label>
+        </div>
+        <button class="btn btn-small" onClick={handleSave} disabled={saving()}>
+          {saving() ? t("profile.saving") : t("settings.save")}
+        </button>
       </div>
 
       <div class="settings-section">
