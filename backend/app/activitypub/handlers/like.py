@@ -156,9 +156,17 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
     shortcode = match.group(1)
     domain = match.group(2)
 
+    # Determine domain early (needed for both tag-based and fallback caching)
+    if not domain:
+        actor_ap_id = activity.get("actor", "")
+        from urllib.parse import urlparse
+
+        domain = urlparse(actor_ap_id).hostname
+
     tags = activity.get("tag", [])
     if isinstance(tags, dict):
         tags = [tags]
+    found_tag = False
     for tag in tags:
         if (
             isinstance(tag, dict)
@@ -167,36 +175,36 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
         ):
             icon = tag.get("icon", {})
             url = icon.get("url") if isinstance(icon, dict) else None
-            if url:
-                # Determine domain from actor if not in shortcode
-                if not domain:
-                    actor_ap_id = activity.get("actor", "")
-                    from urllib.parse import urlparse
+            if url and domain:
+                from app.services.emoji_service import upsert_remote_emoji
 
-                    domain = urlparse(actor_ap_id).hostname
-                if domain:
-                    from app.services.emoji_service import upsert_remote_emoji
-
-                    # Extract extended fields (Misskey + CherryPick)
-                    static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
-                    _ml = tag.get("_misskey_license")
-                    license_text = tag.get("license") or (
-                        _ml.get("freeText") if isinstance(_ml, dict) else None
-                    )
-                    await upsert_remote_emoji(
-                        db,
-                        shortcode,
-                        domain,
-                        url,
-                        static_url=static_url,
-                        aliases=tag.get("keywords"),
-                        license=license_text,
-                        is_sensitive=bool(tag.get("isSensitive", False)),
-                        author=tag.get("author") or tag.get("creator"),
-                        description=tag.get("description"),
-                        copy_permission=tag.get("copyPermission"),
-                        usage_info=tag.get("usageInfo"),
-                        is_based_on=tag.get("isBasedOn"),
-                        category=tag.get("category"),
-                    )
+                # Extract extended fields (Misskey + CherryPick)
+                static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
+                _ml = tag.get("_misskey_license")
+                license_text = tag.get("license") or (
+                    _ml.get("freeText") if isinstance(_ml, dict) else None
+                )
+                await upsert_remote_emoji(
+                    db,
+                    shortcode,
+                    domain,
+                    url,
+                    static_url=static_url,
+                    aliases=tag.get("keywords"),
+                    license=license_text,
+                    is_sensitive=bool(tag.get("isSensitive", False)),
+                    author=tag.get("author") or tag.get("creator"),
+                    description=tag.get("description"),
+                    copy_permission=tag.get("copyPermission"),
+                    usage_info=tag.get("usageInfo"),
+                    is_based_on=tag.get("isBasedOn"),
+                    category=tag.get("category"),
+                )
+                found_tag = True
             break
+
+    # Fallback: fetch from remote instance API if tag was missing
+    if not found_tag and domain:
+        from app.services.emoji_service import fetch_and_cache_remote_emoji
+
+        await fetch_and_cache_remote_emoji(db, shortcode, domain)
