@@ -211,7 +211,9 @@ export default function EmojiImportModal(props: Props) {
               previewUrl={meta()!.url}
               previewDomain={meta()!.domain}
             />
+          </div>
 
+          <div class="emoji-import-footer">
             <Show when={error()}>
               <div class="emoji-import-error">{error()}</div>
             </Show>

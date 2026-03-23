@@ -2494,6 +2494,8 @@ a:hover {
   flex-direction: column;
   gap: 10px;
   overflow-y: auto;
+  flex: 1;
+  min-height: 0;
 }
 .emoji-import-preview {
   display: flex;
@@ -2592,11 +2594,15 @@ a:hover {
   color: var(--accent);
   font-size: 0.85em;
 }
+.emoji-import-footer {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
 .emoji-import-actions {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 8px;
   flex-wrap: wrap;
 }
 .emoji-import-actions .btn {
