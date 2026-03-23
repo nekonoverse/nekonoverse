@@ -183,6 +183,7 @@ export const ja = {
   "reactions.notDelivered": "このサーバーには絵文字リアクションが届きません",
   "reactions.importAndReact": "インポートしてリアクション",
   "reactions.importDenied": "作者によりインポートが禁止されています",
+  "reactions.copyViolationWarning": "{domain} ではこの絵文字のコピーが禁止されています。このソースのコピーは権利を侵害している可能性があります",
   "reactions.emojiShortcode": "ショートコード",
   "reactions.emojiCategory": "カテゴリー",
   "reactions.emojiAuthor": "作者",

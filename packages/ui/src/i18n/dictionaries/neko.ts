@@ -185,6 +185,7 @@ export const neko: Dictionary = {
   "reactions.notDelivered": "このさーばーにはえもじりあくしょんがとどかにゃいにゃ",
   "reactions.importAndReact": "いんぽーとしてりあくしょんにゃ",
   "reactions.importDenied": "さくしゃがいんぽーときんしにゃ",
+  "reactions.copyViolationWarning": "{domain} ではこのえもじのこぴーがきんしされてるにゃ。このそーすのこぴーはけんりしんがいのかのうせいがあるにゃ",
   "reactions.emojiShortcode": "しょーとこーどにゃ",
   "reactions.emojiCategory": "かてごりーにゃ",
   "reactions.emojiAuthor": "さくしゃにゃ",
