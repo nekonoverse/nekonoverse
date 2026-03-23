@@ -644,6 +644,12 @@ export default function NoteCard(props: Props) {
             }}
           />{" "}
           {t("boost.boosted")}
+          <span class="note-reblog-time">
+            {(() => {
+              useTimeTick();
+              return formatTimestamp(props.note.published, t);
+            })()}
+          </span>
         </div>
       </Show>
       <Show when={replyToDisplay()}>
