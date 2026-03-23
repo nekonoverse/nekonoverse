@@ -1907,6 +1907,7 @@ a:hover {
 .note-boost-time {
   display: block;
   font-style: italic;
+  font-size: inherit;
   opacity: 0.7;
 }
 
