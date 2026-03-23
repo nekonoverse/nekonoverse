@@ -369,6 +369,7 @@ export default function NoteComposer(props: Props) {
       }}
       onDrop={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         setDragging(false);
         if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files);
       }}
