@@ -151,6 +151,7 @@ def test_render_note_emoji_tags():
     emoji_tags = [t for t in data["tag"] if t.get("type") == "Emoji"]
     assert len(emoji_tags) == 1
     et = emoji_tags[0]
+    assert et["id"].endswith("/emojis/neko_smile")
     assert et["name"] == ":neko_smile:"
     assert et["icon"]["url"] == "http://localhost/emoji/neko_smile.png"
     assert et["icon"]["mediaType"] == "image/png"
