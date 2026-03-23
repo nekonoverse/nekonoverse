@@ -1904,12 +1904,10 @@ a:hover {
 .note-reblog-indicator a:hover {
   color: var(--accent);
 }
-.note-reblog-time {
-  font-size: 0.78em;
-  color: var(--text-secondary);
-  opacity: 0.6;
-  padding-left: 52px;
-  margin-bottom: -6px;
+.note-boost-time {
+  display: block;
+  font-style: italic;
+  opacity: 0.7;
 }
 
 .note-reblog-banner {
