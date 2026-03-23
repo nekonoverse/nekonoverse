@@ -89,8 +89,8 @@ async def register_verify(
             credential_json=credential_json,
             name=body.name,
         )
-    except Exception as e:
-        raise HTTPException(status_code=400, detail=str(e))
+    except Exception:
+        raise HTTPException(status_code=400, detail="Passkey registration failed")
 
     return PasskeyCredentialResponse(
         id=str(passkey.id),
@@ -148,10 +148,10 @@ async def authenticate_verify(
             challenge_id=body.challengeId,
             credential_json=credential_json,
         )
-    except Exception as e:
+    except Exception:
         await valkey.incr(key)
         await valkey.expire(key, PASSKEY_LOCKOUT_TTL)
-        raise HTTPException(status_code=401, detail=str(e))
+        raise HTTPException(status_code=401, detail="Passkey authentication failed")
 
     # Passkey (WebAuthn) はデバイス所持+生体認証/PINで既にMFAを満たすため、
     # TOTP追加検証は不要。パスワード認証時のみTOTPを要求する。

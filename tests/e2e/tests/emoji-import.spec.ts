@@ -1,7 +1,8 @@
 import { test, expect } from "@playwright/test";
 import { loginAsAdmin, createNote } from "./helpers";
-import { execSync } from "child_process";
+import { execFileSync } from "child_process";
 import * as path from "path";
+import * as fs from "fs";
 
 /**
  * Seed a remote custom emoji record and a reaction using it on a note.
@@ -15,8 +16,11 @@ function seedRemoteEmojiReaction(
   const projectRoot =
     process.env.PROJECT_ROOT ||
     path.resolve(__dirname, "../../..");
-  // Prefer e2e compose; fall back to default
-  const composeArgs = ["-f", `${projectRoot}/docker-compose.e2e.yml`];
+  // Validate projectRoot is a real directory
+  if (!fs.existsSync(projectRoot) || !fs.statSync(projectRoot).isDirectory()) {
+    throw new Error(`PROJECT_ROOT is not a valid directory: ${projectRoot}`);
+  }
+  const composeFile = path.join(projectRoot, "docker-compose.e2e.yml");
 
   const py = [
     "import asyncio, uuid",
@@ -43,12 +47,13 @@ function seedRemoteEmojiReaction(
     "asyncio.run(seed())",
   ].join("\n");
 
-  const cmd = `docker compose ${composeArgs.join(" ")} exec -T app python -c '${py.replace(/'/g, "'\"'\"'")}'`;
   const execEnv = {
     ...process.env,
     COMPOSE_PROJECT_NAME: process.env.COMPOSE_PROJECT_NAME || "neko-e2e",
   };
-  execSync(cmd, { stdio: "pipe", timeout: 15_000, env: execEnv });
+  execFileSync("docker", [
+    "compose", "-f", composeFile, "exec", "-T", "app", "python", "-c", py,
+  ], { stdio: "pipe", timeout: 15_000, env: execEnv });
 }
 
 test.describe("Emoji Import Modal", () => {
