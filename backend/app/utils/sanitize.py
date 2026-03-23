@@ -7,7 +7,6 @@ ALLOWED_ATTRIBUTES = {"a": ["href", "rel", "class", "target"], "span": ["class"]
 
 URL_PATTERN = re.compile(r"(https?://[^\s<]+)")
 MENTION_PATTERN = re.compile(r"@([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?")
-EMOJI_SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
 EMOJI_IMG_RE = re.compile(
     r'<img\b[^>]*\balt="(:[a-zA-Z0-9_]+:)"[^>]*/?>',
     re.IGNORECASE,
@@ -38,25 +37,8 @@ def _replace_mention(match: re.Match) -> str:
     )
 
 
-def _replace_emoji(match: re.Match, emoji_map: dict[str, str]) -> str:
-    """Replace an emoji shortcode match with an <img> tag."""
-    shortcode = match.group(1)
-    url = emoji_map.get(shortcode)
-    if url:
-        return (
-            f'<img src="{url}" alt=":{shortcode}:" class="custom-emoji"'
-            f' style="height: 1.5em; vertical-align: middle" />'
-        )
-    return match.group(0)
-
-
-def text_to_html(text: str, emoji_map: dict[str, str] | None = None) -> str:
-    """Convert plain text to simple HTML with auto-linking, mentions, and line breaks.
-
-    If *emoji_map* is provided (``{shortcode: url}``), custom emoji shortcodes
-    like ``:blobcat:`` are replaced with ``<img>`` tags so that remote servers
-    (e.g. Iceshrimp.NET) can resolve them in the AP ``content`` field.
-    """
+def text_to_html(text: str) -> str:
+    """Convert plain text to simple HTML with auto-linking, mentions, and line breaks."""
     if not text.strip():
         return ""
     escaped = bleach.clean(text)
@@ -76,28 +58,6 @@ def text_to_html(text: str, emoji_map: dict[str, str] | None = None) -> str:
         else:
             result.append(MENTION_PATTERN.sub(_replace_mention, part))
     escaped = "".join(result)
-
-    # Replace custom emoji shortcodes with <img> tags (skip inside <a>/<span> tags)
-    if emoji_map:
-        parts = re.split(r"(<[^>]+>)", escaped)
-        result = []
-        inside_tag = 0
-        for part in parts:
-            if part.startswith("<a") or part.startswith("<span"):
-                inside_tag += 1
-                result.append(part)
-            elif (part.startswith("</a") or part.startswith("</span")) and inside_tag > 0:
-                inside_tag -= 1
-                result.append(part)
-            elif part.startswith("<"):
-                result.append(part)
-            elif inside_tag == 0:
-                result.append(
-                    EMOJI_SHORTCODE_RE.sub(lambda m: _replace_emoji(m, emoji_map), part)
-                )
-            else:
-                result.append(part)
-        escaped = "".join(result)
 
     # Line breaks
     escaped = escaped.replace("\n", "<br>")
