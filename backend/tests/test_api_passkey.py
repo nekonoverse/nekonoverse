@@ -92,7 +92,7 @@ async def test_register_verify_invalid_challenge(
             },
         )
     assert resp.status_code == 400
-    assert "Challenge expired" in resp.json()["detail"]
+    assert resp.json()["detail"] == "Passkey registration failed"
 
 
 # ── Authentication options ────────────────────────────────────────────────

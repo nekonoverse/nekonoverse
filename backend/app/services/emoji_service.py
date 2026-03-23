@@ -217,7 +217,7 @@ async def fetch_and_cache_remote_emoji(
         if not is_safe_url(url):
             return None
 
-        async with make_async_client(timeout=5.0, follow_redirects=True) as client:
+        async with make_async_client(timeout=5.0, follow_redirects=False) as client:
             resp = await client.get(url)
             resp.raise_for_status()
 
@@ -334,8 +334,14 @@ async def import_remote_emoji_to_local(db: AsyncSession, emoji_id: uuid.UUID) ->
 
     from app.utils.http_client import make_async_client
 
-    async with make_async_client(timeout=30.0, follow_redirects=True) as client:
+    async with make_async_client(timeout=30.0, follow_redirects=False) as client:
         resp = await client.get(remote.url)
+        # Follow one redirect manually with SSRF re-validation
+        if resp.is_redirect:
+            redirect_url = str(resp.next_request.url) if resp.next_request else None
+            if not redirect_url or not is_safe_url(redirect_url):
+                raise ValueError("Redirect to unsafe URL")
+            resp = await client.get(redirect_url)
         resp.raise_for_status()
 
     mime_type = resp.headers.get("content-type", "image/png").split(";")[0].strip()
