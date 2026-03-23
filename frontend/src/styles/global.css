@@ -2509,15 +2509,19 @@ a:hover {
   padding: 6px;
   height: 48px;
   width: auto;
+  max-width: 100%;
 }
 .emoji-import-domain {
   color: var(--text-secondary);
   font-size: 0.85em;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .emoji-import-field {
   display: flex;
   flex-direction: column;
   gap: 3px;
+  min-width: 0;
 }
 .emoji-import-field span {
   font-size: 0.85em;
@@ -2539,6 +2543,13 @@ a:hover {
 .emoji-import-field select:focus {
   outline: none;
   border-color: var(--accent);
+}
+.emoji-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  overflow: hidden;
 }
 .emoji-edit-form-row {
   display: flex;
