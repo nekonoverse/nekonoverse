@@ -111,34 +111,7 @@ async def create_note(
                     if parent_uri not in cc_list:
                         cc_list.append(parent_uri)
 
-    # Extract custom emoji shortcodes and build emoji_map for HTML rendering
-    emoji_map: dict[str, str] = {}
-    shortcodes = set(_EMOJI_SHORTCODE_RE.findall(content))
-    emoji_tags: list[dict] = []
-    if shortcodes:
-        from app.services.emoji_service import get_custom_emoji
-
-        for sc in shortcodes:
-            emoji = await get_custom_emoji(db, sc, None)
-            if emoji and not emoji.local_only:
-                emoji_map[sc] = emoji.url
-                emoji_tags.append(
-                    {
-                        "shortcode": emoji.shortcode,
-                        "url": emoji.url,
-                        "aliases": emoji.aliases,
-                        "license": emoji.license,
-                        "is_sensitive": emoji.is_sensitive,
-                        "author": emoji.author,
-                        "description": emoji.description,
-                        "copy_permission": emoji.copy_permission,
-                        "usage_info": emoji.usage_info,
-                        "is_based_on": emoji.is_based_on,
-                        "category": emoji.category,
-                    }
-                )
-
-    html_content = text_to_html(content, emoji_map=emoji_map or None)
+    html_content = text_to_html(content)
 
     # Resolve quote
     quote_ap_id = None
@@ -214,9 +187,32 @@ async def create_note(
         await upsert_ht(db, note_id, hashtag_names)
         note._hashtag_names = hashtag_names
 
-    # Attach pre-computed custom emoji tags for AP federation
-    if emoji_tags:
-        note._emoji_tags = emoji_tags
+    # Extract custom emoji shortcodes for AP federation tags
+    shortcodes = set(_EMOJI_SHORTCODE_RE.findall(content))
+    if shortcodes:
+        from app.services.emoji_service import get_custom_emoji
+
+        emoji_tags = []
+        for sc in shortcodes:
+            emoji = await get_custom_emoji(db, sc, None)
+            if emoji and not emoji.local_only:
+                emoji_tags.append(
+                    {
+                        "shortcode": emoji.shortcode,
+                        "url": emoji.url,
+                        "aliases": emoji.aliases,
+                        "license": emoji.license,
+                        "is_sensitive": emoji.is_sensitive,
+                        "author": emoji.author,
+                        "description": emoji.description,
+                        "copy_permission": emoji.copy_permission,
+                        "usage_info": emoji.usage_info,
+                        "is_based_on": emoji.is_based_on,
+                        "category": emoji.category,
+                    }
+                )
+        if emoji_tags:
+            note._emoji_tags = emoji_tags
 
     # Deliver to followers and mentioned remote users
     if visibility in ("public", "unlisted", "followers", "direct"):
