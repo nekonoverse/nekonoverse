@@ -1904,6 +1904,15 @@ a:hover {
 .note-reblog-indicator a:hover {
   color: var(--accent);
 }
+.note-reblog-time {
+  color: var(--text-secondary);
+  opacity: 0.7;
+  margin-left: 2px;
+}
+.note-reblog-time::before {
+  content: "·";
+  margin-right: 4px;
+}
 
 .note-reblog-banner {
   position: absolute;
