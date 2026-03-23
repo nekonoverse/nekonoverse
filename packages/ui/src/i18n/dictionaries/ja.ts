@@ -273,6 +273,7 @@ export const ja = {
   "boost.cannotRenote": "非公開投稿はブーストできません",
   "boost.quoting": "引用中:",
   "boost.boostedBy": "ブーストしたユーザー",
+  "boost.boostedSuffix": "にブースト",
   "note.delete": "削除",
   "note.confirmDelete": "この投稿を削除しますか？",
   "note.modDelete": "削除（モデレーション）",
