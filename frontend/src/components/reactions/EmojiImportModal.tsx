@@ -188,18 +188,12 @@ export default function EmojiImportModal(props: Props) {
             {/* Source navigation */}
             <Show when={sources().length > 1}>
               <div class="emoji-source-nav">
-                <button class="btn btn-sm" onClick={goToPrev}>◀</button>
+                <button class="btn" onClick={goToPrev}>◀</button>
                 <span class="emoji-source-info">
                   <strong>{meta()!.domain}</strong>
                   {" "}({sourceIndex() + 1} / {sources().length})
                 </span>
-                <button class="btn btn-sm" onClick={goToNext}>▶</button>
-              </div>
-            </Show>
-
-            <Show when={sources().length === 1 && meta()?.domain}>
-              <div class="emoji-source-info" style="margin-bottom: 8px">
-                {meta()!.domain}
+                <button class="btn" onClick={goToNext}>▶</button>
               </div>
             </Show>
 
