@@ -118,3 +118,75 @@ def test_emoji_img_regex_various_formats():
     # Non-emoji alt should not match
     assert EMOJI_IMG_RE.search('<img alt="photo" src="url">') is None
     assert EMOJI_IMG_RE.search('<img alt=":invalid emoji:" src="url">') is None
+
+
+# --- text_to_html: emoji_map → <img> replacement ---
+
+
+def test_text_to_html_emoji_map_basic():
+    """Emoji shortcodes are replaced with <img> tags when emoji_map is provided."""
+    emoji_map = {"blobcat": "https://example.com/emoji/blobcat.png"}
+    result = text_to_html("Hello :blobcat: world", emoji_map=emoji_map)
+    assert '<img src="https://example.com/emoji/blobcat.png"' in result
+    assert 'alt=":blobcat:"' in result
+    assert 'class="custom-emoji"' in result
+    assert 'style="height: 1.5em; vertical-align: middle"' in result
+
+
+def test_text_to_html_emoji_map_multiple():
+    """Multiple emoji shortcodes are all replaced."""
+    emoji_map = {
+        "cat": "https://example.com/emoji/cat.png",
+        "dog": "https://example.com/emoji/dog.png",
+    }
+    result = text_to_html(":cat: and :dog:", emoji_map=emoji_map)
+    assert 'alt=":cat:"' in result
+    assert 'alt=":dog:"' in result
+    assert result.count("<img") == 2
+
+
+def test_text_to_html_emoji_map_unknown_shortcode():
+    """Unknown shortcodes remain as plain text."""
+    emoji_map = {"cat": "https://example.com/emoji/cat.png"}
+    result = text_to_html(":cat: and :unknown:", emoji_map=emoji_map)
+    assert 'alt=":cat:"' in result
+    assert ":unknown:" in result
+    assert result.count("<img") == 1
+
+
+def test_text_to_html_emoji_map_none():
+    """When emoji_map is None, shortcodes remain as text."""
+    result = text_to_html("Hello :blobcat:")
+    assert "<img" not in result
+    assert ":blobcat:" in result
+
+
+def test_text_to_html_emoji_map_empty():
+    """When emoji_map is empty dict, shortcodes remain as text."""
+    result = text_to_html("Hello :blobcat:", emoji_map={})
+    assert "<img" not in result
+    assert ":blobcat:" in result
+
+
+def test_text_to_html_emoji_not_replaced_in_url():
+    """Emoji shortcodes inside auto-linked URLs should not be replaced."""
+    emoji_map = {"cat": "https://example.com/emoji/cat.png"}
+    result = text_to_html("See https://example.com/:cat:/page", emoji_map=emoji_map)
+    # The :cat: inside the URL should not be turned into an <img> tag
+    assert 'href="https://example.com/:cat:/page"' in result
+
+
+def test_text_to_html_emoji_with_mentions():
+    """Emoji replacement works alongside mentions."""
+    emoji_map = {"blobcat": "https://example.com/emoji/blobcat.png"}
+    result = text_to_html("@alice :blobcat:", emoji_map=emoji_map)
+    assert 'class="u-url mention"' in result
+    assert 'alt=":blobcat:"' in result
+
+
+def test_text_to_html_emoji_with_line_breaks():
+    """Emoji replacement works with line breaks."""
+    emoji_map = {"cat": "https://example.com/emoji/cat.png"}
+    result = text_to_html(":cat:\nnew line", emoji_map=emoji_map)
+    assert 'alt=":cat:"' in result
+    assert "<br>" in result
