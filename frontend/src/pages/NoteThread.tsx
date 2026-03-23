@@ -41,6 +41,10 @@ export default function NoteThread() {
   const [targetNote, setTargetNote] = createSignal<Note | null>(null);
   const [context, setContext] = createSignal<NoteContext | null>(null);
   const [notFound, setNotFound] = createSignal(false);
+  const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
+
+  // Effective reply target: replyTarget if set, otherwise the target note
+  const effectiveReplyTarget = () => replyTarget() || targetNote();
 
   const [initialData] = createResource(
     () => (!authLoading() && params.id ? params.id : false),
@@ -73,6 +77,7 @@ export default function NoteThread() {
   };
 
   const handleReply = async (newNote: Note) => {
+    setReplyTarget(null);
     // Reload thread to show the new reply
     await loadThread();
   };
@@ -145,6 +150,7 @@ export default function NoteThread() {
                           note={note}
                           onReactionUpdate={() => refreshNote(note.id)}
                           onDelete={handleDelete}
+                          onReply={(n) => setReplyTarget(n)}
                           inReplyToActor={parentActor()}
                         />
                       </div>
@@ -175,8 +181,23 @@ export default function NoteThread() {
             {/* Reply composer */}
             <Show when={currentUser() && targetNote()}>
               <div class="thread-reply-composer">
+                <Show when={replyTarget() && replyTarget()!.id !== targetNote()?.id}>
+                  <div class="thread-reply-indicator">
+                    <span>
+                      @{replyTarget()!.actor.username}{" "}
+                      {t("thread.replyingTo")}
+                    </span>
+                    <button
+                      class="thread-reply-indicator-cancel"
+                      onClick={() => setReplyTarget(null)}
+                      title={t("common.cancel")}
+                    >
+                      {"\u2715"}
+                    </button>
+                  </div>
+                </Show>
                 <NoteComposer
-                  replyTo={targetNote()}
+                  replyTo={effectiveReplyTarget()}
                   onPost={handleReply}
                 />
               </div>
@@ -201,7 +222,7 @@ export default function NoteThread() {
                           note={note}
                           onReactionUpdate={() => refreshNote(note.id)}
                           onDelete={handleDelete}
-                          onReply={() => {/* Navigate to child thread */}}
+                          onReply={(n) => setReplyTarget(n)}
                           inReplyToActor={parentActor()}
                         />
                       </div>

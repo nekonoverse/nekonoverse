@@ -560,6 +560,7 @@ export const en: Dictionary = {
   "thread.descendants": "Replies",
   "thread.loading": "Loading thread...",
   "thread.notFound": "Post not found",
+  "thread.replyingTo": "Replying to",
   "reply.replyingTo": "Replying to",
   "reply.reply": "Reply",
   "reply.repliesCount": "replies",

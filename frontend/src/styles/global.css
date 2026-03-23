@@ -6659,6 +6659,39 @@ a:hover {
   margin: 8px 0;
 }
 
+.thread-reply-indicator {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  margin-bottom: 8px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--accent);
+  border-radius: 8px;
+  font-size: 0.9em;
+  color: var(--text-secondary);
+}
+
+.thread-reply-indicator span {
+  font-weight: 500;
+}
+
+.thread-reply-indicator-cancel {
+  background: none;
+  border: none;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 1.1em;
+  padding: 2px 6px;
+  border-radius: 4px;
+  line-height: 1;
+}
+
+.thread-reply-indicator-cancel:hover {
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+}
+
 .thread-descendants {
   position: relative;
 }

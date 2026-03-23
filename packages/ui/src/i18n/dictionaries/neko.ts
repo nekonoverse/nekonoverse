@@ -560,6 +560,7 @@ export const neko: Dictionary = {
   "thread.descendants": "へんしんにゃ",
   "thread.loading": "スレッドよみこみちゅうにゃ...",
   "thread.notFound": "とうこうみつからにゃいにゃ",
+  "thread.replyingTo": "にへんしんちゅうにゃ",
   "reply.replyingTo": "へんしんさきにゃ:",
   "reply.reply": "へんしんにゃ",
   "reply.repliesCount": "へんしんにゃ",
