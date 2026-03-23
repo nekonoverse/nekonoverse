@@ -18,7 +18,7 @@ import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { mentionify } from "@nekonoverse/ui/utils/mentionify";
-import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 
 export default function Profile() {
@@ -621,7 +621,7 @@ export default function Profile() {
                       </div>
                     </Show>
                   </div>
-                  <span class="profile-handle">@{acc.acct}</span>
+                  <span class="profile-handle">@{acc.acct.includes("@") ? acc.acct : `${acc.acct}@${instance()?.uri || ""}`}</span>
                   <Show when={!isOwn() && currentUser() && isFollowedBy()}>
                     <span class="follows-you-badge">{t("profile.followsYou")}</span>
                   </Show>
