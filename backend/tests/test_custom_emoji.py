@@ -721,6 +721,96 @@ async def test_import_by_shortcode_non_admin_forbidden(db, app_client, mock_valk
     assert resp.status_code == 403
 
 
+# --- create_note: AP content includes <img> for custom emoji ---
+
+
+async def test_create_note_content_has_emoji_img(db, mock_valkey):
+    """create_note() should produce HTML content with <img> tags for known custom emoji.
+
+    This ensures remote servers (e.g. Iceshrimp.NET) can render emoji from the
+    AP content field without relying on tag resolution.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.emoji_service import create_local_emoji
+    from app.services.user_service import create_user
+
+    await create_local_emoji(
+        db, shortcode="ablobcat", url="https://example.com/emoji/ablobcat.png",
+    )
+
+    user = await create_user(db, "emoji_img_user", "eiu@test.com", "password1234")
+    await db.commit()
+
+    # Patch delivery to avoid side effects
+    with patch("app.services.delivery_service.enqueue_delivery", new_callable=AsyncMock):
+        from app.services.note_service import create_note
+
+        note = await create_note(db, user, "Hello :ablobcat: world")
+
+    assert note is not None
+    assert '<img src="https://example.com/emoji/ablobcat.png"' in note.content
+    assert 'alt=":ablobcat:"' in note.content
+    assert 'class="custom-emoji"' in note.content
+    # The source should still contain the plain shortcode
+    assert note.source == "Hello :ablobcat: world"
+
+
+async def test_create_note_content_no_emoji_when_not_found(db, mock_valkey):
+    """create_note() should leave shortcodes as text when emoji is not in DB."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.user_service import create_user
+
+    user = await create_user(db, "emoji_nf_user", "enf@test.com", "password1234")
+    await db.commit()
+
+    with patch("app.services.delivery_service.enqueue_delivery", new_callable=AsyncMock):
+        from app.services.note_service import create_note
+
+        note = await create_note(db, user, "Hello :nonexistent_emoji: world")
+
+    assert note is not None
+    assert "<img" not in note.content
+    assert ":nonexistent_emoji:" in note.content
+
+
+async def test_create_note_ap_activity_has_emoji_in_content(db, mock_valkey):
+    """The AP Create activity rendered for a note with custom emoji should
+    include <img> tags in the content field."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.activitypub.renderer import render_create_activity
+    from app.services.emoji_service import create_local_emoji
+    from app.services.user_service import create_user
+
+    await create_local_emoji(
+        db, shortcode="blobheart", url="https://example.com/emoji/blobheart.png",
+    )
+
+    user = await create_user(db, "emoji_ap_user", "eap@test.com", "password1234")
+    await db.commit()
+
+    captured_activities = []
+
+    async def capture_delivery(db_session, actor_id, inbox_url, activity):
+        captured_activities.append(activity)
+
+    with patch("app.services.delivery_service.enqueue_delivery", side_effect=capture_delivery):
+        from app.services.note_service import create_note
+
+        note = await create_note(db, user, "Love :blobheart: it")
+
+    # Verify the note content itself has the <img>
+    assert '<img src="https://example.com/emoji/blobheart.png"' in note.content
+
+    # Also render the Create activity and verify
+    activity = render_create_activity(note)
+    content = activity["object"]["content"]
+    assert '<img src="https://example.com/emoji/blobheart.png"' in content
+    assert 'alt=":blobheart:"' in content
+
+
 async def test_handle_emoji_react(db, mock_valkey):
     """EmojiReact activity saves the reaction with the emoji."""
     from app.activitypub.handlers.like import handle_emoji_react
