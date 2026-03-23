@@ -32,7 +32,7 @@ import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { useNavigate } from "@solidjs/router";
 import { mentionify } from "@nekonoverse/ui/utils/mentionify";
-import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
+import { formatTimestamp, formatRelative, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 import { timeFormat, nyaizeEnabled, isTouchMode } from "@nekonoverse/ui/stores/theme";
 import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
@@ -644,12 +644,12 @@ export default function NoteCard(props: Props) {
             }}
           />{" "}
           {t("boost.boosted")}
-          <span class="note-reblog-time">
-            {(() => {
-              useTimeTick();
-              return formatTimestamp(props.note.published, t);
-            })()}
-          </span>
+        </div>
+        <div class="note-reblog-time">
+          {(() => {
+            useTimeTick();
+            return formatRelative(props.note.published, t);
+          })()}
         </div>
       </Show>
       <Show when={replyToDisplay()}>

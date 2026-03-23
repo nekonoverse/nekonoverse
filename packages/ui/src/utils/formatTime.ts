@@ -19,7 +19,7 @@ function formatUnixtime(iso: string): string {
   return String(Math.floor(new Date(iso).getTime() / 1000));
 }
 
-function formatRelative(iso: string, t: TranslatorFn, countdown = false): string {
+export function formatRelative(iso: string, t: TranslatorFn, countdown = false): string {
   const now = Date.now();
   const then = new Date(iso).getTime();
   const diffSec = Math.floor((now - then) / 1000);
