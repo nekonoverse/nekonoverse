@@ -137,6 +137,12 @@ function renderNode(
     }
 
     case "mathInline": {
+      if (localStorage.getItem("nekonoverse:katex-render") === "false") {
+        const el = document.createElement("code");
+        el.className = "mfm-math-inline";
+        el.textContent = node.props.formula;
+        return el;
+      }
       const el = document.createElement("span");
       el.className = "mfm-math-inline";
       try {
@@ -148,6 +154,14 @@ function renderNode(
     }
 
     case "mathBlock": {
+      if (localStorage.getItem("nekonoverse:katex-render") === "false") {
+        const pre = document.createElement("pre");
+        pre.className = "mfm-math-block";
+        const code = document.createElement("code");
+        code.textContent = node.props.formula;
+        pre.appendChild(code);
+        return pre;
+      }
       const el = document.createElement("div");
       el.className = "mfm-math-block";
       try {
