@@ -271,6 +271,14 @@ export async function getRemoteEmojiInfo(
   );
 }
 
+export async function getRemoteEmojiSources(
+  shortcode: string,
+): Promise<RemoteEmojiInfo[]> {
+  return apiRequest<RemoteEmojiInfo[]>(
+    `/api/v1/emoji/remote-sources?shortcode=${encodeURIComponent(shortcode)}`,
+  );
+}
+
 
 
 export interface ActionByUser {

@@ -14,9 +14,9 @@ test.describe("Admin Push Notification Settings", () => {
       page.locator(".settings-section h3").first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Should have at least 4 settings sections (server settings, timeline, icon, push)
+    // Should have at least 5 settings sections (server settings, icon, push, katex, timeline)
     const headings = page.locator(".settings-section h3");
-    await expect(headings).toHaveCount(4, { timeout: 10_000 });
+    await expect(headings).toHaveCount(5, { timeout: 10_000 });
   });
 
   test("push enabled checkbox is present and checked by default", async ({
@@ -27,10 +27,11 @@ test.describe("Admin Push Notification Settings", () => {
       page.locator(".settings-section h3").first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Find the push settings checkbox
-    const pushCheckbox = page.locator(
-      '.settings-section input[type="checkbox"]',
-    );
+    // Find the push settings checkbox (scoped to the Push Notifications section)
+    const pushSection = page.locator(".settings-section").filter({
+      has: page.locator("h3", { hasText: "Push" }),
+    });
+    const pushCheckbox = pushSection.locator('input[type="checkbox"]');
     await expect(pushCheckbox).toBeVisible();
     await expect(pushCheckbox).toBeChecked();
   });
@@ -41,15 +42,16 @@ test.describe("Admin Push Notification Settings", () => {
       page.locator(".settings-section h3").first(),
     ).toBeVisible({ timeout: 10_000 });
 
-    // Uncheck push enabled
-    const pushCheckbox = page.locator(
-      '.settings-section input[type="checkbox"]',
-    );
+    // Uncheck push enabled (scoped to the Push Notifications section)
+    const pushSection = page.locator(".settings-section").filter({
+      has: page.locator("h3", { hasText: "Push" }),
+    });
+    const pushCheckbox = pushSection.locator('input[type="checkbox"]');
     await pushCheckbox.uncheck();
     await expect(pushCheckbox).not.toBeChecked();
 
-    // Save
-    await page.click('.settings-section button:has-text("Save")');
+    // Save (use the first Save button — belongs to the Server Settings section)
+    await page.locator('.settings-section button:has-text("Save")').first().click();
     await expect(page.locator(".settings-success")).toBeVisible({
       timeout: 5_000,
     });
@@ -59,14 +61,15 @@ test.describe("Admin Push Notification Settings", () => {
     await expect(
       page.locator(".settings-section h3").first(),
     ).toBeVisible({ timeout: 10_000 });
-    const checkboxAfter = page.locator(
-      '.settings-section input[type="checkbox"]',
-    );
+    const pushSectionAfter = page.locator(".settings-section").filter({
+      has: page.locator("h3", { hasText: "Push" }),
+    });
+    const checkboxAfter = pushSectionAfter.locator('input[type="checkbox"]');
     await expect(checkboxAfter).not.toBeChecked();
 
     // Re-enable for other tests
     await checkboxAfter.check();
-    await page.click('.settings-section button:has-text("Save")');
+    await page.locator('.settings-section button:has-text("Save")').first().click();
     await expect(page.locator(".settings-success")).toBeVisible({
       timeout: 5_000,
     });

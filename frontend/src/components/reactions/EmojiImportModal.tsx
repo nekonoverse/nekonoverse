@@ -1,13 +1,12 @@
 import { createSignal, createEffect, Show } from "solid-js";
 import {
-  getRemoteEmojiInfo,
+  getRemoteEmojiSources,
   reactToNote,
   type RemoteEmojiInfo,
 } from "@nekonoverse/ui/api/statuses";
 import { importRemoteEmojiByShortcode } from "@nekonoverse/ui/api/admin";
-import { markShortcodeImported } from "@nekonoverse/ui/api/emoji";
+import { clearEmojiCache, markShortcodeImported } from "@nekonoverse/ui/api/emoji";
 import EmojiEditForm, { type EmojiEditFields } from "./EmojiEditForm";
-import Emoji from "../Emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
 
 interface Props {
@@ -23,7 +22,8 @@ const CUSTOM_RE = /^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$/;
 
 export default function EmojiImportModal(props: Props) {
   const { t } = useI18n();
-  const [meta, setMeta] = createSignal<RemoteEmojiInfo | null>(null);
+  const [sources, setSources] = createSignal<RemoteEmojiInfo[]>([]);
+  const [sourceIndex, setSourceIndex] = createSignal(0);
   const [loading, setLoading] = createSignal(true);
   const [submitting, setSubmitting] = createSignal(false);
   const [error, setError] = createSignal("");
@@ -45,9 +45,39 @@ export default function EmojiImportModal(props: Props) {
     return domain ? { shortcode: m[1], domain } : null;
   };
 
+  const meta = () => sources()[sourceIndex()] ?? null;
   const isDenied = () => meta()?.copy_permission === "deny";
 
-  // Fetch metadata on mount
+  // Find domains that deny copying
+  const denyDomains = () =>
+    sources()
+      .filter((s) => s.copy_permission === "deny")
+      .map((s) => s.domain)
+      .filter(Boolean) as string[];
+
+  // Show warning when another source has deny but current source is not the deny one
+  const denyWarning = () => {
+    const deny = denyDomains();
+    if (deny.length === 0) return null;
+    const current = meta();
+    if (!current || deny.includes(current.domain!)) return null;
+    const domain = deny[0];
+    return t("reactions.copyViolationWarning").replace("{domain}", domain);
+  };
+
+  const applySourceFields = (info: RemoteEmojiInfo) => {
+    setFields({
+      shortcode: info.shortcode,
+      category: info.category || "",
+      author: info.author || "",
+      license: info.license || "",
+      description: info.description || "",
+      isSensitive: info.is_sensitive,
+      aliases: (info.aliases || []).join(", "),
+    });
+  };
+
+  // Fetch all sources on mount
   createEffect(() => {
     const p = parsed();
     if (!p) {
@@ -57,40 +87,52 @@ export default function EmojiImportModal(props: Props) {
     }
     setLoading(true);
     setError("");
-    getRemoteEmojiInfo(p.shortcode, p.domain)
-      .then((info) => {
-        setMeta(info);
-        setFields({
-          shortcode: info.shortcode,
-          category: info.category || "",
-          author: info.author || "",
-          license: info.license || "",
-          description: info.description || "",
-          isSensitive: info.is_sensitive,
-          aliases: (info.aliases || []).join(", "),
-        });
+    getRemoteEmojiSources(p.shortcode)
+      .then((list) => {
+        if (list.length === 0) {
+          setError(t("reactions.importFailed"));
+          return;
+        }
+        setSources(list);
+        // Start with the domain from props if available
+        const idx = list.findIndex((s) => s.domain === p.domain);
+        const startIdx = idx >= 0 ? idx : 0;
+        setSourceIndex(startIdx);
+        applySourceFields(list[startIdx]);
       })
       .catch(() => setError(t("reactions.importFailed")))
       .finally(() => setLoading(false));
   });
+
+  const goToPrev = () => {
+    const idx = (sourceIndex() - 1 + sources().length) % sources().length;
+    setSourceIndex(idx);
+    applySourceFields(sources()[idx]);
+  };
+
+  const goToNext = () => {
+    const idx = (sourceIndex() + 1) % sources().length;
+    setSourceIndex(idx);
+    applySourceFields(sources()[idx]);
+  };
 
   const handleSubmit = async (react: boolean) => {
     if (isDenied() || submitting()) return;
     setSubmitting(true);
     setError("");
     try {
-      const p = parsed()!;
+      const current = meta()!;
       const f = fields();
       const parsedAliases = f.aliases
         ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean)
         : undefined;
-      const localShortcode = f.shortcode !== p.shortcode ? f.shortcode : p.shortcode;
+      const localShortcode = f.shortcode !== current.shortcode ? f.shortcode : current.shortcode;
 
       // Import via admin API
       await importRemoteEmojiByShortcode({
-        shortcode: p.shortcode,
-        domain: p.domain,
-        shortcode_override: f.shortcode !== p.shortcode ? f.shortcode : undefined,
+        shortcode: current.shortcode,
+        domain: current.domain!,
+        shortcode_override: f.shortcode !== current.shortcode ? f.shortcode : undefined,
         category: f.category || undefined,
         author: f.author || undefined,
         license: f.license || undefined,
@@ -101,6 +143,7 @@ export default function EmojiImportModal(props: Props) {
 
       // Mark shortcode as imported so all ReactionBars suppress importable
       markShortcodeImported(localShortcode);
+      clearEmojiCache();
 
       // React with the local emoji if requested
       if (react) {
@@ -124,10 +167,7 @@ export default function EmojiImportModal(props: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div class="modal-header">
-          <h3 style="display: flex; align-items: center; gap: 8px">
-            <Emoji emoji={props.emoji} url={props.emojiUrl} />
-            {t("reactions.importEmojiTitle")}
-          </h3>
+          <h3>{t("reactions.importEmojiTitle")}</h3>
           <button class="modal-close" onClick={props.onClose}>
             ✕
           </button>
@@ -141,9 +181,26 @@ export default function EmojiImportModal(props: Props) {
 
         <Show when={!loading() && meta()}>
           <div class="emoji-import-form">
+            {/* Source navigation */}
+            <Show when={sources().length > 1}>
+              <div class="emoji-source-nav">
+                <button class="btn" onClick={goToPrev}>◀</button>
+                <span class="emoji-source-info">
+                  {sourceIndex() + 1} / {sources().length}
+                </span>
+                <button class="btn" onClick={goToNext}>▶</button>
+              </div>
+            </Show>
+
             <Show when={isDenied()}>
               <div class="emoji-import-denied">
                 {t("reactions.importDenied")}
+              </div>
+            </Show>
+
+            <Show when={denyWarning()}>
+              <div class="emoji-import-warning">
+                {denyWarning()}
               </div>
             </Show>
 
@@ -153,7 +210,9 @@ export default function EmojiImportModal(props: Props) {
               previewUrl={meta()!.url}
               previewDomain={meta()!.domain}
             />
+          </div>
 
+          <div class="emoji-import-footer">
             <Show when={error()}>
               <div class="emoji-import-error">{error()}</div>
             </Show>

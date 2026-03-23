@@ -109,6 +109,10 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
             emoji_obj = await get_custom_emoji(db, shortcode, None)
             if not emoji_obj and domain:
                 emoji_obj = await get_custom_emoji(db, shortcode, domain)
+            if not emoji_obj and domain:
+                from app.services.emoji_service import fetch_and_cache_remote_emoji
+
+                emoji_obj = await fetch_and_cache_remote_emoji(db, shortcode, domain)
 
             if emoji_obj:
                 emoji_tag = [

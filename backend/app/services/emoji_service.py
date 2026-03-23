@@ -1,3 +1,4 @@
+import logging
 import re
 import uuid
 
@@ -5,6 +6,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.custom_emoji import CustomEmoji
+
+logger = logging.getLogger(__name__)
 
 _SHORTCODE_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _SHORTCODE_MAX_LEN = 255
@@ -99,11 +102,15 @@ _EMOJI_UPDATABLE_FIELDS = {
 
 
 async def _invalidate_emoji_cache() -> None:
-    """Invalidate the Valkey emoji list cache."""
+    """Invalidate the Valkey emoji list cache and notify SSE clients."""
     try:
+        import json
+
         from app.valkey_client import valkey as valkey_client
 
         await valkey_client.delete("perf:custom_emojis")
+        event = json.dumps({"event": "emoji_update", "payload": {}})
+        await valkey_client.publish("emoji:update", event)
     except Exception:
         pass
 
@@ -194,6 +201,69 @@ async def upsert_remote_emoji(
     return emoji
 
 
+async def fetch_and_cache_remote_emoji(
+    db: AsyncSession, shortcode: str, domain: str
+) -> CustomEmoji | None:
+    """Fetch a remote custom emoji from the instance API and cache it.
+
+    Tries GET https://{domain}/api/v1/custom_emojis to find the emoji.
+    Returns the cached CustomEmoji or None if not found / fetch failed.
+    """
+    existing = await get_custom_emoji(db, shortcode, domain)
+    if existing:
+        return existing
+
+    try:
+        from app.utils.http_client import make_async_client
+        from app.utils.network import is_safe_url
+
+        url = f"https://{domain}/api/v1/custom_emojis"
+        if not is_safe_url(url):
+            return None
+
+        async with make_async_client(timeout=5.0, follow_redirects=False) as client:
+            resp = await client.get(url)
+            resp.raise_for_status()
+
+        emojis = resp.json()
+        if not isinstance(emojis, list):
+            return None
+
+        for entry in emojis:
+            if not isinstance(entry, dict):
+                continue
+            if entry.get("shortcode") == shortcode:
+                emoji_url = entry.get("url")
+                if not emoji_url:
+                    return None
+                return await upsert_remote_emoji(
+                    db,
+                    shortcode,
+                    domain,
+                    emoji_url,
+                    static_url=entry.get("static_url"),
+                    category=entry.get("category"),
+                )
+    except Exception:
+        logger.debug("Failed to fetch remote emoji :%s: from %s", shortcode, domain)
+    return None
+
+
+async def list_remote_emoji_sources(
+    db: AsyncSession, shortcode: str
+) -> list[CustomEmoji]:
+    """Return all remote entries matching the given shortcode."""
+    result = await db.execute(
+        select(CustomEmoji)
+        .where(
+            CustomEmoji.shortcode == shortcode,
+            CustomEmoji.domain.isnot(None),
+        )
+        .order_by(CustomEmoji.domain)
+    )
+    return list(result.scalars().all())
+
+
 async def list_local_emojis(db: AsyncSession) -> list[CustomEmoji]:
     result = await db.execute(
         select(CustomEmoji)
@@ -268,8 +338,14 @@ async def import_remote_emoji_to_local(db: AsyncSession, emoji_id: uuid.UUID) ->
 
     from app.utils.http_client import make_async_client
 
-    async with make_async_client(timeout=30.0, follow_redirects=True) as client:
+    async with make_async_client(timeout=30.0, follow_redirects=False) as client:
         resp = await client.get(remote.url)
+        # Follow one redirect manually with SSRF re-validation
+        if resp.is_redirect:
+            redirect_url = str(resp.next_request.url) if resp.next_request else None
+            if not redirect_url or not is_safe_url(redirect_url):
+                raise ValueError("Redirect to unsafe URL")
+            resp = await client.get(redirect_url)
         resp.raise_for_status()
 
     mime_type = resp.headers.get("content-type", "image/png").split(";")[0].strip()

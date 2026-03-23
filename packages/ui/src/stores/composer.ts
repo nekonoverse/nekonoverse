@@ -51,7 +51,7 @@ export function getInitialVisibility(): Visibility {
   return rememberVisibility() ? lastVisibility() : defaultVisibility();
 }
 
-const VISIBILITY_RANK: Record<Visibility, number> = {
+export const VISIBILITY_RANK: Record<Visibility, number> = {
   public: 0,
   unlisted: 1,
   followers: 2,

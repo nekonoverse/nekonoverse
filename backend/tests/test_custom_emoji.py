@@ -108,6 +108,55 @@ async def test_list_local_emojis(db, mock_valkey):
     assert "hidden_cat" not in shortcodes
 
 
+# --- list_remote_emoji_sources ---
+
+
+async def test_list_remote_emoji_sources(db, mock_valkey):
+    from app.models.custom_emoji import CustomEmoji
+    from app.services.emoji_service import list_remote_emoji_sources
+
+    e1 = CustomEmoji(
+        shortcode="sharedcat",
+        domain="alpha.example",
+        url="https://alpha.example/emoji/sharedcat.png",
+        copy_permission="allow",
+    )
+    e2 = CustomEmoji(
+        shortcode="sharedcat",
+        domain="beta.example",
+        url="https://beta.example/emoji/sharedcat.png",
+        copy_permission="deny",
+    )
+    local = CustomEmoji(
+        shortcode="sharedcat",
+        domain=None,
+        url="http://localhost/emoji/sharedcat.png",
+        visible_in_picker=True,
+    )
+    other = CustomEmoji(
+        shortcode="othercat",
+        domain="alpha.example",
+        url="https://alpha.example/emoji/othercat.png",
+    )
+    db.add_all([e1, e2, local, other])
+    await db.flush()
+
+    result = await list_remote_emoji_sources(db, "sharedcat")
+    domains = [e.domain for e in result]
+    assert len(result) == 2
+    assert "alpha.example" in domains
+    assert "beta.example" in domains
+    # local emoji should not be included
+    assert None not in domains
+
+
+async def test_list_remote_emoji_sources_empty(db, mock_valkey):
+    from app.services.emoji_service import list_remote_emoji_sources
+
+    result = await list_remote_emoji_sources(db, "nonexistent")
+    assert result == []
+
+
 # --- API: /api/v1/custom_emojis ---
 
 
@@ -701,3 +750,151 @@ async def test_handle_emoji_react(db, mock_valkey):
     reaction = result.scalar_one_or_none()
     assert reaction is not None
     assert reaction.emoji == "\U0001F31F"
+
+
+# --- fetch_and_cache_remote_emoji ---
+
+
+async def test_fetch_and_cache_remote_emoji_already_cached(db, mock_valkey):
+    """If the emoji is already cached, return it without HTTP fetch."""
+    from app.services.emoji_service import fetch_and_cache_remote_emoji, upsert_remote_emoji
+
+    await upsert_remote_emoji(
+        db, "cached_emoji", "remote.example", "https://remote.example/emoji/cached.png"
+    )
+
+    result = await fetch_and_cache_remote_emoji(db, "cached_emoji", "remote.example")
+    assert result is not None
+    assert result.shortcode == "cached_emoji"
+    assert result.url == "https://remote.example/emoji/cached.png"
+
+
+async def test_fetch_and_cache_remote_emoji_from_api(db, mock_valkey):
+    """Fetches emoji from remote /api/v1/custom_emojis and caches it."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from app.services.emoji_service import fetch_and_cache_remote_emoji, get_custom_emoji
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = [
+        {
+            "shortcode": "remoji",
+            "url": "https://remote2.example/emoji/remoji.png",
+            "static_url": "https://remote2.example/emoji/remoji_static.png",
+            "category": "custom",
+        },
+        {
+            "shortcode": "other",
+            "url": "https://remote2.example/emoji/other.png",
+        },
+    ]
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.utils.http_client.make_async_client", return_value=mock_client):
+        with patch("app.utils.network.is_safe_url", return_value=True):
+            result = await fetch_and_cache_remote_emoji(db, "remoji", "remote2.example")
+
+    assert result is not None
+    assert result.shortcode == "remoji"
+    assert result.url == "https://remote2.example/emoji/remoji.png"
+    assert result.static_url == "https://remote2.example/emoji/remoji_static.png"
+    assert result.domain == "remote2.example"
+
+    # Verify it was persisted
+    cached = await get_custom_emoji(db, "remoji", "remote2.example")
+    assert cached is not None
+
+
+async def test_fetch_and_cache_remote_emoji_not_found(db, mock_valkey):
+    """Returns None when the shortcode is not in the remote API response."""
+    from unittest.mock import AsyncMock, MagicMock, patch
+
+    from app.services.emoji_service import fetch_and_cache_remote_emoji
+
+    mock_response = MagicMock()
+    mock_response.raise_for_status = MagicMock()
+    mock_response.json.return_value = [
+        {"shortcode": "other", "url": "https://remote3.example/emoji/other.png"},
+    ]
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.utils.http_client.make_async_client", return_value=mock_client):
+        with patch("app.utils.network.is_safe_url", return_value=True):
+            result = await fetch_and_cache_remote_emoji(db, "nonexistent", "remote3.example")
+
+    assert result is None
+
+
+async def test_fetch_and_cache_remote_emoji_fetch_failure(db, mock_valkey):
+    """Returns None when HTTP fetch fails."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.services.emoji_service import fetch_and_cache_remote_emoji
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=Exception("Connection refused"))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch("app.utils.http_client.make_async_client", return_value=mock_client):
+        with patch("app.utils.network.is_safe_url", return_value=True):
+            result = await fetch_and_cache_remote_emoji(db, "emoji", "down.example")
+
+    assert result is None
+
+
+# --- Like handler: fallback when tag is missing ---
+
+
+async def test_handle_like_custom_emoji_no_tag_fallback(db, mock_valkey):
+    """Like with custom emoji but no tag array triggers remote fetch fallback."""
+    from unittest.mock import AsyncMock, patch
+
+    from app.activitypub.handlers.like import handle_like
+    from app.services.emoji_service import get_custom_emoji, upsert_remote_emoji
+    from app.services.user_service import create_user
+    from tests.conftest import make_note, make_remote_actor
+
+    remote_actor = await make_remote_actor(
+        db, username="notag_reactor", domain="notag.example"
+    )
+    user = await create_user(db, "notag_target", "nt@test.com", "password1234")
+    note = await make_note(db, user.actor, content="No tag test")
+    await db.commit()
+
+    activity = {
+        "id": "http://notag.example/activities/like-notag-1",
+        "type": "Like",
+        "actor": remote_actor.ap_id,
+        "object": note.ap_id,
+        "content": ":notag_emoji:",
+        "_misskey_reaction": ":notag_emoji:",
+        # No "tag" field!
+    }
+
+    # Mock the fallback fetch
+    async def mock_fetch(db_arg, shortcode, domain):
+        return await upsert_remote_emoji(
+            db_arg, shortcode, domain,
+            f"https://{domain}/emoji/{shortcode}.png",
+        )
+
+    with patch(
+        "app.services.emoji_service.fetch_and_cache_remote_emoji",
+        side_effect=mock_fetch,
+    ):
+        await handle_like(db, activity)
+
+    # Verify emoji was cached via fallback
+    cached = await get_custom_emoji(db, "notag_emoji", "notag.example")
+    assert cached is not None
+    assert cached.url == "https://notag.example/emoji/notag_emoji.png"

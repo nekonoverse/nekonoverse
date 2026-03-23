@@ -844,7 +844,7 @@ def _render_consent_form(
             )
         switch_html = (
             f'<p class="logged-in">Logged in as <strong>@{esc(username)}</strong>'
-            f' &mdash; <a href="/oauth/authorize?{switch_params}">Switch account</a></p>'
+            f' &mdash; <a href="/oauth/authorize?{esc(switch_params)}">Switch account</a></p>'
         )
 
     return HTMLResponse(

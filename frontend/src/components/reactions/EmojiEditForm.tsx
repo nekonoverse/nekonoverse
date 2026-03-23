@@ -41,7 +41,7 @@ export default function EmojiEditForm(props: Props) {
           <img
             src={props.previewUrl!}
             alt={`:${props.fields.shortcode}:`}
-            style="height: 64px"
+            style="height: 48px"
           />
           <Show when={props.previewDomain}>
             <span class="emoji-import-domain">{props.previewDomain}</span>

@@ -76,12 +76,16 @@ async def _fetch_software(
     """Fetch software name, version, and instance name from remote nodeinfo."""
     try:
         from app.utils.http_client import USER_AGENT
+        from app.utils.network import is_safe_url
         async with httpx.AsyncClient(
-            timeout=5, follow_redirects=True, verify=False,
+            timeout=5, follow_redirects=False, verify=False,
             headers={"User-Agent": USER_AGENT},
         ) as client:
             # Step 1: Discover nodeinfo URL
-            resp = await client.get(f"https://{domain}/.well-known/nodeinfo")
+            wellknown_url = f"https://{domain}/.well-known/nodeinfo"
+            if not is_safe_url(wellknown_url):
+                return None, None, None
+            resp = await client.get(wellknown_url)
             if resp.status_code != 200:
                 return None, None, None
             data = resp.json()
@@ -95,6 +99,10 @@ async def _fetch_software(
                     nodeinfo_url = href
                     break
             if not nodeinfo_url:
+                return None, None, None
+
+            # Validate nodeinfo URL before fetching
+            if not is_safe_url(nodeinfo_url):
                 return None, None, None
 
             # Step 2: Fetch nodeinfo

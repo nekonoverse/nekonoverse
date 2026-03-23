@@ -8,7 +8,7 @@ import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
 import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
-import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
+import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { activateTouchGuard } from "../utils/touchGuard";
 import { isTouchMode } from "@nekonoverse/ui/stores/theme";
 
@@ -256,7 +256,7 @@ export default function UserHoverCard(props: Props) {
                           twemojify(el);
                         }} />
                       </a>
-                      <span class="hover-card-handle">@{acc.acct}</span>
+                      <span class="hover-card-handle">@{acc.acct.includes("@") ? acc.acct : `${acc.acct}@${instance()?.uri || ""}`}</span>
                     </div>
                   </div>
                   <Show when={acc.note}>

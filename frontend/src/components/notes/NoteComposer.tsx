@@ -17,6 +17,7 @@ import {
   defaultVisibility,
   setLastVisibility,
   moreRestrictiveVisibility,
+  VISIBILITY_RANK,
   type Visibility,
 } from "@nekonoverse/ui/stores/composer";
 
@@ -83,6 +84,7 @@ export default function NoteComposer(props: Props) {
   const [cwOpen, setCwOpen] = createSignal(false);
   const [spoilerText, setSpoilerText] = createSignal("");
   const [showEmojiPicker, setShowEmojiPicker] = createSignal(false);
+  const [parentVisibility, setParentVisibility] = createSignal<Visibility | null>(null);
 
   let fileInput!: HTMLInputElement;
   let textareaRef!: HTMLTextAreaElement;
@@ -95,9 +97,12 @@ export default function NoteComposer(props: Props) {
     if (targetNote) {
       const parentVis = targetNote.visibility as Visibility;
       if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
+        setParentVisibility(parentVis);
         const userVis = getInitialVisibility();
         setVisibility(moreRestrictiveVisibility(userVis, parentVis));
       }
+    } else {
+      setParentVisibility(null);
     }
     // Auto-prepend @mention for the replied-to user (skip self-mention)
     if (props.replyTo) {
@@ -151,6 +156,13 @@ export default function NoteComposer(props: Props) {
   });
 
   const visEmoji = () => VISIBILITY_OPTIONS.find((o) => o.key === visibility())?.emoji || "\u{1F310}";
+
+  // Warn when user selects a visibility wider than the parent note
+  const isVisibilityWider = () => {
+    const pv = parentVisibility();
+    if (!pv) return false;
+    return (VISIBILITY_RANK[visibility()] ?? 0) < (VISIBILITY_RANK[pv] ?? 0);
+  };
 
   // Close visibility menu on outside click
   const handleDocClick = (e: MouseEvent) => {
@@ -351,12 +363,14 @@ export default function NoteComposer(props: Props) {
     <form
       onSubmit={handleSubmit}
       class={`note-composer${dragging() ? " drag-over" : ""}`}
-      onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+      onDragOver={(e) => { e.preventDefault(); e.stopPropagation(); setDragging(true); }}
       onDragLeave={(e) => {
+        e.stopPropagation();
         if (!e.currentTarget.contains(e.relatedTarget as Node)) setDragging(false);
       }}
       onDrop={(e) => {
         e.preventDefault();
+        e.stopPropagation();
         setDragging(false);
         if (e.dataTransfer?.files?.length) handleFiles(e.dataTransfer.files);
       }}
@@ -552,6 +566,12 @@ export default function NoteComposer(props: Props) {
               </For>
             </select>
           </div>
+        </div>
+      </Show>
+      <Show when={isVisibilityWider()}>
+        <div class="composer-visibility-warning">
+          <span class="composer-visibility-warning-icon">&#9888;</span>
+          {t("composer.visibilityWiderWarning" as any)}
         </div>
       </Show>
       <div class="composer-footer">

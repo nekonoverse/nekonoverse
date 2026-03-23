@@ -13,6 +13,7 @@ import {
   nyaizeEnabled, setNyaizeEnabled,
   reduceMfmMotion, setReduceMfmMotion,
   cropShadow, setCropShadow,
+  katexRender, setKatexRender,
   FONT_FAMILY_MAP,
   type Theme, type FontSize, type FontFamily, type TimeFormat, type CursorStyle, type WideEmojiStyle, type InputMode,
 } from "@nekonoverse/ui/stores/theme";
@@ -331,6 +332,14 @@ function AppearanceTab() {
             onChange={(e) => setReduceMfmMotion(e.currentTarget.checked)}
           />
           {t("settings.reduceMfmMotion" as any)}
+        </label>
+        <label class="toggle-label">
+          <input
+            type="checkbox"
+            checked={katexRender()}
+            onChange={(e) => setKatexRender(e.currentTarget.checked)}
+          />
+          {t("settings.katexRender" as any)}
         </label>
       </div>
 

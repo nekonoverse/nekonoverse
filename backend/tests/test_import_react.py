@@ -187,6 +187,56 @@ async def test_remote_info_no_auth(app_client, remote_emoji):
     assert resp.status_code == 401 or resp.status_code == 403
 
 
+# --- remote-sources endpoint ---
+
+
+async def test_remote_sources_multiple(admin_client, db):
+    from app.models.custom_emoji import CustomEmoji
+
+    e1 = CustomEmoji(
+        shortcode="multicat",
+        domain="alpha.example",
+        url="https://alpha.example/emoji/multicat.png",
+        copy_permission="allow",
+    )
+    e2 = CustomEmoji(
+        shortcode="multicat",
+        domain="beta.example",
+        url="https://beta.example/emoji/multicat.png",
+        copy_permission="deny",
+    )
+    db.add_all([e1, e2])
+    await db.flush()
+
+    resp = await admin_client.get(
+        "/api/v1/emoji/remote-sources",
+        params={"shortcode": "multicat"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    domains = [e["domain"] for e in data]
+    assert "alpha.example" in domains
+    assert "beta.example" in domains
+
+
+async def test_remote_sources_empty(admin_client):
+    resp = await admin_client.get(
+        "/api/v1/emoji/remote-sources",
+        params={"shortcode": "nonexistent"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_remote_sources_no_auth(app_client):
+    resp = await app_client.get(
+        "/api/v1/emoji/remote-sources",
+        params={"shortcode": "anycat"},
+    )
+    assert resp.status_code == 401 or resp.status_code == 403
+
+
 # --- importable flag in reaction summaries ---
 
 
@@ -281,6 +331,121 @@ async def test_reaction_summary_unicode_not_importable(db, admin_user, note, moc
     db.add(reaction)
     await db.flush()
 
+    summaries = await get_reaction_summaries(db, [note.id])
+    assert summaries[note.id][0]["importable"] is False
+
+
+# --- importable flag transitions after import ---
+
+
+async def test_importable_becomes_false_after_local_copy(
+    db, admin_user, note, remote_emoji, mock_valkey
+):
+    """After creating a local copy, importable should become False (batch path)."""
+    from app.models.custom_emoji import CustomEmoji
+    from app.models.reaction import Reaction
+    from app.services.note_service import get_reaction_summaries
+
+    reaction = Reaction(
+        id=uuid.uuid4(),
+        ap_id=f"https://localhost/reactions/{uuid.uuid4()}",
+        actor_id=admin_user.actor_id,
+        note_id=note.id,
+        emoji=":blobcat@remote.example:",
+    )
+    db.add(reaction)
+    await db.flush()
+
+    # Before import: importable
+    summaries = await get_reaction_summaries(db, [note.id])
+    assert summaries[note.id][0]["importable"] is True
+
+    # Create local copy (simulates import)
+    local = CustomEmoji(
+        shortcode="blobcat",
+        domain=None,
+        url="https://localhost/emoji/blobcat.png",
+        visible_in_picker=True,
+    )
+    db.add(local)
+    await db.flush()
+
+    # After import: not importable, uses local URL
+    summaries = await get_reaction_summaries(db, [note.id])
+    assert summaries[note.id][0]["importable"] is False
+    assert "blobcat.png" in summaries[note.id][0]["emoji_url"]
+
+
+async def test_importable_becomes_false_single_note_path(
+    db, admin_user, note, remote_emoji, mock_valkey
+):
+    """After creating a local copy, single-note path also returns importable=False."""
+    from app.models.custom_emoji import CustomEmoji
+    from app.models.reaction import Reaction
+    from app.services.note_service import get_reaction_summary
+
+    reaction = Reaction(
+        id=uuid.uuid4(),
+        ap_id=f"https://localhost/reactions/{uuid.uuid4()}",
+        actor_id=admin_user.actor_id,
+        note_id=note.id,
+        emoji=":blobcat@remote.example:",
+    )
+    db.add(reaction)
+    await db.flush()
+
+    # Before import: importable
+    summary = await get_reaction_summary(db, note.id, admin_user.actor_id)
+    assert summary[0]["importable"] is True
+
+    # Create local copy
+    local = CustomEmoji(
+        shortcode="blobcat",
+        domain=None,
+        url="https://localhost/emoji/blobcat.png",
+        visible_in_picker=True,
+    )
+    db.add(local)
+    await db.flush()
+
+    # After import: not importable
+    summary = await get_reaction_summary(db, note.id, admin_user.actor_id)
+    assert summary[0]["importable"] is False
+
+
+async def test_importable_without_domain_becomes_false(
+    db, admin_user, note, remote_emoji, mock_valkey
+):
+    """Reaction stored as :shortcode: (no @domain) also becomes not importable after import."""
+    from app.models.custom_emoji import CustomEmoji
+    from app.models.reaction import Reaction
+    from app.services.note_service import get_reaction_summaries
+
+    reaction = Reaction(
+        id=uuid.uuid4(),
+        ap_id=f"https://localhost/reactions/{uuid.uuid4()}",
+        actor_id=admin_user.actor_id,
+        note_id=note.id,
+        emoji=":blobcat:",
+    )
+    db.add(reaction)
+    await db.flush()
+
+    # Before: importable (only remote exists)
+    summaries = await get_reaction_summaries(db, [note.id])
+    assert summaries[note.id][0]["importable"] is True
+
+    # Create local copy
+    local = CustomEmoji(
+        shortcode="blobcat",
+        domain=None,
+        url="https://localhost/emoji/blobcat.png",
+        visible_in_picker=True,
+    )
+    db.add(local)
+    await db.flush()
+
+    # After: not importable
     summaries = await get_reaction_summaries(db, [note.id])
     assert summaries[note.id][0]["importable"] is False
 

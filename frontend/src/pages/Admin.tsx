@@ -42,8 +42,6 @@ import {
   importEmojis,
   getEmojiExportUrl,
   getRemoteEmojis,
-  getRemoteEmojiDomains,
-  importRemoteEmoji,
   updateEmoji,
   importRemoteEmojiByShortcode,
   getServerFiles,
@@ -396,6 +394,7 @@ function ServerSettingsTab() {
   const [generatingKey, setGeneratingKey] = createSignal(false);
   const [tlDefault, setTlDefault] = createSignal(20);
   const [tlMax, setTlMax] = createSignal(40);
+  const [katexEnabled, setKatexEnabled] = createSignal(false);
   let iconInput!: HTMLInputElement;
 
   // Use createEffect for reliable initialization inside Switch/Match
@@ -420,6 +419,7 @@ function ServerSettingsTab() {
           setVapidKey(s.vapid_public_key ?? null);
           setTlDefault(s.timeline_default_limit ?? 20);
           setTlMax(s.timeline_max_limit ?? 40);
+          setKatexEnabled(s.katex_enabled ?? false);
         } catch (e) {
           console.error("Failed to load server settings:", e);
         }
@@ -443,6 +443,7 @@ function ServerSettingsTab() {
         push_enabled: pushEnabled(),
         timeline_default_limit: tlDefault(),
         timeline_max_limit: tlMax(),
+        katex_enabled: katexEnabled(),
       } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
@@ -627,6 +628,23 @@ function ServerSettingsTab() {
         <p style={{ "font-size": "0.85em", color: "var(--text-muted)", "margin-top": "8px" }}>
           {t("admin.vapidGenerateWarning")}
         </p>
+      </div>
+
+      <div class="settings-section">
+        <h3>{t("admin.katexSettings")}</h3>
+        <div class="settings-form-group">
+          <label style={{ display: "flex", "align-items": "center", gap: "8px" }}>
+            <input
+              type="checkbox"
+              checked={katexEnabled()}
+              onChange={(e) => setKatexEnabled(e.currentTarget.checked)}
+            />
+            {t("admin.katexEnabled")}
+          </label>
+        </div>
+        <button class="btn btn-small" onClick={handleSave} disabled={saving()}>
+          {saving() ? t("profile.saving") : t("settings.save")}
+        </button>
       </div>
 
       <div class="settings-section">
@@ -1334,14 +1352,30 @@ function LogTab() {
 
 function EmojiTab() {
   const { t } = useI18n();
+  type EmojiSubTab = "upload" | "zip" | "import" | "manage";
+  const [emojiTab, setEmojiTab] = createSignal<EmojiSubTab>("manage");
+
+  // Local emoji state
   const [emojis, setEmojis] = createSignal<AdminEmoji[]>([]);
   const [loading, setLoading] = createSignal(true);
-  const [showForm, setShowForm] = createSignal(false);
+  const [manageSearch, setManageSearch] = createSignal("");
+
+  // Upload tab state
+  const [fields, setFields] = createSignal<EmojiEditFields>({
+    shortcode: "", category: "", aliases: "", license: "", author: "", description: "", isSensitive: false,
+  });
+  const [copyPermission, setCopyPermission] = createSignal("");
+  const [localOnly, setLocalOnly] = createSignal(false);
+  const [adding, setAdding] = createSignal(false);
+  let fileInput!: HTMLInputElement;
+
+  // ZIP tab state
   const [importing, setImporting] = createSignal(false);
   const [importMsg, setImportMsg] = createSignal("");
   const [importErrors, setImportErrors] = createSignal<string[]>([]);
   const [importFileName, setImportFileName] = createSignal("");
   const [importFileSize, setImportFileSize] = createSignal("");
+  let importInput!: HTMLInputElement;
 
   // Edit modal state
   const [editTarget, setEditTarget] = createSignal<AdminEmoji | null>(null);
@@ -1350,37 +1384,42 @@ function EmojiTab() {
   });
   const [editSaving, setEditSaving] = createSignal(false);
   const [editError, setEditError] = createSignal("");
+  const [editCopyPermission, setEditCopyPermission] = createSignal("");
+  const [editLocalOnly, setEditLocalOnly] = createSignal(false);
+  const [editConfirmDelete, setEditConfirmDelete] = createSignal(false);
+
+  // Remote import tab state
+  const [remoteEmojis, setRemoteEmojis] = createSignal<RemoteEmoji[]>([]);
+  const [remoteLoading, setRemoteLoading] = createSignal(false);
+  const [remoteSearch, setRemoteSearch] = createSignal("");
+  const [remoteMsg, setRemoteMsg] = createSignal("");
 
   // Remote import modal state
   const [importTarget, setImportTarget] = createSignal<RemoteEmoji | null>(null);
+  const [importGroup, setImportGroup] = createSignal<RemoteEmoji[] | null>(null);
+  const [importGroupIndex, setImportGroupIndex] = createSignal(0);
   const [impFields, setImpFields] = createSignal<EmojiEditFields>({
     shortcode: "", category: "", author: "", license: "", description: "", isSensitive: false, aliases: "",
   });
   const [impSaving, setImpSaving] = createSignal(false);
   const [impError, setImpError] = createSignal("");
 
-  // Remote emoji state
-  const [remoteEmojis, setRemoteEmojis] = createSignal<RemoteEmoji[]>([]);
-  const [remoteDomains, setRemoteDomains] = createSignal<string[]>([]);
-  const [remoteLoading, setRemoteLoading] = createSignal(false);
-  const [remoteDomain, setRemoteDomain] = createSignal("");
-  const [remoteSearch, setRemoteSearch] = createSignal("");
-  const [remoteMsg, setRemoteMsg] = createSignal("");
-  const [importingId, setImportingId] = createSignal("");
-  const [fields, setFields] = createSignal<EmojiEditFields>({
-    shortcode: "",
-    category: "",
-    aliases: "",
-    license: "",
-    author: "",
-    description: "",
-    isSensitive: false,
+  // Grouped remote emojis by shortcode
+  const groupedRemote = createMemo(() => {
+    const map = new Map<string, RemoteEmoji[]>();
+    for (const e of remoteEmojis()) {
+      if (!map.has(e.shortcode)) map.set(e.shortcode, []);
+      map.get(e.shortcode)!.push(e);
+    }
+    return map;
   });
-  const [copyPermission, setCopyPermission] = createSignal("");
-  const [localOnly, setLocalOnly] = createSignal(false);
-  const [adding, setAdding] = createSignal(false);
-  let fileInput!: HTMLInputElement;
-  let importInput!: HTMLInputElement;
+
+  // Filtered local emojis for manage tab
+  const filteredEmojis = createMemo(() => {
+    const q = manageSearch().toLowerCase().trim();
+    if (!q) return emojis();
+    return emojis().filter((e) => e.shortcode.toLowerCase().includes(q));
+  });
 
   const load = async () => {
     try {
@@ -1391,7 +1430,6 @@ function EmojiTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
   let emojiInit = false;
   createEffect(() => {
     if (!emojiInit) {
@@ -1400,6 +1438,7 @@ function EmojiTab() {
     }
   });
 
+  // --- Upload tab handlers ---
   const handleAdd = async () => {
     const file = fileInput.files?.[0];
     const f = fields();
@@ -1410,15 +1449,7 @@ function EmojiTab() {
     fd.append("shortcode", f.shortcode.trim());
     if (f.category) fd.append("category", f.category);
     if (f.aliases)
-      fd.append(
-        "aliases",
-        JSON.stringify(
-          f.aliases
-            .split(",")
-            .map((a) => a.trim())
-            .filter(Boolean),
-        ),
-      );
+      fd.append("aliases", JSON.stringify(f.aliases.split(",").map((a) => a.trim()).filter(Boolean)));
     if (f.license) fd.append("license", f.license);
     if (f.author) fd.append("author", f.author);
     if (f.description) fd.append("description", f.description);
@@ -1427,62 +1458,16 @@ function EmojiTab() {
     fd.append("local_only", String(localOnly()));
     try {
       await addEmoji(fd);
-      setFields({
-        shortcode: "",
-        category: "",
-        aliases: "",
-        license: "",
-        author: "",
-        description: "",
-        isSensitive: false,
-      });
+      setFields({ shortcode: "", category: "", aliases: "", license: "", author: "", description: "", isSensitive: false });
       setCopyPermission("");
       setLocalOnly(false);
       fileInput.value = "";
-      setShowForm(false);
       await load();
     } catch {}
     setAdding(false);
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm(t("admin.confirmDeleteEmoji"))) return;
-    try {
-      await deleteEmoji(id);
-      await load();
-    } catch {}
-  };
-
-  const loadRemote = async () => {
-    setRemoteLoading(true);
-    try {
-      const [ems, doms] = await Promise.all([
-        getRemoteEmojis(
-          remoteDomain() || undefined,
-          remoteSearch() || undefined,
-        ),
-        getRemoteEmojiDomains(),
-      ]);
-      setRemoteEmojis(ems);
-      setRemoteDomains(doms);
-    } catch {}
-    setRemoteLoading(false);
-  };
-
-  const handleImportRemote = async (id: string) => {
-    setImportingId(id);
-    setRemoteMsg("");
-    try {
-      await importRemoteEmoji(id);
-      setRemoteMsg(t("admin.importSuccess"));
-      await load();
-      await loadRemote();
-    } catch (e: any) {
-      setRemoteMsg(e.message || t("admin.importFailed"));
-    }
-    setImportingId("");
-  };
-
+  // --- ZIP tab handlers ---
   const formatSize = (bytes: number) => {
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -1500,13 +1485,9 @@ function EmojiTab() {
     try {
       const res = await importEmojis(file);
       setImportMsg(
-        t("admin.importResult")
-          .replace("{imported}", String(res.imported))
-          .replace("{skipped}", String(res.skipped)),
+        t("admin.importResult").replace("{imported}", String(res.imported)).replace("{skipped}", String(res.skipped)),
       );
-      if (res.errors && res.errors.length > 0) {
-        setImportErrors(res.errors);
-      }
+      if (res.errors && res.errors.length > 0) setImportErrors(res.errors);
       await load();
     } catch {
       setImportMsg("Import failed");
@@ -1515,57 +1496,22 @@ function EmojiTab() {
     (e.currentTarget as HTMLInputElement).value = "";
   };
 
-  const openEdit = (e: AdminEmoji) => {
-    setEditTarget(e);
-    setEditFields({
-      shortcode: e.shortcode,
-      category: e.category || "",
-      author: e.author || "",
-      license: e.license || "",
-      description: e.description || "",
-      isSensitive: e.is_sensitive,
-      aliases: (e.aliases || []).join(", "),
-    });
-    setEditError("");
-  };
-
-  const handleEditSave = async () => {
-    const target = editTarget();
-    if (!target || editSaving()) return;
-    setEditSaving(true);
-    setEditError("");
+  // --- Remote import tab handlers ---
+  const loadRemote = async () => {
+    if (!remoteSearch().trim()) return;
+    setRemoteLoading(true);
     try {
-      const f = editFields();
-      await updateEmoji(target.id, {
-        shortcode: f.shortcode !== target.shortcode ? f.shortcode : undefined,
-        category: f.category || undefined,
-        author: f.author || undefined,
-        license: f.license || undefined,
-        description: f.description || undefined,
-        is_sensitive: f.isSensitive,
-        aliases: f.aliases
-          ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean)
-          : [],
-      });
-      setEditTarget(null);
-      await load();
-    } catch (e: any) {
-      setEditError(e.message || "Failed to save");
-    } finally {
-      setEditSaving(false);
-    }
+      setRemoteEmojis(await getRemoteEmojis(undefined, remoteSearch() || undefined));
+    } catch {}
+    setRemoteLoading(false);
   };
 
   const openImportModal = (e: RemoteEmoji) => {
     setImportTarget(e);
     setImpFields({
-      shortcode: e.shortcode,
-      category: e.category || "",
-      author: e.author || "",
-      license: e.license || "",
-      description: e.description || "",
-      isSensitive: e.is_sensitive,
-      aliases: (e.aliases || []).join(", "),
+      shortcode: e.shortcode, category: e.category || "", author: e.author || "",
+      license: e.license || "", description: e.description || "",
+      isSensitive: e.is_sensitive, aliases: (e.aliases || []).join(", "),
     });
     setImpError("");
   };
@@ -1581,16 +1527,13 @@ function EmojiTab() {
         shortcode: target.shortcode,
         domain: target.domain,
         shortcode_override: f.shortcode !== target.shortcode ? f.shortcode : undefined,
-        category: f.category || undefined,
-        author: f.author || undefined,
-        license: f.license || undefined,
-        description: f.description || undefined,
+        category: f.category || undefined, author: f.author || undefined,
+        license: f.license || undefined, description: f.description || undefined,
         is_sensitive: f.isSensitive,
-        aliases: f.aliases
-          ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean)
-          : undefined,
+        aliases: f.aliases ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean) : undefined,
       });
       setImportTarget(null);
+      setImportGroup(null);
       setRemoteMsg(t("admin.importSuccess"));
       await load();
       await loadRemote();
@@ -1601,208 +1544,231 @@ function EmojiTab() {
     }
   };
 
+  // --- Edit modal handlers ---
+  const openEdit = (e: AdminEmoji) => {
+    setEditTarget(e);
+    setEditFields({
+      shortcode: e.shortcode, category: e.category || "", author: e.author || "",
+      license: e.license || "", description: e.description || "",
+      isSensitive: e.is_sensitive, aliases: (e.aliases || []).join(", "),
+    });
+    setEditCopyPermission(e.copy_permission || "");
+    setEditLocalOnly(e.local_only);
+    setEditError("");
+    setEditConfirmDelete(false);
+  };
+
+  const closeEdit = () => {
+    setEditTarget(null);
+    setEditConfirmDelete(false);
+  };
+
+  const handleEditSave = async () => {
+    const target = editTarget();
+    if (!target || editSaving()) return;
+    setEditSaving(true);
+    setEditError("");
+    try {
+      const f = editFields();
+      await updateEmoji(target.id, {
+        shortcode: f.shortcode !== target.shortcode ? f.shortcode : undefined,
+        category: f.category || undefined, author: f.author || undefined,
+        license: f.license || undefined, description: f.description || undefined,
+        is_sensitive: f.isSensitive,
+        aliases: f.aliases ? f.aliases.split(",").map((s) => s.trim()).filter(Boolean) : [],
+        copy_permission: editCopyPermission() || undefined,
+        local_only: editLocalOnly(),
+      });
+      closeEdit();
+      await load();
+    } catch (e: any) {
+      setEditError(e.message || "Failed to save");
+    } finally {
+      setEditSaving(false);
+    }
+  };
+
+  const handleEditDelete = async () => {
+    const target = editTarget();
+    if (!target) return;
+    try {
+      await deleteEmoji(target.id);
+      closeEdit();
+      await load();
+    } catch {}
+  };
+
   return (
     <div class="settings-section">
       <h3>{t("admin.tabEmoji")}</h3>
-      <div class="admin-emoji-actions">
-        <button class="btn btn-small" onClick={() => setShowForm(!showForm())}>
-          {t("admin.emojiAdd")}
+
+      {/* Tab bar */}
+      <div class="settings-tabs">
+        <button class={`settings-tab${emojiTab() === "upload" ? " settings-tab-active" : ""}`} onClick={() => setEmojiTab("upload")}>
+          {t("admin.emojiTabUpload" as any)}
         </button>
-        <button
-          class="btn btn-small"
-          onClick={() => importInput.click()}
-          disabled={importing()}
-        >
-          {importing() ? t("common.loading") : t("admin.emojiImport")}
+        <button class={`settings-tab${emojiTab() === "zip" ? " settings-tab-active" : ""}`} onClick={() => setEmojiTab("zip")}>
+          {t("admin.emojiTabZip" as any)}
         </button>
-        <a class="btn btn-small" href={getEmojiExportUrl()} download="">
-          {t("admin.emojiExport")}
-        </a>
-        <input
-          ref={importInput}
-          type="file"
-          accept=".zip"
-          style="display:none"
-          onChange={handleImport}
-        />
-      </div>
-      <Show when={importMsg()}>
-        <p class="settings-success">{importMsg()}</p>
-      </Show>
-      <Show when={importErrors().length > 0}>
-        <details class="import-errors">
-          <summary class="settings-error">{importErrors().length} errors</summary>
-          <ul>
-            {importErrors().map((err) => <li>{err}</li>)}
-          </ul>
-        </details>
-      </Show>
-
-      <Show when={showForm()}>
-        <div class="admin-emoji-form">
-          <div class="settings-form-group">
-            <label>{t("admin.emojiFile")}</label>
-            <input ref={fileInput} type="file" accept="image/*" />
-          </div>
-          <EmojiEditForm
-            fields={fields()}
-            onChange={setFields}
-            showAdminFields
-            copyPermission={copyPermission()}
-            onCopyPermissionChange={setCopyPermission}
-            localOnly={localOnly()}
-            onLocalOnlyChange={setLocalOnly}
-          />
-          <button
-            class="btn btn-small"
-            onClick={handleAdd}
-            disabled={adding() || !fields().shortcode.trim()}
-          >
-            {adding() ? t("common.loading") : t("admin.emojiAdd")}
-          </button>
-        </div>
-      </Show>
-
-      <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
-        <Show
-          when={emojis().length > 0}
-          fallback={<p class="empty">{t("admin.noEmoji")}</p>}
-        >
-          <div class="admin-emoji-list">
-            <For each={emojis()}>
-              {(e) => (
-                <div class="admin-emoji-item">
-                  <img
-                    src={e.url}
-                    alt={e.shortcode}
-                    class="admin-emoji-img"
-                    loading="lazy"
-                  />
-                  <div class="admin-emoji-info">
-                    <strong>:{e.shortcode}:</strong>
-                    <Show when={e.category}>
-                      <span class="admin-emoji-cat">{e.category}</span>
-                    </Show>
-                    <Show when={e.license}>
-                      <span class="admin-emoji-meta">{e.license}</span>
-                    </Show>
-                    <Show when={e.author}>
-                      <span class="admin-emoji-meta">{e.author}</span>
-                    </Show>
-                  </div>
-                  <button
-                    class="btn btn-small"
-                    onClick={() => openEdit(e)}
-                  >
-                    {t("admin.editEmoji")}
-                  </button>
-                  <button
-                    class="btn btn-small btn-danger"
-                    onClick={() => handleDelete(e.id)}
-                  >
-                    {t("admin.remove")}
-                  </button>
-                </div>
-              )}
-            </For>
-          </div>
-        </Show>
-      </Show>
-
-      <h3>{t("admin.remoteEmoji")}</h3>
-      <div class="admin-remote-emoji-actions">
-        <select
-          value={remoteDomain()}
-          onChange={(e) => {
-            setRemoteDomain(e.currentTarget.value);
-          }}
-        >
-          <option value="">{t("admin.allDomains")}</option>
-          <For each={remoteDomains()}>
-            {(d) => <option value={d}>{d}</option>}
-          </For>
-        </select>
-        <input
-          type="text"
-          value={remoteSearch()}
-          onInput={(e) => setRemoteSearch(e.currentTarget.value)}
-          placeholder={t("admin.searchEmoji")}
-        />
-        <button
-          class="btn btn-small"
-          onClick={loadRemote}
-          disabled={remoteLoading()}
-        >
-          {remoteLoading() ? t("common.loading") : t("admin.search")}
+        <button class={`settings-tab${emojiTab() === "import" ? " settings-tab-active" : ""}`} onClick={() => setEmojiTab("import")}>
+          {t("admin.emojiTabImport" as any)}
+        </button>
+        <button class={`settings-tab${emojiTab() === "manage" ? " settings-tab-active" : ""}`} onClick={() => setEmojiTab("manage")}>
+          {t("admin.emojiTabManage" as any)}
         </button>
       </div>
-      <Show when={remoteMsg()}>
-        <p class="settings-success">{remoteMsg()}</p>
-      </Show>
 
-      <Show when={remoteEmojis().length > 0}>
-        <div class="admin-emoji-list">
-          <For each={remoteEmojis()}>
-            {(e) => (
-              <div class="admin-emoji-item">
-                <img
-                  src={e.url}
-                  alt={e.shortcode}
-                  class="admin-emoji-img"
-                  loading="lazy"
-                />
-                <div class="admin-emoji-info">
-                  <strong>:{e.shortcode}:</strong>
-                  <span class="admin-emoji-meta">@{e.domain}</span>
-                  <Show when={e.copy_permission === "deny"}>
-                    <span class="admin-emoji-meta" style="color: var(--accent)">
-                      {t("admin.copyDenied")}
-                    </span>
-                  </Show>
-                </div>
-                <button
-                  class="btn btn-small"
-                  onClick={() => openImportModal(e)}
-                  disabled={e.copy_permission === "deny"}
-                >
-                  {t("admin.importEmoji")}
-                </button>
+      <Switch>
+        {/* Tab 1: Upload */}
+        <Match when={emojiTab() === "upload"}>
+          <div class="admin-emoji-form">
+            <div class="settings-form-group">
+              <label>{t("admin.emojiFile")}</label>
+              <input ref={fileInput} type="file" accept="image/*" />
+            </div>
+            <EmojiEditForm
+              fields={fields()}
+              onChange={setFields}
+              showAdminFields
+              copyPermission={copyPermission()}
+              onCopyPermissionChange={setCopyPermission}
+              localOnly={localOnly()}
+              onLocalOnlyChange={setLocalOnly}
+            />
+            <button class="btn btn-small" onClick={handleAdd} disabled={adding() || !fields().shortcode.trim()}>
+              {adding() ? t("common.loading") : t("admin.emojiAdd")}
+            </button>
+          </div>
+        </Match>
+
+        {/* Tab 2: ZIP Import/Export */}
+        <Match when={emojiTab() === "zip"}>
+          <div class="admin-emoji-actions">
+            <button class="btn btn-small" onClick={() => importInput.click()} disabled={importing()}>
+              {importing() ? t("common.loading") : t("admin.emojiImport")}
+            </button>
+            <a class="btn btn-small" href={getEmojiExportUrl()} download="">
+              {t("admin.emojiExport")}
+            </a>
+            <input ref={importInput} type="file" accept=".zip" style="display:none" onChange={handleImport} />
+          </div>
+          <Show when={importMsg()}>
+            <p class="settings-success">{importMsg()}</p>
+          </Show>
+          <Show when={importErrors().length > 0}>
+            <details class="import-errors">
+              <summary class="settings-error">{importErrors().length} errors</summary>
+              <ul>{importErrors().map((err) => <li>{err}</li>)}</ul>
+            </details>
+          </Show>
+        </Match>
+
+        {/* Tab 3: Remote Import */}
+        <Match when={emojiTab() === "import"}>
+          <div class="admin-remote-emoji-actions">
+            <input
+              type="text"
+              value={remoteSearch()}
+              onInput={(e) => setRemoteSearch(e.currentTarget.value)}
+              placeholder={t("admin.searchEmoji")}
+              onKeyDown={(e) => { if (e.key === "Enter") loadRemote(); }}
+            />
+            <button class="btn btn-small" onClick={loadRemote} disabled={remoteLoading()}>
+              {remoteLoading() ? t("common.loading") : t("admin.search")}
+            </button>
+          </div>
+          <Show when={remoteMsg()}>
+            <p class="settings-success">{remoteMsg()}</p>
+          </Show>
+          <Show when={groupedRemote().size > 0}>
+            <div class="admin-emoji-grid">
+              <For each={[...groupedRemote().entries()]}>
+                {([shortcode, sources]) => {
+                  const allDenied = sources.every((s) => s.copy_permission === "deny");
+                  return (
+                    <button
+                      class={`admin-emoji-grid-item${allDenied ? " copy-denied" : ""}`}
+                      onClick={() => {
+                        if (allDenied) return;
+                        setImportGroup(sources);
+                        setImportGroupIndex(0);
+                        openImportModal(sources[0]);
+                      }}
+                      title={`:${shortcode}: (${sources.length})`}
+                      disabled={allDenied}
+                    >
+                      <img src={sources[0].url} alt={`:${shortcode}:`} loading="lazy" />
+                      <span class="shortcode-label">:{shortcode}:</span>
+                    </button>
+                  );
+                }}
+              </For>
+            </div>
+          </Show>
+          <Show when={!remoteLoading() && remoteSearch().trim() && groupedRemote().size === 0}>
+            <p class="empty">{t("admin.noRemoteEmoji")}</p>
+          </Show>
+        </Match>
+
+        {/* Tab 4: Manage */}
+        <Match when={emojiTab() === "manage"}>
+          <div class="admin-remote-emoji-actions">
+            <input
+              type="text"
+              value={manageSearch()}
+              onInput={(e) => setManageSearch(e.currentTarget.value)}
+              placeholder={t("admin.searchEmoji")}
+            />
+          </div>
+          <Show when={!loading()} fallback={<p>{t("common.loading")}</p>}>
+            <Show when={filteredEmojis().length > 0} fallback={<p class="empty">{t("admin.noEmoji")}</p>}>
+              <div class="admin-emoji-grid">
+                <For each={filteredEmojis()}>
+                  {(e) => (
+                    <button
+                      class="admin-emoji-grid-item"
+                      onClick={() => openEdit(e)}
+                      title={`:${e.shortcode}:`}
+                    >
+                      <img src={e.url} alt={`:${e.shortcode}:`} loading="lazy" />
+                      <span class="shortcode-label">:{e.shortcode}:</span>
+                    </button>
+                  )}
+                </For>
               </div>
-            )}
-          </For>
-        </div>
-      </Show>
-      <Show
-        when={
-          !remoteLoading() &&
-          remoteEmojis().length === 0 &&
-          remoteDomains().length > 0
-        }
-      >
-        <p class="empty">{t("admin.noRemoteEmoji")}</p>
-      </Show>
+            </Show>
+          </Show>
+        </Match>
+      </Switch>
 
       {/* Edit local emoji modal */}
       <Show when={editTarget()}>
-        <div class="modal-overlay" onClick={() => setEditTarget(null)}>
+        <div class="modal-overlay" onClick={closeEdit}>
           <div class="modal-content" style="max-width: 440px" onClick={(e) => e.stopPropagation()}>
             <div class="modal-header">
               <h3 style="display: flex; align-items: center; gap: 8px">
                 <img src={editTarget()!.url} alt={editTarget()!.shortcode} style="height: 32px" />
                 {t("admin.editEmoji")}
               </h3>
-              <button class="modal-close" onClick={() => setEditTarget(null)}>✕</button>
+              <button class="modal-close" onClick={closeEdit}>✕</button>
             </div>
             <div class="emoji-import-form">
               <EmojiEditForm
                 fields={editFields()}
                 onChange={setEditFields}
+                showAdminFields
+                copyPermission={editCopyPermission()}
+                onCopyPermissionChange={setEditCopyPermission}
+                localOnly={editLocalOnly()}
+                onLocalOnlyChange={setEditLocalOnly}
               />
+            </div>
+            <div class="emoji-import-footer">
               <Show when={editError()}>
                 <div class="emoji-import-error">{editError()}</div>
               </Show>
               <div class="emoji-import-actions">
-                <button class="btn" onClick={() => setEditTarget(null)}>
+                <button class="btn" onClick={closeEdit}>
                   {t("common.cancel")}
                 </button>
                 <button class="btn btn-primary" onClick={handleEditSave} disabled={editSaving()}>
@@ -1810,36 +1776,87 @@ function EmojiTab() {
                 </button>
               </div>
             </div>
+            <div class="admin-emoji-delete-zone">
+              <Show when={!editConfirmDelete()}>
+                <button class="btn btn-danger" style="width: 100%" onClick={() => setEditConfirmDelete(true)}>
+                  {t("admin.deleteEmoji" as any)}
+                </button>
+              </Show>
+              <Show when={editConfirmDelete()}>
+                <p style="font-size: 0.85em; color: var(--accent); margin-bottom: 8px; text-align: center">
+                  {t("admin.confirmDeleteEmoji")}
+                </p>
+                <div style="display: flex; gap: 8px">
+                  <button class="btn" style="flex: 1" onClick={() => setEditConfirmDelete(false)}>
+                    {t("common.cancel")}
+                  </button>
+                  <button class="btn btn-danger" style="flex: 1" onClick={handleEditDelete}>
+                    {t("admin.deleteEmoji" as any)}
+                  </button>
+                </div>
+              </Show>
+            </div>
           </div>
         </div>
       </Show>
 
-      {/* Import remote emoji modal */}
+      {/* Import remote emoji modal (with source navigation) */}
       <Show when={importTarget()}>
-        <div class="modal-overlay" onClick={() => setImportTarget(null)}>
+        <div class="modal-overlay" onClick={() => { setImportTarget(null); setImportGroup(null); }}>
           <div class="modal-content" style="max-width: 440px" onClick={(e) => e.stopPropagation()}>
             <div class="modal-header">
               <h3 style="display: flex; align-items: center; gap: 8px">
                 <img src={importTarget()!.url} alt={importTarget()!.shortcode} style="height: 32px" />
                 {t("admin.importEmoji")}
               </h3>
-              <button class="modal-close" onClick={() => setImportTarget(null)}>✕</button>
+              <button class="modal-close" onClick={() => { setImportTarget(null); setImportGroup(null); }}>✕</button>
             </div>
             <div class="emoji-import-form">
+              {/* Source navigation */}
+              <Show when={importGroup() && importGroup()!.length > 1}>
+                <div class="emoji-source-nav">
+                  <button class="btn" onClick={() => {
+                    const group = importGroup()!;
+                    const idx = (importGroupIndex() - 1 + group.length) % group.length;
+                    setImportGroupIndex(idx);
+                    openImportModal(group[idx]);
+                  }}>◀</button>
+                  <span class="emoji-source-info">
+                    {importGroupIndex() + 1} / {importGroup()!.length}
+                  </span>
+                  <button class="btn" onClick={() => {
+                    const group = importGroup()!;
+                    const idx = (importGroupIndex() + 1) % group.length;
+                    setImportGroupIndex(idx);
+                    openImportModal(group[idx]);
+                  }}>▶</button>
+                </div>
+              </Show>
+
+              <Show when={importTarget()!.copy_permission === "deny"}>
+                <div class="emoji-import-denied">{t("admin.copyDenied")}</div>
+              </Show>
+
               <EmojiEditForm
                 fields={impFields()}
                 onChange={setImpFields}
                 previewUrl={importTarget()!.url}
                 previewDomain={importTarget()!.domain}
               />
+            </div>
+            <div class="emoji-import-footer">
               <Show when={impError()}>
                 <div class="emoji-import-error">{impError()}</div>
               </Show>
               <div class="emoji-import-actions">
-                <button class="btn" onClick={() => setImportTarget(null)}>
+                <button class="btn" onClick={() => { setImportTarget(null); setImportGroup(null); }}>
                   {t("common.cancel")}
                 </button>
-                <button class="btn btn-primary" onClick={handleImportSave} disabled={impSaving()}>
+                <button
+                  class="btn btn-primary"
+                  onClick={handleImportSave}
+                  disabled={impSaving() || importTarget()!.copy_permission === "deny"}
+                >
                   {impSaving() ? t("common.loading") : t("admin.importEmoji")}
                 </button>
               </div>
