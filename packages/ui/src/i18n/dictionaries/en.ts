@@ -71,6 +71,7 @@ export const en: Dictionary = {
   "composer.sensitive": "Mark as sensitive",
   "composer.cw": "Content warning",
   "composer.cwPlaceholder": "Write a warning...",
+  "composer.visibilityWiderWarning": "Selected visibility is wider than the original post",
   "lang.ja": "日本語",
   "lang.en": "English",
   "auth.or": "or",
