@@ -144,7 +144,11 @@ const [cropShadow, setCropShadowSignal] = createSignal<boolean>(
   localStorage.getItem("nekonoverse:crop-shadow") !== "false"
 );
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, inputMode, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion, cropShadow };
+const [katexRender, setKatexRenderSignal] = createSignal<boolean>(
+  localStorage.getItem("nekonoverse:katex-render") !== "false"
+);
+
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, inputMode, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion, cropShadow, katexRender };
 
 export function isTouchMode(): boolean {
   const mode = inputMode();
@@ -221,6 +225,11 @@ export function setCropShadow(v: boolean) {
   setCropShadowSignal(v);
   localStorage.setItem("nekonoverse:crop-shadow", String(v));
   applyCropShadow(v);
+}
+
+export function setKatexRender(v: boolean) {
+  setKatexRenderSignal(v);
+  localStorage.setItem("nekonoverse:katex-render", String(v));
 }
 
 function applyReduceMfmMotion(v: boolean) {
