@@ -187,6 +187,56 @@ async def test_remote_info_no_auth(app_client, remote_emoji):
     assert resp.status_code == 401 or resp.status_code == 403
 
 
+# --- remote-sources endpoint ---
+
+
+async def test_remote_sources_multiple(admin_client, db):
+    from app.models.custom_emoji import CustomEmoji
+
+    e1 = CustomEmoji(
+        shortcode="multicat",
+        domain="alpha.example",
+        url="https://alpha.example/emoji/multicat.png",
+        copy_permission="allow",
+    )
+    e2 = CustomEmoji(
+        shortcode="multicat",
+        domain="beta.example",
+        url="https://beta.example/emoji/multicat.png",
+        copy_permission="deny",
+    )
+    db.add_all([e1, e2])
+    await db.flush()
+
+    resp = await admin_client.get(
+        "/api/v1/emoji/remote-sources",
+        params={"shortcode": "multicat"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    domains = [e["domain"] for e in data]
+    assert "alpha.example" in domains
+    assert "beta.example" in domains
+
+
+async def test_remote_sources_empty(admin_client):
+    resp = await admin_client.get(
+        "/api/v1/emoji/remote-sources",
+        params={"shortcode": "nonexistent"},
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_remote_sources_no_auth(app_client):
+    resp = await app_client.get(
+        "/api/v1/emoji/remote-sources",
+        params={"shortcode": "anycat"},
+    )
+    assert resp.status_code == 401 or resp.status_code == 403
+
+
 # --- importable flag in reaction summaries ---
 
 

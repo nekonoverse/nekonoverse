@@ -108,6 +108,55 @@ async def test_list_local_emojis(db, mock_valkey):
     assert "hidden_cat" not in shortcodes
 
 
+# --- list_remote_emoji_sources ---
+
+
+async def test_list_remote_emoji_sources(db, mock_valkey):
+    from app.models.custom_emoji import CustomEmoji
+    from app.services.emoji_service import list_remote_emoji_sources
+
+    e1 = CustomEmoji(
+        shortcode="sharedcat",
+        domain="alpha.example",
+        url="https://alpha.example/emoji/sharedcat.png",
+        copy_permission="allow",
+    )
+    e2 = CustomEmoji(
+        shortcode="sharedcat",
+        domain="beta.example",
+        url="https://beta.example/emoji/sharedcat.png",
+        copy_permission="deny",
+    )
+    local = CustomEmoji(
+        shortcode="sharedcat",
+        domain=None,
+        url="http://localhost/emoji/sharedcat.png",
+        visible_in_picker=True,
+    )
+    other = CustomEmoji(
+        shortcode="othercat",
+        domain="alpha.example",
+        url="https://alpha.example/emoji/othercat.png",
+    )
+    db.add_all([e1, e2, local, other])
+    await db.flush()
+
+    result = await list_remote_emoji_sources(db, "sharedcat")
+    domains = [e.domain for e in result]
+    assert len(result) == 2
+    assert "alpha.example" in domains
+    assert "beta.example" in domains
+    # local emoji should not be included
+    assert None not in domains
+
+
+async def test_list_remote_emoji_sources_empty(db, mock_valkey):
+    from app.services.emoji_service import list_remote_emoji_sources
+
+    result = await list_remote_emoji_sources(db, "nonexistent")
+    assert result == []
+
+
 # --- API: /api/v1/custom_emojis ---
 
 

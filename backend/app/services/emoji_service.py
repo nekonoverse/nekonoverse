@@ -245,6 +245,21 @@ async def fetch_and_cache_remote_emoji(
     return None
 
 
+async def list_remote_emoji_sources(
+    db: AsyncSession, shortcode: str
+) -> list[CustomEmoji]:
+    """Return all remote entries matching the given shortcode."""
+    result = await db.execute(
+        select(CustomEmoji)
+        .where(
+            CustomEmoji.shortcode == shortcode,
+            CustomEmoji.domain.isnot(None),
+        )
+        .order_by(CustomEmoji.domain)
+    )
+    return list(result.scalars().all())
+
+
 async def list_local_emojis(db: AsyncSession) -> list[CustomEmoji]:
     result = await db.execute(
         select(CustomEmoji)

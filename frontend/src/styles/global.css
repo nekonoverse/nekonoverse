@@ -2545,6 +2545,29 @@ a:hover {
   color: var(--accent);
   font-size: 0.85em;
 }
+.emoji-import-warning {
+  padding: 8px 12px;
+  background: rgba(255, 165, 0, 0.15);
+  border: 1px solid orange;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.85em;
+}
+.emoji-source-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.emoji-source-nav .btn-sm {
+  padding: 2px 8px;
+  min-width: auto;
+  font-size: 0.85em;
+}
+.emoji-source-info {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+}
 .emoji-import-error {
   color: var(--accent);
   font-size: 0.85em;

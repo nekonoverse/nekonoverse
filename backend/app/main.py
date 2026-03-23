@@ -714,6 +714,20 @@ async def get_remote_emoji_info(
     return AdminRemoteEmojiResponse.model_validate(emoji)
 
 
+@app.get("/api/v1/emoji/remote-sources")
+async def get_remote_emoji_sources(
+    shortcode: str = Query(...),
+    user=Depends(get_permitted_staff("emoji")),
+    db=Depends(get_db),
+):
+    """List all remote sources for a given emoji shortcode."""
+    from app.schemas.admin import AdminRemoteEmojiResponse
+    from app.services.emoji_service import list_remote_emoji_sources
+
+    emojis = await list_remote_emoji_sources(db, shortcode)
+    return [AdminRemoteEmojiResponse.model_validate(e) for e in emojis]
+
+
 @app.get("/api/v1/trends/tags")
 async def trending_tags(
     limit: int = 10,

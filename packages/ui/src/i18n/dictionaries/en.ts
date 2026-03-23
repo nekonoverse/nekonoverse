@@ -185,6 +185,7 @@ export const en: Dictionary = {
   "reactions.notDelivered": "Emoji reactions won't be delivered to this server",
   "reactions.importAndReact": "Import & React",
   "reactions.importDenied": "Import denied by author",
+  "reactions.copyViolationWarning": "Copying of this emoji is denied on {domain}. This source may be a rights violation",
   "reactions.emojiShortcode": "Shortcode",
   "reactions.emojiCategory": "Category",
   "reactions.emojiAuthor": "Author",
