@@ -275,7 +275,6 @@ export const en: Dictionary = {
   "boost.cannotRenote": "Cannot boost a private post",
   "boost.quoting": "Quoting:",
   "boost.boostedBy": "Boosted by",
-  "boost.boostedSuffix": " boosted",
   "note.delete": "Delete",
   "note.confirmDelete": "Delete this post?",
   "note.modDelete": "Delete (moderation)",
