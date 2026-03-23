@@ -62,6 +62,7 @@ async def stream_user(request: Request, user: User = Depends(get_current_user)):
             f"timeline:home:{actor_id}",
             f"notifications:{actor_id}",
             "timeline:public",
+            "emoji:update",
         ],
     )
 
@@ -69,4 +70,4 @@ async def stream_user(request: Request, user: User = Depends(get_current_user)):
 @router.get("/public")
 async def stream_public(request: Request):
     """SSE stream for public timeline (no auth required)."""
-    return _sse_response(request, ["timeline:public"])
+    return _sse_response(request, ["timeline:public", "emoji:update"])
