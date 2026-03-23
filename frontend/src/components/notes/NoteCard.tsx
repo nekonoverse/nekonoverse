@@ -644,6 +644,12 @@ export default function NoteCard(props: Props) {
             }}
           />{" "}
           {t("boost.boosted")}
+          <span class="note-boost-time">
+            {(() => {
+              useTimeTick();
+              return formatRelative(props.note.published, t);
+            })()}
+          </span>
         </div>
       </Show>
       <Show when={replyToDisplay()}>
@@ -1333,14 +1339,6 @@ export default function NoteCard(props: Props) {
                 return formatTimestamp(note().published, t);
               })()}
             </span>
-            <Show when={isReblog()}>
-              <span class="note-boost-time">
-                {(() => {
-                  useTimeTick();
-                  return formatRelative(props.note.published, t);
-                })()}{t("boost.boostedSuffix" as any)}
-              </span>
-            </Show>
           </a>
         </div>
       </div>
