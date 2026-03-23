@@ -9,16 +9,23 @@ export interface CustomEmoji extends BaseCustomEmoji {
 }
 
 let cachedEmojis: CustomEmoji[] | null = null;
+let lastFetchedAt = 0;
+const EMOJI_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 export async function getCustomEmojis(): Promise<CustomEmoji[]> {
-  if (cachedEmojis) return cachedEmojis;
+  const now = Date.now();
+  if (cachedEmojis && now - lastFetchedAt < EMOJI_CACHE_TTL) {
+    return cachedEmojis;
+  }
   const emojis = await apiRequest<CustomEmoji[]>("/api/v1/custom_emojis");
   cachedEmojis = emojis.filter((e) => e.visible_in_picker);
+  lastFetchedAt = now;
   return cachedEmojis;
 }
 
 export function clearEmojiCache() {
   cachedEmojis = null;
+  lastFetchedAt = 0;
 }
 
 // Track shortcodes imported during this session so all ReactionBars
