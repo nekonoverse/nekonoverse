@@ -11,6 +11,7 @@ type Handler = (data: unknown) => void;
 const updateHandlers = new Set<Handler>();
 const notificationHandlers = new Set<Handler>();
 const reactionHandlers = new Set<Handler>();
+const emojiUpdateHandlers = new Set<Handler>();
 
 let es: EventSource | null = null;
 let retryMs = 1000;
@@ -66,6 +67,10 @@ function doConnect(path: string) {
       const data = JSON.parse(e.data);
       reactionHandlers.forEach((h) => h(data));
     } catch { /* ignore */ }
+  });
+
+  es.addEventListener("emoji_update", () => {
+    emojiUpdateHandlers.forEach((h) => h(null));
   });
 
   es.onerror = () => {
@@ -137,6 +142,12 @@ export function onNotification(handler: Handler): () => void {
 export function onReaction(handler: Handler): () => void {
   reactionHandlers.add(handler);
   return () => reactionHandlers.delete(handler);
+}
+
+/** Subscribe to emoji update events. Returns unsubscribe function. */
+export function onEmojiUpdate(handler: Handler): () => void {
+  emojiUpdateHandlers.add(handler);
+  return () => emojiUpdateHandlers.delete(handler);
 }
 
 export function resetUnread() {

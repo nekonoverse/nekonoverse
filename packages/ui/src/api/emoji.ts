@@ -1,6 +1,7 @@
 import { createSignal } from "solid-js";
 import { apiRequest } from "./client";
 import type { CustomEmoji as BaseCustomEmoji } from "../types/emoji";
+import { onEmojiUpdate } from "../stores/streaming";
 
 export interface CustomEmoji extends BaseCustomEmoji {
   visible_in_picker: boolean;
@@ -38,3 +39,8 @@ export { importedShortcodes };
 export function markShortcodeImported(shortcode: string) {
   setImportedShortcodes((prev) => new Set(prev).add(shortcode));
 }
+
+// SSE経由で絵文字変更を即座に反映
+onEmojiUpdate(() => {
+  clearEmojiCache();
+});

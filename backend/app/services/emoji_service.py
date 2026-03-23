@@ -102,11 +102,15 @@ _EMOJI_UPDATABLE_FIELDS = {
 
 
 async def _invalidate_emoji_cache() -> None:
-    """Invalidate the Valkey emoji list cache."""
+    """Invalidate the Valkey emoji list cache and notify SSE clients."""
     try:
+        import json
+
         from app.valkey_client import valkey as valkey_client
 
         await valkey_client.delete("perf:custom_emojis")
+        event = json.dumps({"event": "emoji_update", "payload": {}})
+        await valkey_client.publish("emoji:update", event)
     except Exception:
         pass
 
