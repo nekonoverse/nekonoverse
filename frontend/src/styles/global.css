@@ -3150,6 +3150,20 @@ a:hover {
   margin-bottom: 16px;
 }
 
+.settings-section select {
+  padding: 6px 10px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.9em;
+}
+
+.settings-section select:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
 .settings-user-info h3 {
   margin-bottom: 4px;
 }
@@ -3927,12 +3941,18 @@ a:hover {
 .hover-card-display-name {
   display: block;
   font-size: 1em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hover-card-handle {
   display: block;
   font-size: 0.8em;
   color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .hover-card-bio {
