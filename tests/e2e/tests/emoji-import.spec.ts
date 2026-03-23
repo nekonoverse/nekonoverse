@@ -92,9 +92,10 @@ test.describe("Emoji Import Modal", () => {
     const shortcodeInput = form.locator('input[type="text"]').first();
     await expect(shortcodeInput).toHaveValue(`testcat${uid}`);
 
-    // Both buttons should be present
-    await expect(form.locator("text=Import Only")).toBeVisible();
-    await expect(form.locator("text=Import & React")).toBeVisible();
+    // Both buttons should be present (in footer, sibling of form)
+    const modalContent = page.locator(".modal-content");
+    await expect(modalContent.locator("text=Import Only")).toBeVisible();
+    await expect(modalContent.locator("text=Import & React")).toBeVisible();
   });
 
   test("import modal shows error on failed import", async ({ page }) => {
@@ -122,12 +123,13 @@ test.describe("Emoji Import Modal", () => {
     await expect(form).toBeVisible({ timeout: 10_000 });
 
     // Click Import & React — will fail because remote URL isn't reachable
-    const importBtn = form.locator(".btn-primary");
+    const modalContent = page.locator(".modal-content");
+    const importBtn = modalContent.locator(".btn-primary");
     await expect(importBtn).toBeEnabled();
     await importBtn.click();
 
     // Error message should appear (not stuck forever)
-    const errBlock = form.locator(".emoji-import-error");
+    const errBlock = modalContent.locator(".emoji-import-error");
     await expect(errBlock).toBeVisible({ timeout: 10_000 });
 
     // Modal should still be open (not closed on error)
@@ -184,8 +186,9 @@ test.describe("Emoji Import Modal", () => {
     const form = page.locator(".emoji-import-form");
     await expect(form).toBeVisible({ timeout: 10_000 });
 
-    // Click "Import Only" button (not the primary btn-primary)
-    const importOnlyBtn = form.locator("button", { hasText: "Import Only" }).first();
+    // Click "Import Only" button (in footer, sibling of form)
+    const modalContent = page.locator(".modal-content");
+    const importOnlyBtn = modalContent.locator("button", { hasText: "Import Only" }).first();
     await expect(importOnlyBtn).toBeVisible();
     await importOnlyBtn.click();
 

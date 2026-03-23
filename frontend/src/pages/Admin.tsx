@@ -1818,6 +1818,8 @@ function EmojiTab() {
                 fields={editFields()}
                 onChange={setEditFields}
               />
+            </div>
+            <div class="emoji-import-footer">
               <Show when={editError()}>
                 <div class="emoji-import-error">{editError()}</div>
               </Show>
@@ -1852,6 +1854,8 @@ function EmojiTab() {
                 previewUrl={importTarget()!.url}
                 previewDomain={importTarget()!.domain}
               />
+            </div>
+            <div class="emoji-import-footer">
               <Show when={impError()}>
                 <div class="emoji-import-error">{impError()}</div>
               </Show>
