@@ -4800,6 +4800,57 @@ a:hover {
   color: var(--text-secondary);
 }
 
+/* Admin emoji grid (import & manage tabs) */
+.admin-emoji-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(80px, 1fr));
+  gap: 4px;
+}
+.admin-emoji-grid-item {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 6px 4px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+  background: none;
+  color: var(--text-primary);
+}
+.admin-emoji-grid-item:hover {
+  background: var(--bg-secondary);
+  border-color: var(--border);
+}
+.admin-emoji-grid-item img {
+  width: 32px;
+  height: 32px;
+  object-fit: contain;
+}
+.admin-emoji-grid-item .shortcode-label {
+  font-size: 0.65em;
+  color: var(--text-secondary);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  text-align: center;
+}
+.admin-emoji-grid-item.copy-denied {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+/* Delete zone in edit modal */
+.admin-emoji-delete-zone {
+  padding: 12px 16px;
+  border-top: 1px solid var(--border);
+}
+@media (max-width: 480px) {
+  .admin-emoji-grid {
+    grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+  }
+}
+
 /* Admin Server Files */
 .admin-file-list {
   display: flex;
