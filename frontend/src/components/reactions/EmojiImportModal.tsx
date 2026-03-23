@@ -1,4 +1,4 @@
-import { createSignal, createEffect, Show, For } from "solid-js";
+import { createSignal, createEffect, Show } from "solid-js";
 import {
   getRemoteEmojiSources,
   reactToNote,
@@ -7,7 +7,6 @@ import {
 import { importRemoteEmojiByShortcode } from "@nekonoverse/ui/api/admin";
 import { clearEmojiCache, markShortcodeImported } from "@nekonoverse/ui/api/emoji";
 import EmojiEditForm, { type EmojiEditFields } from "./EmojiEditForm";
-import Emoji from "../Emoji";
 import { useI18n } from "@nekonoverse/ui/i18n";
 
 interface Props {
@@ -168,10 +167,7 @@ export default function EmojiImportModal(props: Props) {
         onClick={(e) => e.stopPropagation()}
       >
         <div class="modal-header">
-          <h3 style="display: flex; align-items: center; gap: 8px">
-            <Emoji emoji={props.emoji} url={props.emojiUrl} />
-            {t("reactions.importEmojiTitle")}
-          </h3>
+          <h3>{t("reactions.importEmojiTitle")}</h3>
           <button class="modal-close" onClick={props.onClose}>
             ✕
           </button>

@@ -2493,9 +2493,11 @@ a:hover {
   padding: 8px 0;
 }
 .emoji-import-preview img {
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  padding: 4px;
+  border-radius: 6px;
+  background: var(--bg-primary);
+  padding: 6px;
+  height: 48px;
+  width: auto;
 }
 .emoji-import-domain {
   color: var(--text-secondary);
@@ -2510,14 +2512,22 @@ a:hover {
   font-size: 0.85em;
   color: var(--text-secondary);
 }
-.emoji-import-field input {
-  padding: 6px 8px;
+.emoji-import-field input,
+.emoji-import-field select {
+  padding: 7px 10px;
   border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-secondary);
+  border-radius: 6px;
+  background: var(--bg-primary);
   color: var(--text);
   font-size: 0.9em;
   min-width: 0;
+  width: 100%;
+  box-sizing: border-box;
+}
+.emoji-import-field input:focus,
+.emoji-import-field select:focus {
+  outline: none;
+  border-color: var(--accent);
 }
 .emoji-edit-form-row {
   display: flex;
@@ -2525,13 +2535,7 @@ a:hover {
 }
 .emoji-edit-form-row > * {
   flex: 1;
-}
-.emoji-import-field select {
-  padding: 6px 8px;
-  border: 1px solid var(--border);
-  border-radius: 4px;
-  background: var(--bg-secondary);
-  color: var(--text);
+  min-width: 0;
 }
 .emoji-import-checkbox {
   display: flex;
@@ -2543,7 +2547,7 @@ a:hover {
   padding: 8px 12px;
   background: rgba(233, 69, 96, 0.15);
   border: 1px solid var(--accent);
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--accent);
   font-size: 0.85em;
 }
@@ -2551,7 +2555,7 @@ a:hover {
   padding: 8px 12px;
   background: rgba(255, 165, 0, 0.15);
   border: 1px solid orange;
-  border-radius: 4px;
+  border-radius: 6px;
   color: var(--text-primary);
   font-size: 0.85em;
 }
@@ -2559,7 +2563,6 @@ a:hover {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
 }
 .emoji-source-nav .btn {
   padding: 4px 10px;
@@ -2585,6 +2588,7 @@ a:hover {
   justify-content: flex-end;
   gap: 8px;
   padding-top: 8px;
+  flex-wrap: wrap;
 }
 .emoji-import-actions .btn {
   padding: 8px 14px;
@@ -2598,6 +2602,19 @@ a:hover {
 }
 .emoji-import-actions .btn:not(.btn-primary):hover {
   background: var(--bg-secondary);
+}
+@media (max-width: 480px) {
+  .emoji-edit-form-row {
+    flex-direction: column;
+    gap: 10px;
+  }
+  .emoji-import-actions {
+    flex-direction: column;
+  }
+  .emoji-import-actions .btn {
+    width: 100%;
+    text-align: center;
+  }
 }
 
 /* Reaction users modal */
