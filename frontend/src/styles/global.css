@@ -2581,7 +2581,7 @@ a:hover {
 .emoji-source-nav {
   display: flex;
   align-items: center;
-  gap: 8px;
+  justify-content: space-between;
 }
 .emoji-source-nav .btn {
   padding: 4px 10px;
@@ -2609,11 +2609,11 @@ a:hover {
 }
 .emoji-import-actions {
   display: flex;
-  justify-content: flex-end;
   gap: 8px;
   flex-wrap: wrap;
 }
 .emoji-import-actions .btn {
+  flex: 1;
   padding: 8px 14px;
   font-size: 0.85em;
   white-space: nowrap;

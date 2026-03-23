@@ -186,8 +186,7 @@ export default function EmojiImportModal(props: Props) {
               <div class="emoji-source-nav">
                 <button class="btn" onClick={goToPrev}>◀</button>
                 <span class="emoji-source-info">
-                  <strong>{meta()!.domain}</strong>
-                  {" "}({sourceIndex() + 1} / {sources().length})
+                  {sourceIndex() + 1} / {sources().length}
                 </span>
                 <button class="btn" onClick={goToNext}>▶</button>
               </div>
