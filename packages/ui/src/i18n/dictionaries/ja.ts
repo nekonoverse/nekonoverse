@@ -558,6 +558,7 @@ export const ja = {
   "thread.descendants": "返信",
   "thread.loading": "スレッドを読み込み中...",
   "thread.notFound": "投稿が見つかりません",
+  "thread.replyingTo": "に返信中",
   "reply.replyingTo": "返信先:",
   "reply.reply": "返信",
   "reply.repliesCount": "返信",
