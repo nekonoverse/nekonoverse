@@ -2484,6 +2484,7 @@ a:hover {
   display: flex;
   flex-direction: column;
   gap: 10px;
+  overflow-y: auto;
 }
 .emoji-import-preview {
   display: flex;
@@ -2516,6 +2517,7 @@ a:hover {
   background: var(--bg-secondary);
   color: var(--text);
   font-size: 0.9em;
+  min-width: 0;
 }
 .emoji-edit-form-row {
   display: flex;
@@ -2559,10 +2561,16 @@ a:hover {
   gap: 8px;
   margin-bottom: 8px;
 }
-.emoji-source-nav .btn-sm {
-  padding: 2px 8px;
+.emoji-source-nav .btn {
+  padding: 4px 10px;
   min-width: auto;
   font-size: 0.85em;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.emoji-source-nav .btn:hover {
+  background: var(--bg-secondary);
 }
 .emoji-source-info {
   font-size: 0.85em;
@@ -2576,7 +2584,20 @@ a:hover {
   display: flex;
   justify-content: flex-end;
   gap: 8px;
-  padding-top: 4px;
+  padding-top: 8px;
+}
+.emoji-import-actions .btn {
+  padding: 8px 14px;
+  font-size: 0.85em;
+  white-space: nowrap;
+}
+.emoji-import-actions .btn:not(.btn-primary) {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+}
+.emoji-import-actions .btn:not(.btn-primary):hover {
+  background: var(--bg-secondary);
 }
 
 /* Reaction users modal */
