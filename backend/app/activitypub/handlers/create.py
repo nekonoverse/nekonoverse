@@ -74,12 +74,15 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     else:
         visibility = "direct"
 
-    # プロキシ購読のみの場合、フォロワー限定/ダイレクト投稿は保存しない
-    if visibility in ("followers", "direct") and not actor.is_local:
-        from app.services.proxy_service import has_real_local_follower
+    # プロキシ購読のみの場合、フォロワー限定投稿は保存しない
+    # directはフォロー関係ではなく宛先指定で配送されるためフィルタ対象外
+    if visibility == "followers" and not actor.is_local:
+        from app.services.proxy_service import has_real_local_follower, is_proxy_subscribed
 
-        if not await has_real_local_follower(db, actor.id):
-            logger.debug("Discarding %s note %s (proxy-only subscription)", visibility, ap_id)
+        if await is_proxy_subscribed(db, actor.id) and not await has_real_local_follower(
+            db, actor.id
+        ):
+            logger.debug("Discarding followers-only note %s (proxy-only subscription)", ap_id)
             return
 
     # Resolve reply and quote

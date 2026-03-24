@@ -369,3 +369,68 @@ async def test_public_note_saved_when_proxy_only(db):
     note = result.scalar_one_or_none()
     assert note is not None
     assert note.visibility == "public"
+
+
+async def test_direct_note_saved_even_without_follower(db):
+    """DM投稿はフォロー関係に関係なく保存される(宛先指定で配送されるため)"""
+    from app.activitypub.handlers.create import handle_create_note
+
+    remote = _make_remote_actor(username="dmuser")
+    db.add(remote)
+    await db.commit()
+
+    note_data = {
+        "id": f"https://remote.example.com/notes/{uuid.uuid4()}",
+        "type": "Note",
+        "attributedTo": remote.ap_id,
+        "content": "<p>Direct message</p>",
+        "to": [],
+        "cc": [],
+        "published": "2026-03-24T00:00:00Z",
+    }
+    activity = {"type": "Create", "actor": remote.ap_id, "object": note_data}
+
+    with patch("app.valkey_client.valkey", new_callable=AsyncMock):
+        await handle_create_note(db, activity, note_data)
+
+    from sqlalchemy import select
+
+    from app.models.note import Note
+
+    result = await db.execute(select(Note).where(Note.ap_id == note_data["id"]))
+    note = result.scalar_one_or_none()
+    assert note is not None
+    assert note.visibility == "direct"
+
+
+async def test_followers_note_saved_when_no_proxy_no_follower(db):
+    """proxyも実ユーザーもフォローしていない場合、followers-onlyでも保存される
+    (inbox配送された正当な理由があるため)"""
+    from app.activitypub.handlers.create import handle_create_note
+
+    remote = _make_remote_actor(username="nofollowuser")
+    db.add(remote)
+    await db.commit()
+
+    note_data = {
+        "id": f"https://remote.example.com/notes/{uuid.uuid4()}",
+        "type": "Note",
+        "attributedTo": remote.ap_id,
+        "content": "<p>Followers post no proxy</p>",
+        "to": [f"{remote.ap_id}/followers"],
+        "cc": [],
+        "published": "2026-03-24T00:00:00Z",
+    }
+    activity = {"type": "Create", "actor": remote.ap_id, "object": note_data}
+
+    with patch("app.valkey_client.valkey", new_callable=AsyncMock):
+        await handle_create_note(db, activity, note_data)
+
+    from sqlalchemy import select
+
+    from app.models.note import Note
+
+    result = await db.execute(select(Note).where(Note.ap_id == note_data["id"]))
+    note = result.scalar_one_or_none()
+    assert note is not None
+    assert note.visibility == "followers"
