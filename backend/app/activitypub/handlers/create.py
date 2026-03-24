@@ -74,6 +74,14 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     else:
         visibility = "direct"
 
+    # プロキシ購読のみの場合、フォロワー限定/ダイレクト投稿は保存しない
+    if visibility in ("followers", "direct") and not actor.is_local:
+        from app.services.proxy_service import has_real_local_follower
+
+        if not await has_real_local_follower(db, actor.id):
+            logger.debug("Discarding %s note %s (proxy-only subscription)", visibility, ap_id)
+            return
+
     # Resolve reply and quote
     in_reply_to_ap_id = note_data.get("inReplyTo")
     quote_ap_id = (
@@ -297,16 +305,28 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             if reply_note.actor and reply_note.actor.is_local and reply_note.actor_id != actor.id:
                 reply_recipient_id = reply_note.actor_id
                 notif = await create_notification(
-                    db, "reply", reply_note.actor_id, actor.id, note.id,
+                    db,
+                    "reply",
+                    reply_note.actor_id,
+                    actor.id,
+                    note.id,
                 )
                 if notif:
                     pending_notifs.append(notif)
 
     for mention in mentions_list:
         mentioned_actor = await get_actor_by_ap_id(db, mention["ap_id"])
-        if mentioned_actor and mentioned_actor.is_local and mentioned_actor.id != reply_recipient_id:
+        if (
+            mentioned_actor
+            and mentioned_actor.is_local
+            and mentioned_actor.id != reply_recipient_id
+        ):
             notif = await create_notification(
-                db, "mention", mentioned_actor.id, actor.id, note.id,
+                db,
+                "mention",
+                mentioned_actor.id,
+                actor.id,
+                note.id,
             )
             if notif:
                 pending_notifs.append(notif)
@@ -328,9 +348,14 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         if visibility == "public":
             await valkey_client.publish("timeline:public", event)
         # Deliver to followers of this remote actor (local users who follow them)
+        # システムアカウントのアクターIDを除外
+        from app.services.proxy_service import _get_system_actor_ids
+
+        system_ids = await _get_system_actor_ids(db)
         follower_ids = await get_follower_ids(db, actor.id)
         for fid in follower_ids:
-            await valkey_client.publish(f"timeline:home:{fid}", event)
+            if fid not in system_ids:
+                await valkey_client.publish(f"timeline:home:{fid}", event)
     except Exception:
         logger.exception("Failed to publish remote note to streaming")
 
@@ -346,7 +371,14 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                 NA.remote_url.isnot(None),
                 NA.remote_focal_x.is_(None),
                 NA.remote_mime_type.in_(
-                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
+                    [
+                        "image/jpeg",
+                        "image/png",
+                        "image/webp",
+                        "image/gif",
+                        "image/avif",
+                        "image/apng",
+                    ]
                 ),
             )
         )
@@ -410,7 +442,8 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
         if existing_any.scalars().first():
             logger.debug(
                 "Duplicate poll vote (single-choice) from %s on %s",
-                voter_ap_id, in_reply_to,
+                voter_ap_id,
+                in_reply_to,
             )
             return
     else:
@@ -441,4 +474,6 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
     flag_modified(poll_note, "poll_options")
 
     await db.commit()
-    logger.info("Recorded poll vote from %s on %s (choice: %s)", voter_ap_id, in_reply_to, option_name)
+    logger.info(
+        "Recorded poll vote from %s on %s (choice: %s)", voter_ap_id, in_reply_to, option_name
+    )

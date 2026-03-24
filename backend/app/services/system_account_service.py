@@ -20,6 +20,10 @@ SYSTEM_ACCOUNTS = [
         "username": "instance.actor",
         "display_name": "Instance Actor",
     },
+    {
+        "username": "system.proxy",
+        "display_name": "Proxy Subscription Actor",
+    },
 ]
 
 
@@ -96,3 +100,8 @@ async def get_system_account(db: AsyncSession, username: str) -> User | None:
 async def get_instance_actor(db: AsyncSession) -> User | None:
     """Get the instance.actor system account."""
     return await get_system_account(db, "instance.actor")
+
+
+async def get_proxy_actor(db: AsyncSession) -> User | None:
+    """Get the system.proxy system account."""
+    return await get_system_account(db, "system.proxy")
