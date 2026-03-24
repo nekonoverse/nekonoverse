@@ -352,9 +352,9 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             await valkey_client.publish("timeline:public", event)
         # Deliver to followers of this remote actor (local users who follow them)
         # システムアカウントのアクターIDを除外
-        from app.services.proxy_service import _get_system_actor_ids
+        from app.services.proxy_service import get_system_actor_ids
 
-        system_ids = await _get_system_actor_ids(db)
+        system_ids = await get_system_actor_ids(db)
         follower_ids = await get_follower_ids(db, actor.id)
         for fid in follower_ids:
             if fid not in system_ids:

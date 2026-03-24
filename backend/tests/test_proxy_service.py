@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 from app.models.actor import Actor
 from app.models.follow import Follow
 from app.services.proxy_service import (
-    _get_system_actor_ids,
+    get_system_actor_ids,
     get_proxy_account,
     has_real_local_follower,
     is_proxy_subscribed,
@@ -231,12 +231,18 @@ async def test_has_real_local_follower_true_when_real_user(db):
     assert await has_real_local_follower(db, remote.id)
 
 
-# -- _get_system_actor_ids --
+# -- get_system_actor_ids --
 
 
 async def test_get_system_actor_ids(db):
+    # キャッシュをリセットしてテスト間の汚染を防止
+    from app.services import proxy_service
+
+    proxy_service._system_actor_ids_cache = None
+    proxy_service._system_actor_ids_cached_at = 0
+
     await ensure_system_accounts(db)
-    ids = await _get_system_actor_ids(db)
+    ids = await get_system_actor_ids(db)
     assert len(ids) >= 2  # instance.actor + system.proxy
 
     proxy_user = await get_proxy_actor(db)

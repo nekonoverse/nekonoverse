@@ -139,10 +139,23 @@ async def is_proxy_subscribed(db: AsyncSession, target_actor_id: uuid.UUID) -> b
     return result.scalar() or False
 
 
-async def _get_system_actor_ids(db: AsyncSession) -> set[uuid.UUID]:
-    """Return the set of actor IDs belonging to system accounts."""
+_system_actor_ids_cache: set[uuid.UUID] | None = None
+_system_actor_ids_cached_at: float = 0
+_SYSTEM_IDS_TTL = 300  # 5 minutes
+
+
+async def get_system_actor_ids(db: AsyncSession) -> set[uuid.UUID]:
+    """Return the set of actor IDs belonging to system accounts (cached)."""
+    import time
+
+    global _system_actor_ids_cache, _system_actor_ids_cached_at
+    now = time.monotonic()
+    if _system_actor_ids_cache is not None and now - _system_actor_ids_cached_at < _SYSTEM_IDS_TTL:
+        return _system_actor_ids_cache
     result = await db.execute(select(User.actor_id).where(User.is_system.is_(True)))
-    return set(result.scalars().all())
+    _system_actor_ids_cache = set(result.scalars().all())
+    _system_actor_ids_cached_at = now
+    return _system_actor_ids_cache
 
 
 async def has_real_local_follower(db: AsyncSession, remote_actor_id: uuid.UUID) -> bool:
@@ -153,13 +166,16 @@ async def has_real_local_follower(db: AsyncSession, remote_actor_id: uuid.UUID) 
     """
     result = await db.execute(
         select(
-            exists().where(
-                Follow.following_id == remote_actor_id,
-                Follow.accepted.is_(True),
-                Follow.follower_id == Actor.id,
-                Actor.domain.is_(None),  # ローカルアクターのみ
-                Actor.id == User.actor_id,
-                User.is_system.is_(False),
+            exists(
+                select(Follow.id)
+                .join(Actor, Follow.follower_id == Actor.id)
+                .join(User, Actor.id == User.actor_id)
+                .where(
+                    Follow.following_id == remote_actor_id,
+                    Follow.accepted.is_(True),
+                    Actor.domain.is_(None),
+                    User.is_system.is_(False),
+                )
             )
         )
     )
