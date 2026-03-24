@@ -25,6 +25,8 @@ const Notifications = lazy(() => import("./pages/Notifications"));
 const Admin = lazy(() => import("./pages/Admin"));
 const Drive = lazy(() => import("./pages/Drive"));
 const Bookmarks = lazy(() => import("./pages/Bookmarks"));
+const Lists = lazy(() => import("./pages/Lists"));
+const ListTimeline = lazy(() => import("./pages/ListTimeline"));
 const Search = lazy(() => import("./pages/Search"));
 const Profile = lazy(() => import("./pages/Profile"));
 const FollowList = lazy(() => import("./pages/FollowList"));
@@ -124,6 +126,8 @@ export default function App() {
         <Route path="/admin/*section" component={Admin} />
         <Route path="/drive" component={Drive} />
         <Route path="/bookmarks" component={Bookmarks} />
+        <Route path="/lists" component={Lists} />
+        <Route path="/lists/:id" component={ListTimeline} />
         <Route path="/follow-requests" component={FollowRequests} />
         <Route path="/search" component={Search} />
         <Route path="/terms" component={Terms} />

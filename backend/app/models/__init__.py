@@ -8,6 +8,7 @@ from app.models.drive_file import DriveFile
 from app.models.follow import Follow
 from app.models.hashtag import Hashtag, NoteHashtag
 from app.models.invitation_code import InvitationCode
+from app.models.list import List, ListMember
 from app.models.login_history import LoginHistory
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
@@ -39,6 +40,8 @@ __all__ = [
     "Follow",
     "Hashtag",
     "InvitationCode",
+    "List",
+    "ListMember",
     "LoginHistory",
     "ModerationLog",
     "Note",

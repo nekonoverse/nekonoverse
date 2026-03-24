@@ -109,6 +109,32 @@ async def home_timeline(
     return await _home_tl_deduped(db, user, actual_limit, max_id)
 
 
+@router.get("/list/{list_id}", response_model=list[NoteResponse])
+async def list_timeline(
+    list_id: uuid.UUID,
+    max_id: uuid.UUID | None = Query(None),
+    limit: int | None = Query(None, ge=1),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from fastapi import HTTPException
+
+    from app.services.list_service import get_list as get_list_, get_list_timeline
+
+    lst = await get_list_(db, list_id)
+    if not lst or lst.user_id != user.id:
+        raise HTTPException(status_code=404, detail="List not found")
+
+    actual_limit = await _resolve_limit(db, limit)
+    fetch_limit = actual_limit + 10
+    notes = await get_list_timeline(db, lst, user, limit=fetch_limit, max_id=max_id)
+    note_ids = [n.id for n in notes]
+    reactions_map = await get_reaction_summaries(db, note_ids, user.actor_id)
+    result = await notes_to_responses(notes, reactions_map, db, actor_id=user.actor_id)
+    deduped = _deduplicate_timeline(result)
+    return deduped[:actual_limit]
+
+
 @router.get("/tag/{tag}", response_model=list[NoteResponse])
 async def tag_timeline(
     tag: str,
