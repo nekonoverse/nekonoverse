@@ -75,6 +75,7 @@ class User(Base):
         lazy="selectin",
     )
     drive_files = relationship("DriveFile", back_populates="owner")
+    lists = relationship("List", back_populates="user", cascade="all, delete-orphan")
 
     @property
     def is_admin(self) -> bool:

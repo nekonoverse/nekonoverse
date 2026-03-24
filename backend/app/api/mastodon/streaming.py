@@ -4,10 +4,11 @@ import asyncio
 import json
 import re
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import StreamingResponse
+from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user
+from app.dependencies import get_current_user, get_db
 from app.models.user import User
 from app.pubsub_hub import pubsub_hub
 
@@ -53,18 +54,47 @@ def _sse_response(request: Request, channels: list[str]):
 
 
 @router.get("/user")
-async def stream_user(request: Request, user: User = Depends(get_current_user)):
-    """SSE stream for authenticated user: home timeline + notifications."""
+async def stream_user(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """SSE stream for authenticated user: home timeline + notifications + lists."""
+    from app.services.list_service import get_user_lists
+
     actor_id = str(user.actor_id)
-    return _sse_response(
-        request,
-        [
-            f"timeline:home:{actor_id}",
-            f"notifications:{actor_id}",
-            "timeline:public",
-            "emoji:update",
-        ],
-    )
+    channels = [
+        f"timeline:home:{actor_id}",
+        f"notifications:{actor_id}",
+        "timeline:public",
+        "emoji:update",
+    ]
+    user_lists = await get_user_lists(db, user.id)
+    for lst in user_lists:
+        channels.append(f"timeline:list:{lst.id}")
+    return _sse_response(request, channels)
+
+
+@router.get("/list")
+async def stream_list(
+    request: Request,
+    list: str = Query(...),
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """SSE stream for a specific list timeline."""
+    import uuid as _uuid
+
+    from app.services.list_service import get_list as get_list_
+
+    try:
+        list_id = _uuid.UUID(list)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid list ID")
+    lst = await get_list_(db, list_id)
+    if not lst or lst.user_id != user.id:
+        raise HTTPException(status_code=404, detail="List not found")
+    return _sse_response(request, [f"timeline:list:{list}"])
 
 
 @router.get("/public")

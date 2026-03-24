@@ -356,9 +356,23 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
 
         system_ids = await get_system_actor_ids(db)
         follower_ids = await get_follower_ids(db, actor.id)
+
+        # Exclusive リスト: このアクターを exclusive リストに入れているユーザーの
+        # ホームTLには配信しない（リストTLにのみ配信）
+        from app.services.list_service import (
+            get_exclusive_list_user_actor_ids,
+            get_list_ids_for_actor,
+        )
+
+        exclusive_user_ids = await get_exclusive_list_user_actor_ids(db, actor.id)
         for fid in follower_ids:
-            if fid not in system_ids:
+            if fid not in system_ids and fid not in exclusive_user_ids:
                 await valkey_client.publish(f"timeline:home:{fid}", event)
+
+        # リストタイムラインチャンネルに配信
+        list_ids = await get_list_ids_for_actor(db, actor.id)
+        for lid in list_ids:
+            await valkey_client.publish(f"timeline:list:{lid}", event)
     except Exception:
         logger.exception("Failed to publish remote note to streaming")
 
