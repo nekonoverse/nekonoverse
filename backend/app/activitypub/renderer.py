@@ -20,6 +20,7 @@ AP_CONTEXT = [
     {
         "misskey": "https://misskey-hub.net/ns#",
         "toot": "http://joinmastodon.org/ns#",
+        "Emoji": "toot:Emoji",
         "schema": "http://schema.org#",
         "value": "schema:value",
         "discoverable": "toot:discoverable",
@@ -235,7 +236,7 @@ def render_note(note: Note) -> dict:
             }.get(ext, "image/png")
 
             emoji_tag: dict = {
-                "id": url,
+                "id": f"{settings.server_url}/emojis/{e['shortcode']}",
                 "type": "Emoji",
                 "name": f":{e['shortcode']}:",
                 "icon": {"type": "Image", "mediaType": media_type, "url": url},

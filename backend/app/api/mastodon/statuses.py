@@ -656,10 +656,17 @@ async def create_status(
     db: AsyncSession = Depends(get_db),
 ):
     # Validate in_reply_to_id exists
+    visibility = "followers" if body.visibility == "private" else body.visibility
     if body.in_reply_to_id:
         parent = await get_note_by_id(db, body.in_reply_to_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Reply target not found")
+        # Enforce: reply visibility must not be wider than parent
+        vis_rank = {"public": 0, "unlisted": 1, "followers": 2, "direct": 3}
+        parent_rank = vis_rank.get(parent.visibility, 0)
+        reply_rank = vis_rank.get(visibility, 0)
+        if reply_rank < parent_rank:
+            visibility = parent.visibility
 
     poll_options = None
     poll_expires_in = None
@@ -674,7 +681,7 @@ async def create_status(
             db=db,
             user=user,
             content=body.content,
-            visibility="followers" if body.visibility == "private" else body.visibility,
+            visibility=visibility,
             sensitive=body.sensitive,
             spoiler_text=body.spoiler_text,
             in_reply_to_id=body.in_reply_to_id,

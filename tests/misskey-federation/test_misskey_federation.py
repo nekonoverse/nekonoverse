@@ -1067,3 +1067,55 @@ class TestHashtagFederation:
             or "misskey" in content.lower()
         )
         assert has_hashtag, f"Hashtag not found in tags={tags} or content={content}"
+
+
+# ── 17. Note URL Lookup (照会) — #822 ──────────────────────────
+
+
+class TestNoteLookup:
+    """Test that Misskey can look up Nekonoverse notes via ap/show (照会)."""
+
+    def test_misskey_resolves_neko_note_by_url(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Misskey ap/show can resolve a Nekonoverse note URL to a Misskey note."""
+        unique = f"Lookup test {time.time()}"
+        note = neko.create_note(unique)
+        note_url = f"{NEKO_URL}/notes/{note['id']}"
+
+        # Misskey should be able to resolve the note via ap/show
+        result = misskey.resolve_ap(note_url)
+        assert result.get("type") == "Note", f"Expected type=Note, got {result}"
+        obj = result.get("object", {})
+        assert unique in (obj.get("text") or ""), (
+            f"Note text mismatch: expected '{unique}' in '{obj.get('text')}'"
+        )
+
+    def test_misskey_resolves_neko_note_by_ap_id(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Misskey ap/show can resolve a Nekonoverse note by its AP id."""
+        unique = f"AP ID lookup {time.time()}"
+        note = neko.create_note(unique)
+
+        # Get the AP id
+        resp = _get(
+            f"{NEKO_URL}/notes/{note['id']}",
+            headers={"Accept": "application/activity+json"},
+            timeout=10,
+        )
+        assert resp.status_code == 200
+        ap_note = resp.json()
+        ap_id = ap_note["id"]
+
+        # Misskey should resolve via AP id
+        result = misskey.resolve_ap(ap_id)
+        assert result.get("type") == "Note", f"Expected type=Note, got {result}"
+
+    def test_misskey_resolves_neko_user_by_url(
+        self, neko: NekoClient, misskey: MisskeyClient, alice, bob
+    ):
+        """Misskey ap/show can resolve a Nekonoverse user URL."""
+        user_url = f"{NEKO_URL}/users/alice"
+        result = misskey.resolve_ap(user_url)
+        assert result.get("type") == "User", f"Expected type=User, got {result}"

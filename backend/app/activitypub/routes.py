@@ -233,6 +233,9 @@ async def get_featured(username: str, db: AsyncSession = Depends(get_db)):
 
 @router.get("/notes/{note_id}")
 async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)):
+    import re
+
+    from app.services.emoji_service import get_custom_emoji
     from app.services.hashtag_service import get_hashtags_for_notes
     from app.services.note_service import get_note_by_id
 
@@ -246,6 +249,31 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
     # Load hashtags for AP rendering
     hashtags_map = await get_hashtags_for_notes(db, [note.id])
     note._hashtag_names = hashtags_map.get(note.id, [])
+
+    # Load custom emoji tags for AP rendering
+    shortcodes = set(re.findall(r":([a-zA-Z0-9_]+):", note.content or ""))
+    if shortcodes:
+        emoji_tags = []
+        for sc in shortcodes:
+            emoji = await get_custom_emoji(db, sc, None)
+            if emoji and not emoji.local_only:
+                emoji_tags.append(
+                    {
+                        "shortcode": emoji.shortcode,
+                        "url": emoji.url,
+                        "aliases": emoji.aliases,
+                        "license": emoji.license,
+                        "is_sensitive": emoji.is_sensitive,
+                        "author": emoji.author,
+                        "description": emoji.description,
+                        "copy_permission": emoji.copy_permission,
+                        "usage_info": emoji.usage_info,
+                        "is_based_on": emoji.is_based_on,
+                        "category": emoji.category,
+                    }
+                )
+        if emoji_tags:
+            note._emoji_tags = emoji_tags
 
     return Response(
         content=json.dumps(render_note(note)),

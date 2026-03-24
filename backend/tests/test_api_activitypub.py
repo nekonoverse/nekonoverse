@@ -219,6 +219,41 @@ async def test_note_ap_includes_hashtag_tags(authed_client, mock_valkey):
     assert any("nekonoverse" in t.get("name", "").lower() for t in hashtag_tags)
 
 
+async def test_note_ap_includes_emoji_tags(authed_client, db, mock_valkey):
+    """Note with custom emoji should include Emoji tags in AP output."""
+    from app.models.custom_emoji import CustomEmoji
+
+    emoji = CustomEmoji(
+        shortcode="test_ap_emoji",
+        url="https://example.com/emoji/test_ap_emoji.png",
+        domain=None,
+        local_only=False,
+    )
+    db.add(emoji)
+    await db.flush()
+
+    create_resp = await authed_client.post(
+        "/api/v1/statuses",
+        json={"content": "Hello :test_ap_emoji: world", "visibility": "public"},
+    )
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.get(
+        f"/notes/{note_id}", headers={"Accept": "application/activity+json"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    # Verify @context includes "Emoji": "toot:Emoji" for JSON-LD compatibility
+    ctx = data.get("@context", [])
+    inline_ctx = next((c for c in ctx if isinstance(c, dict)), {})
+    assert inline_ctx.get("Emoji") == "toot:Emoji", f"Missing Emoji term in context: {inline_ctx}"
+    tags = data.get("tag", [])
+    emoji_tags = [t for t in tags if t.get("type") == "Emoji"]
+    assert len(emoji_tags) >= 1, f"No Emoji tags in {tags}"
+    assert emoji_tags[0]["name"] == ":test_ap_emoji:"
+    assert emoji_tags[0]["icon"]["url"] == "https://example.com/emoji/test_ap_emoji.png"
+    assert "/emojis/test_ap_emoji" in emoji_tags[0]["id"]
+
+
 async def test_actor_suspended(app_client, test_user, db, mock_valkey):
     """Suspended actor should return 410 Gone."""
     from datetime import datetime, timezone
