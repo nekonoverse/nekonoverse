@@ -124,7 +124,23 @@ export default function NoteComposer(props: Props) {
     const _key = props.key;
     if (_key !== undefined && _key > 0) {
       setContent(props.initialContent || "");
-      setVisibility(props.initialVisibility || getInitialVisibility());
+      // Visibility: draft > reply/quote inheritance > user default
+      if (props.initialVisibility) {
+        setVisibility(props.initialVisibility);
+      } else {
+        const targetNote = props.replyTo || props.quoteNote;
+        if (targetNote) {
+          const parentVis = targetNote.visibility as Visibility;
+          if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
+            setParentVisibility(parentVis);
+            setVisibility(moreRestrictiveVisibility(getInitialVisibility(), parentVis));
+          } else {
+            setVisibility(getInitialVisibility());
+          }
+        } else {
+          setVisibility(getInitialVisibility());
+        }
+      }
       setAttachments([]);
       setError("");
       setPollOpen(false);

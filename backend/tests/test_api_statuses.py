@@ -592,8 +592,8 @@ async def test_bookmark_unauthenticated(app_client, mock_valkey):
 # --- Pin/Unpin tests ---
 
 
-async def test_reply_visibility_followers_to_public(authed_client, mock_valkey):
-    """Replying to a followers-only note with public visibility is allowed by backend."""
+async def test_reply_visibility_clamped_to_parent(authed_client, mock_valkey):
+    """Replying to a restricted note with wider visibility is clamped to parent."""
     parent = await authed_client.post("/api/v1/statuses", json={
         "content": "Followers only", "visibility": "followers"
     })
@@ -604,20 +604,12 @@ async def test_reply_visibility_followers_to_public(authed_client, mock_valkey):
         "in_reply_to_id": parent_id,
     })
     assert resp.status_code == 201
-    assert resp.json()["visibility"] == "public"
+    # Public reply to followers-only parent is clamped to private (followers)
+    assert resp.json()["visibility"] == "private"
 
 
-async def test_reply_visibility_preserved(authed_client, mock_valkey):
-    """Reply visibility is preserved as-is (backend does not restrict)."""
-    combos = [
-        ("public", "public"),
-        ("public", "unlisted"),
-        ("public", "followers"),
-        ("public", "direct"),
-        ("unlisted", "public"),
-        ("followers", "public"),
-        ("direct", "public"),
-    ]
+async def test_reply_visibility_enforcement(authed_client, mock_valkey):
+    """Reply visibility is clamped: cannot be wider than parent."""
     # "followers" maps to "private" in the API response
     vis_response_map = {
         "public": "public",
@@ -625,7 +617,25 @@ async def test_reply_visibility_preserved(authed_client, mock_valkey):
         "followers": "private",
         "direct": "direct",
     }
-    for parent_vis, reply_vis in combos:
+    # (parent_vis, requested_reply_vis, expected_reply_vis)
+    combos = [
+        # Narrower or equal → allowed as-is
+        ("public", "public", "public"),
+        ("public", "unlisted", "unlisted"),
+        ("public", "followers", "followers"),
+        ("public", "direct", "direct"),
+        ("unlisted", "unlisted", "unlisted"),
+        ("followers", "followers", "followers"),
+        ("direct", "direct", "direct"),
+        # Wider → clamped to parent
+        ("unlisted", "public", "unlisted"),
+        ("followers", "public", "followers"),
+        ("followers", "unlisted", "followers"),
+        ("direct", "public", "direct"),
+        ("direct", "unlisted", "direct"),
+        ("direct", "followers", "direct"),
+    ]
+    for parent_vis, reply_vis, expected_vis in combos:
         parent = await authed_client.post("/api/v1/statuses", json={
             "content": f"Parent {parent_vis}", "visibility": parent_vis,
         })
@@ -639,8 +649,9 @@ async def test_reply_visibility_preserved(authed_client, mock_valkey):
         assert resp.status_code == 201, (
             f"Failed: parent={parent_vis}, reply={reply_vis}"
         )
-        assert resp.json()["visibility"] == vis_response_map[reply_vis], (
-            f"Visibility mismatch: parent={parent_vis}, reply={reply_vis}"
+        assert resp.json()["visibility"] == vis_response_map[expected_vis], (
+            f"Visibility mismatch: parent={parent_vis}, reply={reply_vis}, "
+            f"expected={vis_response_map[expected_vis]}, got={resp.json()['visibility']}"
         )
 
 
