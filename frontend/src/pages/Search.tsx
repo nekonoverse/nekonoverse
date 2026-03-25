@@ -1,4 +1,5 @@
 import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
+import { useSearchParams } from "@solidjs/router";
 import { searchV2, searchSuggest } from "@nekonoverse/ui/api/search";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import { onReaction } from "@nekonoverse/ui/stores/streaming";
@@ -8,7 +9,8 @@ import NoteThreadModal from "../components/notes/NoteThreadModal";
 
 export default function Search() {
   const { t } = useI18n();
-  const [query, setQuery] = createSignal("");
+  const [searchParams, setSearchParams] = useSearchParams();
+  const [query, setQuery] = createSignal(searchParams.q ?? "");
   const [noteResults, setNoteResults] = createSignal<Note[]>([]);
   const [searched, setSearched] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
@@ -35,6 +37,7 @@ export default function Search() {
   const performSearch = async (q: string) => {
     const cleaned = q.trim();
     if (!cleaned) return;
+    setSearchParams({ q: cleaned });
     setLoading(true);
     setSuggestions([]);
     try {
@@ -46,6 +49,11 @@ export default function Search() {
     }
     setLoading(false);
   };
+
+  // Auto-search if q param is present on load
+  if (searchParams.q) {
+    performSearch(searchParams.q);
+  }
 
   const handleSubmit = (e: Event) => {
     e.preventDefault();
