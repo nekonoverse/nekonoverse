@@ -1,3 +1,15 @@
+## [20260326-3](https://github.com/nekonoverse/nekonoverse/releases/tag/20260326-3) — 2026-03-26
+
+### セキュリティ
+
+- **検索 API 認証必須化** — `/api/v2/search` および `/api/v2/search/suggest` を認証必須に変更。未ログインユーザーは検索ページにアクセスできない (#885, #886)
+
+### 修正
+
+- **BM25 検索を AND モードに変更** — 全クエリトークンを含むノートのみヒットするように修正。「の」等の高頻度トークンで無関係なノートが大量に返される問題を解消 (#886)
+
+---
+
 ## [20260326-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260326-2) — 2026-03-26
 
 ### 追加
