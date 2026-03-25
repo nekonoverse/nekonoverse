@@ -7,7 +7,7 @@ export interface NoteActor {
   id: string;
   username: string;
   display_name: string | null;
-  avatar_url: string | null;
+  avatar: string | null;
   ap_id: string;
   domain: string | null;
   server_software: string | null;
