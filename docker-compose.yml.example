@@ -74,8 +74,9 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
-      # neko-search (optional — set in .env)
+      # neko-search (optional — set in .env, URL or UDS)
       NEKO_SEARCH_URL: ${NEKO_SEARCH_URL:-}
+      NEKO_SEARCH_UDS: ${NEKO_SEARCH_UDS:-}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # media-proxy-transform (optional — set in .env)
@@ -122,8 +123,9 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
-      # neko-search (optional — set in .env)
+      # neko-search (optional — set in .env, URL or UDS)
       NEKO_SEARCH_URL: ${NEKO_SEARCH_URL:-}
+      NEKO_SEARCH_UDS: ${NEKO_SEARCH_UDS:-}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # media-proxy-transform (optional — set in .env)
@@ -171,12 +173,14 @@ services:
 
   # Optional: Full-text search service (uncomment to use)
   # SentencePiece + BM25 search with auto-suggest.
-  # Set NEKO_SEARCH_URL=http://neko-search:8002 in app/worker environment.
+  # TCP mode: Set NEKO_SEARCH_URL=http://neko-search:8002 in app/worker environment.
+  # UDS mode: Set NEKO_SEARCH_UDS=/var/run/neko-search/neko-search.sock and share the socket volume.
   # neko-search:
   #   image: ghcr.io/nekonoverse/neko-search:latest
   #   restart: unless-stopped
   #   volumes:
   #     - neko-search-data:/data
+  #     # - neko-search-sock:/var/run/neko-search  # UDS mode
   #   environment:
   #     DATA_DIR: /data
   #   expose:

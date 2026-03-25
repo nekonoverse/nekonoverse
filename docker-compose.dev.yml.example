@@ -81,8 +81,9 @@ services:
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
       NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,neko-search,face-detect,media-proxy-transform,summary-proxy,localhost}
-      # neko-search (optional — set in .env)
+      # neko-search (optional — set in .env, URL or UDS)
       NEKO_SEARCH_URL: ${NEKO_SEARCH_URL:-}
+      NEKO_SEARCH_UDS: ${NEKO_SEARCH_UDS:-}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # media-proxy-transform (optional — set in .env)
@@ -129,8 +130,9 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-changeme-s3}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
-      # neko-search (optional — set in .env)
+      # neko-search (optional — set in .env, URL or UDS)
       NEKO_SEARCH_URL: ${NEKO_SEARCH_URL:-}
+      NEKO_SEARCH_UDS: ${NEKO_SEARCH_UDS:-}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # media-proxy-transform (optional — set in .env)
