@@ -1,7 +1,6 @@
-import { createSignal, Show, For } from "solid-js";
+import { createSignal, createEffect, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { type Account } from "@nekonoverse/ui/api/accounts";
-import { searchV2 } from "@nekonoverse/ui/api/search";
+import { searchV2, searchSuggest } from "@nekonoverse/ui/api/search";
 import type { Note } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
@@ -11,79 +10,109 @@ export default function Search() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [query, setQuery] = createSignal("");
-  const [accountResults, setAccountResults] = createSignal<Account[]>([]);
   const [noteResults, setNoteResults] = createSignal<Note[]>([]);
   const [searched, setSearched] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
+  const [suggestions, setSuggestions] = createSignal<{ token: string; df: number }[]>([]);
 
-  const handleSearch = async (e?: Event) => {
-    e?.preventDefault();
-    const q = query().trim().replace(/^@/, "");
-    if (!q) return;
+  let inputRef: HTMLInputElement | undefined;
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+
+  // Debounced suggest on input
+  createEffect(() => {
+    const q = query();
+    clearTimeout(debounceTimer);
+
+    if (!q.trim()) {
+      setSuggestions([]);
+      return;
+    }
+
+    debounceTimer = setTimeout(() => {
+      searchSuggest(q).then((r) => setSuggestions(r.suggestions)).catch(() => setSuggestions([]));
+    }, 200);
+  });
+
+  const performSearch = async (q: string) => {
+    const cleaned = q.trim();
+    if (!cleaned) return;
     setLoading(true);
+    setSuggestions([]);
     try {
-      const data = await searchV2(q, true);
-      // URL照会でノート1件 → 直接遷移
-      if (q.startsWith("https://") && data.statuses.length === 1) {
-        navigate(`/notes/${data.statuses[0].id}`);
-        return;
-      }
-      // user@domain照会でユーザー1件 → 直接遷移
-      if (q.includes("@") && !q.startsWith("https://") && data.accounts.length === 1) {
-        navigate(`/@${data.accounts[0].acct}`);
-        return;
-      }
-      setAccountResults(data.accounts);
+      const data = await searchV2(cleaned, false);
       setNoteResults(data.statuses);
       setSearched(true);
-    } catch {}
+    } catch {
+      // Ignore errors silently
+    }
     setLoading(false);
   };
 
-  const hasResults = () => accountResults().length > 0 || noteResults().length > 0;
+  const handleSubmit = (e: Event) => {
+    e.preventDefault();
+    clearTimeout(debounceTimer);
+    performSearch(query());
+  };
+
+  const handleSuggestionClick = (token: string) => {
+    const display = token.replace(/^▁/, "");
+    setQuery(display);
+    setSuggestions([]);
+    performSearch(display);
+  };
+
+  const handleNoteClick = (noteId: string) => {
+    navigate(`/notes/${noteId}`);
+  };
 
   return (
     <div class="page-container">
-      <h1>{t("search.title")}</h1>
-      <form onSubmit={handleSearch} class="search-form">
+      <h1>{t("search.fullSearchTitle")}</h1>
+      <form onSubmit={handleSubmit} class="search-form">
         <input
+          ref={inputRef}
           type="text"
           value={query()}
           onInput={(e) => setQuery(e.currentTarget.value)}
           placeholder={t("search.placeholder")}
           class="search-input"
+          autocomplete="off"
+          autofocus
         />
         <button type="submit" class="btn" disabled={loading()}>
-          {t("search.search")}
+          {t("search.fullSearchTitle")}
         </button>
       </form>
+      <Show when={suggestions().length > 0}>
+        <div class="search-modal-suggestions">
+          <For each={suggestions()}>
+            {(s) => (
+              <button
+                class="search-modal-suggestion-item"
+                onClick={() => handleSuggestionClick(s.token)}
+              >
+                <span>{s.token.replace(/^▁/, "")}</span>
+                <span class="search-modal-suggestion-df">{s.df}</span>
+              </button>
+            )}
+          </For>
+        </div>
+      </Show>
       <Show when={loading()}>
         <p>{t("common.loading")}</p>
       </Show>
       <Show when={searched() && !loading()}>
         <Show
-          when={hasResults()}
+          when={noteResults().length > 0}
           fallback={<p class="empty">{t("search.noResults")}</p>}
         >
           <div class="search-results">
-            <For each={accountResults()}>
-              {(acc) => (
-                <a href={`/@${acc.acct}`} class="search-result-item">
-                  <img
-                    class="search-result-avatar"
-                    src={acc.avatar || defaultAvatar()}
-                    alt=""
-                  />
-                  <div class="search-result-info">
-                    <strong>{acc.display_name || acc.username}</strong>
-                    <span class="search-result-handle">@{acc.acct}</span>
-                  </div>
-                </a>
-              )}
-            </For>
             <For each={noteResults()}>
               {(note) => (
-                <a href={`/notes/${note.id}`} class="search-result-item">
+                <button
+                  class="search-result-item"
+                  onClick={() => handleNoteClick(note.id)}
+                >
                   <img
                     class="search-result-avatar"
                     src={note.account.avatar || defaultAvatar()}
@@ -98,7 +127,7 @@ export default function Search() {
                       }}
                     />
                   </div>
-                </a>
+                </button>
               )}
             </For>
           </div>
