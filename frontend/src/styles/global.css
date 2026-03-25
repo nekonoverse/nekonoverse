@@ -2984,7 +2984,7 @@ a:hover {
 
 /* 長い絵文字の表示モード: ぼかしトリミング */
 [data-wide-emoji="blur"] .reaction-badge .custom-emoji {
-  max-width: 5em;
+  max-width: 100%;
   min-width: 0;
   flex-shrink: 1;
   object-fit: cover;

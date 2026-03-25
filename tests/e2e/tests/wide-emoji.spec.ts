@@ -136,10 +136,14 @@ test.describe("Wide emoji display modes", () => {
     const emojiImg = badge.locator("img.custom-emoji").first();
     await expect(emojiImg).toBeVisible({ timeout: 5_000 });
 
-    // In blur mode, same max-width constraint
-    const box = await emojiImg.boundingBox();
-    expect(box).toBeTruthy();
-    expect(box!.width).toBeLessThan(120);
+    // In blur mode, max-width is 100% (not constrained like shrink).
+    // object-fit: cover is applied, and emoji-overflow class + mask
+    // are added only when the emoji actually overflows the badge.
+    // Just verify the emoji renders with cover fit style.
+    const objectFit = await emojiImg.evaluate(
+      (el) => getComputedStyle(el).objectFit,
+    );
+    expect(objectFit).toBe("cover");
 
     await page.screenshot({
       path: "test-results/wide-emoji-blur.png",
