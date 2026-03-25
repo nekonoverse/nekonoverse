@@ -290,6 +290,8 @@ async def update_drive_file_meta(
         drive_file.focal_x = max(-1.0, min(1.0, focal_x))
     if focal_y is not None and math.isfinite(focal_y):
         drive_file.focal_y = max(-1.0, min(1.0, focal_y))
+    if focal_x is not None or focal_y is not None:
+        drive_file.focal_detect_version = "manual"
     await db.commit()
     await db.refresh(drive_file)
     return drive_file
@@ -299,6 +301,7 @@ async def auto_detect_focal_point(
     db: AsyncSession,
     drive_file: DriveFile,
     image_data: bytes | None = None,
+    detect_version: str | None = None,
 ) -> None:
     """Call face detection service to auto-set focal point. Fails silently.
 
@@ -306,6 +309,8 @@ async def auto_detect_focal_point(
         db: Database session.
         drive_file: The drive file to detect focal point for.
         image_data: Raw image bytes. If not provided, downloads from S3.
+        detect_version: Current face-detect service version. Used to skip
+            re-detection and record which version was used.
     """
     if not settings.face_detect_enabled:
         return
@@ -314,8 +319,10 @@ async def auto_detect_focal_point(
     if parsed.scheme not in ("http", "https"):
         logger.warning("Invalid face_detect_url scheme: %s", parsed.scheme)
         return
-    if drive_file.focal_x is not None:
-        return  # Already set manually
+    if drive_file.focal_detect_version == "manual":
+        return  # User-set focal point — never override
+    if detect_version and drive_file.focal_detect_version == detect_version:
+        return  # Already checked with this version (face or no face)
     if not drive_file.mime_type.startswith("image/"):
         return
 
@@ -347,15 +354,18 @@ async def auto_detect_focal_point(
         focal = focal_from_detections(
             results, drive_file.width or 1, drive_file.height or 1
         )
-        if not focal:
+        if focal:
+            drive_file.focal_x, drive_file.focal_y = focal
+            logger.info(
+                "Focal point set for %s: (%.2f, %.2f)", drive_file.id, focal[0], focal[1]
+            )
+        else:
             logger.info("No face detected for %s", drive_file.id)
-            return
 
-        drive_file.focal_x, drive_file.focal_y = focal
+        # Record version regardless of result (face found or not)
+        if detect_version:
+            drive_file.focal_detect_version = detect_version
         await db.commit()
-        logger.info(
-            "Focal point set for %s: (%.2f, %.2f)", drive_file.id, focal[0], focal[1]
-        )
     except Exception:
         logger.warning(
             "Face detection failed for %s", drive_file.id, exc_info=True

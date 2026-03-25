@@ -28,6 +28,7 @@ class DriveFile(Base):
     description: Mapped[str | None] = mapped_column(String(1500), nullable=True)
     focal_x: Mapped[float | None] = mapped_column(Float, nullable=True)
     focal_y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    focal_detect_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
     server_file: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False
