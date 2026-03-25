@@ -41,6 +41,17 @@ export function markShortcodeImported(shortcode: string) {
 }
 
 // SSE経由で絵文字変更を即座に反映
+// キャッシュクリア + 再取得して importable バッジを全クライアントで抑制
 onEmojiUpdate(() => {
   clearEmojiCache();
+  getCustomEmojis()
+    .then((emojis) => {
+      const shortcodes = new Set(emojis.map((e) => e.shortcode));
+      setImportedShortcodes((prev) => {
+        const merged = new Set(prev);
+        for (const sc of shortcodes) merged.add(sc);
+        return merged;
+      });
+    })
+    .catch(() => {});
 });
