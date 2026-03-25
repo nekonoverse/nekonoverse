@@ -1,3 +1,16 @@
+## [20260326-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260326-1) — 2026-03-26
+
+### 追加
+
+- **検索サジェスト UI** — SearchModal で入力中にトークン補完候補をリアルタイム表示。候補クリックでクエリに反映しフル検索を実行 (#874, #875)
+
+### インフラ
+
+- **docker-compose example に neko-search 追加** — TCP (NEKO_SEARCH_URL) / UDS (NEKO_SEARCH_UDS) 両モード対応のテンプレート追加
+- **neko-search CI/GHCR** — テスト・Docker イメージ自動ビルドワークフロー追加
+
+---
+
 ## [20260325-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260325-1) — 2026-03-25
 
 ### 追加
