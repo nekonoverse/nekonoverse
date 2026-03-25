@@ -1,3 +1,32 @@
+## [20260325-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260325-1) — 2026-03-25
+
+### 追加
+
+- **neko-search マイクロサービス連携 (Phase 1)** — SentencePiece + BM25 による全文検索。Valkey キューによるリアルタイムインデックス更新、CLI での一括インデックス・学習 (#313, #867)
+- **検索サジェスト API (Phase 2)** — `GET /api/v2/search/suggest` でトークン prefix 補完候補を document frequency ランキングで返す (#313, #872)
+- **非同期語彙学習 (Phase 3)** — バックグラウンドで SentencePiece モデルを再学習し、ダウンタイムなしでインデックスをアトミックスワップ。CLI は `/train/status` ポーリングに対応 (#313, #872)
+- **face-detect バージョン管理** — 検出結果にバージョンを付与し、モデル更新時のみ再検出を実行 (#862, #864, #865)
+- **ミュート/ブロック UI 改善** — UserHoverCard/Profile にミュート/ブロックボタンを移動、リスト追加・ソース表示機能 (#863)
+- **リストタイムライン** — Mastodon 互換リストタイムライン機能 (#227, #859)
+- **system.proxy アカウント** — プロキシリレー用システムアカウント (#858)
+
+### 修正
+
+- **wide emoji display のリグレッション** — shrink/blur モードの表示崩れを修正。blur モードの `max-width` を `100%` に復元 (#869, #871)
+- **リアクションユーザーのアバター欠落** — `reacted_by` の Mastodon 互換フィールドが空になる問題を修正 (#856, #870)
+
+### セキュリティ
+
+- **neko-search vocab_size バリデーション** — `/train` エンドポイントに上限/下限 (100-100000) を追加し、リソース枯渇攻撃を防止
+
+### テスト
+
+- **wide emoji E2E テスト** — shrink/blur/expand の 3 モード表示テスト (#869)
+- **リアクションアバター E2E テスト** — リアクションユーザーのアバター表示を検証 (#870)
+- **検索サジェストテスト** — プロキシ正常系、無効時、エラーフォールバックの 3 テスト (#872)
+
+---
+
 ## [20260324-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260324-2) — 2026-03-24
 
 ### 修正
