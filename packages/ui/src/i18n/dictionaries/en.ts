@@ -355,6 +355,7 @@ export const en: Dictionary = {
   "search.noResults": "No results found",
   "search.closeHint": "Press Esc to close",
   "search.resolving": "Looking up...",
+  "search.suggestions": "Suggestions",
   "migration.title": "Account Migration",
   "migration.description":
     "Move your account to another server. This action cannot be undone.",
