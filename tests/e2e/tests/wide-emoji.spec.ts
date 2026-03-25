@@ -62,8 +62,8 @@ test.describe("Wide emoji display modes", () => {
     );
     expect(reactResp.ok()).toBeTruthy();
 
-    // Set wide emoji mode to "shrink" via localStorage
-    await page.evaluate(() => {
+    // Set wide emoji mode to "shrink" via addInitScript so it's available before page scripts run
+    await page.addInitScript(() => {
       localStorage.setItem("nekonoverse:wide-emoji-style", "shrink");
     });
 
@@ -113,7 +113,7 @@ test.describe("Wide emoji display modes", () => {
     );
     expect(reactResp.ok()).toBeTruthy();
 
-    await page.evaluate(() => {
+    await page.addInitScript(() => {
       localStorage.setItem("nekonoverse:wide-emoji-style", "blur");
     });
 
@@ -160,7 +160,7 @@ test.describe("Wide emoji display modes", () => {
     );
     expect(reactResp.ok()).toBeTruthy();
 
-    await page.evaluate(() => {
+    await page.addInitScript(() => {
       localStorage.setItem("nekonoverse:wide-emoji-style", "overflow");
     });
 
