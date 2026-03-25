@@ -5,6 +5,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import settings
 from app.services.actor_service import get_actor_by_ap_id
 from app.services.note_service import get_note_by_ap_id
 
@@ -45,3 +46,9 @@ async def handle_delete(db: AsyncSession, activity: dict):
     note.deleted_at = datetime.now(timezone.utc)
     await db.commit()
     logger.info("Deleted note %s by %s", object_id, actor_ap_id)
+
+    # Remove from search index
+    if settings.neko_search_enabled:
+        from app.services.search_queue import enqueue_delete
+
+        await enqueue_delete(note.id)

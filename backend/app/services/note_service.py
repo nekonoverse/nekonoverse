@@ -339,6 +339,12 @@ async def create_note(
         if first_url:
             await enqueue_summary(note_id, first_url)
 
+    # Enqueue search indexing (if neko-search configured)
+    if settings.neko_search_enabled and visibility == "public":
+        from app.services.search_queue import enqueue_index
+
+        await enqueue_index(note_id, content, note.published)
+
     # M-12: statuses_countキャッシュを無効化
     try:
         await valkey_client.delete(f"perf:statuses_count:{actor.id}")

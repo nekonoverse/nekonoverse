@@ -376,6 +376,12 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     except Exception:
         logger.exception("Failed to publish remote note to streaming")
 
+    # Enqueue search indexing for remote public notes
+    if settings.neko_search_enabled and visibility == "public":
+        from app.services.search_queue import enqueue_index
+
+        await enqueue_index(note.id, source or "", note.published)
+
     # Background focal point detection for remote image attachments
     if settings.face_detect_enabled:
         from sqlalchemy import select as sel

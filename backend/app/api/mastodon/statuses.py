@@ -1534,6 +1534,14 @@ async def delete_status(
     note.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
+    # Remove from search index
+    from app.config import settings as _settings
+
+    if _settings.neko_search_enabled:
+        from app.services.search_queue import enqueue_delete
+
+        await enqueue_delete(note.id)
+
     # Deliver Delete(Tombstone) to followers
     from app.activitypub.renderer import render_delete_activity
     from app.services.delivery_service import enqueue_delivery
