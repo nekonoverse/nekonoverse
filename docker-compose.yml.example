@@ -74,6 +74,8 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # neko-search (optional — set in .env)
+      NEKO_SEARCH_URL: ${NEKO_SEARCH_URL:-}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # media-proxy-transform (optional — set in .env)
@@ -93,7 +95,7 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,summary-proxy,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,neko-search,face-detect,media-proxy-transform,summary-proxy,localhost}
     expose:
       - "8000"
     depends_on:
@@ -120,6 +122,8 @@ services:
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-nekonoverse}
       S3_REGION: us-east-1
+      # neko-search (optional — set in .env)
+      NEKO_SEARCH_URL: ${NEKO_SEARCH_URL:-}
       # face-detect (optional — set in .env)
       FACE_DETECT_URL: ${FACE_DETECT_URL:-}
       # media-proxy-transform (optional — set in .env)
@@ -136,7 +140,7 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,media-proxy-transform,summary-proxy,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,neko-search,face-detect,media-proxy-transform,summary-proxy,localhost}
     depends_on:
       postgresql:
         condition: service_healthy
@@ -164,6 +168,19 @@ services:
       - app
       - frontend
       - s3proxy-deliverer
+
+  # Optional: Full-text search service (uncomment to use)
+  # SentencePiece + BM25 search with auto-suggest.
+  # Set NEKO_SEARCH_URL=http://neko-search:8002 in app/worker environment.
+  # neko-search:
+  #   image: ghcr.io/nekonoverse/neko-search:latest
+  #   restart: unless-stopped
+  #   volumes:
+  #     - neko-search-data:/data
+  #   environment:
+  #     DATA_DIR: /data
+  #   expose:
+  #     - "8002"
 
   # Optional: GPU face detection service (uncomment to use)
   # Requires NVIDIA GPU + nvidia-container-toolkit.
@@ -209,3 +226,4 @@ services:
 
 volumes:
   s3proxy_sock:
+  # neko-search-data:
