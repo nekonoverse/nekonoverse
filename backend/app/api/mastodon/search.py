@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_current_user, get_db, get_optional_user
+from app.dependencies import get_current_user, get_db
 from app.models.actor import Actor
 from app.models.hashtag import Hashtag
 from app.models.note import Note
