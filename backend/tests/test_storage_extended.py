@@ -1,6 +1,16 @@
 """Tests for storage module — S3-compatible storage with AWS SigV4."""
 
+import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+
+@pytest.fixture(autouse=True)
+def _reset_s3_client():
+    """Reset the global S3 client before each test to prevent stale connections."""
+    import app.storage
+    app.storage._s3_client = None
+    yield
+    app.storage._s3_client = None
 
 # ── get_public_url ───────────────────────────────────────────────────────
 

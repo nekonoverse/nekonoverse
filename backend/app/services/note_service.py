@@ -304,15 +304,30 @@ async def create_note(
         if visibility == "public":
             await valkey_client.publish("timeline:public", event)
         follower_ids = await get_follower_ids(db, actor.id)
+
+        # Exclusive リスト除外: このアクターを exclusive リストに入れているユーザーの
+        # ホームTLには配信しない
+        from app.services.list_service import (
+            get_exclusive_list_user_actor_ids,
+            get_list_ids_for_actor,
+        )
+
+        exclusive_user_ids = await get_exclusive_list_user_actor_ids(db, actor.id)
+
         # M-9: Valkeyパイプラインで一括pub/sub
-        if follower_ids:
-            pipe = valkey_client.pipeline()
-            for fid in follower_ids:
+        pipe = valkey_client.pipeline()
+        for fid in follower_ids:
+            if fid not in exclusive_user_ids:
                 pipe.publish(f"timeline:home:{fid}", event)
+        if actor.id not in exclusive_user_ids:
             pipe.publish(f"timeline:home:{actor.id}", event)
-            await pipe.execute()
-        else:
-            await valkey_client.publish(f"timeline:home:{actor.id}", event)
+
+        # リストタイムラインチャンネルに配信
+        list_ids = await get_list_ids_for_actor(db, actor.id)
+        for lid in list_ids:
+            pipe.publish(f"timeline:list:{lid}", event)
+
+        await pipe.execute()
     except Exception:
         pass  # Don't fail note creation if pub/sub fails
 
@@ -323,6 +338,12 @@ async def create_note(
         first_url = _extract_first_url(content)
         if first_url:
             await enqueue_summary(note_id, first_url)
+
+    # Enqueue search indexing (if neko-search configured)
+    if settings.neko_search_enabled and visibility == "public":
+        from app.services.search_queue import enqueue_index
+
+        await enqueue_index(note_id, content, note.published)
 
     # M-12: statuses_countキャッシュを無効化
     try:
@@ -539,6 +560,13 @@ async def get_home_timeline(
     # Exclude blocked/muted actors
     excluded = await _get_excluded_ids(db, actor_id)
     visible_ids = [fid for fid in following_ids if fid not in excluded]
+
+    # Exclude actors in exclusive lists (they appear in list TL instead)
+    from app.services.list_service import get_exclusive_list_actor_ids
+
+    exclusive_ids = await get_exclusive_list_actor_ids(db, user.id)
+    if exclusive_ids:
+        visible_ids = [vid for vid in visible_ids if vid not in exclusive_ids]
 
     query = (
         select(Note)

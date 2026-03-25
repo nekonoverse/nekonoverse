@@ -510,7 +510,13 @@ async def test_reacted_by(authed_client, mock_valkey):
     data = resp.json()
     assert len(data) >= 1
     assert data[0]["emoji"] == "👍"
-    assert data[0]["actor"]["username"] == "testuser"
+    actor = data[0]["actor"]
+    assert actor["username"] == "testuser"
+    # Mastodon-compatible fields must be populated (#856)
+    assert actor["acct"] == "testuser"
+    assert actor["url"] != ""
+    assert actor["uri"] != ""
+    assert actor["avatar"] != ""
 
 
 async def test_reacted_by_filter_emoji(authed_client, mock_valkey):

@@ -1208,7 +1208,7 @@ async def reacted_by(
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.config import settings as _settings
+    from app.api.mastodon.accounts import _actor_to_account
     from app.models.reaction import Reaction
 
     note = await get_note_by_id(db, note_id)
@@ -1232,57 +1232,13 @@ async def reacted_by(
     result = await db.execute(query)
     reactions = result.scalars().all()
 
-    # Batch-collect all shortcodes from reactor display names
-    from app.services.emoji_service import get_emojis_by_shortcodes
-
-    all_shortcodes_by_domain: dict[str | None, set[str]] = {}
-    for r in reactions:
-        if r.actor.display_name:
-            scs = set(_SHORTCODE_RE.findall(r.actor.display_name))
-            if scs:
-                domain = r.actor.domain
-                all_shortcodes_by_domain.setdefault(domain, set()).update(scs)
-                all_shortcodes_by_domain.setdefault(None, set()).update(scs)
-
-    # Batch-fetch emojis per domain
-    emoji_cache: dict[tuple[str, str | None], object] = {}
-    for domain, scs in all_shortcodes_by_domain.items():
-        if scs:
-            emoji_list = await get_emojis_by_shortcodes(db, scs, domain)
-            for e in emoji_list:
-                emoji_cache[(e.shortcode, e.domain)] = e
-
-    response = []
-    for r in reactions:
-        actor_emojis: list[CustomEmojiInfo] = []
-        if r.actor.display_name:
-            scs = set(_SHORTCODE_RE.findall(r.actor.display_name))
-            for sc in scs:
-                emoji = emoji_cache.get((sc, r.actor.domain)) or emoji_cache.get((sc, None))
-                if emoji:
-                    url = media_proxy_url(emoji.url, variant="emoji")
-                    static = (
-                        media_proxy_url(emoji.static_url, variant="emoji", static=True)
-                        if emoji.static_url
-                        else media_proxy_url(emoji.url, variant="emoji", static=True)
-                    )
-                    actor_emojis.append(
-                        CustomEmojiInfo(shortcode=emoji.shortcode, url=url, static_url=static)
-                    )
-
-        response.append({
-            "actor": NoteActorResponse(
-                id=r.actor.id,
-                username=r.actor.username,
-                display_name=r.actor.display_name,
-                avatar_url=media_proxy_url(r.actor.avatar_url, variant="avatar") or f"{_settings.server_url}/default-avatar.svg",
-                ap_id=r.actor.ap_id,
-                domain=r.actor.domain,
-                emojis=actor_emojis,
-            ),
+    return [
+        {
+            "actor": await _actor_to_account(r.actor, db=db),
             "emoji": r.emoji,
-        })
-    return response
+        }
+        for r in reactions
+    ]
 
 
 @router.post("/{note_id}/reblog", response_model=NoteResponse, status_code=200)
@@ -1577,6 +1533,14 @@ async def delete_status(
 
     note.deleted_at = datetime.now(timezone.utc)
     await db.commit()
+
+    # Remove from search index
+    from app.config import settings as _settings
+
+    if _settings.neko_search_enabled:
+        from app.services.search_queue import enqueue_delete
+
+        await enqueue_delete(note.id)
 
     # Deliver Delete(Tombstone) to followers
     from app.activitypub.renderer import render_delete_activity

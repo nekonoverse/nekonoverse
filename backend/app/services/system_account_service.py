@@ -20,6 +20,10 @@ SYSTEM_ACCOUNTS = [
         "username": "instance.actor",
         "display_name": "Instance Actor",
     },
+    {
+        "username": "system.proxy",
+        "display_name": "Proxy Subscription Actor",
+    },
 ]
 
 
@@ -84,15 +88,20 @@ async def ensure_system_accounts(db: AsyncSession) -> None:
 
 async def get_system_account(db: AsyncSession, username: str) -> User | None:
     """Get a system account by username."""
+    # Userを直接クエリすることでUser.actorのselectin eager loadを確実に発火させる
     result = await db.execute(
-        select(Actor).where(Actor.username == username, Actor.domain.is_(None))
+        select(User)
+        .join(Actor, User.actor_id == Actor.id)
+        .where(Actor.username == username, Actor.domain.is_(None), User.is_system.is_(True))
     )
-    actor = result.scalar_one_or_none()
-    if not actor or not actor.local_user or not actor.local_user.is_system:
-        return None
-    return actor.local_user
+    return result.scalar_one_or_none()
 
 
 async def get_instance_actor(db: AsyncSession) -> User | None:
     """Get the instance.actor system account."""
     return await get_system_account(db, "instance.actor")
+
+
+async def get_proxy_actor(db: AsyncSession) -> User | None:
+    """Get the system.proxy system account."""
+    return await get_system_account(db, "system.proxy")

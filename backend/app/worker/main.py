@@ -13,6 +13,7 @@ async def run_worker():
     from app.services.email_queue import run_email_loop
     from app.services.export_queue import run_export_loop
     from app.services.face_detect_queue import run_face_detect_loop
+    from app.services.search_queue import run_search_index_loop
     from app.services.summary_proxy_queue import run_summary_proxy_loop
 
     await asyncio.gather(
@@ -21,6 +22,7 @@ async def run_worker():
         run_summary_proxy_loop(),
         run_email_loop(),
         run_export_loop(),
+        run_search_index_loop(),
     )
 
 

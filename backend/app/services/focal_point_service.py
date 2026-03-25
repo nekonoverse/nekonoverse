@@ -20,6 +20,7 @@ _MAX_DOWNLOAD_BYTES = 10 * 1024 * 1024
 async def detect_remote_focal_points(
     note_id: uuid.UUID,
     attachment_ids: list[uuid.UUID],
+    detect_version: str | None = None,
 ) -> None:
     """Background task: detect focal points for remote attachments.
 
@@ -46,31 +47,36 @@ async def detect_remote_focal_points(
             attachments = list(rows.scalars().all())
 
             results = await asyncio.gather(
-                *(_detect_single(att) for att in attachments),
+                *(_detect_single(att, detect_version) for att in attachments),
                 return_exceptions=True,
             )
 
-            updated = False
+            changed = False
             for att, res in zip(attachments, results):
                 if isinstance(res, Exception):
                     logger.warning("Focal detection failed for %s: %s", att.id, res)
                 elif res is True:
-                    updated = True
+                    changed = True
 
-            if updated:
+            if changed:
                 await db.commit()
                 logger.info("Focal points updated for note %s, publishing update", note_id)
                 await _publish_update(note_id)
+            elif any(not isinstance(r, Exception) for r in results):
+                # Version recorded but no focal point change — still commit
+                await db.commit()
     except Exception:
         logger.warning(
             "Background focal detection failed for note %s", note_id, exc_info=True
         )
 
 
-async def _detect_single(att) -> bool:
-    """Detect focal point for one attachment. Returns True if updated."""
-    if att.remote_focal_x is not None:
+async def _detect_single(att, detect_version: str | None = None) -> bool:
+    """Detect focal point for one attachment. Returns True if focal point updated."""
+    if att.focal_detect_version == "manual":
         return False
+    if detect_version and att.focal_detect_version == detect_version:
+        return False  # Already checked with this version
     if not att.remote_url:
         return False
     if (att.remote_mime_type or "") not in _IMAGE_MIMES:
@@ -81,12 +87,18 @@ async def _detect_single(att) -> bool:
         return False
 
     focal = await _call_face_detect(image_data, att.remote_width, att.remote_height)
-    if focal is None:
-        return False
 
-    att.remote_focal_x = focal[0]
-    att.remote_focal_y = focal[1]
-    return True
+    focal_updated = False
+    if focal is not None:
+        att.remote_focal_x = focal[0]
+        att.remote_focal_y = focal[1]
+        focal_updated = True
+
+    # Record version regardless of result
+    if detect_version:
+        att.focal_detect_version = detect_version
+
+    return focal_updated
 
 
 async def _download_image(url: str) -> bytes | None:

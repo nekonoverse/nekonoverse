@@ -28,6 +28,7 @@ class NoteAttachment(Base):
     remote_description: Mapped[str | None] = mapped_column(String(1500), nullable=True)
     remote_focal_x: Mapped[float | None] = mapped_column(Float, nullable=True)
     remote_focal_y: Mapped[float | None] = mapped_column(Float, nullable=True)
+    focal_detect_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     note = relationship("Note", back_populates="attachments")
     drive_file = relationship("DriveFile", lazy="selectin")

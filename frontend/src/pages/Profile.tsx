@@ -20,6 +20,7 @@ import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { mentionify } from "@nekonoverse/ui/utils/mentionify";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
+import { getLists, addListAccounts, type ListInfo } from "@nekonoverse/ui/api/lists";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -58,6 +59,10 @@ export default function Profile() {
   const [moreOpen, setMoreOpen] = createSignal(false);
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
   const [showUnlockModal, setShowUnlockModal] = createSignal(false);
+  const [showAddToList, setShowAddToList] = createSignal(false);
+  const [userLists, setUserLists] = createSignal<ListInfo[]>([]);
+  const [selectedListId, setSelectedListId] = createSignal("");
+  const [addToListLoading, setAddToListLoading] = createSignal(false);
 
   // Compose modal state
   const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
@@ -361,6 +366,24 @@ export default function Profile() {
     }
   };
 
+  const handleAddToList = async () => {
+    setShowAddToList(true);
+    try { const data = await getLists(); setUserLists(data); } catch {}
+  };
+
+  const handleAddToListConfirm = async () => {
+    const acc = account();
+    const listId = selectedListId();
+    if (!acc || !listId) return;
+    setAddToListLoading(true);
+    try {
+      await addListAccounts(listId, [acc.id]);
+      setShowAddToList(false);
+      setSelectedListId("");
+    } catch {}
+    setAddToListLoading(false);
+  };
+
   // Close dropdown on outside click
   const handleDocClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
@@ -614,6 +637,12 @@ export default function Profile() {
                               onClick={() => { setMoreOpen(false); handleBlock(); }}
                             >
                               {isBlocking() ? t("block.unblock") : t("block.block")}
+                            </button>
+                            <button
+                              class="profile-more-item"
+                              onClick={() => { setMoreOpen(false); handleAddToList(); }}
+                            >
+                              {t("list.addToList" as any)}
                             </button>
                           </div>
                         </Show>
@@ -922,6 +951,32 @@ export default function Profile() {
           onSave={handleHeaderFocalSave}
           onClose={() => setShowHeaderFocal(false)}
         />
+      </Show>
+
+      {/* Add to list modal */}
+      <Show when={showAddToList()}>
+        <div class="modal-overlay" onClick={() => setShowAddToList(false)}>
+          <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3>{t("list.addToList" as any)}</h3>
+              <button class="modal-close" onClick={() => setShowAddToList(false)}>✕</button>
+            </div>
+            <div style="padding: 16px">
+              <Show when={userLists().length > 0} fallback={<p>{t("list.noLists" as any)}</p>}>
+                <select class="modal-select" value={selectedListId()} onChange={(e) => setSelectedListId(e.target.value)}>
+                  <option value="">{t("list.selectList" as any)}</option>
+                  <For each={userLists()}>{(l) => <option value={l.id}>{l.title}</option>}</For>
+                </select>
+                <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end">
+                  <button class="btn btn-small" onClick={() => setShowAddToList(false)}>{t("common.cancel")}</button>
+                  <button class="btn btn-small btn-primary" disabled={!selectedListId() || addToListLoading()} onClick={handleAddToListConfirm}>
+                    {t("common.add" as any)}
+                  </button>
+                </div>
+              </Show>
+            </div>
+          </div>
+        </div>
       </Show>
     </div>
   );

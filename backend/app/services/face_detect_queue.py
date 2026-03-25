@@ -14,6 +14,7 @@ import json
 import logging
 import time
 import uuid
+from collections import defaultdict
 
 from app.config import settings
 from app.valkey_client import valkey as valkey_client
@@ -24,9 +25,92 @@ QUEUE_KEY = "face_detect:queue"
 DELAYED_KEY = "face_detect:delayed"  # sorted set: score=run_at_timestamp
 DEAD_KEY = "face_detect:dead"
 HEARTBEAT_KEY = "worker:face_detect:heartbeat"
+VERSION_KEY = "face_detect:version"
 
 MAX_ATTEMPTS = 5
 MAX_CONCURRENT = 4
+
+_current_version: str | None = None
+
+
+async def _fetch_version() -> str | None:
+    """Fetch current version from face-detect service."""
+    try:
+        from app.utils.http_client import make_face_detect_client
+
+        base = settings.face_detect_base_url
+        # /object-detection → /version
+        if base.endswith("/object-detection"):
+            version_url = base.rsplit("/", 1)[0] + "/version"
+        else:
+            version_url = base.rstrip("/") + "/version"
+
+        async with make_face_detect_client() as client:
+            resp = await client.get(version_url)
+            resp.raise_for_status()
+            return resp.json().get("version")
+    except Exception:
+        logger.warning("Failed to fetch face-detect version", exc_info=True)
+        return None
+
+
+async def _requeue_outdated(version: str) -> int:
+    """Re-enqueue images that were detected with an older version."""
+    from sqlalchemy import select
+
+    from app.database import async_session
+    from app.models.drive_file import DriveFile
+    from app.models.note_attachment import NoteAttachment
+
+    count = 0
+    async with async_session() as db:
+        # Local DriveFiles with outdated version
+        rows = await db.execute(
+            select(DriveFile.id).where(
+                DriveFile.mime_type.like("image/%"),
+                DriveFile.focal_detect_version.isnot(None),
+                DriveFile.focal_detect_version != version,
+                DriveFile.focal_detect_version != "manual",
+            )
+        )
+        local_ids = [row[0] for row in rows.all()]
+        for fid in local_ids:
+            job = {
+                "type": "local",
+                "drive_file_id": str(fid),
+                "attempts": 0,
+                "created_at": time.time(),
+                "detect_version": version,
+            }
+            await valkey_client.lpush(QUEUE_KEY, json.dumps(job))
+            count += 1
+
+        # Remote NoteAttachments with outdated version, grouped by note_id
+        rows = await db.execute(
+            select(NoteAttachment.id, NoteAttachment.note_id).where(
+                NoteAttachment.remote_url.isnot(None),
+                NoteAttachment.focal_detect_version.isnot(None),
+                NoteAttachment.focal_detect_version != version,
+                NoteAttachment.focal_detect_version != "manual",
+            )
+        )
+        by_note: dict[uuid.UUID, list[uuid.UUID]] = defaultdict(list)
+        for att_id, note_id in rows.all():
+            by_note[note_id].append(att_id)
+
+        for note_id, att_ids in by_note.items():
+            job = {
+                "type": "remote",
+                "note_id": str(note_id),
+                "attachment_ids": [str(a) for a in att_ids],
+                "attempts": 0,
+                "created_at": time.time(),
+                "detect_version": version,
+            }
+            await valkey_client.lpush(QUEUE_KEY, json.dumps(job))
+            count += len(att_ids)
+
+    return count
 
 
 async def enqueue_local(drive_file_id: uuid.UUID) -> None:
@@ -38,6 +122,7 @@ async def enqueue_local(drive_file_id: uuid.UUID) -> None:
         "drive_file_id": str(drive_file_id),
         "attempts": 0,
         "created_at": time.time(),
+        "detect_version": _current_version,
     }
     await valkey_client.lpush(QUEUE_KEY, json.dumps(job))
     logger.debug("Enqueued local face-detect job for %s", drive_file_id)
@@ -53,6 +138,7 @@ async def enqueue_remote(note_id: uuid.UUID, attachment_ids: list[uuid.UUID]) ->
         "attachment_ids": [str(a) for a in attachment_ids],
         "attempts": 0,
         "created_at": time.time(),
+        "detect_version": _current_version,
     }
     await valkey_client.lpush(QUEUE_KEY, json.dumps(job))
     logger.debug("Enqueued remote face-detect job for note %s (%d attachments)",
@@ -68,6 +154,7 @@ async def _process_local(job: dict) -> None:
     from app.services.drive_service import auto_detect_focal_point
 
     drive_file_id = uuid.UUID(job["drive_file_id"])
+    detect_version = job.get("detect_version") or _current_version
 
     async with async_session() as db:
         result = await db.execute(
@@ -77,10 +164,8 @@ async def _process_local(job: dict) -> None:
         if not drive_file:
             logger.warning("DriveFile %s not found, skipping", drive_file_id)
             return
-        if drive_file.focal_x is not None:
-            return  # Already set
 
-        await auto_detect_focal_point(db, drive_file)
+        await auto_detect_focal_point(db, drive_file, detect_version=detect_version)
 
 
 async def _process_remote(job: dict) -> None:
@@ -89,7 +174,8 @@ async def _process_remote(job: dict) -> None:
 
     note_id = uuid.UUID(job["note_id"])
     attachment_ids = [uuid.UUID(a) for a in job["attachment_ids"]]
-    await detect_remote_focal_points(note_id, attachment_ids)
+    detect_version = job.get("detect_version") or _current_version
+    await detect_remote_focal_points(note_id, attachment_ids, detect_version=detect_version)
 
 
 async def _process_job(job: dict) -> None:
@@ -149,13 +235,31 @@ async def run_face_detect_loop() -> None:
     Pops jobs from the Valkey queue, processes them with a concurrency semaphore,
     and handles retries with exponential backoff.
     """
+    global _current_version
+
     if not settings.face_detect_enabled:
         logger.info("FACE_DETECT_URL/UDS not set, face-detect worker idle")
-        # Still run the loop so we can start processing if config changes
         while True:
             await asyncio.sleep(30)
 
     logger.info("Face-detect worker started (max_concurrent=%d)", MAX_CONCURRENT)
+
+    # Fetch current version and check for version changes
+    _current_version = await _fetch_version()
+    if _current_version:
+        prev = await valkey_client.get(VERSION_KEY)
+        prev_version = prev.decode() if isinstance(prev, bytes) else prev
+        if prev_version and prev_version != _current_version:
+            logger.info(
+                "Face-detect version changed: %s -> %s, re-queuing outdated images",
+                prev_version, _current_version,
+            )
+            count = await _requeue_outdated(_current_version)
+            logger.info("Re-queued %d images for re-detection", count)
+        await valkey_client.set(VERSION_KEY, _current_version)
+        logger.info("Face-detect version: %s", _current_version)
+    else:
+        logger.warning("Could not fetch face-detect version, version tracking disabled")
     sem = asyncio.Semaphore(MAX_CONCURRENT)
 
     async def _run_one(raw: str) -> None:

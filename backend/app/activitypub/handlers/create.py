@@ -74,6 +74,17 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     else:
         visibility = "direct"
 
+    # プロキシ購読のみの場合、フォロワー限定投稿は保存しない
+    # directはフォロー関係ではなく宛先指定で配送されるためフィルタ対象外
+    if visibility == "followers" and not actor.is_local:
+        from app.services.proxy_service import has_real_local_follower, is_proxy_subscribed
+
+        if await is_proxy_subscribed(db, actor.id) and not await has_real_local_follower(
+            db, actor.id
+        ):
+            logger.debug("Discarding followers-only note %s (proxy-only subscription)", ap_id)
+            return
+
     # Resolve reply and quote
     in_reply_to_ap_id = note_data.get("inReplyTo")
     quote_ap_id = (
@@ -297,16 +308,28 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             if reply_note.actor and reply_note.actor.is_local and reply_note.actor_id != actor.id:
                 reply_recipient_id = reply_note.actor_id
                 notif = await create_notification(
-                    db, "reply", reply_note.actor_id, actor.id, note.id,
+                    db,
+                    "reply",
+                    reply_note.actor_id,
+                    actor.id,
+                    note.id,
                 )
                 if notif:
                     pending_notifs.append(notif)
 
     for mention in mentions_list:
         mentioned_actor = await get_actor_by_ap_id(db, mention["ap_id"])
-        if mentioned_actor and mentioned_actor.is_local and mentioned_actor.id != reply_recipient_id:
+        if (
+            mentioned_actor
+            and mentioned_actor.is_local
+            and mentioned_actor.id != reply_recipient_id
+        ):
             notif = await create_notification(
-                db, "mention", mentioned_actor.id, actor.id, note.id,
+                db,
+                "mention",
+                mentioned_actor.id,
+                actor.id,
+                note.id,
             )
             if notif:
                 pending_notifs.append(notif)
@@ -328,11 +351,36 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         if visibility == "public":
             await valkey_client.publish("timeline:public", event)
         # Deliver to followers of this remote actor (local users who follow them)
+        # システムアカウントのアクターIDを除外
+        from app.services.proxy_service import get_system_actor_ids
+
+        system_ids = await get_system_actor_ids(db)
         follower_ids = await get_follower_ids(db, actor.id)
+
+        # Exclusive リスト: このアクターを exclusive リストに入れているユーザーの
+        # ホームTLには配信しない（リストTLにのみ配信）
+        from app.services.list_service import (
+            get_exclusive_list_user_actor_ids,
+            get_list_ids_for_actor,
+        )
+
+        exclusive_user_ids = await get_exclusive_list_user_actor_ids(db, actor.id)
         for fid in follower_ids:
-            await valkey_client.publish(f"timeline:home:{fid}", event)
+            if fid not in system_ids and fid not in exclusive_user_ids:
+                await valkey_client.publish(f"timeline:home:{fid}", event)
+
+        # リストタイムラインチャンネルに配信
+        list_ids = await get_list_ids_for_actor(db, actor.id)
+        for lid in list_ids:
+            await valkey_client.publish(f"timeline:list:{lid}", event)
     except Exception:
         logger.exception("Failed to publish remote note to streaming")
+
+    # Enqueue search indexing for remote public notes
+    if settings.neko_search_enabled and visibility == "public":
+        from app.services.search_queue import enqueue_index
+
+        await enqueue_index(note.id, source or "", note.published)
 
     # Background focal point detection for remote image attachments
     if settings.face_detect_enabled:
@@ -346,7 +394,14 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                 NA.remote_url.isnot(None),
                 NA.remote_focal_x.is_(None),
                 NA.remote_mime_type.in_(
-                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
+                    [
+                        "image/jpeg",
+                        "image/png",
+                        "image/webp",
+                        "image/gif",
+                        "image/avif",
+                        "image/apng",
+                    ]
                 ),
             )
         )
@@ -410,7 +465,8 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
         if existing_any.scalars().first():
             logger.debug(
                 "Duplicate poll vote (single-choice) from %s on %s",
-                voter_ap_id, in_reply_to,
+                voter_ap_id,
+                in_reply_to,
             )
             return
     else:
@@ -441,4 +497,6 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
     flag_modified(poll_note, "poll_options")
 
     await db.commit()
-    logger.info("Recorded poll vote from %s on %s (choice: %s)", voter_ap_id, in_reply_to, option_name)
+    logger.info(
+        "Recorded poll vote from %s on %s (choice: %s)", voter_ap_id, in_reply_to, option_name
+    )

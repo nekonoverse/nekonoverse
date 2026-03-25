@@ -4,3 +4,6 @@
 [submodule "claude-md"]
 	path = claude-md
 	url = https://github.com/nekonoverse/claude-md.git
+[submodule "neko-search"]
+	path = neko-search
+	url = https://github.com/nekonoverse/neko-search.git
