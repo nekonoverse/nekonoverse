@@ -1,14 +1,21 @@
 import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
-import { useSearchParams } from "@solidjs/router";
+import { useSearchParams, useNavigate } from "@solidjs/router";
 import { searchV2, searchSuggest } from "@nekonoverse/ui/api/search";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
 import { onReaction } from "@nekonoverse/ui/stores/streaming";
+import { currentUser } from "@nekonoverse/ui/stores/auth";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteCard from "../components/notes/NoteCard";
 import NoteThreadModal from "../components/notes/NoteThreadModal";
 
 export default function Search() {
   const { t } = useI18n();
+  const navigate = useNavigate();
+
+  if (!currentUser()) {
+    navigate("/login", { replace: true });
+    return null;
+  }
   const [searchParams, setSearchParams] = useSearchParams();
   const [query, setQuery] = createSignal(searchParams.q ?? "");
   const [noteResults, setNoteResults] = createSignal<Note[]>([]);
