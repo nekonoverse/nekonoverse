@@ -2976,6 +2976,7 @@ a:hover {
 
 /* 長い絵文字の表示モード: 縮小 */
 [data-wide-emoji="shrink"] .reaction-badge .custom-emoji {
+  max-width: 5em;
   min-width: 0;
   flex-shrink: 1;
   object-fit: contain;
@@ -2983,6 +2984,7 @@ a:hover {
 
 /* 長い絵文字の表示モード: ぼかしトリミング */
 [data-wide-emoji="blur"] .reaction-badge .custom-emoji {
+  max-width: 5em;
   min-width: 0;
   flex-shrink: 1;
   object-fit: cover;
