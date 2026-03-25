@@ -125,6 +125,20 @@ async def _search_statuses(
             )
         return []
 
+    # Use neko-search if available
+    if settings.neko_search_enabled:
+        neko_results = await _search_via_neko_search(q, limit)
+        if neko_results is not None:
+            notes = await _fetch_notes_by_ids(db, neko_results)
+            if notes:
+                note_ids = [n.id for n in notes]
+                reactions_map = await get_reaction_summaries(db, note_ids, current_actor_id)
+                return await notes_to_responses(
+                    notes, reactions_map, db, actor_id=current_actor_id
+                )
+            return []
+
+    # Fallback: ILIKE search
     pattern = f"%{_escape_like(q)}%"
     query = (
         select(Note)
@@ -150,6 +164,52 @@ async def _search_statuses(
     return await notes_to_responses(
         notes, reactions_map, db, actor_id=current_actor_id
     )
+
+
+async def _search_via_neko_search(q: str, limit: int) -> list[str] | None:
+    """Call neko-search API. Returns list of note_id strings or None on failure."""
+    import logging
+
+    from app.utils.http_client import make_neko_search_client
+
+    logger = logging.getLogger(__name__)
+    base = settings.neko_search_base_url.rstrip("/")
+    try:
+        async with make_neko_search_client() as client:
+            resp = await client.get(f"{base}/search", params={"q": q, "limit": limit})
+            resp.raise_for_status()
+            data = resp.json()
+            return data.get("note_ids", [])
+    except Exception:
+        logger.warning("neko-search unavailable, falling back to ILIKE", exc_info=True)
+        return None
+
+
+async def _fetch_notes_by_ids(db: AsyncSession, note_id_strs: list[str]) -> list:
+    """Fetch notes by ID strings, preserving order from search results."""
+    import uuid
+
+    try:
+        uuids = [uuid.UUID(nid) for nid in note_id_strs]
+    except ValueError:
+        return []
+
+    if not uuids:
+        return []
+
+    result = await db.execute(
+        select(Note)
+        .join(Actor, Note.actor_id == Actor.id)
+        .options(*_note_load_options())
+        .where(
+            Note.id.in_(uuids),
+            Note.deleted_at.is_(None),
+            Actor.silenced_at.is_(None),
+        )
+    )
+    notes_by_id = {n.id: n for n in result.scalars().all()}
+    # Preserve search ranking order
+    return [notes_by_id[uid] for uid in uuids if uid in notes_by_id]
 
 
 async def _search_hashtags(db: AsyncSession, q: str, limit: int) -> list[dict]:

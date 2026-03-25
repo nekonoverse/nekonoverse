@@ -6,6 +6,8 @@ Usage:
     python -m app.cli detect-focal-points
     python -m app.cli redetect-focal <note_id>
     python -m app.cli regenerate-icons [--from-default]
+    python -m app.cli index-notes
+    python -m app.cli train-search [--vocab-size 8000]
     python -m app.cli create-admin --username neko --email neko@example.com --password mypassword
 """
 
@@ -444,6 +446,170 @@ async def _reset_password(args: argparse.Namespace) -> None:
     await engine.dispose()
 
 
+async def _index_notes(args: argparse.Namespace) -> None:
+    """Bulk-index all public notes to neko-search."""
+    from sqlalchemy import func, select
+
+    from app.config import settings
+    from app.models.note import Note
+
+    if not settings.neko_search_enabled:
+        print("Error: NEKO_SEARCH_URL or NEKO_SEARCH_UDS is not set.", file=sys.stderr)
+        sys.exit(1)
+
+    from app.utils.http_client import make_neko_search_client
+
+    base = settings.neko_search_base_url.rstrip("/")
+
+    # Check health
+    async with make_neko_search_client() as client:
+        resp = await client.get(f"{base}/health")
+        resp.raise_for_status()
+        health = resp.json()
+        print(f"neko-search: {health}")
+        if not health.get("model_loaded"):
+            print("Error: SentencePiece model not loaded. Run train-search first.", file=sys.stderr)
+            sys.exit(1)
+
+    # Count total public notes
+    async with async_session() as db:
+        total = (
+            await db.execute(
+                select(func.count()).select_from(Note).where(
+                    Note.deleted_at.is_(None),
+                    Note.visibility == "public",
+                )
+            )
+        ).scalar()
+
+    print(f"Total public notes: {total}")
+
+    batch_size = 100
+    indexed = 0
+    offset = 0
+
+    while offset < total:
+        async with async_session() as db:
+            rows = await db.execute(
+                select(Note.id, Note.source, Note.published)
+                .where(
+                    Note.deleted_at.is_(None),
+                    Note.visibility == "public",
+                )
+                .order_by(Note.published.asc())
+                .offset(offset)
+                .limit(batch_size)
+            )
+            notes = rows.all()
+
+        if not notes:
+            break
+
+        payload = {
+            "notes": [
+                {
+                    "note_id": str(n.id),
+                    "text": n.source or "",
+                    "published": n.published.isoformat() if n.published else None,
+                }
+                for n in notes
+            ]
+        }
+
+        async with make_neko_search_client(timeout=60.0) as client:
+            resp = await client.post(f"{base}/bulk-index", json=payload)
+            resp.raise_for_status()
+
+        indexed += len(notes)
+        offset += batch_size
+        print(f"\r  [{indexed}/{total}] indexed", end="", flush=True)
+
+    print(f"\nDone. Indexed {indexed} notes.")
+    await engine.dispose()
+
+
+async def _train_search(args: argparse.Namespace) -> None:
+    """Export corpus to neko-search store, then trigger SentencePiece training."""
+    from sqlalchemy import func, select
+
+    from app.config import settings
+    from app.models.note import Note
+
+    if not settings.neko_search_enabled:
+        print("Error: NEKO_SEARCH_URL or NEKO_SEARCH_UDS is not set.", file=sys.stderr)
+        sys.exit(1)
+
+    from app.utils.http_client import make_neko_search_client
+
+    base = settings.neko_search_base_url.rstrip("/")
+
+    # First, bulk-index all notes so the store has data for training
+    async with async_session() as db:
+        total = (
+            await db.execute(
+                select(func.count()).select_from(Note).where(
+                    Note.deleted_at.is_(None),
+                    Note.visibility == "public",
+                )
+            )
+        ).scalar()
+
+    print(f"Exporting {total} public notes to neko-search store...")
+
+    batch_size = 100
+    exported = 0
+    offset = 0
+
+    while offset < total:
+        async with async_session() as db:
+            rows = await db.execute(
+                select(Note.id, Note.source, Note.published)
+                .where(
+                    Note.deleted_at.is_(None),
+                    Note.visibility == "public",
+                )
+                .order_by(Note.published.asc())
+                .offset(offset)
+                .limit(batch_size)
+            )
+            notes = rows.all()
+
+        if not notes:
+            break
+
+        payload = {
+            "notes": [
+                {
+                    "note_id": str(n.id),
+                    "text": n.source or "",
+                    "published": n.published.isoformat() if n.published else None,
+                }
+                for n in notes
+            ]
+        }
+
+        async with make_neko_search_client(timeout=60.0) as client:
+            resp = await client.post(f"{base}/bulk-index", json=payload)
+            resp.raise_for_status()
+
+        exported += len(notes)
+        offset += batch_size
+        print(f"\r  [{exported}/{total}] exported", end="", flush=True)
+
+    print(f"\n  Exported {exported} notes.")
+
+    # Trigger training
+    print(f"Triggering SentencePiece training (vocab_size={args.vocab_size})...")
+    async with make_neko_search_client(timeout=300.0) as client:
+        resp = await client.post(f"{base}/train", json={"vocab_size": args.vocab_size})
+        resp.raise_for_status()
+        result = resp.json()
+
+    print(f"Training complete: vocab_size={result.get('vocab_size')}, "
+          f"doc_count={result.get('doc_count')}")
+    await engine.dispose()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="nekonoverse", description="nekonoverse management CLI")
     sub = parser.add_subparsers(dest="command")
@@ -473,6 +639,13 @@ def main() -> None:
     )
     redetect.add_argument("note_id", type=str, help="Note ID (UUID)")
 
+    sub.add_parser("index-notes", help="Bulk-index all public notes to neko-search")
+    train_search = sub.add_parser("train-search", help="Export corpus and trigger neko-search training")
+    train_search.add_argument(
+        "--vocab-size", type=int, default=8000,
+        help="SentencePiece vocabulary size (default: 8000)",
+    )
+
     regen_icons = sub.add_parser("regenerate-icons", help="Regenerate favicon and PWA icons")
     regen_icons.add_argument(
         "--from-default", action="store_true",
@@ -493,6 +666,10 @@ def main() -> None:
         asyncio.run(_detect_focal_points(args))
     elif args.command == "redetect-focal":
         asyncio.run(_redetect_focal(args))
+    elif args.command == "index-notes":
+        asyncio.run(_index_notes(args))
+    elif args.command == "train-search":
+        asyncio.run(_train_search(args))
     elif args.command == "regenerate-icons":
         asyncio.run(_regenerate_icons(args))
     else:

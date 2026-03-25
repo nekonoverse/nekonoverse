@@ -66,6 +66,18 @@ def make_summary_proxy_client(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(**kwargs)
 
 
+def make_neko_search_client(**kwargs) -> httpx.AsyncClient:
+    """Create an httpx.AsyncClient configured for the neko-search service."""
+    _inject_user_agent(kwargs)
+    if settings.neko_search_uds:
+        kwargs.setdefault(
+            "transport", httpx.AsyncHTTPTransport(uds=settings.neko_search_uds)
+        )
+    kwargs.setdefault("timeout", 10.0)
+    kwargs.setdefault("proxy", None)
+    return httpx.AsyncClient(**kwargs)
+
+
 def make_async_client(*, use_proxy: bool = True, **kwargs) -> httpx.AsyncClient:
     """Create an httpx.AsyncClient with proxy settings injected.
 
