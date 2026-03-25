@@ -1,21 +1,20 @@
-import { createSignal, createEffect, Show, For } from "solid-js";
-import { useNavigate } from "@solidjs/router";
+import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
 import { searchV2, searchSuggest } from "@nekonoverse/ui/api/search";
-import type { Note } from "@nekonoverse/ui/api/statuses";
+import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
+import { onReaction } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
-import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
-import { sanitizeHtml } from "@nekonoverse/ui/utils/sanitize";
+import NoteCard from "../components/notes/NoteCard";
+import NoteThreadModal from "../components/notes/NoteThreadModal";
 
 export default function Search() {
   const { t } = useI18n();
-  const navigate = useNavigate();
   const [query, setQuery] = createSignal("");
   const [noteResults, setNoteResults] = createSignal<Note[]>([]);
   const [searched, setSearched] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [suggestions, setSuggestions] = createSignal<{ token: string; df: number }[]>([]);
+  const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
-  let inputRef: HTMLInputElement | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
   // Debounced suggest on input
@@ -61,20 +60,35 @@ export default function Search() {
     performSearch(display);
   };
 
-  const handleNoteClick = (noteId: string) => {
-    navigate(`/notes/${noteId}`);
+  const refreshNote = async (noteId: string) => {
+    try {
+      const updated = await getNote(noteId);
+      setNoteResults((prev) => prev.map((n) => {
+        if (n.id === noteId) return updated;
+        if (n.reblog?.id === noteId) return { ...n, reblog: updated };
+        return n;
+      }));
+    } catch {}
   };
+
+  const unsubReaction = onReaction(async (data) => {
+    const { id } = data as { id: string };
+    if (!id) return;
+    if (noteResults().some((n) => n.id === id || n.reblog?.id === id)) {
+      await refreshNote(id);
+    }
+  });
+  onCleanup(() => unsubReaction());
 
   return (
     <div class="page-container">
       <h1>{t("search.fullSearchTitle")}</h1>
       <form onSubmit={handleSubmit} class="search-form">
         <input
-          ref={inputRef}
           type="text"
           value={query()}
           onInput={(e) => setQuery(e.currentTarget.value)}
-          placeholder={t("search.placeholder")}
+          placeholder={t("search.fullSearchPlaceholder")}
           class="search-input"
           autocomplete="off"
           autofocus
@@ -106,32 +120,24 @@ export default function Search() {
           when={noteResults().length > 0}
           fallback={<p class="empty">{t("search.noResults")}</p>}
         >
-          <div class="search-results">
-            <For each={noteResults()}>
-              {(note) => (
-                <button
-                  class="search-result-item"
-                  onClick={() => handleNoteClick(note.id)}
-                >
-                  <img
-                    class="search-result-avatar"
-                    src={note.account.avatar || defaultAvatar()}
-                    alt=""
-                  />
-                  <div class="search-result-info">
-                    <strong>{note.account.display_name || note.account.username}</strong>
-                    <span
-                      class="search-result-preview"
-                      ref={(el) => {
-                        el.innerHTML = sanitizeHtml(note.content);
-                      }}
-                    />
-                  </div>
-                </button>
-              )}
-            </For>
-          </div>
+          <For each={noteResults()}>
+            {(note) => (
+              <NoteCard
+                note={note}
+                onReactionUpdate={() => refreshNote(note.id)}
+                onDelete={(id) => setNoteResults((prev) => prev.filter((n) => n.id !== id))}
+                onThreadOpen={(id) => setThreadNoteId(id)}
+              />
+            )}
+          </For>
         </Show>
+      </Show>
+
+      <Show when={threadNoteId()}>
+        <NoteThreadModal
+          noteId={threadNoteId()!}
+          onClose={() => setThreadNoteId(null)}
+        />
       </Show>
     </div>
   );
