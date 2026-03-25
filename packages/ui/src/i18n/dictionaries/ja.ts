@@ -353,6 +353,7 @@ export const ja = {
   "search.noResults": "見つかりませんでした",
   "search.closeHint": "Escで閉じる",
   "search.resolving": "照会中...",
+  "search.suggestions": "サジェスト",
   "migration.title": "アカウント移行",
   "migration.description":
     "別のサーバーへアカウントを移行します。この操作は取り消せません。",

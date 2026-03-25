@@ -1,7 +1,7 @@
 import { createSignal, createEffect, onMount, onCleanup, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
 import { searchAccounts, type Account } from "@nekonoverse/ui/api/accounts";
-import { searchV2 } from "@nekonoverse/ui/api/search";
+import { searchV2, searchSuggest } from "@nekonoverse/ui/api/search";
 import type { Note } from "@nekonoverse/ui/api/statuses";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
@@ -20,6 +20,7 @@ export default function SearchModal(props: Props) {
   const [searched, setSearched] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
   const [resolving, setResolving] = createSignal(false);
+  const [suggestions, setSuggestions] = createSignal<{ token: string; df: number }[]>([]);
 
   let inputRef: HTMLInputElement | undefined;
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
@@ -86,7 +87,7 @@ export default function SearchModal(props: Props) {
     setResolving(false);
   };
 
-  // Debounced local search on input
+  // Debounced local search + suggest on input
   createEffect(() => {
     const q = query();
     clearTimeout(debounceTimer);
@@ -94,6 +95,7 @@ export default function SearchModal(props: Props) {
     if (!q.trim()) {
       setAccountResults([]);
       setNoteResults([]);
+      setSuggestions([]);
       setSearched(false);
       setLoading(false);
       setResolving(false);
@@ -103,18 +105,30 @@ export default function SearchModal(props: Props) {
     setLoading(true);
     debounceTimer = setTimeout(() => {
       performSearch(q, false);
-    }, 300);
+      searchSuggest(q).then((r) => setSuggestions(r.suggestions)).catch(() => setSuggestions([]));
+    }, 200);
   });
 
   // Submit triggers a resolve search (for remote users/notes)
   const handleSubmit = (e: Event) => {
     e.preventDefault();
     clearTimeout(debounceTimer);
+    setSuggestions([]);
     const q = query().trim();
     if (!q) return;
     setResolving(q.includes("@") || q.startsWith("https://"));
     setLoading(true);
     performSearch(q, true);
+  };
+
+  const handleSuggestionClick = (token: string) => {
+    // Remove SentencePiece word boundary marker for display
+    const display = token.replace(/^▁/, "");
+    setQuery(display);
+    setSuggestions([]);
+    // Trigger full search with the suggestion
+    setLoading(true);
+    performSearch(display, true);
   };
 
   const handleAccountClick = (acct: string) => {
@@ -179,6 +193,21 @@ export default function SearchModal(props: Props) {
         </form>
 
         <div class="search-modal-body">
+          <Show when={suggestions().length > 0}>
+            <div class="search-modal-suggestions">
+              <For each={suggestions()}>
+                {(s) => (
+                  <button
+                    class="search-modal-suggestion-item"
+                    onClick={() => handleSuggestionClick(s.token)}
+                  >
+                    <span>{s.token.replace(/^▁/, "")}</span>
+                    <span class="search-modal-suggestion-df">{s.df}</span>
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
           <Show when={resolving()}>
             <p class="search-modal-status">{t("search.resolving")}</p>
           </Show>
