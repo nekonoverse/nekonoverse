@@ -118,32 +118,54 @@ async def _create_admin(args: argparse.Namespace) -> None:
 
 
 async def _detect_focal_points(args: argparse.Namespace) -> None:
-    from sqlalchemy import select
+    from sqlalchemy import or_, select
 
     from app.config import settings
     from app.models.drive_file import DriveFile
     from app.models.note_attachment import NoteAttachment
     from app.services.drive_service import _read_file_data
+    from app.services.face_detect_queue import _fetch_version
     from app.services.focal_point_service import _call_face_detect, _download_image
 
     if not settings.face_detect_enabled:
         print("Error: FACE_DETECT_URL or FACE_DETECT_UDS is not set.", file=sys.stderr)
         sys.exit(1)
 
+    # Fetch current face-detect version for skip/record logic
+    detect_version = await _fetch_version()
+    if detect_version:
+        print(f"Face-detect version: {detect_version}")
+    else:
+        print(
+            "Warning: Could not fetch face-detect version,"
+            " all undetected images will be processed."
+        )
+
     concurrency = args.concurrency
     sem = asyncio.Semaphore(concurrency)
 
     # --- Local DriveFiles ---
+    # Find images that need detection: version NULL (never checked) or outdated version
+    # Skip: manual focal points, already checked with current version
     async with async_session() as db:
-        rows = await db.execute(
-            select(DriveFile).where(
-                DriveFile.focal_x.is_(None),
-                DriveFile.mime_type.startswith("image/"),
+        conditions = [
+            DriveFile.mime_type.startswith("image/"),
+            DriveFile.focal_detect_version != "manual",
+        ]
+        if detect_version:
+            conditions.append(
+                or_(
+                    DriveFile.focal_detect_version.is_(None),
+                    DriveFile.focal_detect_version != detect_version,
+                )
             )
-        )
+        else:
+            conditions.append(DriveFile.focal_detect_version.is_(None))
+
+        rows = await db.execute(select(DriveFile).where(*conditions))
         local_files = list(rows.scalars().all())
 
-    print(f"Local DriveFiles (focal_x IS NULL, image): {len(local_files)}")
+    print(f"Local DriveFiles to process: {len(local_files)}")
 
     local_ok = 0
     local_noface = 0
@@ -163,28 +185,44 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
                     else:
                         merged.focal_x = focal[0]
                         merged.focal_y = focal[1]
-                        await db.commit()
                         local_ok += 1
+                    # Record version so this file is skipped next time
+                    if detect_version:
+                        merged.focal_detect_version = detect_version
+                    await db.commit()
                 except Exception as e:
                     local_err += 1
                     print(f"\n  [error] {df.id}: {e}", file=sys.stderr)
-        print(f"\r  [{i}/{len(local_files)}] ok={local_ok} noface={local_noface} err={local_err}", end="", flush=True)
+        print(
+            f"\r  [{i}/{len(local_files)}] ok={local_ok}"
+            f" noface={local_noface} err={local_err}",
+            end="", flush=True,
+        )
     if local_files:
         print()
 
     # --- Remote NoteAttachments ---
     image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"}
     async with async_session() as db:
-        rows = await db.execute(
-            select(NoteAttachment).where(
-                NoteAttachment.remote_focal_x.is_(None),
-                NoteAttachment.remote_url.isnot(None),
-                NoteAttachment.remote_mime_type.in_(image_mimes),
+        conditions = [
+            NoteAttachment.remote_url.isnot(None),
+            NoteAttachment.remote_mime_type.in_(image_mimes),
+            NoteAttachment.focal_detect_version != "manual",
+        ]
+        if detect_version:
+            conditions.append(
+                or_(
+                    NoteAttachment.focal_detect_version.is_(None),
+                    NoteAttachment.focal_detect_version != detect_version,
+                )
             )
-        )
+        else:
+            conditions.append(NoteAttachment.focal_detect_version.is_(None))
+
+        rows = await db.execute(select(NoteAttachment).where(*conditions))
         remote_atts = list(rows.scalars().all())
 
-    print(f"Remote NoteAttachments (remote_focal_x IS NULL, image): {len(remote_atts)}")
+    print(f"Remote NoteAttachments to process: {len(remote_atts)}")
 
     remote_ok = 0
     remote_noface = 0
@@ -198,9 +236,14 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
                 return "dl_err"
             focal = await _call_face_detect(image_data, att.remote_width, att.remote_height)
             if focal is None:
+                # Record version so this attachment is skipped next time
+                if detect_version:
+                    att.focal_detect_version = detect_version
                 return "noface"
             att.remote_focal_x = focal[0]
             att.remote_focal_y = focal[1]
+            if detect_version:
+                att.focal_detect_version = detect_version
             return "ok"
 
     # Process in batches to avoid holding too many sessions open
@@ -225,7 +268,11 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
                     remote_noface += 1
             await db.commit()
         done = min(batch_start + batch_size, len(remote_atts))
-        print(f"\r  [{done}/{len(remote_atts)}] ok={remote_ok} noface={remote_noface} err={remote_err}", end="", flush=True)
+        print(
+            f"\r  [{done}/{len(remote_atts)}] ok={remote_ok}"
+            f" noface={remote_noface} err={remote_err}",
+            end="", flush=True,
+        )
     if remote_atts:
         print()
 
@@ -240,10 +287,10 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
     from sqlalchemy.orm import selectinload
 
     from app.config import settings
-    from app.models.drive_file import DriveFile
     from app.models.note import Note
     from app.models.note_attachment import NoteAttachment
     from app.services.drive_service import _read_file_data
+    from app.services.face_detect_queue import _fetch_version
     from app.services.focal_point_service import (
         _call_face_detect,
         _download_image,
@@ -253,6 +300,8 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
     if not settings.face_detect_enabled:
         print("Error: FACE_DETECT_URL or FACE_DETECT_UDS is not set.", file=sys.stderr)
         sys.exit(1)
+
+    detect_version = await _fetch_version()
 
     try:
         note_id = uuid.UUID(args.note_id)
@@ -297,7 +346,7 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
                 try:
                     image_data = await _read_file_data(df)
                     if not image_data:
-                        print(f"       -> ERROR: could not read file data")
+                        print("       -> ERROR: could not read file data")
                         continue
                     focal = await _call_face_detect(image_data, df.width, df.height)
                     if focal is None:
@@ -308,6 +357,8 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
                         df.focal_x = focal[0]
                         df.focal_y = focal[1]
                         print(f"       -> focal=({focal[0]:.4f}, {focal[1]:.4f}) (was {old})")
+                    if detect_version:
+                        df.focal_detect_version = detect_version
                     updated = True
                 except Exception as e:
                     print(f"       -> ERROR: {e}")
@@ -318,7 +369,7 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
                 try:
                     image_data = await _download_image(att.remote_url)
                     if not image_data:
-                        print(f"       -> ERROR: could not download image")
+                        print("       -> ERROR: could not download image")
                         continue
                     focal = await _call_face_detect(image_data, att.remote_width, att.remote_height)
                     if focal is None:
@@ -329,6 +380,8 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
                         att.remote_focal_x = focal[0]
                         att.remote_focal_y = focal[1]
                         print(f"       -> focal=({focal[0]:.4f}, {focal[1]:.4f}) (was {old})")
+                    if detect_version:
+                        att.focal_detect_version = detect_version
                     updated = True
                 except Exception as e:
                     print(f"       -> ERROR: {e}")
@@ -405,10 +458,19 @@ def main() -> None:
     reset_pw.add_argument("--username", default=None)
     reset_pw.add_argument("--password", default=None)
 
-    detect_fp = sub.add_parser("detect-focal-points", help="Run face detection on all images without focal points")
-    detect_fp.add_argument("--concurrency", type=int, default=4, help="Max concurrent requests (default: 4)")
+    detect_fp = sub.add_parser(
+        "detect-focal-points",
+        help="Run face detection on images needing detection",
+    )
+    detect_fp.add_argument(
+        "--concurrency", type=int, default=4,
+        help="Max concurrent requests (default: 4)",
+    )
 
-    redetect = sub.add_parser("redetect-focal", help="Force re-detect focal point for a specific note")
+    redetect = sub.add_parser(
+        "redetect-focal",
+        help="Force re-detect focal point for a specific note",
+    )
     redetect.add_argument("note_id", type=str, help="Note ID (UUID)")
 
     regen_icons = sub.add_parser("regenerate-icons", help="Regenerate favicon and PWA icons")
