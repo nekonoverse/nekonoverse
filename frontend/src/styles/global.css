@@ -7855,3 +7855,90 @@ html[data-cursor="paw"] textarea,
 html[data-cursor="paw"] [contenteditable="true"] {
   cursor: text;
 }
+
+/* UserHoverCard more menu */
+.hover-card-more-menu {
+  position: relative;
+}
+
+.hover-card-more-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  padding: 4px 10px;
+  font-size: 1rem;
+  letter-spacing: 2px;
+  line-height: 1;
+}
+
+.hover-card-more-btn:hover {
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.hover-card-more-dropdown {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  margin-top: 4px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 160px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.hover-card-more-item {
+  display: block;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.9rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.hover-card-more-item:hover {
+  background: var(--bg-primary);
+}
+
+.hover-card-more-danger {
+  color: #e74c3c;
+}
+
+/* Source view modal */
+.source-modal-body {
+  padding: 16px;
+}
+
+.source-code {
+  background: var(--bg-primary);
+  padding: 12px;
+  border-radius: 8px;
+  overflow-x: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: monospace;
+  font-size: 14px;
+  max-height: 400px;
+  overflow-y: auto;
+  margin-bottom: 12px;
+  border: 1px solid var(--border);
+}
+
+/* Modal select */
+.modal-select {
+  width: 100%;
+  padding: 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+}

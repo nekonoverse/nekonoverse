@@ -16,7 +16,6 @@ import {
   getFavouritedBy,
 } from "@nekonoverse/ui/api/statuses";
 import type { ActionByUser } from "@nekonoverse/ui/api/statuses";
-import { blockAccount, muteAccount } from "@nekonoverse/ui/api/accounts";
 import LinkPreviewCard from "./LinkPreviewCard";
 import ReactionBar from "../reactions/ReactionBar";
 import { groupReactions } from "@nekonoverse/ui/utils/groupReactions";
@@ -255,6 +254,7 @@ export default function NoteCard(props: Props) {
   const { t } = useI18n();
   const navigate = useNavigate();
   const [moreOpen, setMoreOpen] = createSignal(false);
+  const [showSource, setShowSource] = createSignal(false);
   const [nyaizeSuppressed, setNyaizeSuppressed] = createSignal(false);
   const [boosted, setBoosted] = createSignal(props.note.reblogged || (props.note.reblog?.reblogged ?? false));
   const [boostLoading, setBoostLoading] = createSignal(false);
@@ -342,22 +342,6 @@ export default function NoteCard(props: Props) {
     }
   });
   onCleanup(() => document.removeEventListener("click", handleDocClick));
-
-  const handleBlock = async () => {
-    setMoreOpen(false);
-    if (!confirm(t("block.confirmBlock"))) return;
-    try {
-      await blockAccount(displayNote().actor.id);
-    } catch {}
-  };
-
-  const handleMute = async () => {
-    setMoreOpen(false);
-    if (!confirm(t("block.confirmMute"))) return;
-    try {
-      await muteAccount(displayNote().actor.id);
-    } catch {}
-  };
 
   const handleDelete = async () => {
     setMoreOpen(false);
@@ -839,15 +823,6 @@ export default function NoteCard(props: Props) {
                       </button>
                     </Show>
                     <Show when={!isOwnNote()}>
-                      <button class="note-more-item" onClick={handleMute}>
-                        {t("block.mute")} {actorHandle(note().actor)}
-                      </button>
-                      <button
-                        class="note-more-item note-more-danger"
-                        onClick={handleBlock}
-                      >
-                        {t("block.block")} {actorHandle(note().actor)}
-                      </button>
                       <Show when={canModerateContent()}>
                         <button
                           class="note-more-item note-more-danger"
@@ -856,6 +831,11 @@ export default function NoteCard(props: Props) {
                           {t("note.modDelete" as any)}
                         </button>
                       </Show>
+                    </Show>
+                    <Show when={displayNote().source}>
+                      <button class="note-more-item" onClick={() => { setMoreOpen(false); setShowSource(true); }}>
+                        {t("note.viewSource" as any)}
+                      </button>
                     </Show>
                   </div>
                 </Show>
@@ -1384,6 +1364,27 @@ export default function NoteCard(props: Props) {
                 );
               }}
             </For>
+          </div>
+        </div>
+      </div>
+    </Show>
+
+    {/* Source view modal */}
+    <Show when={showSource()}>
+      <div class="modal-overlay" onClick={() => setShowSource(false)}>
+        <div class="modal-content" style="max-width: 600px" onClick={(e) => e.stopPropagation()}>
+          <div class="modal-header">
+            <h3>{t("note.viewSource" as any)}</h3>
+            <button class="modal-close" onClick={() => setShowSource(false)}>✕</button>
+          </div>
+          <div class="source-modal-body">
+            <pre class="source-code">{displayNote().source}</pre>
+            <button
+              class="btn btn-small"
+              onClick={() => navigator.clipboard.writeText(displayNote().source || "")}
+            >
+              {t("common.copy" as any)}
+            </button>
           </div>
         </div>
       </div>
