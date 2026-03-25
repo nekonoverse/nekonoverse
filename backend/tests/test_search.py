@@ -78,6 +78,67 @@ async def test_search_empty_query(authed_client, mock_valkey):
     assert resp.status_code == 422
 
 
+async def test_suggest_proxy(authed_client, mock_valkey):
+    """When neko-search is enabled, /suggest proxies to neko-search."""
+    mock_response = MagicMock()
+    mock_response.status_code = 200
+    mock_response.json.return_value = {
+        "suggestions": [{"token": "ねこ", "df": 42}],
+        "prefix": "ねこ",
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("app.api.mastodon.search.settings") as mock_settings,
+        patch("app.utils.http_client.make_neko_search_client", return_value=mock_client),
+    ):
+        mock_settings.neko_search_enabled = True
+        mock_settings.neko_search_base_url = "http://neko-search:8002"
+
+        resp = await authed_client.get("/api/v2/search/suggest?q=ねこ")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["suggestions"]) == 1
+        assert data["suggestions"][0]["token"] == "ねこ"
+        assert data["prefix"] == "ねこ"
+
+
+async def test_suggest_disabled(authed_client, mock_valkey):
+    """When neko-search is disabled, /suggest returns empty."""
+    with patch("app.api.mastodon.search.settings") as mock_settings:
+        mock_settings.neko_search_enabled = False
+
+        resp = await authed_client.get("/api/v2/search/suggest?q=test")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["suggestions"] == []
+
+
+async def test_suggest_fallback_on_error(authed_client, mock_valkey):
+    """When neko-search fails, /suggest returns empty."""
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(side_effect=Exception("Connection refused"))
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch("app.api.mastodon.search.settings") as mock_settings,
+        patch("app.utils.http_client.make_neko_search_client", return_value=mock_client),
+    ):
+        mock_settings.neko_search_enabled = True
+        mock_settings.neko_search_base_url = "http://neko-search:8002"
+
+        resp = await authed_client.get("/api/v2/search/suggest?q=test")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["suggestions"] == []
+
+
 async def test_search_queue_enqueue_index(mock_valkey):
     """enqueue_index pushes job to Valkey."""
     import uuid
