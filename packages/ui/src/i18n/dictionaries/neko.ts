@@ -356,6 +356,7 @@ export const neko: Dictionary = {
   "search.closeHint": "Escでとじるにゃ",
   "search.resolving": "しらべてるにゃ...",
   "search.suggestions": "サジェストにゃ",
+  "search.fullSearchTitle": "けんさくにゃ",
   "migration.title": "おひっこしにゃ",
   "migration.description":
     "べつのサーバーにおひっこしするにゃ。もどせにゃいにゃ。",
