@@ -598,15 +598,40 @@ async def _train_search(args: argparse.Namespace) -> None:
 
     print(f"\n  Exported {exported} notes.")
 
-    # Trigger training
+    # Trigger async training
     print(f"Triggering SentencePiece training (vocab_size={args.vocab_size})...")
-    async with make_neko_search_client(timeout=300.0) as client:
+    async with make_neko_search_client(timeout=60.0) as client:
         resp = await client.post(f"{base}/train", json={"vocab_size": args.vocab_size})
         resp.raise_for_status()
-        result = resp.json()
 
-    print(f"Training complete: vocab_size={result.get('vocab_size')}, "
-          f"doc_count={result.get('doc_count')}")
+    print("Training started. Polling for completion...")
+
+    # Poll /train/status until build completes
+    import asyncio
+
+    while True:
+        await asyncio.sleep(2)
+        async with make_neko_search_client(timeout=10.0) as client:
+            resp = await client.get(f"{base}/train/status")
+            resp.raise_for_status()
+            status = resp.json()
+
+        if not status["building"]:
+            if status.get("error"):
+                print(f"Training failed: {status['error']}", file=sys.stderr)
+                sys.exit(1)
+            print(f"Training complete: generation={status['current_version']}")
+            break
+        print(f"\r  building... (generation={status['current_version']})", end="", flush=True)
+
+    # Verify with health check
+    async with make_neko_search_client(timeout=10.0) as client:
+        resp = await client.get(f"{base}/health")
+        resp.raise_for_status()
+        health = resp.json()
+
+    print(f"Health: model_loaded={health['model_loaded']}, "
+          f"vocab_size={health['vocab_size']}, doc_count={health['doc_count']}")
     await engine.dispose()
 
 

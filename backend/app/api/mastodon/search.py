@@ -212,6 +212,39 @@ async def _fetch_notes_by_ids(db: AsyncSession, note_id_strs: list[str]) -> list
     return [notes_by_id[uid] for uid in uuids if uid in notes_by_id]
 
 
+@router.get("/search/suggest")
+async def suggest(
+    q: str = Query(min_length=1),
+    limit: int = Query(default=10, ge=1, le=50),
+):
+    """Proxy suggest requests to neko-search."""
+    if not settings.neko_search_enabled:
+        return {"suggestions": [], "prefix": ""}
+
+    result = await _suggest_via_neko_search(q, limit)
+    if result is None:
+        return {"suggestions": [], "prefix": ""}
+    return result
+
+
+async def _suggest_via_neko_search(q: str, limit: int) -> dict | None:
+    """Call neko-search /suggest API. Returns response dict or None on failure."""
+    import logging
+
+    from app.utils.http_client import make_neko_search_client
+
+    logger = logging.getLogger(__name__)
+    base = settings.neko_search_base_url.rstrip("/")
+    try:
+        async with make_neko_search_client() as client:
+            resp = await client.get(f"{base}/suggest", params={"q": q, "limit": limit})
+            resp.raise_for_status()
+            return resp.json()
+    except Exception:
+        logger.warning("neko-search suggest unavailable", exc_info=True)
+        return None
+
+
 async def _search_hashtags(db: AsyncSession, q: str, limit: int) -> list[dict]:
     """Search hashtags by name."""
     pattern = f"%{_escape_like(q.lower())}%"
