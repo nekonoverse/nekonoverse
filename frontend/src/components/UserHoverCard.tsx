@@ -1,6 +1,7 @@
-import { createSignal, onCleanup, Show } from "solid-js";
+import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { getAccount, followAccount, unfollowAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { getAccount, followAccount, unfollowAccount, blockAccount, muteAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { getLists, addListAccounts, type ListInfo } from "@nekonoverse/ui/api/lists";
 import { isFollowing, addFollowedId, removeFollowedId } from "@nekonoverse/ui/stores/followedUsers";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -36,6 +37,11 @@ export default function UserHoverCard(props: Props) {
   const [account, setAccount] = createSignal<Account | null>(null);
   const [followLoading, setFollowLoading] = createSignal(false);
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
+  const [moreOpen, setMoreOpen] = createSignal(false);
+  const [showAddToList, setShowAddToList] = createSignal(false);
+  const [lists, setLists] = createSignal<ListInfo[]>([]);
+  const [selectedListId, setSelectedListId] = createSignal("");
+  const [addToListLoading, setAddToListLoading] = createSignal(false);
   let showTimer: number | undefined;
   let hideTimer: number | undefined;
   let longPressTimer: number | undefined;
@@ -197,6 +203,52 @@ export default function UserHoverCard(props: Props) {
     setShowUnfollowModal(false);
   };
 
+  const handleBlock = async () => {
+    setMoreOpen(false);
+    if (!confirm(t("block.confirmBlock"))) return;
+    try { await blockAccount(props.actorId); } catch {}
+  };
+
+  const handleMute = async () => {
+    setMoreOpen(false);
+    if (!confirm(t("block.confirmMute"))) return;
+    try { await muteAccount(props.actorId); } catch {}
+  };
+
+  const handleAddToList = async () => {
+    setMoreOpen(false);
+    setShowAddToList(true);
+    try { const data = await getLists(); setLists(data); } catch {}
+  };
+
+  const handleAddToListConfirm = async () => {
+    const listId = selectedListId();
+    if (!listId) return;
+    setAddToListLoading(true);
+    try {
+      await addListAccounts(listId, [props.actorId]);
+      setShowAddToList(false);
+      setSelectedListId("");
+    } catch {}
+    setAddToListLoading(false);
+  };
+
+  // Close more menu on outside click
+  const handleDocClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    if (!target.closest(".hover-card-more-menu")) {
+      setMoreOpen(false);
+    }
+  };
+  createEffect(() => {
+    if (moreOpen()) {
+      document.addEventListener("click", handleDocClick);
+    } else {
+      document.removeEventListener("click", handleDocClick);
+    }
+  });
+  onCleanup(() => document.removeEventListener("click", handleDocClick));
+
   return (
     <span
       class="hover-card-wrapper"
@@ -288,6 +340,16 @@ export default function UserHoverCard(props: Props) {
                           {t("profile.following")}
                         </button>
                       </Show>
+                      <div class="hover-card-more-menu">
+                        <button class="hover-card-more-btn" onClick={(e) => { e.stopPropagation(); setMoreOpen(!moreOpen()); }}>···</button>
+                        <Show when={moreOpen()}>
+                          <div class="hover-card-more-dropdown">
+                            <button class="hover-card-more-item" onClick={(e) => { e.stopPropagation(); handleMute(); }}>{t("block.mute")}</button>
+                            <button class="hover-card-more-item hover-card-more-danger" onClick={(e) => { e.stopPropagation(); handleBlock(); }}>{t("block.block")}</button>
+                            <button class="hover-card-more-item" onClick={(e) => { e.stopPropagation(); handleAddToList(); }}>{t("list.addToList" as any)}</button>
+                          </div>
+                        </Show>
+                      </div>
                     </div>
                   </Show>
                 </>
@@ -316,6 +378,32 @@ export default function UserHoverCard(props: Props) {
               >
                 {t("profile.unfollow")}
               </button>
+            </div>
+          </div>
+        </div>
+      </Show>
+
+      {/* Add to list modal */}
+      <Show when={showAddToList()}>
+        <div class="modal-overlay" onClick={() => setShowAddToList(false)}>
+          <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>
+            <div class="modal-header">
+              <h3>{t("list.addToList" as any)}</h3>
+              <button class="modal-close" onClick={() => setShowAddToList(false)}>✕</button>
+            </div>
+            <div style="padding: 16px">
+              <Show when={lists().length > 0} fallback={<p>{t("list.noLists" as any)}</p>}>
+                <select class="modal-select" value={selectedListId()} onChange={(e) => setSelectedListId(e.target.value)}>
+                  <option value="">{t("list.selectList" as any)}</option>
+                  <For each={lists()}>{(l) => <option value={l.id}>{l.title}</option>}</For>
+                </select>
+                <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end">
+                  <button class="btn btn-small" onClick={() => setShowAddToList(false)}>{t("common.cancel")}</button>
+                  <button class="btn btn-small btn-primary" disabled={!selectedListId() || addToListLoading()} onClick={handleAddToListConfirm}>
+                    {t("common.add" as any)}
+                  </button>
+                </div>
+              </Show>
             </div>
           </div>
         </div>
