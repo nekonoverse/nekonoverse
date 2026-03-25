@@ -3,7 +3,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
-from app.dependencies import get_db, get_optional_user
+from app.dependencies import get_current_user, get_db
 from app.models.actor import Actor
 from app.models.hashtag import Hashtag
 from app.models.note import Note
@@ -24,10 +24,10 @@ async def search(
     type: str | None = Query(default=None, alias="type"),
     resolve: bool = False,
     limit: int = Query(default=20, ge=1, le=40),
-    user: User | None = Depends(get_optional_user),
+    user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Unified search across accounts, statuses, and hashtags."""
+    """Unified search across accounts, statuses, and hashtags (auth required)."""
     accounts = []
     statuses = []
     hashtags = []
@@ -40,7 +40,7 @@ async def search(
         accounts = await _search_accounts(db, q, resolve, limit)
 
     if search_statuses:
-        actor_id = user.actor_id if user else None
+        actor_id = user.actor_id
         statuses = await _search_statuses(db, q, limit, actor_id, resolve)
 
     if search_hashtags:
@@ -216,8 +216,9 @@ async def _fetch_notes_by_ids(db: AsyncSession, note_id_strs: list[str]) -> list
 async def suggest(
     q: str = Query(min_length=1),
     limit: int = Query(default=10, ge=1, le=50),
+    _user: User = Depends(get_current_user),
 ):
-    """Proxy suggest requests to neko-search."""
+    """Proxy suggest requests to neko-search (auth required)."""
     if not settings.neko_search_enabled:
         return {"suggestions": [], "prefix": ""}
 
