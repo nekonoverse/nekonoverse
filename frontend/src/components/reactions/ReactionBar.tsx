@@ -366,7 +366,7 @@ export default function ReactionBar(props: Props) {
                         class="reacted-by-item"
                         onClick={() => { setHoverGroup(null); navigate(`/${handle}`); }}
                       >
-                        <img class="reacted-by-avatar" src={ru.actor.avatar_url || defaultAvatar()} alt="" />
+                        <img class="reacted-by-avatar" src={ru.actor.avatar || defaultAvatar()} alt="" />
                         <div class="reacted-by-names">
                           <span class="reacted-by-display">{ru.actor.display_name || ru.actor.username}</span>
                           <span class="reacted-by-handle">{handle}</span>
@@ -446,7 +446,7 @@ export default function ReactionBar(props: Props) {
                     >
                       <img
                         class="reacted-by-avatar"
-                        src={ru.actor.avatar_url || defaultAvatar()}
+                        src={ru.actor.avatar || defaultAvatar()}
                         alt=""
                       />
                       <div class="reacted-by-names">
