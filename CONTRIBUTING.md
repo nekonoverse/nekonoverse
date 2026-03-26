@@ -41,7 +41,7 @@ Nekonoverseへの貢献に興味を持っていただきありがとうござい
 
 必要なものは **Docker & Docker Compose** のみです。
 
-詳細なセットアップ手順は[開発環境ドキュメント](https://nananek.github.io/nekonoverse/development/)を参照してください。
+詳細なセットアップ手順は[開発環境ドキュメント](https://nekonoverse.github.io/nekonoverse/development/)を参照してください。
 
 ```bash
 # リポジトリをフォーク & クローン
@@ -199,7 +199,7 @@ DBスキーマを変更する場合:
 
 フロントエンドは日本語 (ja)、英語 (en)、ねこ語 (neko) の3言語に対応しています。
 
-新しい言語の追加方法は[i18nドキュメント](https://nananek.github.io/nekonoverse/i18n/)を参照してください。
+新しい言語の追加方法は[i18nドキュメント](https://nekonoverse.github.io/nekonoverse/i18n/)を参照してください。
 
 基本的な手順:
 

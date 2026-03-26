@@ -565,7 +565,7 @@
 
 ---
 
-## [v0.5.2](https://github.com/nananek/nekonoverse/releases/tag/v0.5.2) — 2026-03-08
+## [v0.5.2](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.5.2) — 2026-03-08
 
 ### 追加
 
@@ -595,7 +595,7 @@
 
 ---
 
-## [v0.4.0](https://github.com/nananek/nekonoverse/releases/tag/v0.4.0) — 2026-03-08
+## [v0.4.0](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.4.0) — 2026-03-08
 
 ### 追加
 
@@ -617,7 +617,7 @@
 
 ---
 
-## [v0.3.0](https://github.com/nananek/nekonoverse/releases/tag/v0.3.0) — 2026-03-07
+## [v0.3.0](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.3.0) — 2026-03-07
 
 ### 変更
 
@@ -630,7 +630,7 @@
 
 ---
 
-## [v0.2.0](https://github.com/nananek/nekonoverse/releases/tag/v0.2.0) — 2026-03-07
+## [v0.2.0](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.2.0) — 2026-03-07
 
 ### 追加
 
@@ -653,7 +653,7 @@
 
 ---
 
-## [v0.1.2](https://github.com/nananek/nekonoverse/releases/tag/v0.1.2) — 2026-03-03
+## [v0.1.2](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.1.2) — 2026-03-03
 
 ### 追加
 
@@ -664,7 +664,7 @@
 
 ---
 
-## [v0.0.1](https://github.com/nananek/nekonoverse/releases/tag/v0.0.1) — 2026-03-03
+## [v0.0.1](https://github.com/nekonoverse/nekonoverse/releases/tag/v0.0.1) — 2026-03-03
 
 ### 初回リリース
 
