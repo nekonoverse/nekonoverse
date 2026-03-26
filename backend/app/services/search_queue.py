@@ -104,14 +104,18 @@ async def _retry_or_dead(job: dict, error: str) -> None:
 
     if job["attempts"] >= MAX_ATTEMPTS:
         await valkey_client.lpush(DEAD_KEY, json.dumps(job))
-        logger.warning("neko-search job dead-lettered after %d attempts: %s",
-                       job["attempts"], error)
+        logger.warning(
+            "neko-search job dead-lettered after %d attempts: %s", job["attempts"], error
+        )
     else:
-        delay = min(30 * (2 ** job["attempts"]), 3600)
+        import random
+
+        # L-3: ジッタを追加してthundering herdを防止
+        base_delay = min(30 * (2 ** job["attempts"]), 3600)
+        delay = base_delay * (0.5 + random.random())
         run_at = time.time() + delay
         await valkey_client.zadd(DELAYED_KEY, {json.dumps(job): run_at})
-        logger.info("neko-search job retry #%d in %ds: %s",
-                    job["attempts"], delay, error)
+        logger.info("neko-search job retry #%d in %ds: %s", job["attempts"], delay, error)
 
 
 async def _promote_delayed() -> int:
@@ -130,6 +134,7 @@ async def _update_heartbeat() -> None:
     """Update neko-search worker heartbeat."""
     try:
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         await valkey_client.set(HEARTBEAT_KEY, now, ex=30)
     except Exception:
@@ -151,7 +156,8 @@ async def run_search_index_loop() -> None:
             try:
                 job = json.loads(raw)
             except json.JSONDecodeError:
-                logger.warning("Invalid neko-search job JSON: %s", raw[:200])
+                # L-5: 生データではなく長さのみログ出力
+                logger.warning("Invalid neko-search job JSON (length=%d)", len(raw))
                 return
             try:
                 await _process_job(job)

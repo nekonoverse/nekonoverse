@@ -1,3 +1,30 @@
+## [20260326-4](https://github.com/nekonoverse/nekonoverse/releases/tag/20260326-4) — 2026-03-26
+
+### セキュリティ
+
+- **OAuth スコープ細粒度チェック** — statuses/accounts/lists/bookmarks/favourites/follows の各エンドポイントに `require_oauth_scope` を追加 (#890)
+- **SSE 接続数制限** — IP あたり最大 10、ユーザーあたり最大 5 の同時 SSE 接続制限を追加 (#890)
+- **AP Create attributedTo/actor ドメイン検証** — なりすまし防止のためドメイン一致を検証 (#890)
+- **Recovery Code タイミング攻撃対策** — 全コードに対して bcrypt 照合を実行 (#890)
+- **proxy_unsubscribe 競合状態修正** — SELECT FOR UPDATE で並行リクエストの競合を防止 (#890)
+- **パスワードポリシー強化** — 2 種類以上の文字クラス必須 + よくあるパスワードのブラックリスト (#890)
+- **システムアカウント password_hash を bcrypt 化** — DB 漏洩時の判別困難化 (#890)
+- **システムアクター ID キャッシュを Valkey 共有化** — マルチワーカー間での一貫性を確保 (#890)
+
+### 追加
+
+- **フレーズ検索** — 空白なしクエリでトークン連接チェック。位置情報付きインデックスに拡張 (#888, #889)
+
+### 修正
+
+- **リスト API UUID バリデーション** — 不正な UUID に 422 エラーを返すように修正 (#890)
+- **replies_policy 検証** — サービス層で有効値チェックを追加 (#890)
+- **リトライジッタ追加** — face-detect/neko-search キューの thundering herd 防止 (#890)
+- **ログセキュリティ** — 生データではなくデータ長のみをログ出力 (#890)
+- **Digest 検証強化** — 空の base64 値を明示的に拒否、タイミングセーフ比較 (#890)
+
+---
+
 ## [20260326-3](https://github.com/nekonoverse/nekonoverse/releases/tag/20260326-3) — 2026-03-26
 
 ### セキュリティ

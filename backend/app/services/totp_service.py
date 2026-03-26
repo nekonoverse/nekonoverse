@@ -82,8 +82,13 @@ def verify_recovery_code(
     code: str,
     hashed_codes: list[str],
 ) -> tuple[bool, list[str]]:
+    # M-2: タイミング攻撃対策 -- 全コードに対してbcrypt照合を実行
+    matched_index: int | None = None
     for i, hashed in enumerate(hashed_codes):
         if _bcrypt.checkpw(code.encode(), hashed.encode()):
-            remaining = hashed_codes[:i] + hashed_codes[i + 1 :]
-            return True, remaining
+            if matched_index is None:
+                matched_index = i
+    if matched_index is not None:
+        remaining = hashed_codes[:matched_index] + hashed_codes[matched_index + 1 :]
+        return True, remaining
     return False, hashed_codes

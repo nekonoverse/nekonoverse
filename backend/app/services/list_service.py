@@ -47,10 +47,11 @@ async def get_list(db: AsyncSession, list_id: uuid.UUID) -> List | None:
 
 
 async def get_user_lists(db: AsyncSession, user_id: uuid.UUID) -> list[List]:
-    result = await db.execute(
-        select(List).where(List.user_id == user_id).order_by(List.created_at)
-    )
+    result = await db.execute(select(List).where(List.user_id == user_id).order_by(List.created_at))
     return list(result.scalars().all())
+
+
+_VALID_REPLIES_POLICIES = frozenset({"followed", "list", "none"})
 
 
 async def update_list(
@@ -64,6 +65,12 @@ async def update_list(
     if title is not None:
         lst.title = title
     if replies_policy is not None:
+        # L-2: サービス層でもreplies_policyを検証
+        if replies_policy not in _VALID_REPLIES_POLICIES:
+            raise ValueError(
+                f"Invalid replies_policy: {replies_policy}. "
+                f"Must be one of: {', '.join(sorted(_VALID_REPLIES_POLICIES))}"
+            )
         lst.replies_policy = replies_policy
     if exclusive is not None:
         lst.exclusive = exclusive
@@ -148,21 +155,13 @@ async def remove_list_member(
     _invalidate_list_cache(lst.id)
 
 
-async def get_list_member_ids(
-    db: AsyncSession, list_id: uuid.UUID
-) -> list[uuid.UUID]:
-    result = await db.execute(
-        select(ListMember.actor_id).where(ListMember.list_id == list_id)
-    )
+async def get_list_member_ids(db: AsyncSession, list_id: uuid.UUID) -> list[uuid.UUID]:
+    result = await db.execute(select(ListMember.actor_id).where(ListMember.list_id == list_id))
     return list(result.scalars().all())
 
 
-async def is_actor_in_any_list(
-    db: AsyncSession, actor_id: uuid.UUID
-) -> bool:
-    result = await db.execute(
-        select(exists().where(ListMember.actor_id == actor_id))
-    )
+async def is_actor_in_any_list(db: AsyncSession, actor_id: uuid.UUID) -> bool:
+    result = await db.execute(select(exists().where(ListMember.actor_id == actor_id)))
     return result.scalar() or False
 
 
@@ -240,9 +239,7 @@ async def get_list_timeline(
 # ---------------------------------------------------------------------------
 
 
-async def get_exclusive_list_actor_ids(
-    db: AsyncSession, user_id: uuid.UUID
-) -> set[uuid.UUID]:
+async def get_exclusive_list_actor_ids(db: AsyncSession, user_id: uuid.UUID) -> set[uuid.UUID]:
     """Get actor IDs in exclusive lists owned by user (for home TL exclusion)."""
     result = await db.execute(
         select(ListMember.actor_id)
@@ -252,13 +249,9 @@ async def get_exclusive_list_actor_ids(
     return set(result.scalars().all())
 
 
-async def get_list_ids_for_actor(
-    db: AsyncSession, actor_id: uuid.UUID
-) -> list[uuid.UUID]:
+async def get_list_ids_for_actor(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
     """Get all list IDs containing the given actor (for streaming dispatch)."""
-    result = await db.execute(
-        select(ListMember.list_id).where(ListMember.actor_id == actor_id)
-    )
+    result = await db.execute(select(ListMember.list_id).where(ListMember.actor_id == actor_id))
     return list(result.scalars().all())
 
 

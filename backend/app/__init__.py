@@ -1,4 +1,4 @@
-__version__ = "20260326-3"
+__version__ = "20260326-4"
 
 
 def _resolve_version() -> str:

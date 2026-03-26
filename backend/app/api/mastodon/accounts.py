@@ -6,21 +6,24 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mastodon.statuses import _to_mastodon_datetime
-from app.dependencies import get_current_user, get_db, get_optional_user
+from app.config import settings
+from app.dependencies import get_current_user, get_db, get_optional_user, require_oauth_scope
 from app.models.actor import Actor
 from app.models.follow import Follow
 from app.models.note import Note
 from app.models.user import User
 from app.services.follow_service import follow_actor, get_follow_counts, unfollow_actor
 from app.services.note_service import get_statuses_count
-from app.config import settings
 from app.utils.media_proxy import media_proxy_url
 
 router = APIRouter(prefix="/api/v1/accounts", tags=["accounts"])
 relationships_router = APIRouter(prefix="/api/v1", tags=["relationships"])
 
 
-@router.post("/{actor_id}/follow")
+@router.post(
+    "/{actor_id}/follow",
+    dependencies=[Depends(require_oauth_scope("write:follows"))],
+)
 async def follow(
     actor_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -42,7 +45,10 @@ async def follow(
     return {"ok": True}
 
 
-@router.post("/{actor_id}/unfollow")
+@router.post(
+    "/{actor_id}/unfollow",
+    dependencies=[Depends(require_oauth_scope("write:follows"))],
+)
 async def unfollow(
     actor_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -132,7 +138,10 @@ async def _actor_to_account(
 ) -> dict:
     import re
 
-    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or f"{settings.server_url}/default-avatar.svg"
+    avatar = (
+        media_proxy_url(actor.avatar_url, variant="avatar")
+        or f"{settings.server_url}/default-avatar.svg"
+    )
     avatar_static = media_proxy_url(actor.avatar_url, variant="avatar", static=True) or avatar
     header = media_proxy_url(actor.header_url) or ""
     data = {
@@ -351,11 +360,13 @@ async def get_account_statuses(
         else:
             # Check if current user follows this actor
             follow_check = await db.execute(
-                select(Follow.id).where(
+                select(Follow.id)
+                .where(
                     Follow.follower_id == user.actor_id,
                     Follow.following_id == actor_id,
                     Follow.accepted.is_(True),
-                ).limit(1)
+                )
+                .limit(1)
             )
             if follow_check.scalar_one_or_none() is not None:
                 visible = ["public", "unlisted", "followers"]
@@ -411,9 +422,7 @@ async def get_account_statuses(
 
     if max_id:
         # Cursor-based pagination: get the published timestamp of max_id note
-        cursor_result = await db.execute(
-            select(Note.published).where(Note.id == max_id)
-        )
+        cursor_result = await db.execute(select(Note.published).where(Note.id == max_id))
         cursor_ts = cursor_result.scalar_one_or_none()
         if cursor_ts:
             query = query.where(Note.published < cursor_ts)
@@ -690,21 +699,23 @@ async def get_relationships_batch(
         following = outgoing.accepted if outgoing else False
         requested = (not outgoing.accepted) if outgoing else False
 
-        results.append({
-            "id": str(aid),
-            "following": following,
-            "followed_by": aid in followed_by_ids,
-            "blocking": aid in blocked_ids,
-            "muting": aid in muted_ids,
-            "requested": requested,
-            "showing_reblogs": True,
-            "notifying": False,
-            "domain_blocking": False,
-            "endorsed": False,
-            "muting_notifications": False,
-            "note": "",
-            "languages": None,
-        })
+        results.append(
+            {
+                "id": str(aid),
+                "following": following,
+                "followed_by": aid in followed_by_ids,
+                "blocking": aid in blocked_ids,
+                "muting": aid in muted_ids,
+                "requested": requested,
+                "showing_reblogs": True,
+                "notifying": False,
+                "domain_blocking": False,
+                "endorsed": False,
+                "muting_notifications": False,
+                "note": "",
+                "languages": None,
+            }
+        )
 
     return results
 
