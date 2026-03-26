@@ -235,11 +235,11 @@ async def test_has_real_local_follower_true_when_real_user(db):
 
 
 async def test_get_system_actor_ids(db):
-    # キャッシュをリセットしてテスト間の汚染を防止
-    from app.services import proxy_service
+    # Valkeyキャッシュをリセットしてテスト間の汚染を防止
+    from app.services.proxy_service import _SYSTEM_IDS_VALKEY_KEY
+    from app.valkey_client import valkey
 
-    proxy_service._system_actor_ids_cache = None
-    proxy_service._system_actor_ids_cached_at = 0
+    await valkey.delete(_SYSTEM_IDS_VALKEY_KEY)
 
     await ensure_system_accounts(db)
     ids = await get_system_actor_ids(db)
