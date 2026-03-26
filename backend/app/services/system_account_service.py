@@ -66,7 +66,7 @@ async def ensure_system_account(
     # M-4: bcryptハッシュを使用し、DB漏洩時にシステムアカウントと判別されにくくする
     import bcrypt as _bcrypt
 
-    _dummy_pw = secrets.token_urlsafe(64)
+    _dummy_pw = secrets.token_urlsafe(48)[:72]
     _pw_hash = _bcrypt.hashpw(_dummy_pw.encode(), _bcrypt.gensalt()).decode()
 
     user = User(
