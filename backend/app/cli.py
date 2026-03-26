@@ -139,8 +139,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
         print(f"Face-detect version: {detect_version}")
     else:
         print(
-            "Warning: Could not fetch face-detect version,"
-            " all undetected images will be processed."
+            "Warning: Could not fetch face-detect version, all undetected images will be processed."
         )
 
     concurrency = args.concurrency
@@ -196,9 +195,9 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
                     local_err += 1
                     print(f"\n  [error] {df.id}: {e}", file=sys.stderr)
         print(
-            f"\r  [{i}/{len(local_files)}] ok={local_ok}"
-            f" noface={local_noface} err={local_err}",
-            end="", flush=True,
+            f"\r  [{i}/{len(local_files)}] ok={local_ok} noface={local_noface} err={local_err}",
+            end="",
+            flush=True,
         )
     if local_files:
         print()
@@ -273,13 +272,16 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
         print(
             f"\r  [{done}/{len(remote_atts)}] ok={remote_ok}"
             f" noface={remote_noface} err={remote_err}",
-            end="", flush=True,
+            end="",
+            flush=True,
         )
     if remote_atts:
         print()
 
-    print(f"\nDone. Local: {local_ok} detected / {local_noface} noface / {local_err} errors. "
-          f"Remote: {remote_ok} detected / {remote_noface} noface / {remote_err} errors.")
+    print(
+        f"\nDone. Local: {local_ok} detected / {local_noface} noface / {local_err} errors. "
+        f"Remote: {remote_ok} detected / {remote_noface} noface / {remote_err} errors."
+    )
 
     await engine.dispose()
 
@@ -327,7 +329,8 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
             sys.exit(1)
 
         attachments = [
-            att for att in note.attachments
+            att
+            for att in note.attachments
             if (att.drive_file and (att.drive_file.mime_type or "") in image_mimes)
             or ((att.remote_mime_type or "") in image_mimes and att.remote_url)
         ]
@@ -414,10 +417,10 @@ async def _regenerate_icons(args: argparse.Namespace) -> None:
 
             # Download current server icon from S3
             print(f"Downloading current server icon: {icon_url}")
-            import httpx
+            # L-4: make_async_clientを使用してタイムアウトを確保
+            from app.utils.http_client import make_async_client
 
-            from app.utils.http_client import USER_AGENT
-            async with httpx.AsyncClient(headers={"User-Agent": USER_AGENT}) as client:
+            async with make_async_client(use_proxy=False, timeout=30.0) as client:
                 resp = await client.get(icon_url)
                 if resp.status_code != 200:
                     print(f"Error: Failed to download icon (HTTP {resp.status_code})")
@@ -475,7 +478,9 @@ async def _index_notes(args: argparse.Namespace) -> None:
     async with async_session() as db:
         total = (
             await db.execute(
-                select(func.count()).select_from(Note).where(
+                select(func.count())
+                .select_from(Note)
+                .where(
                     Note.deleted_at.is_(None),
                     Note.visibility == "public",
                 )
@@ -547,7 +552,9 @@ async def _train_search(args: argparse.Namespace) -> None:
     async with async_session() as db:
         total = (
             await db.execute(
-                select(func.count()).select_from(Note).where(
+                select(func.count())
+                .select_from(Note)
+                .where(
                     Note.deleted_at.is_(None),
                     Note.visibility == "public",
                 )
@@ -630,8 +637,10 @@ async def _train_search(args: argparse.Namespace) -> None:
         resp.raise_for_status()
         health = resp.json()
 
-    print(f"Health: model_loaded={health['model_loaded']}, "
-          f"vocab_size={health['vocab_size']}, doc_count={health['doc_count']}")
+    print(
+        f"Health: model_loaded={health['model_loaded']}, "
+        f"vocab_size={health['vocab_size']}, doc_count={health['doc_count']}"
+    )
     await engine.dispose()
 
 
@@ -654,7 +663,9 @@ def main() -> None:
         help="Run face detection on images needing detection",
     )
     detect_fp.add_argument(
-        "--concurrency", type=int, default=4,
+        "--concurrency",
+        type=int,
+        default=4,
         help="Max concurrent requests (default: 4)",
     )
 
@@ -665,15 +676,20 @@ def main() -> None:
     redetect.add_argument("note_id", type=str, help="Note ID (UUID)")
 
     sub.add_parser("index-notes", help="Bulk-index all public notes to neko-search")
-    train_search = sub.add_parser("train-search", help="Export corpus and trigger neko-search training")
+    train_search = sub.add_parser(
+        "train-search", help="Export corpus and trigger neko-search training"
+    )
     train_search.add_argument(
-        "--vocab-size", type=int, default=8000,
+        "--vocab-size",
+        type=int,
+        default=8000,
         help="SentencePiece vocabulary size (default: 8000)",
     )
 
     regen_icons = sub.add_parser("regenerate-icons", help="Regenerate favicon and PWA icons")
     regen_icons.add_argument(
-        "--from-default", action="store_true",
+        "--from-default",
+        action="store_true",
         help="Use bundled default icon instead of current server icon",
     )
 

@@ -1,6 +1,7 @@
 """SSE streaming endpoints for real-time timeline and notification updates."""
 
 import asyncio
+import collections
 import json
 import re
 
@@ -16,7 +17,13 @@ router = APIRouter(prefix="/api/v1/streaming", tags=["streaming"])
 
 KEEPALIVE_INTERVAL = 30  # seconds
 
-_EVENT_TYPE_RE = re.compile(r'^[a-zA-Z0-9_.]+$')
+_EVENT_TYPE_RE = re.compile(r"^[a-zA-Z0-9_.]+$")
+
+# H-2: IPあたり・ユーザーあたりのSSE同時接続数制限
+MAX_SSE_PER_IP = 10
+MAX_SSE_PER_USER = 5
+_sse_ip_counts: dict[str, int] = collections.defaultdict(int)
+_sse_user_counts: dict[str, int] = collections.defaultdict(int)
 
 
 async def _event_stream(request: Request, channels: list[str]):
@@ -41,9 +48,31 @@ async def _event_stream(request: Request, channels: list[str]):
         await pubsub_hub.unsubscribe(queue, channels)
 
 
-def _sse_response(request: Request, channels: list[str]):
+def _sse_response(request: Request, channels: list[str], *, user_id: str | None = None):
+    client_ip = request.client.host if request.client else "unknown"
+    if _sse_ip_counts[client_ip] >= MAX_SSE_PER_IP:
+        raise HTTPException(status_code=429, detail="Too many SSE connections")
+    if user_id and _sse_user_counts[user_id] >= MAX_SSE_PER_USER:
+        raise HTTPException(status_code=429, detail="Too many SSE connections")
+
+    async def _tracked_stream():
+        _sse_ip_counts[client_ip] += 1
+        if user_id:
+            _sse_user_counts[user_id] += 1
+        try:
+            async for chunk in _event_stream(request, channels):
+                yield chunk
+        finally:
+            _sse_ip_counts[client_ip] -= 1
+            if _sse_ip_counts[client_ip] <= 0:
+                _sse_ip_counts.pop(client_ip, None)
+            if user_id:
+                _sse_user_counts[user_id] -= 1
+                if _sse_user_counts[user_id] <= 0:
+                    _sse_user_counts.pop(user_id, None)
+
     return StreamingResponse(
-        _event_stream(request, channels),
+        _tracked_stream(),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
@@ -72,7 +101,7 @@ async def stream_user(
     user_lists = await get_user_lists(db, user.id)
     for lst in user_lists:
         channels.append(f"timeline:list:{lst.id}")
-    return _sse_response(request, channels)
+    return _sse_response(request, channels, user_id=str(user.id))
 
 
 @router.get("/list")
@@ -94,7 +123,7 @@ async def stream_list(
     lst = await get_list_(db, list_id)
     if not lst or lst.user_id != user.id:
         raise HTTPException(status_code=404, detail="List not found")
-    return _sse_response(request, [f"timeline:list:{list}"])
+    return _sse_response(request, [f"timeline:list:{list}"], user_id=str(user.id))
 
 
 @router.get("/public")

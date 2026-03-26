@@ -5,12 +5,11 @@ import uuid
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, require_oauth_scope
 from app.models.user import User
 from app.schemas.list import (
     ListCreateRequest,
     ListMemberAddRequest,
-    ListResponse,
     ListUpdateRequest,
 )
 from app.services.list_service import (
@@ -43,7 +42,10 @@ async def _get_owned_list(db: AsyncSession, list_id: uuid.UUID, user: User):
     return lst
 
 
-@router.get("")
+@router.get(
+    "",
+    dependencies=[Depends(require_oauth_scope("read:lists"))],
+)
 async def get_lists(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
@@ -52,7 +54,10 @@ async def get_lists(
     return [_list_response(lst) for lst in lists]
 
 
-@router.post("")
+@router.post(
+    "",
+    dependencies=[Depends(require_oauth_scope("write:lists"))],
+)
 async def create_list_endpoint(
     body: ListCreateRequest,
     user: User = Depends(get_current_user),
@@ -79,7 +84,10 @@ async def get_list_endpoint(
     return _list_response(lst)
 
 
-@router.put("/{list_id}")
+@router.put(
+    "/{list_id}",
+    dependencies=[Depends(require_oauth_scope("write:lists"))],
+)
 async def update_list_endpoint(
     list_id: uuid.UUID,
     body: ListUpdateRequest,
@@ -98,7 +106,10 @@ async def update_list_endpoint(
     return _list_response(lst)
 
 
-@router.delete("/{list_id}")
+@router.delete(
+    "/{list_id}",
+    dependencies=[Depends(require_oauth_scope("write:lists"))],
+)
 async def delete_list_endpoint(
     list_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -132,7 +143,10 @@ async def get_list_accounts(
     return [await _actor_to_account(a, db=db) for a in actors]
 
 
-@router.post("/{list_id}/accounts")
+@router.post(
+    "/{list_id}/accounts",
+    dependencies=[Depends(require_oauth_scope("write:lists"))],
+)
 async def add_list_accounts(
     list_id: uuid.UUID,
     body: ListMemberAddRequest,
@@ -144,11 +158,14 @@ async def add_list_accounts(
 
     from app.models.actor import Actor
 
+    # L-1: 不正UUIDに対して422エラーを返す
     for account_id in body.account_ids:
         try:
-            aid = uuid.UUID(account_id)
+            uuid.UUID(account_id)
         except (ValueError, AttributeError):
-            continue
+            raise HTTPException(status_code=422, detail=f"Invalid account ID: {account_id}")
+    for account_id in body.account_ids:
+        aid = uuid.UUID(account_id)
         result = await db.execute(sel(Actor).where(Actor.id == aid))
         actor = result.scalar_one_or_none()
         if actor:
@@ -157,7 +174,10 @@ async def add_list_accounts(
     return {}
 
 
-@router.delete("/{list_id}/accounts")
+@router.delete(
+    "/{list_id}/accounts",
+    dependencies=[Depends(require_oauth_scope("write:lists"))],
+)
 async def remove_list_accounts(
     list_id: uuid.UUID,
     body: ListMemberAddRequest,
@@ -169,11 +189,14 @@ async def remove_list_accounts(
 
     from app.models.actor import Actor
 
+    # L-1: 不正UUIDに対して422エラーを返す
     for account_id in body.account_ids:
         try:
-            aid = uuid.UUID(account_id)
+            uuid.UUID(account_id)
         except (ValueError, AttributeError):
-            continue
+            raise HTTPException(status_code=422, detail=f"Invalid account ID: {account_id}")
+    for account_id in body.account_ids:
+        aid = uuid.UUID(account_id)
         result = await db.execute(sel(Actor).where(Actor.id == aid))
         actor = result.scalar_one_or_none()
         if actor:

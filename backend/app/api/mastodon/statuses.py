@@ -19,7 +19,8 @@ def _to_mastodon_datetime(dt: datetime | None) -> str:
         dt = dt.replace(tzinfo=timezone.utc)
     return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
-from app.dependencies import get_current_user, get_db, get_optional_user
+
+from app.dependencies import get_current_user, get_db, get_optional_user, require_oauth_scope
 from app.models.note import Note
 from app.models.user import User
 from app.schemas.note import (
@@ -170,9 +171,7 @@ async def note_to_response(
         if reactions_map is not None:
             reblog_reactions = reactions_map.get(actual_reblog.id, [])
         elif db:
-            reblog_reactions = await get_reaction_summary(
-                db, actual_reblog.id, actor_id
-            )
+            reblog_reactions = await get_reaction_summary(db, actual_reblog.id, actor_id)
         reblog = await note_to_response(
             actual_reblog,
             reactions=reblog_reactions,
@@ -365,7 +364,10 @@ async def note_to_response(
 
     from app.config import settings as app_settings
 
-    avatar = media_proxy_url(actor.avatar_url, variant="avatar") or f"{app_settings.server_url}/default-avatar.svg"
+    avatar = (
+        media_proxy_url(actor.avatar_url, variant="avatar")
+        or f"{app_settings.server_url}/default-avatar.svg"
+    )
     header = media_proxy_url(actor.header_url) or ""
     acct = actor.username if not actor.domain else f"{actor.username}@{actor.domain}"
     actor_url = (
@@ -384,6 +386,7 @@ async def note_to_response(
                 sw, sw_ver, sw_name = cached
         elif db:
             from app.utils.nodeinfo import get_domain_software_info
+
             sw, sw_ver, sw_name = await get_domain_software_info(actor.domain)
 
     actor_resp = NoteActorResponse(
@@ -422,9 +425,7 @@ async def note_to_response(
     elif db:
         from app.models.preview_card import PreviewCard
 
-        card_result = await db.execute(
-            select(PreviewCard).where(PreviewCard.note_id == note.id)
-        )
+        card_result = await db.execute(select(PreviewCard).where(PreviewCard.note_id == note.id))
         card_obj = card_result.scalar_one_or_none()
         if card_obj:
             card_resp = _preview_card_to_response(card_obj)
@@ -585,9 +586,7 @@ async def notes_to_responses(
     hashtags_cache = await get_hashtags_for_notes(db, unique_ids)
 
     # リノート/引用ノートのリアクションもバッチ取得
-    inner_ids = [
-        nid for nid in unique_ids if nid not in reactions_map
-    ]
+    inner_ids = [nid for nid in unique_ids if nid not in reactions_map]
     if inner_ids:
         inner_reactions = await get_reaction_summaries(db, inner_ids, actor_id)
         reactions_map.update(inner_reactions)
@@ -624,9 +623,7 @@ async def notes_to_responses(
     # Batch-fetch preview cards for all notes
     from app.models.preview_card import PreviewCard
 
-    cards_result = await db.execute(
-        select(PreviewCard).where(PreviewCard.note_id.in_(unique_ids))
-    )
+    cards_result = await db.execute(select(PreviewCard).where(PreviewCard.note_id.in_(unique_ids)))
     cards_cache: dict = {c.note_id: c for c in cards_result.scalars().all()}
 
     result = []
@@ -649,7 +646,12 @@ async def notes_to_responses(
     return result
 
 
-@router.post("", response_model=NoteResponse, status_code=201)
+@router.post(
+    "",
+    response_model=NoteResponse,
+    status_code=201,
+    dependencies=[Depends(require_oauth_scope("write:statuses"))],
+)
 async def create_status(
     body: NoteCreateRequest,
     user: User = Depends(get_current_user),
@@ -715,7 +717,11 @@ async def get_status(
     return await note_to_response(note, reactions, db=db, actor_id=actor_id)
 
 
-@router.put("/{note_id}", response_model=NoteResponse)
+@router.put(
+    "/{note_id}",
+    response_model=NoteResponse,
+    dependencies=[Depends(require_oauth_scope("write:statuses"))],
+)
 async def edit_status(
     note_id: uuid.UUID,
     body: NoteEditRequest,
@@ -814,7 +820,9 @@ async def get_status_history(
 
 
 async def _batch_filter_visible(
-    db: AsyncSession, notes: list, actor_id: uuid.UUID | None,
+    db: AsyncSession,
+    notes: list,
+    actor_id: uuid.UUID | None,
 ) -> list:
     """C-2: ノートリストの可視性をバッチチェックしてフィルタ。"""
     if not notes or actor_id is None:
@@ -822,8 +830,7 @@ async def _batch_filter_visible(
 
     # followers可視性のノートのactor_idを収集し、フォロー状態を一括チェック
     followers_actor_ids = {
-        n.actor_id for n in notes
-        if n.visibility == "followers" and n.actor_id != actor_id
+        n.actor_id for n in notes if n.visibility == "followers" and n.actor_id != actor_id
     }
     followed_ids: set = set()
     if followers_actor_ids:
@@ -875,9 +882,7 @@ async def get_status_context(
         seen_ids.add(current_id)
         ancestor_ids.append(current_id)
         row = await db.execute(
-            select(Note.in_reply_to_id).where(
-                Note.id == current_id, Note.deleted_at.is_(None)
-            )
+            select(Note.in_reply_to_id).where(Note.id == current_id, Note.deleted_at.is_(None))
         )
         current_id = row.scalar_one_or_none()
     ancestor_ids.reverse()
@@ -942,7 +947,10 @@ async def get_status_context(
     )
 
 
-@router.post("/{note_id}/react/{emoji}")
+@router.post(
+    "/{note_id}/react/{emoji}",
+    dependencies=[Depends(require_oauth_scope("write:favourites"))],
+)
 async def react_to_note(
     note_id: uuid.UUID,
     emoji: str,
@@ -979,9 +987,10 @@ async def react_to_note(
     return {"ok": True}
 
 
-
-
-@router.post("/{note_id}/unreact/{emoji}")
+@router.post(
+    "/{note_id}/unreact/{emoji}",
+    dependencies=[Depends(require_oauth_scope("write:favourites"))],
+)
 async def unreact_to_note(
     note_id: uuid.UUID,
     emoji: str,
@@ -1002,7 +1011,11 @@ async def unreact_to_note(
     return {"ok": True}
 
 
-@router.put("/{note_id}/emoji_reactions/{emoji}", response_model=NoteResponse)
+@router.put(
+    "/{note_id}/emoji_reactions/{emoji}",
+    response_model=NoteResponse,
+    dependencies=[Depends(require_oauth_scope("write:favourites"))],
+)
 async def fedibird_react(
     note_id: uuid.UUID,
     emoji: str,
@@ -1043,7 +1056,11 @@ async def fedibird_react(
     )
 
 
-@router.delete("/{note_id}/emoji_reactions/{emoji}", response_model=NoteResponse)
+@router.delete(
+    "/{note_id}/emoji_reactions/{emoji}",
+    response_model=NoteResponse,
+    dependencies=[Depends(require_oauth_scope("write:favourites"))],
+)
 async def fedibird_unreact(
     note_id: uuid.UUID,
     emoji: str,
@@ -1074,7 +1091,11 @@ async def fedibird_unreact(
     )
 
 
-@router.post("/{note_id}/favourite", response_model=NoteResponse)
+@router.post(
+    "/{note_id}/favourite",
+    response_model=NoteResponse,
+    dependencies=[Depends(require_oauth_scope("write:favourites"))],
+)
 async def favourite_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -1111,7 +1132,11 @@ async def favourite_status(
     return await note_to_response(note, reactions, db=db, actor_id=user.actor_id)
 
 
-@router.post("/{note_id}/unfavourite", response_model=NoteResponse)
+@router.post(
+    "/{note_id}/unfavourite",
+    response_model=NoteResponse,
+    dependencies=[Depends(require_oauth_scope("write:favourites"))],
+)
 async def unfavourite_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -1241,7 +1266,12 @@ async def reacted_by(
     ]
 
 
-@router.post("/{note_id}/reblog", response_model=NoteResponse, status_code=200)
+@router.post(
+    "/{note_id}/reblog",
+    response_model=NoteResponse,
+    status_code=200,
+    dependencies=[Depends(require_oauth_scope("write:statuses"))],
+)
 async def reblog_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -1352,7 +1382,11 @@ async def reblog_status(
     return await note_to_response(reblog_note, reblog_note=original, db=db)
 
 
-@router.post("/{note_id}/unreblog", status_code=200)
+@router.post(
+    "/{note_id}/unreblog",
+    status_code=200,
+    dependencies=[Depends(require_oauth_scope("write:statuses"))],
+)
 async def unreblog_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -1403,7 +1437,10 @@ async def unreblog_status(
     return {"ok": True}
 
 
-@router.post("/{note_id}/bookmark")
+@router.post(
+    "/{note_id}/bookmark",
+    dependencies=[Depends(require_oauth_scope("write:bookmarks"))],
+)
 async def bookmark_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -1424,7 +1461,10 @@ async def bookmark_status(
     return {"ok": True}
 
 
-@router.post("/{note_id}/unbookmark")
+@router.post(
+    "/{note_id}/unbookmark",
+    dependencies=[Depends(require_oauth_scope("write:bookmarks"))],
+)
 async def unbookmark_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -1445,7 +1485,10 @@ async def unbookmark_status(
     return {"ok": True}
 
 
-@router.post("/{note_id}/pin")
+@router.post(
+    "/{note_id}/pin",
+    dependencies=[Depends(require_oauth_scope("write:statuses"))],
+)
 async def pin_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -1480,7 +1523,10 @@ async def pin_status(
     return {"ok": True}
 
 
-@router.post("/{note_id}/unpin")
+@router.post(
+    "/{note_id}/unpin",
+    dependencies=[Depends(require_oauth_scope("write:statuses"))],
+)
 async def unpin_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),
@@ -1518,7 +1564,11 @@ async def unpin_status(
     return {"ok": True}
 
 
-@router.delete("/{note_id}", status_code=204)
+@router.delete(
+    "/{note_id}",
+    status_code=204,
+    dependencies=[Depends(require_oauth_scope("write:statuses"))],
+)
 async def delete_status(
     note_id: uuid.UUID,
     user: User = Depends(get_current_user),

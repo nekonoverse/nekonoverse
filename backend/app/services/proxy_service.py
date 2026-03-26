@@ -90,11 +90,14 @@ async def proxy_unsubscribe(db: AsyncSession, target_actor: Actor) -> bool:
 
     proxy_actor = proxy_user.actor
 
+    # M-3: SELECT FOR UPDATEで競合状態を防止
     result = await db.execute(
-        select(Follow).where(
+        select(Follow)
+        .where(
             Follow.follower_id == proxy_actor.id,
             Follow.following_id == target_actor.id,
         )
+        .with_for_update()
     )
     follow = result.scalar_one_or_none()
     if not follow:
@@ -139,23 +142,35 @@ async def is_proxy_subscribed(db: AsyncSession, target_actor_id: uuid.UUID) -> b
     return result.scalar() or False
 
 
-_system_actor_ids_cache: set[uuid.UUID] | None = None
-_system_actor_ids_cached_at: float = 0
 _SYSTEM_IDS_TTL = 300  # 5 minutes
+_SYSTEM_IDS_VALKEY_KEY = "cache:system_actor_ids"
 
 
 async def get_system_actor_ids(db: AsyncSession) -> set[uuid.UUID]:
-    """Return the set of actor IDs belonging to system accounts (cached)."""
-    import time
+    """Return the set of actor IDs belonging to system accounts (Valkey cached)."""
+    import json
 
-    global _system_actor_ids_cache, _system_actor_ids_cached_at
-    now = time.monotonic()
-    if _system_actor_ids_cache is not None and now - _system_actor_ids_cached_at < _SYSTEM_IDS_TTL:
-        return _system_actor_ids_cache
+    from app.valkey_client import valkey
+
+    # M-5: Valkeyをキャッシュバックエンドに使用し、マルチワーカー間で共有
+    try:
+        cached = await valkey.get(_SYSTEM_IDS_VALKEY_KEY)
+        if cached:
+            return {uuid.UUID(id_str) for id_str in json.loads(cached)}
+    except Exception:
+        pass
+
     result = await db.execute(select(User.actor_id).where(User.is_system.is_(True)))
-    _system_actor_ids_cache = set(result.scalars().all())
-    _system_actor_ids_cached_at = now
-    return _system_actor_ids_cache
+    ids = set(result.scalars().all())
+    try:
+        await valkey.set(
+            _SYSTEM_IDS_VALKEY_KEY,
+            json.dumps([str(id_) for id_ in ids]),
+            ex=_SYSTEM_IDS_TTL,
+        )
+    except Exception:
+        pass
+    return ids
 
 
 async def has_real_local_follower(db: AsyncSession, remote_actor_id: uuid.UUID) -> bool:
