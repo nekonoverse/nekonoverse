@@ -49,6 +49,21 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     if not actor_ap_id:
         return
 
+    # M-1: attributedToとactivity actorのドメイン一致を検証
+    activity_actor = activity.get("actor", "")
+    if actor_ap_id and activity_actor:
+        from urllib.parse import urlparse as _urlparse
+
+        attr_domain = _urlparse(actor_ap_id).hostname
+        act_domain = _urlparse(activity_actor).hostname
+        if attr_domain and act_domain and attr_domain != act_domain:
+            logger.warning(
+                "attributedTo domain mismatch: attributedTo=%s actor=%s",
+                actor_ap_id,
+                activity_actor,
+            )
+            return
+
     # Resolve actor
     actor = await get_actor_by_ap_id(db, actor_ap_id)
     if not actor:

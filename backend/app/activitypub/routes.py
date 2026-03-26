@@ -152,9 +152,7 @@ async def get_followers_collection(
     items = [ap_id for (ap_id,) in result.all()]
     return Response(
         content=json.dumps(
-            render_ordered_collection_page(
-                f"{followers_url}?page=true", followers_url, items
-            )
+            render_ordered_collection_page(f"{followers_url}?page=true", followers_url, items)
         ),
         media_type=AP_CONTENT_TYPE,
     )
@@ -201,9 +199,7 @@ async def get_following_collection(
     items = [ap_id for (ap_id,) in result.all()]
     return Response(
         content=json.dumps(
-            render_ordered_collection_page(
-                f"{following_url}?page=true", following_url, items
-            )
+            render_ordered_collection_page(f"{following_url}?page=true", following_url, items)
         ),
         media_type=AP_CONTENT_TYPE,
     )
@@ -321,6 +317,9 @@ def _verify_digest(body: bytes, digest_header: str | None) -> bool:
     if not digest_header.startswith("SHA-256="):
         return False
     expected_b64 = digest_header[len("SHA-256=") :]
+    # L-7: 空のbase64値を明示的に拒否
+    if not expected_b64:
+        return False
     actual_hash = base64.b64encode(hashlib.sha256(body).digest()).decode()
     # L-6: タイミングセーフ比較
     return _hmac.compare_digest(actual_hash, expected_b64)
@@ -484,9 +483,11 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
             from app.models.user_block import UserBlock
 
             block_result = await db.execute(
-                select(UserBlock).where(
+                select(UserBlock)
+                .where(
                     UserBlock.target_id == remote_actor.id,
-                ).limit(1)
+                )
+                .limit(1)
             )
             if block_result.scalar_one_or_none():
                 logger.info("Rejected activity from user-blocked actor: %s", actor_id_str)

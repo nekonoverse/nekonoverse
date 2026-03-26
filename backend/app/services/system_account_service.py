@@ -63,9 +63,15 @@ async def ensure_system_account(
     db.add(actor)
 
     # システムアカウントはログイン不可のためランダムパスワードとダミーメールを使用
+    # M-4: bcryptハッシュを使用し、DB漏洩時にシステムアカウントと判別されにくくする
+    import bcrypt as _bcrypt
+
+    _dummy_pw = secrets.token_urlsafe(48)[:72]
+    _pw_hash = _bcrypt.hashpw(_dummy_pw.encode(), _bcrypt.gensalt()).decode()
+
     user = User(
         email=f"{username}@system.internal",
-        password_hash=secrets.token_hex(32),
+        password_hash=_pw_hash,
         actor_id=actor_id,
         role="admin",
         is_system=True,

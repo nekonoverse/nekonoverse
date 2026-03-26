@@ -141,8 +141,9 @@ async def enqueue_remote(note_id: uuid.UUID, attachment_ids: list[uuid.UUID]) ->
         "detect_version": _current_version,
     }
     await valkey_client.lpush(QUEUE_KEY, json.dumps(job))
-    logger.debug("Enqueued remote face-detect job for note %s (%d attachments)",
-                 note_id, len(attachment_ids))
+    logger.debug(
+        "Enqueued remote face-detect job for note %s (%d attachments)", note_id, len(attachment_ids)
+    )
 
 
 async def _process_local(job: dict) -> None:
@@ -157,9 +158,7 @@ async def _process_local(job: dict) -> None:
     detect_version = job.get("detect_version") or _current_version
 
     async with async_session() as db:
-        result = await db.execute(
-            select(DriveFile).where(DriveFile.id == drive_file_id)
-        )
+        result = await db.execute(select(DriveFile).where(DriveFile.id == drive_file_id))
         drive_file = result.scalar_one_or_none()
         if not drive_file:
             logger.warning("DriveFile %s not found, skipping", drive_file_id)
@@ -196,14 +195,18 @@ async def _retry_or_dead(job: dict, error: str) -> None:
 
     if job["attempts"] >= MAX_ATTEMPTS:
         await valkey_client.lpush(DEAD_KEY, json.dumps(job))
-        logger.warning("Face-detect job dead-lettered after %d attempts: %s",
-                       job["attempts"], error)
+        logger.warning(
+            "Face-detect job dead-lettered after %d attempts: %s", job["attempts"], error
+        )
     else:
-        delay = min(30 * (2 ** job["attempts"]), 3600)  # Max 1 hour
+        import random
+
+        # L-3: ジッタを追加してthundering herdを防止
+        base_delay = min(30 * (2 ** job["attempts"]), 3600)  # Max 1 hour
+        delay = base_delay * (0.5 + random.random())
         run_at = time.time() + delay
         await valkey_client.zadd(DELAYED_KEY, {json.dumps(job): run_at})
-        logger.info("Face-detect job retry #%d in %ds: %s",
-                    job["attempts"], delay, error)
+        logger.info("Face-detect job retry #%d in %ds: %s", job["attempts"], delay, error)
 
 
 async def _promote_delayed() -> int:
@@ -223,6 +226,7 @@ async def _update_heartbeat() -> None:
     """Update face-detect worker heartbeat."""
     try:
         from datetime import datetime, timezone
+
         now = datetime.now(timezone.utc).isoformat()
         await valkey_client.set(HEARTBEAT_KEY, now, ex=30)
     except Exception:
@@ -252,7 +256,8 @@ async def run_face_detect_loop() -> None:
         if prev_version and prev_version != _current_version:
             logger.info(
                 "Face-detect version changed: %s -> %s, re-queuing outdated images",
-                prev_version, _current_version,
+                prev_version,
+                _current_version,
             )
             count = await _requeue_outdated(_current_version)
             logger.info("Re-queued %d images for re-detection", count)
@@ -267,7 +272,8 @@ async def run_face_detect_loop() -> None:
             try:
                 job = json.loads(raw)
             except json.JSONDecodeError:
-                logger.warning("Invalid face-detect job JSON: %s", raw[:200])
+                # L-5: 生データではなく長さのみログ出力
+                logger.warning("Invalid face-detect job JSON (length=%d)", len(raw))
                 return
             try:
                 await _process_job(job)
