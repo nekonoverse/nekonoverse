@@ -62,4 +62,4 @@ nekonoverse/
 
 ## ライセンス
 
-[いいかんじ™ライセンス (IKL) v1.0 + MIT License](https://github.com/nananek/nekonoverse/blob/main/LICENSE)
+[いいかんじ™ライセンス (IKL) v1.0 + MIT License](https://github.com/nekonoverse/nekonoverse/blob/main/LICENSE)

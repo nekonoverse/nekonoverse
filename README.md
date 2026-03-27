@@ -2,7 +2,7 @@
 
 猫にやさしい ActivityPub サーバー。Misskey 互換の絵文字リアクションと Mastodon 互換の REST API を備えた、軽量な連合型 SNS。
 
-**[ドキュメント](https://nananek.github.io/nekonoverse/)** | **[変更履歴](./CHANGELOG.md)** | **[ライセンス](./LICENSE)**
+**[ドキュメント](https://nekonoverse.github.io/nekonoverse/)** | **[変更履歴](./CHANGELOG.md)** | **[ライセンス](./LICENSE)**
 
 ## 特徴
 
@@ -59,7 +59,7 @@ Python 3.12 / FastAPI / SQLAlchemy 2 / SolidJS / Vite / TypeScript / PostgreSQL 
 ## クイックスタート
 
 ```bash
-git clone https://github.com/nananek/nekonoverse.git
+git clone https://github.com/nekonoverse/nekonoverse.git
 cd nekonoverse
 
 cat <<'EOF' > .env
@@ -76,7 +76,7 @@ docker compose -f docker-compose.dev.yml up -d
 - バックエンド API: http://localhost:8000
 - フロントエンド: http://localhost:3000
 
-詳細は[ドキュメント](https://nananek.github.io/nekonoverse/)を参照してください。
+詳細は[ドキュメント](https://nekonoverse.github.io/nekonoverse/)を参照してください。
 
 ## ライセンス
 

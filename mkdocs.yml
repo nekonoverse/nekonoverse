@@ -1,8 +1,8 @@
 site_name: Nekonoverse
-site_url: https://nananek.github.io/nekonoverse
+site_url: https://nekonoverse.github.io/nekonoverse
 site_description: 猫にやさしい ActivityPub サーバー
-repo_url: https://github.com/nananek/nekonoverse
-repo_name: nananek/nekonoverse
+repo_url: https://github.com/nekonoverse/nekonoverse
+repo_name: nekonoverse/nekonoverse
 
 theme:
   name: material
