@@ -72,6 +72,43 @@ async def test_search_neko_search_fallback_on_error(authed_client, test_user, db
         assert len(data["statuses"]) >= 1
 
 
+async def test_search_resolve_remote_note_url(authed_client, test_user, db, mock_valkey):
+    """Resolve an unknown remote note URL via search with resolve=true."""
+    from tests.conftest import make_remote_actor
+
+    actor = await make_remote_actor(db, username="resolvetest", domain="resolve.example")
+    ap_id = "https://resolve.example/notes/999"
+
+    ap_note = {
+        "type": "Note",
+        "id": ap_id,
+        "attributedTo": actor.ap_id,
+        "content": "<p>Resolved note content</p>",
+        "to": ["https://www.w3.org/ns/activitystreams#Public"],
+        "cc": [f"{actor.ap_id}/followers"],
+        "sensitive": False,
+        "published": "2026-01-01T00:00:00Z",
+    }
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.json.return_value = ap_note
+
+    with patch(
+        "app.services.actor_service._signed_get",
+        new_callable=AsyncMock,
+        return_value=mock_resp,
+    ):
+        resp = await authed_client.get(
+            f"/api/v2/search?q={ap_id}&resolve=true&type=statuses"
+        )
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["statuses"]) == 1
+    assert "Resolved note content" in data["statuses"][0]["content"]
+
+
 async def test_search_empty_query(authed_client, mock_valkey):
     """Empty query returns 422."""
     resp = await authed_client.get("/api/v2/search?q=")
