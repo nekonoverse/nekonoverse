@@ -117,6 +117,14 @@ async def _search_statuses(
             except Exception:
                 pass
         if note:
+            # Re-query with eager loading for notes_to_responses
+            result = await db.execute(
+                select(Note)
+                .options(*_note_load_options())
+                .where(Note.id == note.id)
+            )
+            note = result.scalar_one_or_none()
+        if note:
             reactions_map = await get_reaction_summaries(
                 db, [note.id], current_actor_id
             )
