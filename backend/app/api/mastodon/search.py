@@ -114,8 +114,9 @@ async def _search_statuses(
         if not note:
             try:
                 note = await fetch_remote_note(db, url)
+                await db.commit()
             except Exception:
-                pass
+                await db.rollback()
         if note:
             # Re-query with eager loading for notes_to_responses
             result = await db.execute(
