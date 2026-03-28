@@ -1,3 +1,22 @@
+## [20260328-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260328-1) — 2026-03-28
+
+### セキュリティ
+
+- **照会パス visibility フィルタ** — `resolve=true` でリモートノートを照会する際、`direct`/`followers` のノートが漏洩しないよう visibility + deleted_at フィルタを追加 (#898)
+
+### 修正
+
+- **照会リモートノートの永続化漏れ** — `fetch_remote_note()` 後に `db.commit()` が呼ばれず、ノート詳細ページで 404 になる問題を修正 (#897)
+- **照会の eager load 欠落** — resolve 後の再クエリで `_note_load_options()` を適用し、リアクション・添付ファイル等が正しく返るように修正 (#895)
+- **ドキュメント・README の URL 修正** — リポジトリ URL を nekonoverse org に統一 (#892)
+
+### 内部改善
+
+- **neko-search 自動再学習スケジューラ** — コーパス成長に応じた語彙の自動再学習、前世代モデル保持 (#893)
+- **照会 E2E テスト追加** — SearchModal / SearchPage の照会機能を Playwright で E2E テスト (#896)
+
+---
+
 ## [20260326-4](https://github.com/nekonoverse/nekonoverse/releases/tag/20260326-4) — 2026-03-26
 
 ### セキュリティ
