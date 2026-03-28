@@ -450,10 +450,31 @@ export default function NoteCard(props: Props) {
     });
   };
 
+  // ブースト長押しで公開範囲メニューを表示するタイマー
+  let boostLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let boostDidLongPress = false;
+
+  const startBoostLongPress = () => {
+    if (boosted()) return;
+    boostDidLongPress = false;
+    boostLongPressTimer = setTimeout(() => {
+      boostDidLongPress = true;
+      setBoostMenuOpen(true);
+    }, 500);
+  };
+
+  const cancelBoostLongPress = () => {
+    if (boostLongPressTimer) {
+      clearTimeout(boostLongPressTimer);
+      boostLongPressTimer = null;
+    }
+  };
+
   const handleBoost = async () => {
-    if (actionDidLongPress) return;
+    if (boostDidLongPress || actionDidLongPress) return;
     if (boostLoading()) return;
     if (boosted()) {
+      // ブースト済み→アンブースト
       setBoostLoading(true);
       try {
         await unreblogNote(displayNote().id);
@@ -462,8 +483,15 @@ export default function NoteCard(props: Props) {
       } catch {}
       setBoostLoading(false);
     } else {
-      // 公開範囲選択メニューを表示
-      setBoostMenuOpen(!boostMenuOpen());
+      // 未ブースト→元ノートの公開範囲でブースト
+      setBoostLoading(true);
+      try {
+        const vis = displayNote().visibility === "private" ? "followers" : displayNote().visibility;
+        await reblogNote(displayNote().id, vis as Visibility);
+        setBoosted(true);
+        setBoostCount((c) => c + 1);
+      } catch {}
+      setBoostLoading(false);
     }
   };
 
@@ -1132,8 +1160,17 @@ export default function NoteCard(props: Props) {
                   <button
                     class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${isDisabled() ? " disabled" : ""}`}
                     onClick={handleBoost}
-                    onTouchStart={() => { if (isTouchMode() && boostCount() > 0 && boosted()) startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
-                    onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
+                    onMouseDown={() => { if (!isTouchMode() && !boosted()) startBoostLongPress(); }}
+                    onMouseUp={cancelBoostLongPress}
+                    onMouseLeave={cancelBoostLongPress}
+                    onTouchStart={() => {
+                      if (isTouchMode() && boostCount() > 0 && boosted()) {
+                        startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id));
+                      } else if (isTouchMode() && !boosted()) {
+                        startBoostLongPress();
+                      }
+                    }}
+                    onTouchEnd={(e) => { cancelActionLongPress(); cancelBoostLongPress(); if (actionDidLongPress || boostDidLongPress) e.preventDefault(); }}
                     onContextMenu={(e) => e.preventDefault()}
                     disabled={boostLoading() || isDisabled()}
                     title={
