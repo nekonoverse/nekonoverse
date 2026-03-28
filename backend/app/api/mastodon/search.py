@@ -118,11 +118,15 @@ async def _search_statuses(
             except Exception:
                 await db.rollback()
         if note:
-            # Re-query with eager loading for notes_to_responses
+            # Re-query with eager loading, visibility and soft-delete filter
             result = await db.execute(
                 select(Note)
                 .options(*_note_load_options())
-                .where(Note.id == note.id)
+                .where(
+                    Note.id == note.id,
+                    Note.deleted_at.is_(None),
+                    Note.visibility.in_(("public", "unlisted")),
+                )
             )
             note = result.scalar_one_or_none()
         if note:
