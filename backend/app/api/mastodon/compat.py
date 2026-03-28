@@ -4,6 +4,7 @@ Endpoints here are required by Mastodon clients but either return
 minimal/empty responses or are lightweight wrappers around existing logic.
 """
 
+import uuid
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
@@ -176,9 +177,62 @@ async def list_filters_v2(user: User = Depends(get_current_user)):
 
 
 @router.get("/api/v1/announcements")
-async def list_announcements(user: User | None = Depends(get_optional_user)):
-    """List server announcements (stub - returns empty array)."""
-    return []
+async def list_announcements(
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List active server announcements (Mastodon-compatible)."""
+    from app.api.mastodon.statuses import _to_mastodon_datetime
+    from app.services.announcement_service import get_dismissed_ids, list_active_announcements
+
+    announcements = await list_active_announcements(db)
+    dismissed: set[uuid.UUID] = set()
+    if user:
+        dismissed = await get_dismissed_ids(db, user.id)
+
+    return [
+        {
+            "id": str(a.id),
+            "content": a.content_html,
+            "starts_at": _to_mastodon_datetime(a.starts_at) if a.starts_at else None,
+            "ends_at": _to_mastodon_datetime(a.ends_at) if a.ends_at else None,
+            "all_day": a.all_day,
+            "published_at": _to_mastodon_datetime(a.created_at),
+            "updated_at": _to_mastodon_datetime(a.updated_at),
+            "read": a.id in dismissed,
+            "mentions": [],
+            "statuses": [],
+            "tags": [],
+            "emojis": [],
+            "reactions": [],
+        }
+        for a in announcements
+    ]
+
+
+@router.post("/api/v1/announcements/{announcement_id}/dismiss", status_code=204)
+async def dismiss_announcement(
+    announcement_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Mark an announcement as read (Mastodon-compatible)."""
+    from app.services.announcement_service import dismiss_announcement as _dismiss
+
+    await _dismiss(db, announcement_id, user.id)
+    await db.commit()
+
+
+@router.get("/api/v1/announcements/unread_count")
+async def announcements_unread_count(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get unread announcement count."""
+    from app.services.announcement_service import get_unread_count
+
+    count = await get_unread_count(db, user.id)
+    return {"count": count}
 
 
 @router.get("/api/v1/followed_tags")

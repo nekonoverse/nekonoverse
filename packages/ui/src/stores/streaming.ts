@@ -12,6 +12,7 @@ const updateHandlers = new Set<Handler>();
 const notificationHandlers = new Set<Handler>();
 const reactionHandlers = new Set<Handler>();
 const emojiUpdateHandlers = new Set<Handler>();
+const announcementHandlers = new Set<Handler>();
 
 let es: EventSource | null = null;
 let retryMs = 1000;
@@ -23,8 +24,9 @@ const [unreadCount, setUnreadCount] = createSignal(0);
 const [unreadMentions, setUnreadMentions] = createSignal(0);
 const [unreadOther, setUnreadOther] = createSignal(0);
 const [pendingFollowRequests, setPendingFollowRequests] = createSignal(0);
+const [unreadAnnouncements, setUnreadAnnouncements] = createSignal(0);
 
-export { connected, unreadCount, setUnreadCount, unreadMentions, unreadOther, pendingFollowRequests, setPendingFollowRequests };
+export { connected, unreadCount, setUnreadCount, unreadMentions, unreadOther, pendingFollowRequests, setPendingFollowRequests, unreadAnnouncements, setUnreadAnnouncements };
 
 function doConnect(path: string) {
   if (es) return;
@@ -73,6 +75,14 @@ function doConnect(path: string) {
     emojiUpdateHandlers.forEach((h) => h(null));
   });
 
+  es.addEventListener("announcement", (e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data);
+      setUnreadAnnouncements((c) => c + 1);
+      announcementHandlers.forEach((h) => h(data));
+    } catch { /* ignore */ }
+  });
+
   es.onerror = () => {
     setConnected(false);
     es?.close();
@@ -99,10 +109,22 @@ export async function fetchUnreadCount() {
   } catch { /* ignore */ }
 }
 
+/** Fetch unread announcement count from API */
+export async function fetchAnnouncementsUnreadCount() {
+  try {
+    const resp = await fetch("/api/v1/announcements/unread_count", { credentials: "include" });
+    if (resp.ok) {
+      const data = await resp.json();
+      setUnreadAnnouncements(data.count ?? 0);
+    }
+  } catch { /* ignore */ }
+}
+
 /** Start streaming for authenticated user */
 export function connect() {
   disconnect();
   fetchUnreadCount();
+  fetchAnnouncementsUnreadCount();
   doConnect("/api/v1/streaming/user");
 }
 
@@ -154,6 +176,16 @@ export function resetUnread() {
   setUnreadCount(0);
   setUnreadMentions(0);
   setUnreadOther(0);
+}
+
+export function resetUnreadAnnouncements() {
+  setUnreadAnnouncements(0);
+}
+
+/** Subscribe to announcement events. Returns unsubscribe function. */
+export function onAnnouncement(handler: Handler): () => void {
+  announcementHandlers.add(handler);
+  return () => announcementHandlers.delete(handler);
 }
 
 export function resetUnreadMentions() {

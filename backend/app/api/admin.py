@@ -14,6 +14,11 @@ from app.models.follow import Follow
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
 from app.models.user import User
+from app.schemas.announcement import (
+    AnnouncementAdminResponse,
+    AnnouncementCreateRequest,
+    AnnouncementUpdateRequest,
+)
 from app.schemas.admin import (
     AdminEmojiResponse,
     AdminEmojiUpdate,
@@ -1550,3 +1555,99 @@ async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     return target
+
+
+# --- Announcements ---
+
+
+@router.get("/announcements", response_model=list[AnnouncementAdminResponse])
+async def list_announcements_admin(
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """List all announcements (admin)."""
+    from app.services.announcement_service import list_announcements_admin
+
+    return await list_announcements_admin(db)
+
+
+@router.post(
+    "/announcements", response_model=AnnouncementAdminResponse, status_code=201
+)
+async def create_announcement(
+    body: AnnouncementCreateRequest,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Create a new announcement."""
+    from app.services.announcement_service import (
+        create_announcement as _create,
+        publish_announcement_event,
+    )
+
+    announcement = await _create(
+        db,
+        title=body.title,
+        content=body.content,
+        published=body.published,
+        all_day=body.all_day,
+        starts_at=body.starts_at,
+        ends_at=body.ends_at,
+    )
+    await db.commit()
+    if announcement.published:
+        await publish_announcement_event(announcement)
+    return announcement
+
+
+@router.get("/announcements/{announcement_id}", response_model=AnnouncementAdminResponse)
+async def get_announcement(
+    announcement_id: uuid.UUID,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get a single announcement."""
+    from app.services.announcement_service import get_announcement as _get
+
+    announcement = await _get(db, announcement_id)
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    return announcement
+
+
+@router.patch("/announcements/{announcement_id}", response_model=AnnouncementAdminResponse)
+async def update_announcement(
+    announcement_id: uuid.UUID,
+    body: AnnouncementUpdateRequest,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update an announcement."""
+    from app.services.announcement_service import (
+        update_announcement as _update,
+        publish_announcement_event,
+    )
+
+    updates = body.model_dump(exclude_unset=True)
+    announcement = await _update(db, announcement_id, **updates)
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    await db.commit()
+    if announcement.published:
+        await publish_announcement_event(announcement)
+    return announcement
+
+
+@router.delete("/announcements/{announcement_id}", status_code=204)
+async def delete_announcement(
+    announcement_id: uuid.UUID,
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Delete an announcement."""
+    from app.services.announcement_service import delete_announcement as _delete
+
+    deleted = await _delete(db, announcement_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    await db.commit()
