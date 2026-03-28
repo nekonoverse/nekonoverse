@@ -67,6 +67,42 @@ async def unfollow(
     return {"ok": True}
 
 
+@router.get("")
+async def get_accounts_batch(
+    ids: list[str] = Query(alias="id[]", default=[]),
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Fetch multiple accounts by ID (Mastodon API v4.3.0)."""
+    if not ids:
+        return []
+    # Parse and deduplicate valid UUIDs
+    valid_ids: list[uuid.UUID] = []
+    for raw in ids[:40]:  # cap at 40 to prevent abuse
+        try:
+            valid_ids.append(uuid.UUID(raw))
+        except ValueError:
+            continue
+    if not valid_ids:
+        return []
+    result = await db.execute(select(Actor).where(Actor.id.in_(valid_ids)))
+    actors = list(result.scalars().all())
+    accounts = []
+    for actor in actors:
+        if actor.require_signin_to_view and not user:
+            accounts.append(_actor_to_limited_account(actor))
+        else:
+            fc, fic = await get_follow_counts(db, actor.id)
+            sc = await get_statuses_count(db, actor.id)
+            accounts.append(
+                await _actor_to_account(
+                    actor, followers_count=fc, following_count=fic,
+                    statuses_count=sc, db=db,
+                )
+            )
+    return accounts
+
+
 @router.get("/lookup")
 async def lookup_account(
     acct: str,
