@@ -3,7 +3,7 @@ import re
 import uuid
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -1274,6 +1274,7 @@ async def reacted_by(
 )
 async def reblog_status(
     note_id: uuid.UUID,
+    visibility: str | None = Body(None, embed=True),
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
@@ -1281,14 +1282,32 @@ async def reblog_status(
     if not original:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    # public/unlisted 以外のノートのリブログを拒否（followers-only、direct）
-    if original.visibility in ("followers", "direct"):
+    actor = user.actor
+
+    # direct でのブーストは常に不可
+    if original.visibility == "direct":
+        raise HTTPException(status_code=422, detail="Cannot reblog a direct post")
+
+    # 他人の followers ノートはブースト不可（自分のノートは許可）
+    if original.visibility == "followers" and original.actor_id != actor.id:
+        raise HTTPException(status_code=422, detail="Cannot reblog a private post")
+
+    # visibility が未指定の場合は元ノートの公開範囲を使用
+    _RANK = {"public": 0, "unlisted": 1, "followers": 2, "direct": 3}
+    reblog_vis = visibility or original.visibility
+    # Mastodon API 互換: "private" → "followers"
+    if reblog_vis == "private":
+        reblog_vis = "followers"
+
+    if reblog_vis not in ("public", "unlisted", "followers"):
+        raise HTTPException(status_code=422, detail="Cannot reblog with direct visibility")
+
+    # 元ノートの公開範囲より広い範囲でのブーストは不可
+    if _RANK.get(reblog_vis, 3) < _RANK.get(original.visibility, 0):
         raise HTTPException(
             status_code=422,
-            detail="Cannot reblog a private post",
+            detail="Cannot reblog with wider visibility than the original",
         )
-
-    actor = user.actor
 
     # 既存のリブログを確認
     existing = await db.execute(
@@ -1306,16 +1325,25 @@ async def reblog_status(
     reblog_id = uuid.uuid4()
     ap_id = f"{settings.server_url}/notes/{reblog_id}"
 
+    # 公開範囲に応じて to/cc を構築
     public = "https://www.w3.org/ns/activitystreams#Public"
-    to_list = [public]
-    cc_list = [actor.followers_url or ""]
+    followers_url = actor.followers_url or ""
+    if reblog_vis == "public":
+        to_list = [public]
+        cc_list = [followers_url]
+    elif reblog_vis == "unlisted":
+        to_list = [followers_url]
+        cc_list = [public]
+    else:  # followers
+        to_list = [followers_url]
+        cc_list = []
 
     reblog_note = Note(
         id=reblog_id,
         ap_id=ap_id,
         actor_id=actor.id,
         content="",
-        visibility="public",
+        visibility=reblog_vis,
         renote_of_id=original.id,
         renote_of_ap_id=original.ap_id,
         to=to_list,

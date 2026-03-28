@@ -3323,6 +3323,52 @@ a:hover {
   color: #e74c3c;
 }
 
+/* ブースト公開範囲メニュー */
+.boost-visibility-menu {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  bottom: 100%;
+  margin-bottom: 6px;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  min-width: 180px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
+  z-index: 200;
+  overflow: hidden;
+}
+
+.boost-visibility-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 14px;
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  cursor: pointer;
+  font-size: 0.85em;
+  text-align: left;
+}
+
+.boost-visibility-item:hover {
+  background: var(--bg-primary);
+}
+
+.boost-visibility-emoji {
+  font-size: 1.1em;
+  width: 20px;
+  text-align: center;
+}
+
+.boost-visibility-emoji img.emoji {
+  width: 18px;
+  height: 18px;
+  vertical-align: middle;
+}
+
 /* Profile block/mute buttons */
 .btn-danger {
   border-color: #e74c3c;
