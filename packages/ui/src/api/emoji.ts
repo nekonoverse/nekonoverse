@@ -37,7 +37,7 @@ const [importedShortcodes, setImportedShortcodes] = createSignal<Set<string>>(
 export { importedShortcodes };
 
 export function markShortcodeImported(shortcode: string) {
-  setImportedShortcodes((prev) => new Set(prev).add(shortcode));
+  setImportedShortcodes((prev: Set<string>) => new Set(prev).add(shortcode));
 }
 
 // SSE経由で絵文字変更を即座に反映
@@ -47,7 +47,7 @@ onEmojiUpdate(() => {
   getCustomEmojis()
     .then((emojis) => {
       const shortcodes = new Set(emojis.map((e) => e.shortcode));
-      setImportedShortcodes((prev) => {
+      setImportedShortcodes((prev: Set<string>) => {
         const merged = new Set(prev);
         for (const sc of shortcodes) merged.add(sc);
         return merged;

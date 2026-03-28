@@ -5,12 +5,12 @@ export { sanitizeHtml } from "./utils/sanitize";
 export { emojiToUrl } from "./utils/twemoji";
 export { twemojify } from "./utils/twemojify";
 export { emojify } from "./utils/emojify";
-export { renderMfm, renderMfmPlain } from "./utils/mfm";
+export { renderMfm } from "./utils/mfm";
 export { mentionify } from "./utils/mentionify";
 export { externalLinksNewTab } from "./utils/linkify";
 export { focalPointToObjectPosition } from "./utils/focalPoint";
-export { getRecentEmojis, addRecentEmoji, clearRecentEmojis } from "./utils/recentEmojis";
-export { stripExif } from "./utils/stripExif";
+export { getRecentEmojis, addRecentEmoji } from "./utils/recentEmojis";
+export { stripExifFromFile, stripExifFromFiles } from "./utils/stripExif";
 export { formatTimestamp, useTimeTick } from "./utils/formatTime";
 export {
   isPushSupported,

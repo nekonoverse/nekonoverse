@@ -1445,7 +1445,7 @@ function DataExportTab() {
                   <a
                     href={`/api/v1/export/${st.id}/download`}
                     class="btn"
-                    download
+                    download=""
                   >
                     {t("dataExport.download" as any)}
                   </a>
