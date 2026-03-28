@@ -7984,3 +7984,135 @@ html[data-cursor="paw"] [contenteditable="true"] {
   color: var(--text-primary);
   font-size: 0.95rem;
 }
+
+/* Theme Customizer */
+.theme-customizer {
+  margin-top: 16px;
+}
+
+.theme-customizer h4 {
+  font-size: 1em;
+  margin-bottom: 8px;
+}
+
+.theme-color-name-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.theme-color-name-row label {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.theme-name-input {
+  flex: 1;
+  max-width: 300px;
+  padding: 4px 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-size: 0.9em;
+}
+
+.theme-color-category {
+  margin-top: 12px;
+}
+
+.theme-color-category h5 {
+  font-size: 0.85em;
+  color: var(--text-secondary);
+  margin-bottom: 6px;
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 4px;
+}
+
+.theme-color-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 8px;
+}
+
+.theme-color-item {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.theme-color-item label {
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  flex: 1;
+  min-width: 60px;
+}
+
+.theme-color-item input[type="color"] {
+  width: 32px;
+  height: 28px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  cursor: pointer;
+  background: none;
+  padding: 1px;
+}
+
+.theme-color-item input[type="text"] {
+  width: 75px;
+  font-size: 0.75em;
+  padding: 3px 5px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: monospace;
+}
+
+.theme-preview-section {
+  margin-top: 16px;
+}
+
+.theme-preview-section h4 {
+  font-size: 0.9em;
+  margin-bottom: 8px;
+}
+
+.theme-preview-container {
+  padding: 16px;
+  background: var(--bg-primary);
+  border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+
+.theme-customizer-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+  align-items: center;
+}
+
+.theme-save-message {
+  font-size: 0.85em;
+  color: var(--reblog);
+}
+
+.theme-import-area {
+  margin-top: 12px;
+}
+
+.theme-import-area textarea {
+  width: 100%;
+  min-height: 80px;
+  padding: 8px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-primary);
+  font-family: monospace;
+  font-size: 0.8em;
+  resize: vertical;
+}

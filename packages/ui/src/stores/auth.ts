@@ -48,6 +48,8 @@ export async function fetchCurrentUser() {
     setCurrentUser(user);
     cacheUser(user);
     fetchFollowedIds();
+    // Sync theme from server (non-blocking)
+    import("./theme").then((m) => m.syncThemeFromServer()).catch(() => {});
   } catch {
     setCurrentUser(null);
     cacheUser(null);

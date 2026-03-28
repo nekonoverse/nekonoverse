@@ -4,6 +4,7 @@ Endpoints here are required by Mastodon clients but either return
 minimal/empty responses or are lightweight wrappers around existing logic.
 """
 
+import re
 import uuid
 
 from fastapi import APIRouter, Depends, Query, Request
@@ -72,12 +73,17 @@ async def verify_app_credentials(
 # --- GET /api/v1/preferences ---
 
 
-@router.get("/api/v1/preferences")
-async def get_preferences(
-    user: User = Depends(get_current_user),
-):
-    """Return user preferences."""
-    prefs = user.preferences or {}
+_VALID_THEME_COLOR_KEYS = {
+    "bg-primary", "bg-secondary", "bg-card",
+    "text-primary", "text-secondary",
+    "accent", "accent-hover", "accent-text",
+    "border", "reblog", "favourite",
+}
+_VALID_BASE_THEMES = {"dark", "light", "novel"}
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _prefs_response(prefs: dict) -> dict:
     return {
         "posting:default:visibility": "public",
         "posting:default:sensitive": False,
@@ -85,7 +91,16 @@ async def get_preferences(
         "reading:expand:media": "default",
         "reading:expand:spoilers": False,
         "posting:source_media_type": prefs.get("source_media_type", "auto"),
+        "theme_customization": prefs.get("theme_customization", None),
     }
+
+
+@router.get("/api/v1/preferences")
+async def get_preferences(
+    user: User = Depends(get_current_user),
+):
+    """Return user preferences."""
+    return _prefs_response(user.preferences or {})
 
 
 @router.patch("/api/v1/preferences")
@@ -95,6 +110,8 @@ async def update_preferences(
     db: AsyncSession = Depends(get_db),
 ):
     """Update user preferences."""
+    from fastapi import HTTPException
+
     body = await request.json()
     prefs = dict(user.preferences or {})
 
@@ -102,25 +119,46 @@ async def update_preferences(
     smt = body.get("posting:source_media_type")
     if smt is not None:
         if smt not in _VALID_SOURCE_MEDIA_TYPES:
-            from fastapi import HTTPException
-
             raise HTTPException(
                 status_code=422,
                 detail=f"Invalid source_media_type: must be one of {_VALID_SOURCE_MEDIA_TYPES}",
             )
         prefs["source_media_type"] = smt
 
+    tc = body.get("theme_customization")
+    if tc is not None:
+        if tc is False or tc == {}:
+            prefs.pop("theme_customization", None)
+        elif isinstance(tc, dict):
+            base = tc.get("base")
+            if base not in _VALID_BASE_THEMES:
+                raise HTTPException(422, "Invalid base theme")
+            colors = tc.get("colors")
+            if not isinstance(colors, dict):
+                raise HTTPException(422, "colors must be an object")
+            if set(colors.keys()) != _VALID_THEME_COLOR_KEYS:
+                raise HTTPException(
+                    422,
+                    f"colors must contain exactly: {sorted(_VALID_THEME_COLOR_KEYS)}",
+                )
+            for k, v in colors.items():
+                if not isinstance(v, str) or not _HEX_COLOR_RE.match(v):
+                    raise HTTPException(422, f"Invalid color for {k}: must be #rrggbb hex")
+            name = tc.get("name")
+            if name is not None and (not isinstance(name, str) or len(name) > 50):
+                raise HTTPException(422, "name must be a string of at most 50 chars")
+            prefs["theme_customization"] = {
+                "base": base,
+                "colors": colors,
+                **({"name": name} if name else {}),
+            }
+        else:
+            raise HTTPException(422, "theme_customization must be an object or false")
+
     user.preferences = prefs
     await db.commit()
 
-    return {
-        "posting:default:visibility": "public",
-        "posting:default:sensitive": False,
-        "posting:default:language": None,
-        "reading:expand:media": "default",
-        "reading:expand:spoilers": False,
-        "posting:source_media_type": prefs.get("source_media_type", "auto"),
-    }
+    return _prefs_response(prefs)
 
 
 # --- GET /api/v1/favourites ---

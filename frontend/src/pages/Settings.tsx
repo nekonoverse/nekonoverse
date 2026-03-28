@@ -30,6 +30,7 @@ import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, mo
 import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type LoginHistoryEntry } from "@nekonoverse/ui/api/sessions";
 import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
 import PasskeyManager from "../components/PasskeyManager";
+import ThemeCustomizer from "../components/settings/ThemeCustomizer";
 import Breadcrumb from "../components/Breadcrumb";
 
 declare const __APP_VERSION__: string;
@@ -178,6 +179,10 @@ function AppearanceTab() {
             </button>
           ))}
         </div>
+
+        <Show when={currentUser()}>
+          <ThemeCustomizer />
+        </Show>
       </div>
 
       <div class="settings-section">

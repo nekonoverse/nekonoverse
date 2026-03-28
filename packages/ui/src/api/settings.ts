@@ -100,6 +100,7 @@ export interface ServerPreferences {
   "reading:expand:media": string;
   "reading:expand:spoilers": boolean;
   "posting:source_media_type": SourceMediaType;
+  "theme_customization": import("../stores/theme").ThemeCustomization | null;
 }
 
 export async function getPreferences(): Promise<ServerPreferences> {
@@ -110,6 +111,15 @@ export async function updateSourceMediaType(value: SourceMediaType): Promise<Ser
   return apiRequest<ServerPreferences>("/api/v1/preferences", {
     method: "PATCH",
     body: { "posting:source_media_type": value },
+  });
+}
+
+export async function updateThemeCustomization(
+  customization: import("../stores/theme").ThemeCustomization | null,
+): Promise<ServerPreferences> {
+  return apiRequest<ServerPreferences>("/api/v1/preferences", {
+    method: "PATCH",
+    body: { theme_customization: customization || false },
   });
 }
 
