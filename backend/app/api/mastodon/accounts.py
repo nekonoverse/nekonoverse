@@ -575,6 +575,10 @@ async def get_account_lists(
     db: AsyncSession = Depends(get_db),
 ):
     """Get lists owned by the current user that contain the given account."""
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Actor not found")
+
     from app.services.list_service import get_user_lists_for_actor
 
     lists = await get_user_lists_for_actor(db, user.id, actor_id)

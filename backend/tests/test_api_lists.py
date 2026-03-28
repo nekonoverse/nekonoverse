@@ -380,6 +380,13 @@ async def test_account_lists_empty(authed_client, db, test_user):
     assert resp.json() == []
 
 
+async def test_account_lists_not_found(authed_client, db):
+    """Non-existent actor returns 404."""
+    fake_id = str(uuid.uuid4())
+    resp = await authed_client.get(f"/api/v1/accounts/{fake_id}/lists")
+    assert resp.status_code == 404
+
+
 async def test_account_lists_unauthenticated(app_client, db):
     """Unauthenticated request returns 401."""
     fake_id = str(uuid.uuid4())
