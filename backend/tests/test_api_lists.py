@@ -347,3 +347,41 @@ async def test_unauthed_all_list_endpoints(app_client, db):
         assert resp.status_code in (401, 403), (
             f"{method} {path} returned {resp.status_code}, expected 401/403"
         )
+
+
+# -- GET /api/v1/accounts/:id/lists --
+
+
+async def test_account_lists_member(authed_client, db, test_user):
+    """Lists containing the account are returned."""
+    lst = await create_list(db, test_user, "Contains")
+    actor = _make_actor(username="inlist")
+    db.add(actor)
+    await db.commit()
+    await add_list_member(db, lst, actor)
+    await db.commit()
+
+    resp = await authed_client.get(f"/api/v1/accounts/{actor.id}/lists")
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["id"] == str(lst.id)
+    assert data[0]["title"] == "Contains"
+
+
+async def test_account_lists_empty(authed_client, db, test_user):
+    """Empty list when account is not in any list."""
+    actor = _make_actor(username="notinlist")
+    db.add(actor)
+    await db.commit()
+
+    resp = await authed_client.get(f"/api/v1/accounts/{actor.id}/lists")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_account_lists_unauthenticated(app_client, db):
+    """Unauthenticated request returns 401."""
+    fake_id = str(uuid.uuid4())
+    resp = await app_client.get(f"/api/v1/accounts/{fake_id}/lists")
+    assert resp.status_code in (401, 403)

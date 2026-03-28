@@ -255,6 +255,19 @@ async def get_list_ids_for_actor(db: AsyncSession, actor_id: uuid.UUID) -> list[
     return list(result.scalars().all())
 
 
+async def get_user_lists_for_actor(
+    db: AsyncSession, user_id: uuid.UUID, actor_id: uuid.UUID
+) -> list[List]:
+    """Get lists owned by user_id that contain actor_id."""
+    result = await db.execute(
+        select(List)
+        .join(ListMember, List.id == ListMember.list_id)
+        .where(List.user_id == user_id, ListMember.actor_id == actor_id)
+        .order_by(List.created_at)
+    )
+    return list(result.scalars().all())
+
+
 async def get_exclusive_list_user_actor_ids(
     db: AsyncSession, member_actor_id: uuid.UUID
 ) -> set[uuid.UUID]:
