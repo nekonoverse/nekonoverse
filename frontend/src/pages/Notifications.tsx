@@ -324,6 +324,9 @@ export default function Notifications() {
                           </button>
                         </Show>
                       </div>
+                      <Show when={ann.title}>
+                        <strong class="announcement-title">{ann.title}</strong>
+                      </Show>
                       <span class="notification-time">
                         {(() => { useTimeTick(); return formatTimestamp(ann.published_at, t); })()}
                       </span>

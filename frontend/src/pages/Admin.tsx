@@ -146,6 +146,12 @@ const categories: AdminCategory[] = [
         permission: "federation",
       },
       { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji", permission: "emoji" },
+      {
+        key: "announcements",
+        labelKey: "admin.tabAnnouncements",
+        descKey: "admin.descAnnouncements",
+        permission: "announcements",
+      },
     ],
   },
   {
@@ -177,11 +183,6 @@ const categories: AdminCategory[] = [
         key: "system",
         labelKey: "admin.tabSystem",
         descKey: "admin.descSystem",
-      },
-      {
-        key: "announcements",
-        labelKey: "admin.tabAnnouncements",
-        descKey: "admin.descAnnouncements",
       },
     ],
   },
@@ -3127,6 +3128,7 @@ const PERMISSION_KEYS = [
   "federation",
   "emoji",
   "registrations",
+  "announcements",
 ] as const;
 
 const PERM_LABEL_KEYS: Record<string, string> = {
@@ -3137,6 +3139,7 @@ const PERM_LABEL_KEYS: Record<string, string> = {
   federation: "admin.permFederation",
   emoji: "admin.permEmoji",
   registrations: "admin.permRegistrations",
+  announcements: "admin.permAnnouncements",
 };
 
 const PERM_DESC_KEYS: Record<string, string> = {
@@ -3147,6 +3150,7 @@ const PERM_DESC_KEYS: Record<string, string> = {
   federation: "admin.permFederationDesc",
   emoji: "admin.permEmojiDesc",
   registrations: "admin.permRegistrationsDesc",
+  announcements: "admin.permAnnouncementsDesc",
 };
 
 function formatQuota(bytes: number): string {
@@ -3567,83 +3571,87 @@ function AnnouncementsTab() {
   };
 
   return (
-    <div>
-      <div class="admin-section-header">
+    <div class="settings-section">
+      <div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "16px" }}>
         <h3>{t("admin.tabAnnouncements" as any)}</h3>
-        <button class="btn btn-small" onClick={() => { resetForm(); setShowForm(true); }}>
+        <button class="btn btn-small btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
           {t("announcements.create" as any)}
         </button>
       </div>
 
       <Show when={showForm()}>
-        <div class="admin-form" style="margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
-          <div class="form-group">
+        <div style={{ "margin-bottom": "1rem", padding: "1rem", border: "1px solid var(--border)", "border-radius": "8px" }}>
+          <div class="settings-form-group">
             <label>{t("announcements.titleLabel" as any)}</label>
             <input
               type="text"
-              class="form-input"
               value={title()}
               onInput={(e) => setTitle(e.currentTarget.value)}
               placeholder={t("announcements.titlePlaceholder" as any)}
             />
           </div>
-          <div class="form-group">
+          <div class="settings-form-group">
             <label>{t("announcements.contentLabel" as any)}</label>
             <textarea
-              class="form-input"
               rows={5}
               value={content()}
               onInput={(e) => setContent(e.currentTarget.value)}
               placeholder={t("announcements.contentPlaceholder" as any)}
             />
           </div>
-          <div class="form-group" style="display: flex; gap: 1rem; flex-wrap: wrap;">
-            <label style="display: flex; align-items: center; gap: 4px;">
+          <div style={{ display: "flex", gap: "1rem", "flex-wrap": "wrap", "margin-bottom": "16px" }}>
+            <label style={{ display: "flex", "align-items": "center", gap: "4px" }}>
               <input type="checkbox" checked={published()} onChange={(e) => setPublished(e.currentTarget.checked)} />
               {t("announcements.published" as any)}
             </label>
-            <label style="display: flex; align-items: center; gap: 4px;">
+            <label style={{ display: "flex", "align-items": "center", gap: "4px" }}>
               <input type="checkbox" checked={allDay()} onChange={(e) => setAllDay(e.currentTarget.checked)} />
               {t("announcements.allDay" as any)}
             </label>
           </div>
-          <div class="form-group" style="display: flex; gap: 1rem; flex-wrap: wrap;">
-            <div>
+          <div style={{ display: "flex", gap: "1rem", "flex-wrap": "wrap", "margin-bottom": "16px" }}>
+            <div class="settings-form-group">
               <label>{t("announcements.startsAt" as any)}</label>
-              <input type="datetime-local" class="form-input" value={startsAt()} onInput={(e) => setStartsAt(e.currentTarget.value)} />
+              <input type="datetime-local" value={startsAt()} onInput={(e) => setStartsAt(e.currentTarget.value)} />
             </div>
-            <div>
+            <div class="settings-form-group">
               <label>{t("announcements.endsAt" as any)}</label>
-              <input type="datetime-local" class="form-input" value={endsAt()} onInput={(e) => setEndsAt(e.currentTarget.value)} />
+              <input type="datetime-local" value={endsAt()} onInput={(e) => setEndsAt(e.currentTarget.value)} />
             </div>
           </div>
-          <div style="display: flex; gap: 0.5rem;">
-            <button class="btn" onClick={handleSave} disabled={saving()}>
-              {saving() ? t("common.loading") : editing() ? t("common.save" as any) : t("announcements.create" as any)}
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button class="btn btn-primary" onClick={handleSave} disabled={saving()}>
+              {saving() ? t("common.loading") : editing() ? t("common.save") : t("announcements.create" as any)}
             </button>
             <button class="btn btn-small" onClick={resetForm}>
-              {t("common.cancel" as any)}
+              {t("common.cancel")}
             </button>
           </div>
         </div>
       </Show>
 
-      <Show when={items().length > 0} fallback={<p class="empty">{t("announcements.empty" as any)}</p>}>
-        <div class="admin-list">
+      <Show when={items().length > 0} fallback={<p class="admin-empty">{t("announcements.empty" as any)}</p>}>
+        <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
           <For each={items()}>
             {(ann) => (
-              <div class="admin-list-item" style="padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.5rem;">
-                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+              <div style={{ padding: "12px", border: "1px solid var(--border)", "border-radius": "8px" }}>
+                <div style={{ display: "flex", "justify-content": "space-between", "align-items": "flex-start" }}>
                   <div>
                     <strong>{ann.title}</strong>
                     <span
-                      class={`badge ${ann.published ? "badge-success" : "badge-muted"}`}
-                      style="margin-left: 0.5rem; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;"
+                      style={{
+                        "margin-left": "8px",
+                        "font-size": "0.75rem",
+                        padding: "2px 6px",
+                        "border-radius": "4px",
+                        background: ann.published ? "var(--reblog)" : "var(--text-secondary)",
+                        color: "#fff",
+                      }}
                     >
                       {ann.published ? t("announcements.published" as any) : t("announcements.draft" as any)}
                     </span>
                   </div>
-                  <div style="display: flex; gap: 0.25rem;">
+                  <div style={{ display: "flex", gap: "4px" }}>
                     <button class="btn btn-small" onClick={() => startEdit(ann)}>
                       {t("announcements.edit" as any)}
                     </button>
@@ -3652,8 +3660,8 @@ function AnnouncementsTab() {
                     </button>
                   </div>
                 </div>
-                <div class="announcement-preview" style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);" innerHTML={ann.content_html} />
-                <div style="margin-top: 0.25rem; font-size: 0.75rem; color: var(--text-tertiary);">
+                <div style={{ "margin-top": "8px", "font-size": "0.9rem", color: "var(--text-secondary)" }} innerHTML={ann.content_html} />
+                <div style={{ "margin-top": "4px", "font-size": "0.75rem", color: "var(--text-secondary)", opacity: "0.7" }}>
                   {new Date(ann.created_at).toLocaleString()}
                   <Show when={ann.starts_at}>
                     {" "} | {t("announcements.startsAt" as any)}: {new Date(ann.starts_at!).toLocaleString()}

@@ -2,6 +2,7 @@ import { apiRequest } from "./client";
 
 export interface MastodonAnnouncement {
   id: string;
+  title: string;
   content: string;
   starts_at: string | null;
   ends_at: string | null;

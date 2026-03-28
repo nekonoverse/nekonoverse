@@ -1562,10 +1562,10 @@ async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:
 
 @router.get("/announcements", response_model=list[AnnouncementAdminResponse])
 async def list_announcements_admin(
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("announcements")),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all announcements (admin)."""
+    """List all announcements (staff with announcements permission)."""
     from app.services.announcement_service import list_announcements_admin
 
     return await list_announcements_admin(db)
@@ -1576,7 +1576,7 @@ async def list_announcements_admin(
 )
 async def create_announcement(
     body: AnnouncementCreateRequest,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("announcements")),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new announcement."""
@@ -1603,7 +1603,7 @@ async def create_announcement(
 @router.get("/announcements/{announcement_id}", response_model=AnnouncementAdminResponse)
 async def get_announcement(
     announcement_id: uuid.UUID,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("announcements")),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single announcement."""
@@ -1619,7 +1619,7 @@ async def get_announcement(
 async def update_announcement(
     announcement_id: uuid.UUID,
     body: AnnouncementUpdateRequest,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("announcements")),
     db: AsyncSession = Depends(get_db),
 ):
     """Update an announcement."""
@@ -1641,7 +1641,7 @@ async def update_announcement(
 @router.delete("/announcements/{announcement_id}", status_code=204)
 async def delete_announcement(
     announcement_id: uuid.UUID,
-    user: User = Depends(get_admin_user),
+    user: User = Depends(get_permitted_staff("announcements")),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete an announcement."""

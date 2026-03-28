@@ -22,6 +22,7 @@ MODERATOR_PERMISSIONS = [
     "federation",
     "emoji",
     "registrations",
+    "announcements",
 ]
 
 
