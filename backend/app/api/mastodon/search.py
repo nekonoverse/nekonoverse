@@ -114,8 +114,21 @@ async def _search_statuses(
         if not note:
             try:
                 note = await fetch_remote_note(db, url)
+                await db.commit()
             except Exception:
-                pass
+                await db.rollback()
+        if note:
+            # Re-query with eager loading, visibility and soft-delete filter
+            result = await db.execute(
+                select(Note)
+                .options(*_note_load_options())
+                .where(
+                    Note.id == note.id,
+                    Note.deleted_at.is_(None),
+                    Note.visibility.in_(("public", "unlisted")),
+                )
+            )
+            note = result.scalar_one_or_none()
         if note:
             reactions_map = await get_reaction_summaries(
                 db, [note.id], current_actor_id

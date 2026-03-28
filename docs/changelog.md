@@ -1,6 +1,6 @@
 # 変更履歴
 
-[GitHub Releases](https://github.com/nananek/nekonoverse/releases) も参照してください。
+[GitHub Releases](https://github.com/nekonoverse/nekonoverse/releases) も参照してください。
 
 ---
 

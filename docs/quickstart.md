@@ -9,7 +9,7 @@
 ## 1. セットアップ
 
 ```bash
-git clone https://github.com/nananek/nekonoverse.git
+git clone https://github.com/nekonoverse/nekonoverse.git
 cd nekonoverse
 
 # 環境変数を設定
