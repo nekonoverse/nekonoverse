@@ -193,6 +193,7 @@ async def list_announcements(
     return [
         {
             "id": str(a.id),
+            "title": a.title,
             "content": a.content_html,
             "starts_at": _to_mastodon_datetime(a.starts_at) if a.starts_at else None,
             "ends_at": _to_mastodon_datetime(a.ends_at) if a.ends_at else None,
