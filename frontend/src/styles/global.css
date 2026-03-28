@@ -7985,6 +7985,99 @@ html[data-cursor="paw"] [contenteditable="true"] {
   font-size: 0.95rem;
 }
 
+/* List toggle modal */
+.list-toggle-list {
+  padding: 8px 0;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.list-toggle-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 10px 16px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.list-toggle-item:hover:not(:disabled) {
+  background: var(--bg-primary);
+}
+
+.list-toggle-item:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.list-toggle-item.active {
+  color: var(--accent);
+}
+
+.list-toggle-check {
+  width: 20px;
+  text-align: center;
+  font-weight: bold;
+  flex-shrink: 0;
+}
+
+.list-toggle-title {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.list-toggle-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--border);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  flex-shrink: 0;
+}
+
+.list-toggle-empty {
+  padding: 12px 16px;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.list-toggle-divider {
+  height: 1px;
+  background: var(--border);
+  margin: 4px 16px;
+}
+
+.list-create-row {
+  color: var(--accent);
+}
+
+.list-create-inline {
+  display: flex;
+  gap: 8px;
+  padding: 8px 16px;
+  align-items: center;
+}
+
+.list-create-inline input {
+  flex: 1;
+  padding: 6px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text-primary);
+  font-size: 0.9rem;
+}
+
 /* Theme Customizer */
 .theme-customizer {
   margin-top: 16px;

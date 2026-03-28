@@ -20,7 +20,7 @@ import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { mentionify } from "@nekonoverse/ui/utils/mentionify";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
-import { getLists, addListAccounts, type ListInfo } from "@nekonoverse/ui/api/lists";
+import { getLists, getAccountLists, addListAccounts, removeListAccounts, createList, type ListInfo } from "@nekonoverse/ui/api/lists";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -61,8 +61,10 @@ export default function Profile() {
   const [showUnlockModal, setShowUnlockModal] = createSignal(false);
   const [showAddToList, setShowAddToList] = createSignal(false);
   const [userLists, setUserLists] = createSignal<ListInfo[]>([]);
-  const [selectedListId, setSelectedListId] = createSignal("");
-  const [addToListLoading, setAddToListLoading] = createSignal(false);
+  const [memberListIds, setMemberListIds] = createSignal<Set<string>>(new Set());
+  const [togglingListId, setTogglingListId] = createSignal<string | null>(null);
+  const [showNewListInput, setShowNewListInput] = createSignal(false);
+  const [newListTitle, setNewListTitle] = createSignal("");
 
   // Compose modal state
   const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
@@ -368,20 +370,50 @@ export default function Profile() {
 
   const handleAddToList = async () => {
     setShowAddToList(true);
-    try { const data = await getLists(); setUserLists(data); } catch {}
+    setShowNewListInput(false);
+    setNewListTitle("");
+    const acc = account();
+    if (!acc) return;
+    try {
+      const [lists, accountLists] = await Promise.all([
+        getLists(),
+        getAccountLists(acc.id),
+      ]);
+      setUserLists(lists);
+      setMemberListIds(new Set(accountLists.map((l) => l.id)));
+    } catch {}
   };
 
-  const handleAddToListConfirm = async () => {
+  const handleToggleList = async (listId: string) => {
     const acc = account();
-    const listId = selectedListId();
-    if (!acc || !listId) return;
-    setAddToListLoading(true);
+    if (!acc || togglingListId()) return;
+    setTogglingListId(listId);
     try {
-      await addListAccounts(listId, [acc.id]);
-      setShowAddToList(false);
-      setSelectedListId("");
+      if (memberListIds().has(listId)) {
+        await removeListAccounts(listId, [acc.id]);
+        setMemberListIds((prev) => { const s = new Set(prev); s.delete(listId); return s; });
+      } else {
+        await addListAccounts(listId, [acc.id]);
+        setMemberListIds((prev) => new Set(prev).add(listId));
+      }
     } catch {}
-    setAddToListLoading(false);
+    setTogglingListId(null);
+  };
+
+  const handleCreateListInModal = async () => {
+    const title = newListTitle().trim();
+    const acc = account();
+    if (!title || !acc) return;
+    setTogglingListId("__creating__");
+    try {
+      const created = await createList(title);
+      await addListAccounts(created.id, [acc.id]);
+      setUserLists((prev) => [...prev, created]);
+      setMemberListIds((prev) => new Set(prev).add(created.id));
+      setNewListTitle("");
+      setShowNewListInput(false);
+    } catch {}
+    setTogglingListId(null);
   };
 
   // Close dropdown on outside click
@@ -961,16 +993,52 @@ export default function Profile() {
               <h3>{t("list.addToList" as any)}</h3>
               <button class="modal-close" onClick={() => setShowAddToList(false)}>✕</button>
             </div>
-            <div style="padding: 16px">
-              <Show when={userLists().length > 0} fallback={<p>{t("list.noLists" as any)}</p>}>
-                <select class="modal-select" value={selectedListId()} onChange={(e) => setSelectedListId(e.target.value)}>
-                  <option value="">{t("list.selectList" as any)}</option>
-                  <For each={userLists()}>{(l) => <option value={l.id}>{l.title}</option>}</For>
-                </select>
-                <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end">
-                  <button class="btn btn-small" onClick={() => setShowAddToList(false)}>{t("common.cancel")}</button>
-                  <button class="btn btn-small btn-primary" disabled={!selectedListId() || addToListLoading()} onClick={handleAddToListConfirm}>
-                    {t("common.add" as any)}
+            <div class="list-toggle-list">
+              <Show when={userLists().length > 0 || showNewListInput()}>
+                <For each={userLists()}>
+                  {(l) => (
+                    <button
+                      class={`list-toggle-item${memberListIds().has(l.id) ? " active" : ""}`}
+                      disabled={togglingListId() !== null}
+                      onClick={() => handleToggleList(l.id)}
+                    >
+                      <span class="list-toggle-check">{memberListIds().has(l.id) ? "✓" : ""}</span>
+                      <span class="list-toggle-title">{l.title}</span>
+                      <Show when={togglingListId() === l.id}>
+                        <span class="list-toggle-spinner" />
+                      </Show>
+                    </button>
+                  )}
+                </For>
+              </Show>
+              <Show when={userLists().length === 0 && !showNewListInput()}>
+                <p class="list-toggle-empty">{t("list.noLists" as any)}</p>
+              </Show>
+              <div class="list-toggle-divider" />
+              <Show
+                when={showNewListInput()}
+                fallback={
+                  <button class="list-toggle-item list-create-row" onClick={() => setShowNewListInput(true)}>
+                    <span class="list-toggle-check">+</span>
+                    <span class="list-toggle-title">{t("list.createNew" as any)}</span>
+                  </button>
+                }
+              >
+                <div class="list-create-inline">
+                  <input
+                    type="text"
+                    value={newListTitle()}
+                    onInput={(e) => setNewListTitle(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleCreateListInModal(); }}
+                    placeholder={t("list.newListPlaceholder" as any)}
+                    autofocus
+                  />
+                  <button
+                    class="btn btn-small btn-primary"
+                    disabled={!newListTitle().trim() || togglingListId() !== null}
+                    onClick={handleCreateListInModal}
+                  >
+                    {t("list.createButton" as any)}
                   </button>
                 </div>
               </Show>

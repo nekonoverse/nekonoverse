@@ -13,6 +13,10 @@ export async function getLists(): Promise<ListInfo[]> {
   return apiRequest<ListInfo[]>("/api/v1/lists");
 }
 
+export async function getAccountLists(accountId: string): Promise<ListInfo[]> {
+  return apiRequest<ListInfo[]>(`/api/v1/accounts/${accountId}/lists`);
+}
+
 export async function getList(id: string): Promise<ListInfo> {
   return apiRequest<ListInfo>(`/api/v1/lists/${id}`);
 }

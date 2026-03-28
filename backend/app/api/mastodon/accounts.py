@@ -604,6 +604,31 @@ async def list_following(
     return results
 
 
+@router.get("/{actor_id}/lists")
+async def get_account_lists(
+    actor_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get lists owned by the current user that contain the given account."""
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    from app.services.list_service import get_user_lists_for_actor
+
+    lists = await get_user_lists_for_actor(db, user.id, actor_id)
+    return [
+        {
+            "id": str(lst.id),
+            "title": lst.title,
+            "replies_policy": lst.replies_policy,
+            "exclusive": lst.exclusive,
+        }
+        for lst in lists
+    ]
+
+
 @router.get("/{actor_id}")
 async def get_account(
     actor_id: uuid.UUID,
