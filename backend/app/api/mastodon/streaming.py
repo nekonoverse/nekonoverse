@@ -97,6 +97,7 @@ async def stream_user(
         f"notifications:{actor_id}",
         "timeline:public",
         "emoji:update",
+        "announcements",
     ]
     user_lists = await get_user_lists(db, user.id)
     for lst in user_lists:

@@ -607,3 +607,49 @@ export interface StorageInfo {
 export async function getAccountStorage(): Promise<StorageInfo> {
   return apiRequest<StorageInfo>("/api/v1/accounts/storage");
 }
+
+// Announcements
+export interface Announcement {
+  id: string;
+  title: string;
+  content: string;
+  content_html: string;
+  published: boolean;
+  all_day: boolean;
+  starts_at: string | null;
+  ends_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export async function getAnnouncements(): Promise<Announcement[]> {
+  return apiRequest<Announcement[]>("/api/v1/admin/announcements");
+}
+
+export async function createAnnouncement(data: {
+  title: string;
+  content: string;
+  published?: boolean;
+  all_day?: boolean;
+  starts_at?: string | null;
+  ends_at?: string | null;
+}): Promise<Announcement> {
+  return apiRequest<Announcement>("/api/v1/admin/announcements", {
+    method: "POST",
+    body: data,
+  });
+}
+
+export async function updateAnnouncement(
+  id: string,
+  data: Partial<Pick<Announcement, "title" | "content" | "published" | "all_day" | "starts_at" | "ends_at">>,
+): Promise<Announcement> {
+  return apiRequest<Announcement>(`/api/v1/admin/announcements/${id}`, {
+    method: "PATCH",
+    body: data,
+  });
+}
+
+export async function deleteAnnouncement(id: string): Promise<void> {
+  await apiRequest(`/api/v1/admin/announcements/${id}`, { method: "DELETE" });
+}

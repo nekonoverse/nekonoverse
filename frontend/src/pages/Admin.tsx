@@ -57,6 +57,10 @@ import {
   retryQueueJob,
   retryAllDeadJobs,
   purgeDeliveredJobs,
+  getAnnouncements,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
   getSystemStats,
   getPendingRegistrations,
   approveRegistration,
@@ -86,6 +90,7 @@ import {
   type QueueJob,
   type QueueJobList,
   type SystemStats,
+  type Announcement,
   type PendingRegistration,
 } from "@nekonoverse/ui/api/admin";
 
@@ -172,6 +177,11 @@ const categories: AdminCategory[] = [
         key: "system",
         labelKey: "admin.tabSystem",
         descKey: "admin.descSystem",
+      },
+      {
+        key: "announcements",
+        labelKey: "admin.tabAnnouncements",
+        descKey: "admin.descAnnouncements",
       },
     ],
   },
@@ -322,6 +332,9 @@ export default function Admin() {
             </Match>
             <Match when={section() === "system"}>
               <SystemTab />
+            </Match>
+            <Match when={section() === "announcements"}>
+              <AnnouncementsTab />
             </Match>
           </Switch>
         </Show>
@@ -3472,6 +3485,186 @@ function RolesTab() {
               </div>
             </div>
           </Show>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+function AnnouncementsTab() {
+  const { t } = useI18n();
+  const [items, setItems] = createSignal<Announcement[]>([]);
+  const [editing, setEditing] = createSignal<Announcement | null>(null);
+  const [showForm, setShowForm] = createSignal(false);
+  const [title, setTitle] = createSignal("");
+  const [content, setContent] = createSignal("");
+  const [published, setPublished] = createSignal(false);
+  const [allDay, setAllDay] = createSignal(false);
+  const [startsAt, setStartsAt] = createSignal("");
+  const [endsAt, setEndsAt] = createSignal("");
+  const [saving, setSaving] = createSignal(false);
+
+  const loadItems = async () => {
+    try {
+      const data = await getAnnouncements();
+      setItems(data);
+    } catch { /* ignore */ }
+  };
+
+  createEffect(() => { loadItems(); });
+
+  const resetForm = () => {
+    setEditing(null);
+    setTitle("");
+    setContent("");
+    setPublished(false);
+    setAllDay(false);
+    setStartsAt("");
+    setEndsAt("");
+    setShowForm(false);
+  };
+
+  const startEdit = (ann: Announcement) => {
+    setEditing(ann);
+    setTitle(ann.title);
+    setContent(ann.content);
+    setPublished(ann.published);
+    setAllDay(ann.all_day);
+    setStartsAt(ann.starts_at ? ann.starts_at.slice(0, 16) : "");
+    setEndsAt(ann.ends_at ? ann.ends_at.slice(0, 16) : "");
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!title().trim() || !content().trim()) return;
+    setSaving(true);
+    try {
+      const data: any = {
+        title: title(),
+        content: content(),
+        published: published(),
+        all_day: allDay(),
+        starts_at: startsAt() ? new Date(startsAt()).toISOString() : null,
+        ends_at: endsAt() ? new Date(endsAt()).toISOString() : null,
+      };
+      if (editing()) {
+        await updateAnnouncement(editing()!.id, data);
+      } else {
+        await createAnnouncement(data);
+      }
+      resetForm();
+      await loadItems();
+    } catch { /* ignore */ }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm(t("announcements.confirmDelete" as any))) return;
+    try {
+      await deleteAnnouncement(id);
+      await loadItems();
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <div>
+      <div class="admin-section-header">
+        <h3>{t("admin.tabAnnouncements" as any)}</h3>
+        <button class="btn btn-small" onClick={() => { resetForm(); setShowForm(true); }}>
+          {t("announcements.create" as any)}
+        </button>
+      </div>
+
+      <Show when={showForm()}>
+        <div class="admin-form" style="margin-bottom: 1rem; padding: 1rem; border: 1px solid var(--border); border-radius: 8px;">
+          <div class="form-group">
+            <label>{t("announcements.titleLabel" as any)}</label>
+            <input
+              type="text"
+              class="form-input"
+              value={title()}
+              onInput={(e) => setTitle(e.currentTarget.value)}
+              placeholder={t("announcements.titlePlaceholder" as any)}
+            />
+          </div>
+          <div class="form-group">
+            <label>{t("announcements.contentLabel" as any)}</label>
+            <textarea
+              class="form-input"
+              rows={5}
+              value={content()}
+              onInput={(e) => setContent(e.currentTarget.value)}
+              placeholder={t("announcements.contentPlaceholder" as any)}
+            />
+          </div>
+          <div class="form-group" style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <label style="display: flex; align-items: center; gap: 4px;">
+              <input type="checkbox" checked={published()} onChange={(e) => setPublished(e.currentTarget.checked)} />
+              {t("announcements.published" as any)}
+            </label>
+            <label style="display: flex; align-items: center; gap: 4px;">
+              <input type="checkbox" checked={allDay()} onChange={(e) => setAllDay(e.currentTarget.checked)} />
+              {t("announcements.allDay" as any)}
+            </label>
+          </div>
+          <div class="form-group" style="display: flex; gap: 1rem; flex-wrap: wrap;">
+            <div>
+              <label>{t("announcements.startsAt" as any)}</label>
+              <input type="datetime-local" class="form-input" value={startsAt()} onInput={(e) => setStartsAt(e.currentTarget.value)} />
+            </div>
+            <div>
+              <label>{t("announcements.endsAt" as any)}</label>
+              <input type="datetime-local" class="form-input" value={endsAt()} onInput={(e) => setEndsAt(e.currentTarget.value)} />
+            </div>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn" onClick={handleSave} disabled={saving()}>
+              {saving() ? t("common.loading") : editing() ? t("common.save" as any) : t("announcements.create" as any)}
+            </button>
+            <button class="btn btn-small" onClick={resetForm}>
+              {t("common.cancel" as any)}
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={items().length > 0} fallback={<p class="empty">{t("announcements.empty" as any)}</p>}>
+        <div class="admin-list">
+          <For each={items()}>
+            {(ann) => (
+              <div class="admin-list-item" style="padding: 0.75rem; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 0.5rem;">
+                <div style="display: flex; justify-content: space-between; align-items: flex-start;">
+                  <div>
+                    <strong>{ann.title}</strong>
+                    <span
+                      class={`badge ${ann.published ? "badge-success" : "badge-muted"}`}
+                      style="margin-left: 0.5rem; font-size: 0.75rem; padding: 2px 6px; border-radius: 4px;"
+                    >
+                      {ann.published ? t("announcements.published" as any) : t("announcements.draft" as any)}
+                    </span>
+                  </div>
+                  <div style="display: flex; gap: 0.25rem;">
+                    <button class="btn btn-small" onClick={() => startEdit(ann)}>
+                      {t("announcements.edit" as any)}
+                    </button>
+                    <button class="btn btn-small btn-danger" onClick={() => handleDelete(ann.id)}>
+                      {t("announcements.delete" as any)}
+                    </button>
+                  </div>
+                </div>
+                <div class="announcement-preview" style="margin-top: 0.5rem; font-size: 0.9rem; color: var(--text-secondary);" innerHTML={ann.content_html} />
+                <div style="margin-top: 0.25rem; font-size: 0.75rem; color: var(--text-tertiary);">
+                  {new Date(ann.created_at).toLocaleString()}
+                  <Show when={ann.starts_at}>
+                    {" "} | {t("announcements.startsAt" as any)}: {new Date(ann.starts_at!).toLocaleString()}
+                  </Show>
+                  <Show when={ann.ends_at}>
+                    {" "} | {t("announcements.endsAt" as any)}: {new Date(ann.ends_at!).toLocaleString()}
+                  </Show>
+                </div>
+              </div>
+            )}
+          </For>
         </div>
       </Show>
     </div>

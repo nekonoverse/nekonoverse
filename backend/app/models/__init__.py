@@ -1,3 +1,4 @@
+from app.models.announcement import Announcement, AnnouncementDismissal
 from app.models.actor import Actor
 from app.models.bookmark import Bookmark
 from app.models.custom_emoji import CustomEmoji
@@ -30,6 +31,8 @@ from app.models.user_block import UserBlock
 from app.models.user_mute import UserMute
 
 __all__ = [
+    "Announcement",
+    "AnnouncementDismissal",
     "Actor",
     "Bookmark",
     "CustomEmoji",
