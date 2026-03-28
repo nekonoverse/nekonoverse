@@ -109,6 +109,55 @@ async def test_search_resolve_remote_note_url(authed_client, test_user, db, mock
     assert "Resolved note content" in data["statuses"][0]["content"]
 
 
+async def test_search_resolve_excludes_direct_note(authed_client, test_user, db, mock_valkey):
+    """Resolve by AP URL must not return direct-visibility notes (IDOR prevention)."""
+    note = await make_note(
+        db, test_user.actor, content="secret DM content", visibility="direct"
+    )
+    # Override ap_id to https:// so the resolve path is triggered
+    note.ap_id = f"https://localhost/notes/{note.id}"
+    await db.flush()
+
+    resp = await authed_client.get(
+        f"/api/v2/search?q={note.ap_id}&resolve=true&type=statuses"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["statuses"]) == 0, "direct note must not be returned via resolve"
+
+
+async def test_search_resolve_excludes_followers_note(authed_client, test_user, db, mock_valkey):
+    """Resolve by AP URL must not return followers-only notes (IDOR prevention)."""
+    note = await make_note(
+        db, test_user.actor, content="followers only content", visibility="followers"
+    )
+    note.ap_id = f"https://localhost/notes/{note.id}"
+    await db.flush()
+
+    resp = await authed_client.get(
+        f"/api/v2/search?q={note.ap_id}&resolve=true&type=statuses"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["statuses"]) == 0, "followers note must not be returned via resolve"
+
+
+async def test_search_resolve_allows_unlisted_note(authed_client, test_user, db, mock_valkey):
+    """Resolve by AP URL should return unlisted notes."""
+    note = await make_note(
+        db, test_user.actor, content="unlisted resolve test", visibility="unlisted"
+    )
+    note.ap_id = f"https://localhost/notes/{note.id}"
+    await db.flush()
+
+    resp = await authed_client.get(
+        f"/api/v2/search?q={note.ap_id}&resolve=true&type=statuses"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["statuses"]) == 1, "unlisted note should be returned via resolve"
+
+
 async def test_search_empty_query(authed_client, mock_valkey):
     """Empty query returns 422."""
     resp = await authed_client.get("/api/v2/search?q=")
