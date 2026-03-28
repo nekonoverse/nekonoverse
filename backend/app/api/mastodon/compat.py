@@ -1,7 +1,7 @@
-"""Mastodon-compatible stub/lightweight endpoints for client compatibility.
+"""Mastodon クライアント互換のスタブ/軽量エンドポイント。
 
-Endpoints here are required by Mastodon clients but either return
-minimal/empty responses or are lightweight wrappers around existing logic.
+ここに定義されたエンドポイントは Mastodon クライアントが必要とするが、
+最小限/空のレスポンスを返すか、既存ロジックの軽量ラッパーとして機能する。
 """
 
 import re
@@ -17,7 +17,7 @@ from app.models.user import User
 router = APIRouter(tags=["mastodon-compat"])
 
 
-# --- GET /api/v1/apps/verify_credentials ---
+# --- GET /api/v1/apps/verify_credentials --- アプリ認証情報の検証
 
 
 @router.get("/api/v1/apps/verify_credentials")
@@ -25,7 +25,7 @@ async def verify_app_credentials(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Verify the OAuth application token. Returns app info."""
+    """OAuth アプリケーショントークンを検証する。アプリ情報を返す。"""
     from app.models.oauth import OAuthApplication, OAuthToken
 
     auth_header = request.headers.get("Authorization", "")
@@ -70,7 +70,7 @@ async def verify_app_credentials(
     }
 
 
-# --- GET /api/v1/preferences ---
+# --- GET /api/v1/preferences --- ユーザー設定
 
 
 _VALID_THEME_COLOR_KEYS = {
@@ -99,7 +99,7 @@ def _prefs_response(prefs: dict) -> dict:
 async def get_preferences(
     user: User = Depends(get_current_user),
 ):
-    """Return user preferences."""
+    """ユーザー設定を返す。"""
     return _prefs_response(user.preferences or {})
 
 
@@ -109,7 +109,7 @@ async def update_preferences(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update user preferences."""
+    """ユーザー設定を更新する。"""
     from fastapi import HTTPException
 
     body = await request.json()
@@ -161,7 +161,7 @@ async def update_preferences(
     return _prefs_response(prefs)
 
 
-# --- GET /api/v1/favourites ---
+# --- GET /api/v1/favourites --- お気に入り一覧
 
 
 @router.get("/api/v1/favourites")
@@ -170,7 +170,7 @@ async def list_favourites(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List statuses the current user has favourited (⭐ reacted)."""
+    """現在のユーザーがお気に入り（⭐ リアクション）したステータス一覧を返す。"""
     from app.api.mastodon.statuses import notes_to_responses
     from app.models.note import Note
     from app.models.reaction import Reaction
@@ -199,18 +199,18 @@ async def list_favourites(
     return await notes_to_responses(notes, reactions_map, db, actor_id=user.actor_id)
 
 
-# --- Stub endpoints (return empty arrays for client compatibility) ---
+# --- スタブエンドポイント（クライアント互換のため空配列を返す） ---
 
 
 @router.get("/api/v1/filters")
 async def list_filters_v1(user: User = Depends(get_current_user)):
-    """List content filters (stub - returns empty array)."""
+    """コンテンツフィルタ一覧（スタブ - 空配列を返す）。"""
     return []
 
 
 @router.get("/api/v2/filters")
 async def list_filters_v2(user: User = Depends(get_current_user)):
-    """List content filters v2 (stub - returns empty array)."""
+    """コンテンツフィルタ v2 一覧（スタブ - 空配列を返す）。"""
     return []
 
 
@@ -219,7 +219,7 @@ async def list_announcements(
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List active server announcements (Mastodon-compatible)."""
+    """有効なサーバーお知らせ一覧を返す（Mastodon 互換）。"""
     from app.api.mastodon.statuses import _to_mastodon_datetime
     from app.services.announcement_service import get_dismissed_ids, list_active_announcements
 
@@ -255,7 +255,7 @@ async def dismiss_announcement(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Mark an announcement as read (Mastodon-compatible)."""
+    """お知らせを既読にする（Mastodon 互換）。"""
     from app.services.announcement_service import dismiss_announcement as _dismiss
 
     await _dismiss(db, announcement_id, user.id)
@@ -267,7 +267,7 @@ async def announcements_unread_count(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get unread announcement count."""
+    """未読お知らせ数を取得する。"""
     from app.services.announcement_service import get_unread_count
 
     count = await get_unread_count(db, user.id)
@@ -276,19 +276,19 @@ async def announcements_unread_count(
 
 @router.get("/api/v1/followed_tags")
 async def list_followed_tags(user: User = Depends(get_current_user)):
-    """List followed hashtags (stub - returns empty array)."""
+    """フォロー中のハッシュタグ一覧（スタブ - 空配列を返す）。"""
     return []
 
 
 @router.get("/api/v1/conversations")
 async def list_conversations(user: User = Depends(get_current_user)):
-    """List DM conversations (stub - returns empty array)."""
+    """DM 会話一覧（スタブ - 空配列を返す）。"""
     return []
 
 
 @router.get("/api/v1/lists")
 async def list_lists(user: User = Depends(get_current_user)):
-    """List custom lists (stub - returns empty array)."""
+    """カスタムリスト一覧（スタブ - 空配列を返す）。"""
     return []
 
 
@@ -297,7 +297,7 @@ async def get_markers(
     timeline: list[str] = Query(default=[], alias="timeline[]"),
     user: User = Depends(get_current_user),
 ):
-    """Get timeline position markers (stub - returns empty object)."""
+    """タイムライン位置マーカーを取得する（スタブ - 空オブジェクトを返す）。"""
     return {}
 
 
@@ -305,5 +305,5 @@ async def get_markers(
 async def update_markers(
     user: User = Depends(get_current_user),
 ):
-    """Update timeline position markers (stub - returns empty object)."""
+    """タイムライン位置マーカーを更新する（スタブ - 空オブジェクトを返す）。"""
     return {}

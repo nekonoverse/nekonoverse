@@ -12,7 +12,7 @@ logger = logging.getLogger(__name__)
 
 
 def _to_mastodon_datetime(dt: datetime | None) -> str:
-    """Format datetime to Mastodon-compatible ISO 8601 string (with Z suffix)."""
+    """datetime を Mastodon 互換の ISO 8601 文字列（Z サフィックス付き）にフォーマットする。"""
     if not dt:
         return ""
     if dt.tzinfo is None:
@@ -55,7 +55,7 @@ router = APIRouter(prefix="/api/v1/statuses", tags=["statuses"])
 
 
 def _preview_card_to_response(card) -> PreviewCardResponse:
-    """Convert a PreviewCard model to a Mastodon-compatible PreviewCardResponse."""
+    """PreviewCard モデルを Mastodon 互換の PreviewCardResponse に変換する。"""
     return PreviewCardResponse(
         url=card.url,
         title=card.title or "",
@@ -67,7 +67,7 @@ def _preview_card_to_response(card) -> PreviewCardResponse:
 
 
 def _mime_to_media_type(mime: str) -> str:
-    """Convert a MIME type to Mastodon media type string."""
+    """MIME タイプを Mastodon のメディアタイプ文字列に変換する。"""
     if mime.startswith("image/gif"):
         return "gifv"
     if mime.startswith("image/"):
@@ -80,7 +80,7 @@ def _mime_to_media_type(mime: str) -> str:
 
 
 def _attachment_to_media(att) -> NoteMediaAttachment:
-    """Convert a NoteAttachment to NoteMediaAttachment for API response."""
+    """NoteAttachment を API レスポンス用の NoteMediaAttachment に変換する。"""
     if att.drive_file:
         from app.services.drive_service import file_to_url
 
@@ -102,7 +102,7 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
             blurhash=att.drive_file.blurhash,
             meta=meta,
         )
-    # Remote attachment
+    # リモート添付ファイル
     mime = att.remote_mime_type or ""
     meta = None
     if att.remote_width and att.remote_height:
@@ -139,13 +139,13 @@ async def note_to_response(
     cards_cache: dict | None = None,
     pinned: bool = False,
 ) -> NoteResponse:
-    """Convert a Note model to a NoteResponse.
+    """Note モデルを NoteResponse に変換する。
 
     Args:
-        emoji_cache: Optional pre-resolved emoji cache mapping
-            (shortcode, domain) -> CustomEmoji. When provided, skips per-note
-            emoji DB queries.
-        software_cache: Optional mapping domain -> (software_name, version) tuple.
+        emoji_cache: 事前に解決した絵文字キャッシュの辞書
+            (shortcode, domain) -> CustomEmoji。指定時はノートごとの
+            絵文字 DB クエリをスキップする。
+        software_cache: domain -> (software_name, version) タプルの辞書。
     """
     actor = note.actor
     reblog = None
@@ -153,7 +153,7 @@ async def note_to_response(
     actual_reblog = reblog_note
     if not actual_reblog and hasattr(note, "renote_of") and note.renote_of:
         actual_reblog = note.renote_of
-    # Fallback: renote_of not loaded but renote_of_id is set
+    # フォールバック: renote_of が未ロードだが renote_of_id が設定されている場合
     if not actual_reblog and db and note.renote_of_id:
         actual_reblog = await get_note_by_id(db, note.renote_of_id)
     # リレーション未解決だがrenote_of_ap_idがある場合、遅延解決
@@ -185,13 +185,13 @@ async def note_to_response(
             cards_cache=cards_cache,
         )
 
-    # Build media attachments
+    # メディア添付を構築
     media_attachments = []
     for att in note.attachments or []:
         if att.drive_file or att.remote_url:
             media_attachments.append(_attachment_to_media(att))
 
-    # Build quote
+    # 引用を構築
     quote = None
     if hasattr(note, "quoted_note") and note.quoted_note:
         quote = await note_to_response(
@@ -204,7 +204,7 @@ async def note_to_response(
             software_cache=software_cache,
             cards_cache=cards_cache,
         )
-    # Fallback: quoted_note not loaded but quote_id is set
+    # フォールバック: quoted_note が未ロードだが quote_id が設定されている場合
     if not quote and db and note.quote_id:
         loaded_quote = await get_note_by_id(db, note.quote_id)
         if loaded_quote:
@@ -238,10 +238,10 @@ async def note_to_response(
                     cards_cache=cards_cache,
                 )
 
-    # Resolve custom emoji from content and display_name
+    # content と display_name からカスタム絵文字を解決
     emojis: list[CustomEmojiInfo] = []
     actor_emojis: list[CustomEmojiInfo] = []
-    # Collect shortcodes from note content and actor display_name
+    # ノートの content と アクターの display_name からショートコードを収集
     content_shortcodes: set[str] = set()
     if note.content:
         content_shortcodes = set(_SHORTCODE_RE.findall(note.content))
@@ -251,7 +251,7 @@ async def note_to_response(
     all_shortcodes = content_shortcodes | actor_shortcodes
     if all_shortcodes:
         if emoji_cache is not None:
-            # Use pre-resolved cache — no DB queries needed
+            # 事前解決済みキャッシュを使用 — DB クエリ不要
             emoji_list = _resolve_emojis_from_cache(
                 all_shortcodes,
                 actor.domain,
@@ -297,7 +297,7 @@ async def note_to_response(
         emojis = [emoji_map[sc] for sc in content_shortcodes if sc in emoji_map]
         actor_emojis = [emoji_map[sc] for sc in actor_shortcodes if sc in emoji_map]
 
-    # Resolve hashtags
+    # ハッシュタグを解決
     tags: list[TagInfo] = []
     if hashtags_cache is not None:
         from app.config import settings as app_settings
@@ -312,7 +312,7 @@ async def note_to_response(
 
         tags = [TagInfo(name=tn, url=f"{app_settings.server_url}/tags/{tn}") for tn in tag_names]
 
-    # Resolve in_reply_to_account_id and mention (prefer eager-loaded relationship)
+    # in_reply_to_account_id とメンションを解決（eager-loaded リレーションを優先）
     in_reply_to_account_id = None
     reply_mention: dict | None = None
     if note.in_reply_to_id:
@@ -342,7 +342,7 @@ async def note_to_response(
     if note.updated_at:
         edited_at = _to_mastodon_datetime(note.updated_at)
 
-    # Build poll response
+    # 投票レスポンスを構築
     poll_response = None
     if note.is_poll and note.poll_options:
         from app.services.poll_service import get_poll_data
@@ -375,7 +375,7 @@ async def note_to_response(
         if not actor.domain
         else f"{app_settings.server_url}/@{acct}"
     )
-    # Resolve server software from cache or Valkey
+    # サーバーソフトウェア情報をキャッシュまたは Valkey から解決
     sw = None
     sw_ver = None
     sw_name = None
@@ -416,7 +416,7 @@ async def note_to_response(
         discoverable=actor.discoverable,
     )
 
-    # Resolve preview card
+    # プレビューカードを解決
     card_resp = None
     if cards_cache is not None:
         card_obj = cards_cache.get(note.id)
@@ -469,7 +469,7 @@ async def note_to_response(
         tags=tags,
         card=card_resp,
         mentions=[reply_mention] if reply_mention else [],
-        # Mastodon Status compat
+        # Mastodon Status 互換フィールド
         uri=note.ap_id,
         url=f"{app_settings.server_url}/notes/{note.id}",
         account=actor_resp,
@@ -484,10 +484,10 @@ def _resolve_emojis_from_cache(
     domain: str | None,
     emoji_cache: dict,
 ) -> list:
-    """Resolve emoji shortcodes using a pre-built cache dict.
+    """事前構築したキャッシュ辞書を使って絵文字ショートコードを解決する。
 
-    The cache maps (shortcode, domain) -> CustomEmoji object.
-    Tries the note's actor domain first, then falls back to local (None).
+    キャッシュは (shortcode, domain) -> CustomEmoji オブジェクトのマッピング。
+    まずノートのアクタードメインを試し、見つからなければローカル (None) にフォールバックする。
     """
     result = []
     for sc in shortcodes:
@@ -500,16 +500,16 @@ def _resolve_emojis_from_cache(
 
 
 async def _build_emoji_cache(db, notes) -> dict:
-    """Pre-fetch all custom emoji needed for a list of notes.
+    """ノートリストに必要な全カスタム絵文字を事前取得する。
 
-    Collects shortcodes from note content (and reblog/quote content),
-    then batch-fetches all matching emoji in minimal DB queries.
+    ノートの content（およびリブログ/引用の content）からショートコードを収集し、
+    最小限の DB クエリで一致する絵文字をバッチ取得する。
 
-    Returns a dict mapping (shortcode, domain) -> CustomEmoji.
+    (shortcode, domain) -> CustomEmoji の辞書を返す。
     """
     from app.services.emoji_service import get_emojis_by_shortcodes
 
-    # Collect all (shortcodes, domain) pairs needed
+    # 必要な (shortcodes, domain) ペアを全て収集
     shortcodes_by_domain: dict[str | None, set[str]] = {}
 
     def _collect(note):
@@ -532,7 +532,7 @@ async def _build_emoji_cache(db, notes) -> dict:
         if hasattr(n, "quoted_note") and n.quoted_note:
             _collect(n.quoted_note)
 
-    # Batch fetch per domain (typically 1-3 queries total)
+    # ドメインごとにバッチ取得（通常合計1〜3クエリ）
     cache: dict[tuple[str, str | None], object] = {}
     for domain, scs in shortcodes_by_domain.items():
         if not scs:
@@ -551,23 +551,23 @@ async def notes_to_responses(
     actor_id=None,
     pinned_ids: set | None = None,
 ) -> list[NoteResponse]:
-    """Convert multiple notes to responses with batched emoji/hashtag resolution.
+    """複数ノートをバッチ絵文字/ハッシュタグ解決付きでレスポンスに変換する。
 
     Args:
-        notes: List of Note model objects.
-        reactions_map: Dict mapping note_id -> list of reaction summary dicts,
-            as returned by get_reaction_summaries().
-        db: AsyncSession.
-        actor_id: Optional current user's actor ID for reaction "me" flags.
+        notes: Note モデルオブジェクトのリスト。
+        reactions_map: note_id -> リアクションサマリ辞書リストのマッピング。
+            get_reaction_summaries() の戻り値形式。
+        db: AsyncSession。
+        actor_id: リアクションの "me" フラグ用の現在のユーザーのアクター ID（任意）。
 
     Returns:
-        List of NoteResponse in the same order as input notes.
+        入力ノートと同じ順序の NoteResponse リスト。
     """
     from app.services.hashtag_service import get_hashtags_for_notes
 
     emoji_cache = await _build_emoji_cache(db, notes)
 
-    # Batch-fetch hashtags for all notes (including renote/quote targets)
+    # 全ノート（リノート/引用ノート含む）のハッシュタグをバッチ取得
     all_note_ids: list = [n.id for n in notes]
     for n in notes:
         if hasattr(n, "renote_of") and n.renote_of:
@@ -576,7 +576,7 @@ async def notes_to_responses(
                 all_note_ids.append(n.renote_of.quoted_note.id)
         if hasattr(n, "quoted_note") and n.quoted_note:
             all_note_ids.append(n.quoted_note.id)
-    # Deduplicate while preserving order
+    # 順序を保持しつつ重複排除
     seen_ids: set = set()
     unique_ids = []
     for nid in all_note_ids:
@@ -591,7 +591,7 @@ async def notes_to_responses(
         inner_reactions = await get_reaction_summaries(db, inner_ids, actor_id)
         reactions_map.update(inner_reactions)
 
-    # Batch-check which notes the current user has reblogged
+    # 現在のユーザーがリブログ済みのノートをバッチチェック
     reblogged_set: set = set()
     if actor_id:
         from app.models.note import Note as NoteModel
@@ -605,7 +605,7 @@ async def notes_to_responses(
         )
         reblogged_set = {row[0] for row in reblog_result.all()}
 
-    # Batch-fetch server software for all unique remote domains
+    # 全ユニークリモートドメインのサーバーソフトウェアをバッチ取得
     from app.utils.nodeinfo import get_domain_software_info
 
     domains: set[str] = set()
@@ -620,7 +620,7 @@ async def notes_to_responses(
     for domain in domains:
         software_cache[domain] = await get_domain_software_info(domain)
 
-    # Batch-fetch preview cards for all notes
+    # 全ノートのプレビューカードをバッチ取得
     from app.models.preview_card import PreviewCard
 
     cards_result = await db.execute(select(PreviewCard).where(PreviewCard.note_id.in_(unique_ids)))
@@ -657,13 +657,13 @@ async def create_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    # Validate in_reply_to_id exists
+    # in_reply_to_id の存在を検証
     visibility = "followers" if body.visibility == "private" else body.visibility
     if body.in_reply_to_id:
         parent = await get_note_by_id(db, body.in_reply_to_id)
         if not parent:
             raise HTTPException(status_code=404, detail="Reply target not found")
-        # Enforce: reply visibility must not be wider than parent
+        # リプライの公開範囲は親ノートより広くできない
         vis_rank = {"public": 0, "unlisted": 1, "followers": 2, "direct": 3}
         parent_rank = vis_rank.get(parent.visibility, 0)
         reply_rank = vis_rank.get(visibility, 0)
@@ -735,7 +735,7 @@ async def edit_status(
     if note.actor_id != user.actor_id:
         raise HTTPException(status_code=403, detail="Not your note")
 
-    # Save current state as edit history
+    # 現在の状態を編集履歴として保存
     from app.models.note_edit import NoteEdit
 
     edit_record = NoteEdit(
@@ -746,7 +746,7 @@ async def edit_status(
     )
     db.add(edit_record)
 
-    # Update the note
+    # ノートを更新
     from app.utils.sanitize import text_to_html
 
     note.content = text_to_html(body.content)
@@ -755,7 +755,7 @@ async def edit_status(
     note.updated_at = datetime.now(timezone.utc)
     await db.commit()
 
-    # Deliver AP Update to followers
+    # フォロワーに AP Update を配送
     from app.activitypub.renderer import render_note, render_update_activity
     from app.services.delivery_service import enqueue_delivery
     from app.services.follow_service import get_follower_inboxes
@@ -771,7 +771,7 @@ async def edit_status(
     for inbox_url in inboxes:
         await enqueue_delivery(db, actor.id, inbox_url, update_activity)
 
-    # Reload note for response
+    # レスポンス用にノートを再読み込み
     note = await get_note_by_id(db, note_id)
     return await note_to_response(note, db=db)
 
@@ -797,7 +797,7 @@ async def get_status_history(
     )
     edits = result.scalars().all()
 
-    # Build history: past edits + current state
+    # 編集履歴を構築: 過去の編集 + 現在の状態
     history = [
         NoteEditHistoryEntry(
             content=e.content,
@@ -807,7 +807,7 @@ async def get_status_history(
         )
         for e in edits
     ]
-    # Append current version
+    # 現在のバージョンを追加
     history.append(
         NoteEditHistoryEntry(
             content=note.content,
@@ -968,7 +968,7 @@ async def react_to_note(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Notify note author
+    # ノート作成者に通知
     if note.actor.is_local:
         from app.services.notification_service import create_notification, publish_notification
 
@@ -1022,7 +1022,7 @@ async def fedibird_react(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Fedibird-compatible: add emoji reaction and return updated status."""
+    """Fedibird 互換: 絵文字リアクションを追加し、更新後のステータスを返す。"""
     from app.services.reaction_service import add_reaction
 
     note = await get_note_by_id(db, note_id)
@@ -1035,7 +1035,7 @@ async def fedibird_react(
     try:
         await add_reaction(db, user, note, emoji)
     except ValueError:
-        pass  # Already reacted — return current status
+        pass  # リアクション済み — 現在のステータスを返す
 
     if note.actor.is_local and note.actor_id != user.actor_id:
         from app.services.notification_service import create_notification, publish_notification
@@ -1067,7 +1067,7 @@ async def fedibird_unreact(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Fedibird-compatible: remove emoji reaction and return updated status."""
+    """Fedibird 互換: 絵文字リアクションを削除し、更新後のステータスを返す。"""
     from app.services.reaction_service import remove_reaction
 
     note = await get_note_by_id(db, note_id)
@@ -1080,7 +1080,7 @@ async def fedibird_unreact(
     try:
         await remove_reaction(db, user, note, emoji)
     except ValueError:
-        pass  # Not reacted — return current status
+        pass  # 未リアクション — 現在のステータスを返す
 
     note = await get_note_by_id(db, note_id)
     reactions_map = await get_reaction_summaries(
@@ -1101,7 +1101,7 @@ async def favourite_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Favourite a status (alias for ⭐ reaction)."""
+    """ステータスをお気に入りにする（⭐ リアクションのエイリアス）。"""
     from app.services.reaction_service import add_reaction
 
     note = await get_note_by_id(db, note_id)
@@ -1142,7 +1142,7 @@ async def unfavourite_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Unfavourite a status (remove ⭐ reaction)."""
+    """ステータスのお気に入りを解除する（⭐ リアクションの削除）。"""
     from app.services.reaction_service import remove_reaction
 
     note = await get_note_by_id(db, note_id)
@@ -1168,7 +1168,7 @@ async def favourited_by(
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List accounts that favourited (⭐ reacted) a status."""
+    """ステータスをお気に入り（⭐ リアクション）したアカウント一覧を取得する。"""
     from app.api.mastodon.accounts import _actor_to_account
     from app.models.reaction import Reaction
 
@@ -1198,7 +1198,7 @@ async def reblogged_by(
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List accounts that reblogged (renoted) a status."""
+    """ステータスをリブログ（リノート）したアカウント一覧を取得する。"""
     from app.api.mastodon.accounts import _actor_to_account
 
     note = await get_note_by_id(db, note_id)
@@ -1281,7 +1281,7 @@ async def reblog_status(
     if not original:
         raise HTTPException(status_code=404, detail="Note not found")
 
-    # Reject reblog for non-public/unlisted notes (followers-only, direct)
+    # public/unlisted 以外のノートのリブログを拒否（followers-only、direct）
     if original.visibility in ("followers", "direct"):
         raise HTTPException(
             status_code=422,
@@ -1290,7 +1290,7 @@ async def reblog_status(
 
     actor = user.actor
 
-    # Check for existing reblog
+    # 既存のリブログを確認
     existing = await db.execute(
         select(Note).where(
             Note.actor_id == actor.id,
@@ -1326,7 +1326,7 @@ async def reblog_status(
     original.renotes_count = original.renotes_count + 1
     await db.commit()
 
-    # Notify original note author
+    # 元ノートの作成者に通知
     if original.actor.is_local:
         from app.services.notification_service import create_notification, publish_notification
 
@@ -1343,7 +1343,7 @@ async def reblog_status(
 
     await db.refresh(reblog_note, ["actor", "attachments"])
 
-    # Deliver Announce to followers
+    # フォロワーに Announce を配送
     from app.activitypub.renderer import render_announce_activity
     from app.services.delivery_service import enqueue_delivery
     from app.services.follow_service import get_follower_inboxes
@@ -1360,7 +1360,7 @@ async def reblog_status(
     for inbox_url in inboxes:
         await enqueue_delivery(db, actor.id, inbox_url, activity)
 
-    # Publish streaming events so followers see the reblog in real-time
+    # ストリーミングイベントを発行し、フォロワーがリブログをリアルタイムで確認できるようにする
     try:
         import json as _json
 
@@ -1374,9 +1374,9 @@ async def reblog_status(
             await valkey_client.publish(f"timeline:home:{fid}", event)
         await valkey_client.publish(f"timeline:home:{actor.id}", event)
     except Exception:
-        pass  # Don't fail reblog if pub/sub fails
+        pass  # pub/sub の失敗でリブログを失敗させない
 
-    # Re-refresh after delivery commits expired the session
+    # 配送コミット後にセッションが期限切れになるため再リフレッシュ
     await db.refresh(reblog_note, ["actor", "attachments"])
     await db.refresh(original, ["actor", "attachments"])
     return await note_to_response(reblog_note, reblog_note=original, db=db)
@@ -1415,7 +1415,7 @@ async def unreblog_status(
     original.renotes_count = max(0, original.renotes_count - 1)
     await db.commit()
 
-    # Deliver Undo(Announce) to followers
+    # フォロワーに Undo(Announce) を配送
     from app.activitypub.renderer import render_announce_activity, render_undo_activity
     from app.services.delivery_service import enqueue_delivery
     from app.services.follow_service import get_follower_inboxes
@@ -1502,7 +1502,7 @@ async def pin_status(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Deliver Add activity to followers
+    # フォロワーに Add アクティビティを配送
     from app.activitypub.renderer import render_add_activity
     from app.config import settings
     from app.services.delivery_service import enqueue_delivery
@@ -1544,7 +1544,7 @@ async def unpin_status(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Deliver Remove activity to followers
+    # フォロワーに Remove アクティビティを配送
     from app.activitypub.renderer import render_remove_activity
     from app.config import settings
     from app.services.delivery_service import enqueue_delivery
@@ -1584,7 +1584,7 @@ async def delete_status(
     note.deleted_at = datetime.now(timezone.utc)
     await db.commit()
 
-    # Remove from search index
+    # 検索インデックスから削除
     from app.config import settings as _settings
 
     if _settings.neko_search_enabled:
@@ -1592,7 +1592,7 @@ async def delete_status(
 
         await enqueue_delete(note.id)
 
-    # Deliver Delete(Tombstone) to followers
+    # フォロワーに Delete(Tombstone) を配送
     from app.activitypub.renderer import render_delete_activity
     from app.services.delivery_service import enqueue_delivery
     from app.services.follow_service import get_follower_inboxes

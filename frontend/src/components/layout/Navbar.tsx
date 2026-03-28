@@ -25,7 +25,7 @@ export default function Navbar() {
   const [tlDropdownOpen, setTlDropdownOpen] = createSignal(false);
 
 
-  // Manage global SSE connection based on auth state
+  // 認証状態に基づいてグローバルSSE接続を管理
   createEffect(() => {
     if (currentUser()) {
       connect();
@@ -35,7 +35,7 @@ export default function Navbar() {
     }
   });
 
-  // Close dropdowns on route change
+  // ルート変更時にドロップダウンを閉じる
   createEffect(() => {
     location.pathname; // track
     setMenuOpen(false);
@@ -48,7 +48,7 @@ export default function Navbar() {
 
   const isActive = (path: string) => location.pathname === path;
 
-  // Close dropdown on outside click
+  // 外部クリックでドロップダウンを閉じる
   const handleDocClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest(".navbar-user-menu")) {

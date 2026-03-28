@@ -18,7 +18,7 @@ class NoteAttachment(Base):
         UUID(as_uuid=True), ForeignKey("drive_files.id", ondelete="SET NULL"), nullable=True
     )
     position: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    # For remote attachments where we don't download the file
+    # ファイルをダウンロードしないリモート添付ファイル用
     remote_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     remote_mime_type: Mapped[str | None] = mapped_column(String(127), nullable=True)
     remote_name: Mapped[str | None] = mapped_column(String(255), nullable=True)

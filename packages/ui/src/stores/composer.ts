@@ -17,7 +17,7 @@ function loadBool(key: string, fallback: boolean): boolean {
   return fallback;
 }
 
-// "direct" is not a valid default visibility — migrate to "public" if set
+// "direct" はデフォルト公開範囲として無効 — 設定されていれば "public" に移行
 const loadedDefault = loadVisibility("defaultVisibility", "public");
 const [defaultVisibility, setDefaultVisibilitySignal] = createSignal<Visibility>(
   loadedDefault === "direct" ? "public" : loadedDefault,
@@ -46,7 +46,7 @@ export function setLastVisibility(v: Visibility) {
   localStorage.setItem("lastVisibility", v);
 }
 
-/** Returns the visibility to use when opening the composer. */
+/** コンポーザを開く際に使用する公開範囲を返す。 */
 export function getInitialVisibility(): Visibility {
   return rememberVisibility() ? lastVisibility() : defaultVisibility();
 }
@@ -58,12 +58,12 @@ export const VISIBILITY_RANK: Record<Visibility, number> = {
   direct: 3,
 };
 
-/** Return the more restrictive of two visibilities. */
+/** 2つの公開範囲のうち、より制限の強い方を返す。 */
 export function moreRestrictiveVisibility(a: Visibility, b: Visibility): Visibility {
   return (VISIBILITY_RANK[a] ?? 0) >= (VISIBILITY_RANK[b] ?? 0) ? a : b;
 }
 
-// --- Draft storage ---
+// --- 下書きストレージ ---
 
 export interface Draft {
   id: string;

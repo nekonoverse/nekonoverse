@@ -3,9 +3,9 @@ import type { CustomEmoji } from "../types/emoji";
 const SHORTCODE_RE = /:([a-zA-Z0-9_]+):/g;
 
 /**
- * Replace :shortcode: text in an element with custom emoji <img> tags.
- * Uses the emoji map from the API response to resolve URLs.
- * Call this after setting innerHTML, before twemojify.
+ * 要素内の :shortcode: テキストをカスタム絵文字 <img> タグに置換する。
+ * API レスポンスの絵文字マップを使用して URL を解決する。
+ * innerHTML 設定後、twemojify の前に呼び出すこと。
  */
 export function emojify(el: HTMLElement, emojis: CustomEmoji[]): void {
   if (!emojis || emojis.length === 0) return;

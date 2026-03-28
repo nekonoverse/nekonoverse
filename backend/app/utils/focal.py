@@ -1,10 +1,10 @@
 def focal_from_detections(
     results: list[dict], width: int, height: int
 ) -> tuple[float, float] | None:
-    """Calculate focal point from face detection results.
+    """顔検出結果からフォーカルポイントを計算する。
 
-    Uses the union of all bounding boxes so that multi-face images
-    get a focal point centered on all detected faces, not just one.
+    すべてのバウンディングボックスの和集合を使用し、
+    複数の顔がある画像では1つだけでなく全検出顔の中心にフォーカルポイントを設定する。
     """
     if not results or width <= 0 or height <= 0:
         return None
@@ -15,7 +15,7 @@ def focal_from_detections(
     ymax = max(r["box"]["ymax"] for r in results)
 
     cx = (xmin + xmax) / 2
-    # Bias toward top of face box (1/3 from top) to prevent head/hair cropping
+    # 頭部/髪のクロッピングを防ぐため顔ボックスの上部寄り (上から 1/3) にバイアス
     cy = ymin + (ymax - ymin) / 3
 
     focal_x = max(-1.0, min(1.0, (cx / width) * 2 - 1))

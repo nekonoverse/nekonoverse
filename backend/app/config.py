@@ -18,9 +18,9 @@ class Settings(BaseSettings):
     s3_bucket: str = "nekonoverse"
     s3_region: str = "us-east-1"
     skip_ssl_verify: bool = False
-    allow_private_networks: bool = False  # Disable SSRF protection (for federation tests)
+    allow_private_networks: bool = False  # SSRF 保護を無効化 (連合テスト用)
     face_detect_url: str | None = None
-    face_detect_uds: str | None = None  # UDS path for face-detect (e.g. /var/run/nekonoverse-face-detect/uvicorn.sock)
+    face_detect_uds: str | None = None  # face-detect の UDS パス (例: /var/run/nekonoverse-face-detect/uvicorn.sock)
     media_proxy_transform_url: str | None = None
     media_proxy_transform_uds: str | None = None
     summary_proxy_url: str | None = None
@@ -36,16 +36,16 @@ class Settings(BaseSettings):
     smtp_from: str | None = None  # 未設定時は noreply@{domain}
     smtp_security: str = "starttls"  # "starttls" (port 587) / "ssl" (port 465) / "none"
 
-    # Cloudflare Turnstile CAPTCHA (optional)
+    # Cloudflare Turnstile CAPTCHA (オプション)
     turnstile_site_key: str | None = None
     turnstile_secret_key: str | None = None
 
-    # Upload size limits (MB)
+    # アップロードサイズ制限 (MB)
     max_image_size_mb: int = 10
     max_video_size_mb: int = 40
     max_audio_size_mb: int = 10
 
-    # Forward proxy for outbound federation requests (origin IP concealment)
+    # 送信連合リクエスト用のフォワードプロキシ (送信元 IP 秘匿)
     http_proxy: str | None = None
     https_proxy: str | None = None
     no_proxy: str = ""
@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     vapid_private_key: str | None = None
 
     def derive_key(self, purpose: str) -> str:
-        """Derive a purpose-specific key from secret_key using HMAC."""
+        """HMAC を使用して secret_key から用途別の鍵を導出する。"""
         import hashlib
         import hmac
 

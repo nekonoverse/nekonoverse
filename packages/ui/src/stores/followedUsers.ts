@@ -10,7 +10,7 @@ export async function fetchFollowedIds() {
     const ids = await apiRequest<string[]>("/api/v1/following_ids");
     setFollowedIds(new Set(ids));
   } catch {
-    // not logged in or error
+    // 未ログインまたはエラー
   }
 }
 

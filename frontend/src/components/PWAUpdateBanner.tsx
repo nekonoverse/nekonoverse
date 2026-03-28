@@ -16,7 +16,7 @@ export default function PWAUpdateBanner() {
         },
       });
     } catch {
-      // SW registration not available (dev mode)
+      // Service Worker登録が利用不可（開発モード）
     }
   });
 

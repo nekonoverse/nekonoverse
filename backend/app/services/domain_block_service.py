@@ -1,4 +1,4 @@
-"""Domain block service with Valkey caching."""
+"""Valkeyキャッシュ付きドメインブロックサービス。"""
 
 import logging
 

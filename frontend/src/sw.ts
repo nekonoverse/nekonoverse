@@ -7,13 +7,13 @@ import { ExpirationPlugin } from "workbox-expiration";
 
 declare let self: ServiceWorkerGlobalScope;
 
-// Auto-update: claim clients immediately
+// 自動更新: 即座にクライアントを制御下に置く
 clientsClaim();
 
-// Precache static assets (injected by vite-plugin-pwa)
+// 静的アセットのプリキャッシュ（vite-plugin-pwaが注入）
 precacheAndRoute(self.__WB_MANIFEST);
 
-// Runtime cache for API requests (SSE and instance excluded)
+// APIリクエストのランタイムキャッシュ（SSEとinstanceは除外）
 registerRoute(
   ({ url }) =>
     url.pathname.startsWith("/api/") &&
@@ -31,7 +31,7 @@ registerRoute(
   }),
 );
 
-// --- Web Push notification handler ---
+// --- Web Push通知ハンドラ ---
 self.addEventListener("push", (event) => {
   if (!event.data) return;
 
@@ -59,7 +59,7 @@ self.addEventListener("push", (event) => {
     },
   };
 
-  // Suppress OS notification when the app is focused (SSE handles in-app display)
+  // アプリがフォーカス中はOS通知を抑制する（アプリ内表示はSSEが担当）
   event.waitUntil(
     self.clients
       .matchAll({ type: "window", includeUncontrolled: true })
@@ -73,7 +73,7 @@ self.addEventListener("push", (event) => {
   );
 });
 
-// --- Notification click handler ---
+// --- 通知クリックハンドラ ---
 self.addEventListener("notificationclick", (event) => {
   event.notification.close();
 

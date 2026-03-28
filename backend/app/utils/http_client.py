@@ -1,4 +1,4 @@
-"""Factory for httpx.AsyncClient with optional forward proxy support."""
+"""フォワードプロキシ対応のオプション付き httpx.AsyncClient ファクトリ。"""
 
 import httpx
 
@@ -9,12 +9,12 @@ USER_AGENT = f"Nekonoverse/{__version__}"
 
 
 def get_proxy_url() -> str | None:
-    """Return the proxy URL from settings, preferring https_proxy."""
+    """設定からプロキシ URL を返す。https_proxy を優先する。"""
     return settings.https_proxy or settings.http_proxy
 
 
 def _inject_user_agent(kwargs: dict) -> None:
-    """Ensure User-Agent header is present in kwargs."""
+    """kwargs に User-Agent ヘッダーが存在することを保証する。"""
     headers = kwargs.get("headers")
     if headers is None:
         kwargs["headers"] = {"User-Agent": USER_AGENT}
@@ -23,14 +23,13 @@ def _inject_user_agent(kwargs: dict) -> None:
 
 
 def make_face_detect_client(**kwargs) -> httpx.AsyncClient:
-    """Create an httpx.AsyncClient configured for the face-detect service.
+    """face-detect サービス用に設定された httpx.AsyncClient を作成する。
 
-    When ``settings.face_detect_uds`` is set, uses a Unix domain socket
-    transport instead of TCP.
+    ``settings.face_detect_uds`` が設定されている場合、TCP の代わりに
+    Unix ドメインソケットトランスポートを使用する。
 
-    Proxy is explicitly disabled by default to prevent httpx from using
-    the ``HTTP_PROXY`` environment variable, since face-detect is typically
-    an internal service.
+    face-detect は通常内部サービスのため、httpx が ``HTTP_PROXY``
+    環境変数を使用するのを防ぐためプロキシはデフォルトで明示的に無効化。
     """
     _inject_user_agent(kwargs)
     if settings.face_detect_uds:
@@ -43,7 +42,7 @@ def make_face_detect_client(**kwargs) -> httpx.AsyncClient:
 
 
 def make_media_transform_client(**kwargs) -> httpx.AsyncClient:
-    """Create an httpx.AsyncClient for the media-proxy-transform service."""
+    """media-proxy-transform サービス用の httpx.AsyncClient を作成する。"""
     _inject_user_agent(kwargs)
     if settings.media_proxy_transform_uds:
         kwargs.setdefault(
@@ -55,7 +54,7 @@ def make_media_transform_client(**kwargs) -> httpx.AsyncClient:
 
 
 def make_summary_proxy_client(**kwargs) -> httpx.AsyncClient:
-    """Create an httpx.AsyncClient configured for the summary-proxy service."""
+    """summary-proxy サービス用に設定された httpx.AsyncClient を作成する。"""
     _inject_user_agent(kwargs)
     if settings.summary_proxy_uds:
         kwargs.setdefault(
@@ -67,7 +66,7 @@ def make_summary_proxy_client(**kwargs) -> httpx.AsyncClient:
 
 
 def make_neko_search_client(**kwargs) -> httpx.AsyncClient:
-    """Create an httpx.AsyncClient configured for the neko-search service."""
+    """neko-search サービス用に設定された httpx.AsyncClient を作成する。"""
     _inject_user_agent(kwargs)
     if settings.neko_search_uds:
         kwargs.setdefault(
@@ -79,20 +78,20 @@ def make_neko_search_client(**kwargs) -> httpx.AsyncClient:
 
 
 def make_async_client(*, use_proxy: bool = True, **kwargs) -> httpx.AsyncClient:
-    """Create an httpx.AsyncClient with proxy settings injected.
+    """プロキシ設定を注入した httpx.AsyncClient を作成する。
 
     Args:
-        use_proxy: If True (default), inject proxy from settings.
-                   Set to False for local/internal service calls.
-        **kwargs: Additional arguments passed to httpx.AsyncClient.
+        use_proxy: True (デフォルト) の場合、設定からプロキシを注入する。
+                   ローカル/内部サービス呼び出しには False を設定する。
+        **kwargs: httpx.AsyncClient に渡される追加の引数。
     """
     _inject_user_agent(kwargs)
     if use_proxy and "proxy" not in kwargs:
         proxy_url = get_proxy_url()
         if proxy_url:
             kwargs["proxy"] = proxy_url
-    # When proxy is not wanted, explicitly set None to prevent httpx
-    # from auto-detecting HTTP_PROXY environment variable.
+    # プロキシが不要な場合、httpx が HTTP_PROXY 環境変数を
+    # 自動検出するのを防ぐため明示的に None を設定する。
     if not use_proxy:
         kwargs.setdefault("proxy", None)
     return httpx.AsyncClient(**kwargs)

@@ -1,11 +1,11 @@
-"""Valkey-based job queue for neko-search indexing.
+"""neko-searchインデックス用のValkeyベースジョブキュー。
 
-Jobs are stored as JSON in a Valkey list. The worker pops jobs, calls the
-neko-search external service to index/delete documents.
+ジョブはJSON形式でValkeyリストに保存される。ワーカーがジョブをポップし、
+neko-search外部サービスを呼び出してドキュメントのインデックス/削除を行う。
 
-Job types:
-  - "index":  index a note (note_id, text, published)
-  - "delete": remove a note from the index (note_id)
+ジョブ種別:
+  - "index":  ノートをインデックスに追加 (note_id, text, published)
+  - "delete": ノートをインデックスから削除 (note_id)
 """
 
 import asyncio
@@ -29,7 +29,7 @@ MAX_CONCURRENT = 8
 
 
 async def enqueue_index(note_id: uuid.UUID, text: str, published) -> None:
-    """Enqueue a note for indexing in neko-search."""
+    """neko-searchでのインデックス登録用にノートをキューに追加する。"""
     if not settings.neko_search_enabled:
         return
     pub = published.isoformat() if hasattr(published, "isoformat") else str(published)
@@ -46,7 +46,7 @@ async def enqueue_index(note_id: uuid.UUID, text: str, published) -> None:
 
 
 async def enqueue_delete(note_id: uuid.UUID) -> None:
-    """Enqueue a note deletion from neko-search index."""
+    """neko-searchインデックスからのノート削除をキューに追加する。"""
     if not settings.neko_search_enabled:
         return
     job = {
@@ -60,7 +60,7 @@ async def enqueue_delete(note_id: uuid.UUID) -> None:
 
 
 async def _process_index(job: dict) -> None:
-    """POST /index to neko-search."""
+    """neko-searchにPOST /indexを送信する。"""
     from app.utils.http_client import make_neko_search_client
 
     base = settings.neko_search_base_url.rstrip("/")
@@ -77,7 +77,7 @@ async def _process_index(job: dict) -> None:
 
 
 async def _process_delete(job: dict) -> None:
-    """DELETE /index/{note_id} from neko-search."""
+    """neko-searchからDELETE /index/{note_id}を送信する。"""
     from app.utils.http_client import make_neko_search_client
 
     base = settings.neko_search_base_url.rstrip("/")
@@ -87,7 +87,7 @@ async def _process_delete(job: dict) -> None:
 
 
 async def _process_job(job: dict) -> None:
-    """Route and process a single job."""
+    """単一のジョブをルーティングして処理する。"""
     job_type = job.get("type")
     if job_type == "index":
         await _process_index(job)
@@ -98,7 +98,7 @@ async def _process_job(job: dict) -> None:
 
 
 async def _retry_or_dead(job: dict, error: str) -> None:
-    """Re-enqueue with backoff or move to dead-letter."""
+    """バックオフ付きで再キューするか、デッドレターに移動する。"""
     job["attempts"] = job.get("attempts", 0) + 1
     job["last_error"] = error
 
@@ -119,7 +119,7 @@ async def _retry_or_dead(job: dict, error: str) -> None:
 
 
 async def _promote_delayed() -> int:
-    """Move delayed jobs whose run_at has passed back to the main queue."""
+    """run_atが経過した遅延ジョブをメインキューに戻す。"""
     now = time.time()
     ready = await valkey_client.zrangebyscore(DELAYED_KEY, "-inf", str(now), start=0, num=50)
     if not ready:
@@ -131,7 +131,7 @@ async def _promote_delayed() -> int:
 
 
 async def _update_heartbeat() -> None:
-    """Update neko-search worker heartbeat."""
+    """neko-searchワーカーのハートビートを更新する。"""
     try:
         from datetime import datetime, timezone
 
@@ -142,7 +142,7 @@ async def _update_heartbeat() -> None:
 
 
 async def run_search_index_loop() -> None:
-    """Main neko-search worker loop."""
+    """neko-searchワーカーのメインループ。"""
     if not settings.neko_search_enabled:
         logger.info("NEKO_SEARCH_URL/UDS not set, neko-search worker idle")
         while True:

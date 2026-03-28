@@ -72,7 +72,7 @@ function QuoteEmbed(props: { note: Note }) {
   const navigate = useNavigate();
   const [quoteRevealed, setQuoteRevealed] = createSignal(false);
   const handleClick = (e: MouseEvent) => {
-    // Don't navigate if clicking a link inside the quote
+    // 引用内のリンクをクリックした場合はナビゲーションしない
     if ((e.target as HTMLElement).closest("a")) return;
     e.preventDefault();
     navigate(`/notes/${props.note.id}`);
@@ -288,14 +288,14 @@ export default function NoteCard(props: Props) {
   const [noteSource, setNoteSource] = createSignal(props.note.source);
   const [noteEditedAt, setNoteEditedAt] = createSignal(props.note.edited_at);
 
-  // Long-press modal for boost/fav "who did this"
+  // ブースト/お気に入りの「誰がしたか」を表示する長押しモーダル
   const [actionModalTitle, setActionModalTitle] = createSignal<string | null>(null);
   const [actionModalUsers, setActionModalUsers] = createSignal<ActionByUser[]>([]);
   const [actionModalLoading, setActionModalLoading] = createSignal(false);
   let actionLongPressTimer: ReturnType<typeof setTimeout> | null = null;
   let actionDidLongPress = false;
 
-  // Hover popover for boost/fav (PC mode)
+  // ブースト/お気に入りのホバーポップオーバー（PCモード）
   const [hoverTarget, setHoverTarget] = createSignal<"boost" | "fav" | null>(null);
   const [hoverTitle, setHoverTitle] = createSignal("");
   const [hoverUsers, setHoverUsers] = createSignal<ActionByUser[]>([]);
@@ -303,7 +303,7 @@ export default function NoteCard(props: Props) {
   let hoverShowTimer: ReturnType<typeof setTimeout> | null = null;
   let hoverHideTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // If this is a reblog, the displayed note is the inner one
+  // リブログの場合、表示するノートは内側のノート
   const isReblog = () => !!props.note.reblog;
   const displayNote = () => props.note.reblog || props.note;
 
@@ -325,7 +325,7 @@ export default function NoteCard(props: Props) {
     return user && user.username === note.actor.username && !note.actor.domain;
   };
 
-  // Close more menu on outside click
+  // 外側クリックでその他メニューを閉じる
   const handleDocClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest(".note-more-menu")) {
@@ -448,7 +448,7 @@ export default function NoteCard(props: Props) {
     props.onQuote?.(displayNote());
   };
 
-  // Long press on boost/fav to show who did it
+  // ブースト/お気に入りを長押しして誰がしたかを表示
   const openActionModal = async (
     title: string,
     fetcher: () => Promise<ActionByUser[]>,
@@ -503,7 +503,7 @@ export default function NoteCard(props: Props) {
       try {
         users = await fetcher();
       } catch {
-        // ignore
+        // 無視
       }
       setHoverTitle(title);
       setHoverUsers(users);
@@ -565,10 +565,10 @@ export default function NoteCard(props: Props) {
 
   const note = displayNote;
 
-  // Determine the reply-to actor display
+  // 返信先アクターの表示を決定
   const replyToDisplay = (): { username: string; domain: string | null } | null => {
     if (props.inReplyToActor) return props.inReplyToActor;
-    // Fallback: use mentions from API response (first mention = reply target)
+    // フォールバック: APIレスポンスのメンションを使用（最初のメンション = 返信先）
     const n = note();
     if (n.in_reply_to_id && n.mentions?.length > 0) {
       const m = n.mentions[0];
@@ -772,10 +772,10 @@ export default function NoteCard(props: Props) {
                 title={nyaizeSuppressed() ? t("note.nyaizeOff") : t("note.nyaizeOn")}
               >
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  {/* ears */}
+                  {/* 耳 */}
                   <path d="M3 11 L5 2 L10 8" />
                   <path d="M21 11 L19 2 L14 8" />
-                  {/* face */}
+                  {/* 顔 */}
                   <ellipse cx="12" cy="14" rx="9" ry="8" />
                   {nyaizeSuppressed() ? (
                     <>
@@ -887,7 +887,7 @@ export default function NoteCard(props: Props) {
                   nyaizeElement(el);
                 }
               };
-              // Re-render when nyaize suppression toggles
+              // にゃいず抑制の切り替え時に再レンダリング
               createEffect(() => {
                 nyaizeSuppressed();
                 renderContent();
@@ -1324,7 +1324,7 @@ export default function NoteCard(props: Props) {
       </div>
     </div>
 
-    {/* Boost/Favourite users modal (long press) */}
+    {/* ブースト/お気に入りユーザーモーダル（長押し） */}
     <Show when={actionModalTitle()}>
       <div class="modal-overlay" onClick={closeActionModal}>
         <div class="modal-content reacted-by-modal" onClick={(e) => e.stopPropagation()}>
@@ -1369,7 +1369,7 @@ export default function NoteCard(props: Props) {
       </div>
     </Show>
 
-    {/* Source view modal */}
+    {/* ソース表示モーダル */}
     <Show when={showSource()}>
       <div class="modal-overlay" onClick={() => setShowSource(false)}>
         <div class="modal-content" style="max-width: 600px" onClick={(e) => e.stopPropagation()}>

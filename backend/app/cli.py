@@ -1,6 +1,6 @@
-"""Management CLI for nekonoverse.
+"""nekonoverse 管理 CLI。
 
-Usage:
+使い方:
     python -m app.cli create-admin
     python -m app.cli reset-password
     python -m app.cli detect-focal-points
@@ -20,7 +20,7 @@ import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-# Import all models so SQLAlchemy relationships resolve correctly
+# SQLAlchemy のリレーションが正しく解決されるよう全モデルをインポート
 import app.models.actor  # noqa: F401
 import app.models.delivery  # noqa: F401
 import app.models.drive_file  # noqa: F401
@@ -133,7 +133,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
         print("Error: FACE_DETECT_URL or FACE_DETECT_UDS is not set.", file=sys.stderr)
         sys.exit(1)
 
-    # Fetch current face-detect version for skip/record logic
+    # スキップ/記録ロジック用に現在の face-detect バージョンを取得
     detect_version = await _fetch_version()
     if detect_version:
         print(f"Face-detect version: {detect_version}")
@@ -145,9 +145,9 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     concurrency = args.concurrency
     sem = asyncio.Semaphore(concurrency)
 
-    # --- Local DriveFiles ---
-    # Find images that need detection: version NULL (never checked) or outdated version
-    # Skip: manual focal points, already checked with current version
+    # --- ローカル DriveFile ---
+    # 検出が必要な画像を検索: バージョン NULL (未チェック) または古いバージョン
+    # スキップ: 手動フォーカルポイント、現在のバージョンでチェック済み
     async with async_session() as db:
         conditions = [
             DriveFile.mime_type.startswith("image/"),
@@ -187,7 +187,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
                         merged.focal_x = focal[0]
                         merged.focal_y = focal[1]
                         local_ok += 1
-                    # Record version so this file is skipped next time
+                    # 次回スキップされるようバージョンを記録
                     if detect_version:
                         merged.focal_detect_version = detect_version
                     await db.commit()
@@ -202,7 +202,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     if local_files:
         print()
 
-    # --- Remote NoteAttachments ---
+    # --- リモート NoteAttachment ---
     image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"}
     async with async_session() as db:
         conditions = [
@@ -237,7 +237,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
                 return "dl_err"
             focal = await _call_face_detect(image_data, att.remote_width, att.remote_height)
             if focal is None:
-                # Record version so this attachment is skipped next time
+                # 次回スキップされるようバージョンを記録
                 if detect_version:
                     att.focal_detect_version = detect_version
                 return "noface"
@@ -247,7 +247,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
                 att.focal_detect_version = detect_version
             return "ok"
 
-    # Process in batches to avoid holding too many sessions open
+    # セッションを開きすぎないようバッチ処理
     batch_size = 50
     for batch_start in range(0, len(remote_atts), batch_size):
         batch = remote_atts[batch_start : batch_start + batch_size]
@@ -344,7 +344,7 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
         updated = False
         for i, att in enumerate(attachments, 1):
             if att.drive_file:
-                # Local attachment
+                # ローカル添付ファイル
                 df = att.drive_file
                 print(f"  [{i}] Local: {df.s3_key} ({df.mime_type})")
                 old = (df.focal_x, df.focal_y)
@@ -368,7 +368,7 @@ async def _redetect_focal(args: argparse.Namespace) -> None:
                 except Exception as e:
                     print(f"       -> ERROR: {e}")
             else:
-                # Remote attachment
+                # リモート添付ファイル
                 print(f"  [{i}] Remote: {att.remote_url}")
                 old = (att.remote_focal_x, att.remote_focal_y)
                 try:
@@ -415,7 +415,7 @@ async def _regenerate_icons(args: argparse.Namespace) -> None:
                 print("No server_icon_url configured. Use --from-default to use bundled icon.")
                 sys.exit(1)
 
-            # Download current server icon from S3
+            # S3 から現在のサーバーアイコンをダウンロード
             print(f"Downloading current server icon: {icon_url}")
             # L-4: make_async_clientを使用してタイムアウトを確保
             from app.utils.http_client import make_async_client
@@ -450,7 +450,7 @@ async def _reset_password(args: argparse.Namespace) -> None:
 
 
 async def _index_notes(args: argparse.Namespace) -> None:
-    """Bulk-index all public notes to neko-search."""
+    """全公開ノートを neko-search に一括インデックス登録する。"""
     from sqlalchemy import func, select
 
     from app.config import settings
@@ -464,7 +464,7 @@ async def _index_notes(args: argparse.Namespace) -> None:
 
     base = settings.neko_search_base_url.rstrip("/")
 
-    # Check health
+    # ヘルスチェック
     async with make_neko_search_client() as client:
         resp = await client.get(f"{base}/health")
         resp.raise_for_status()
@@ -474,7 +474,7 @@ async def _index_notes(args: argparse.Namespace) -> None:
             print("Error: SentencePiece model not loaded. Run train-search first.", file=sys.stderr)
             sys.exit(1)
 
-    # Count total public notes
+    # 公開ノートの総数をカウント
     async with async_session() as db:
         total = (
             await db.execute(
@@ -534,7 +534,7 @@ async def _index_notes(args: argparse.Namespace) -> None:
 
 
 async def _train_search(args: argparse.Namespace) -> None:
-    """Export corpus to neko-search store, then trigger SentencePiece training."""
+    """コーパスを neko-search ストアにエクスポートし、SentencePiece の学習を開始する。"""
     from sqlalchemy import func, select
 
     from app.config import settings
@@ -548,7 +548,7 @@ async def _train_search(args: argparse.Namespace) -> None:
 
     base = settings.neko_search_base_url.rstrip("/")
 
-    # First, bulk-index all notes so the store has data for training
+    # まず全ノートを一括インデックスし、学習用データをストアに準備
     async with async_session() as db:
         total = (
             await db.execute(
@@ -605,7 +605,7 @@ async def _train_search(args: argparse.Namespace) -> None:
 
     print(f"\n  Exported {exported} notes.")
 
-    # Trigger async training
+    # 非同期学習を開始
     print(f"Triggering SentencePiece training (vocab_size={args.vocab_size})...")
     async with make_neko_search_client(timeout=60.0) as client:
         resp = await client.post(f"{base}/train", json={"vocab_size": args.vocab_size})
@@ -613,7 +613,7 @@ async def _train_search(args: argparse.Namespace) -> None:
 
     print("Training started. Polling for completion...")
 
-    # Poll /train/status until build completes
+    # ビルド完了まで /train/status をポーリング
     import asyncio
 
     while True:
@@ -631,7 +631,7 @@ async def _train_search(args: argparse.Namespace) -> None:
             break
         print(f"\r  building... (generation={status['current_version']})", end="", flush=True)
 
-    # Verify with health check
+    # ヘルスチェックで検証
     async with make_neko_search_client(timeout=10.0) as client:
         resp = await client.get(f"{base}/health")
         resp.raise_for_status()

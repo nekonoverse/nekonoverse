@@ -37,7 +37,7 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     )
     post_count = post_count_result.scalar() or 0
 
-    # Active users: local actors who posted at least one note in the period
+    # アクティブユーザー: 期間内に1つ以上のノートを投稿したローカルアクター
     now = datetime.now(timezone.utc)
     local_actor_ids = select(Actor.id).where(Actor.domain.is_(None))
 
@@ -61,7 +61,7 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     )
     active_month = active_month_result.scalar() or 0
 
-    # Registration status from server settings
+    # サーバー設定からの登録状況
     open_registrations = settings.registration_open
     try:
         from app.services.server_settings_service import get_setting
@@ -76,7 +76,7 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
-    # Load server settings
+    # サーバー設定を読み込む
     node_name = "Nekonoverse"
     node_description = "A cat-friendly ActivityPub server"
     node_icon_url = None

@@ -1,4 +1,4 @@
-"""Service for querying federated server information."""
+"""連合サーバー情報のクエリサービス。"""
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,9 +19,9 @@ async def get_federated_servers(
     search: str | None = None,
     status: str | None = None,
 ) -> tuple[list[dict], int]:
-    """Return aggregated list of federated servers with stats.
+    """統計情報付きの連合サーバー一覧を集約して返す。
 
-    Returns (servers, total_count).
+    (servers, total_count) を返す。
     """
     # actorテーブルからドメイン別に集約
     actor_sub = (
@@ -156,7 +156,7 @@ async def get_federated_server_detail(
     db: AsyncSession,
     domain: str,
 ) -> dict | None:
-    """Return detailed info for a single federated server."""
+    """単一の連合サーバーの詳細情報を返す。"""
     # ドメインのactor集約
     actor_agg = await db.execute(
         select(

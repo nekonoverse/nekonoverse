@@ -33,7 +33,7 @@ export default function Profile() {
     localStorage.getItem("pinnedPostsExpanded") !== "false"
   );
 
-  // Infinite scroll state
+  // 無限スクロール状態
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
   let sentinelRef: HTMLDivElement | undefined;
@@ -46,12 +46,12 @@ export default function Profile() {
     }
   };
 
-  // Follow state
+  // フォロー状態
   const [isFollowing, setIsFollowing] = createSignal(false);
   const [isRequested, setIsRequested] = createSignal(false);
   const [followLoading, setFollowLoading] = createSignal(false);
 
-  // Block/mute state
+  // ブロック/ミュート状態
   const [isBlocking, setIsBlocking] = createSignal(false);
   const [isMuting, setIsMuting] = createSignal(false);
   const [isFollowedBy, setIsFollowedBy] = createSignal(false);
@@ -66,12 +66,12 @@ export default function Profile() {
   const [showNewListInput, setShowNewListInput] = createSignal(false);
   const [newListTitle, setNewListTitle] = createSignal("");
 
-  // Compose modal state
+  // 投稿モーダル状態
   const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
   const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
   const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
-  // Inline edit state
+  // インライン編集状態
   const [editing, setEditing] = createSignal(false);
   const [editName, setEditName] = createSignal("");
   const [editBio, setEditBio] = createSignal("");
@@ -416,7 +416,7 @@ export default function Profile() {
     setTogglingListId(null);
   };
 
-  // Close dropdown on outside click
+  // 外部クリックでドロップダウンを閉じる
   const handleDocClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest(".profile-more-menu")) {
@@ -886,7 +886,7 @@ export default function Profile() {
         </Show>
       </Show>
 
-      {/* Unfollow confirmation modal */}
+      {/* フォロー解除確認モーダル */}
       <Show when={showUnfollowModal()}>
         <div class="modal-overlay" onClick={() => setShowUnfollowModal(false)}>
           <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>
@@ -920,7 +920,7 @@ export default function Profile() {
         </div>
       </Show>
 
-      {/* Compose modal (reply / quote) */}
+      {/* 投稿モーダル（返信/引用） */}
       <ComposeModal
         open={!!replyTarget() || !!quoteTarget()}
         onClose={() => { setReplyTarget(null); setQuoteTarget(null); }}
@@ -928,7 +928,7 @@ export default function Profile() {
         quoteNote={quoteTarget()}
       />
 
-      {/* Unlock confirmation modal */}
+      {/* 承認制解除確認モーダル */}
       <Show when={showUnlockModal()}>
         <div class="modal-overlay" onClick={() => setShowUnlockModal(false)}>
           <div class="modal-content" style="max-width: 400px" onClick={(e) => e.stopPropagation()}>
@@ -958,7 +958,7 @@ export default function Profile() {
         </div>
       </Show>
 
-      {/* Thread modal */}
+      {/* スレッドモーダル */}
       <Show when={threadNoteId()}>
         <NoteThreadModal
           noteId={threadNoteId()!}
@@ -974,7 +974,7 @@ export default function Profile() {
         />
       </Show>
 
-      {/* Header crop picker */}
+      {/* ヘッダー切り抜きピッカー */}
       <Show when={showHeaderFocal() && account()?.header}>
         <HeaderCropPicker
           imageUrl={account()!.header!}
@@ -985,7 +985,7 @@ export default function Profile() {
         />
       </Show>
 
-      {/* Add to list modal */}
+      {/* リストに追加モーダル */}
       <Show when={showAddToList()}>
         <div class="modal-overlay" onClick={() => setShowAddToList(false)}>
           <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>

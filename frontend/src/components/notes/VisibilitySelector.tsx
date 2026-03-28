@@ -11,7 +11,7 @@ const OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] = [
 interface Props {
   value: Visibility;
   onChange: (v: Visibility) => void;
-  /** Visibility keys to exclude from the selector */
+  /** セレクタから除外する公開範囲キー */
   exclude?: Visibility[];
 }
 

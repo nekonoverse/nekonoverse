@@ -23,7 +23,7 @@ def _get_fernet() -> Fernet:
 
 
 def _get_legacy_fernet() -> Fernet:
-    """Legacy key derivation (SHA-256 direct) for migration."""
+    """移行用のレガシー鍵導出 (SHA-256直接導出)。"""
     key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode()).digest())
     return Fernet(key)
 

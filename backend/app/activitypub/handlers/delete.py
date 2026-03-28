@@ -1,4 +1,4 @@
-"""Handle Delete activities."""
+"""Delete activity を処理する。"""
 
 import logging
 from datetime import datetime, timezone
@@ -19,7 +19,7 @@ async def handle_delete(db: AsyncSession, activity: dict):
     if not actor_ap_id:
         return
 
-    # Object can be a string (ID) or a Tombstone dict
+    # オブジェクトは文字列 (ID) または Tombstone dict のどちらかを取る
     if isinstance(obj, dict):
         object_id = obj.get("id")
     elif isinstance(obj, str):
@@ -30,7 +30,7 @@ async def handle_delete(db: AsyncSession, activity: dict):
     if not object_id:
         return
 
-    # Verify the actor owns the object
+    # アクターがオブジェクトの所有者であることを検証
     actor = await get_actor_by_ap_id(db, actor_ap_id)
     if not actor:
         return
@@ -47,7 +47,7 @@ async def handle_delete(db: AsyncSession, activity: dict):
     await db.commit()
     logger.info("Deleted note %s by %s", object_id, actor_ap_id)
 
-    # Remove from search index
+    # 検索インデックスから削除
     if settings.neko_search_enabled:
         from app.services.search_queue import enqueue_delete
 

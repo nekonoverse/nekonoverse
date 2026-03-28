@@ -1,4 +1,4 @@
-"""Account migration service: Move activity handling."""
+"""アカウント移行サービス: Move Activity の処理。"""
 
 import logging
 
@@ -17,7 +17,7 @@ async def handle_incoming_move(
     source_actor: Actor,
     target_ap_id: str,
 ) -> bool:
-    """Handle a received Move activity: set movedTo, migrate followers."""
+    """受信した Move Activity を処理する: movedTo を設定し、フォロワーを移行する。"""
     from app.services.actor_service import fetch_remote_actor
 
     target_actor = await fetch_remote_actor(db, target_ap_id)
@@ -25,7 +25,7 @@ async def handle_incoming_move(
         logger.warning("Move target %s not found", target_ap_id)
         return False
 
-    # Verify alsoKnownAs on target includes source
+    # 移行先の alsoKnownAs に移行元が含まれているか検証
     also_known = target_actor.also_known_as or []
     if source_actor.ap_id not in also_known:
         logger.warning(
@@ -35,11 +35,11 @@ async def handle_incoming_move(
         )
         return False
 
-    # Mark source as moved
+    # 移行元を移行済みとしてマーク
     source_actor.moved_to_ap_id = target_ap_id
     await db.flush()
 
-    # Migrate local followers to target
+    # ローカルフォロワーを移行先に移行
     result = await db.execute(
         select(Follow).where(
             Follow.following_id == source_actor.id,
@@ -49,7 +49,7 @@ async def handle_incoming_move(
     follows = list(result.scalars().all())
 
     for follow in follows:
-        # Check if already following target
+        # 既に移行先をフォロー済みか確認
         existing = await db.execute(
             select(Follow).where(
                 Follow.follower_id == follow.follower_id,
@@ -59,7 +59,7 @@ async def handle_incoming_move(
         if existing.scalar_one_or_none():
             continue
 
-        # Create new follow to target
+        # 移行先への新しいフォローを作成
         new_follow = Follow(
             follower_id=follow.follower_id,
             following_id=target_actor.id,
@@ -82,12 +82,12 @@ async def initiate_move(
     user: User,
     target_ap_id: str,
 ) -> bool:
-    """Initiate an account move from the local user to a target."""
+    """ローカルユーザーから移行先へのアカウント移行を開始する。"""
     from app.services.actor_service import fetch_remote_actor
 
     actor = user.actor
 
-    # Verify the target actor has alsoKnownAs pointing back
+    # 移行先アクターの alsoKnownAs に自分が含まれているか検証
     target_actor = await fetch_remote_actor(db, target_ap_id)
     if not target_actor:
         raise ValueError("Target actor not found")
@@ -99,11 +99,11 @@ async def initiate_move(
     if actor_url not in also_known:
         raise ValueError("Target actor's alsoKnownAs must include your AP ID")
 
-    # Set movedTo on self
+    # 自身に movedTo を設定
     actor.moved_to_ap_id = target_ap_id
     await db.flush()
 
-    # Deliver Move activity to followers
+    # フォロワーに Move Activity を配送
     from app.activitypub.renderer import render_move_activity
     from app.services.delivery_service import enqueue_delivery
     from app.services.follow_service import get_follower_inboxes

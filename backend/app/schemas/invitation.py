@@ -1,4 +1,4 @@
-"""Invitation code schemas."""
+"""招待コードスキーマ。"""
 
 from datetime import datetime
 
@@ -6,8 +6,8 @@ from pydantic import BaseModel, Field
 
 
 class InvitationCodeCreate(BaseModel):
-    max_uses: int | None = Field(1, ge=1, description="Max uses (null = unlimited)")
-    expires_in_days: int | None = Field(None, ge=1, le=365, description="Expires after N days")
+    max_uses: int | None = Field(1, ge=1, description="最大使用回数 (null = 無制限)")
+    expires_in_days: int | None = Field(None, ge=1, le=365, description="N日後に有効期限切れ")
 
 
 class InvitationCodeResponse(BaseModel):

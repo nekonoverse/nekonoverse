@@ -1,12 +1,12 @@
-"""Valkey-based job queue for face-detect focal point detection.
+"""face-detectフォーカルポイント検出用のValkeyベースジョブキュー。
 
-Jobs are stored as JSON in a Valkey list. The worker pops jobs, processes them,
-and re-enqueues on failure with exponential backoff (up to max_attempts).
-Dead jobs are moved to a dead-letter list for inspection.
+ジョブはJSON形式でValkeyリストに保存される。ワーカーがジョブをポップし、処理する。
+失敗時は指数バックオフ付きで再エンキューする (最大max_attempts回)。
+永続的に失敗したジョブはデッドレターリストに移動する。
 
-Job types:
-  - "local":  detect focal point for a local DriveFile (by drive_file_id)
-  - "remote": detect focal points for remote NoteAttachments (by note_id + attachment_ids)
+ジョブ種別:
+  - "local":  ローカルDriveFileのフォーカルポイントを検出 (drive_file_id指定)
+  - "remote": リモートNoteAttachmentのフォーカルポイントを検出 (note_id + attachment_ids指定)
 """
 
 import asyncio
@@ -34,7 +34,7 @@ _current_version: str | None = None
 
 
 async def _fetch_version() -> str | None:
-    """Fetch current version from face-detect service."""
+    """face-detectサービスから現在のバージョンを取得する。"""
     try:
         from app.utils.http_client import make_face_detect_client
 
@@ -55,7 +55,7 @@ async def _fetch_version() -> str | None:
 
 
 async def _requeue_outdated(version: str) -> int:
-    """Re-enqueue images that were detected with an older version."""
+    """古いバージョンで検出された画像を再エンキューする。"""
     from sqlalchemy import select
 
     from app.database import async_session
@@ -64,7 +64,7 @@ async def _requeue_outdated(version: str) -> int:
 
     count = 0
     async with async_session() as db:
-        # Local DriveFiles with outdated version
+        # 古いバージョンのローカルDriveFile
         rows = await db.execute(
             select(DriveFile.id).where(
                 DriveFile.mime_type.like("image/%"),
@@ -85,7 +85,7 @@ async def _requeue_outdated(version: str) -> int:
             await valkey_client.lpush(QUEUE_KEY, json.dumps(job))
             count += 1
 
-        # Remote NoteAttachments with outdated version, grouped by note_id
+        # 古いバージョンのリモートNoteAttachment (note_idごとにグループ化)
         rows = await db.execute(
             select(NoteAttachment.id, NoteAttachment.note_id).where(
                 NoteAttachment.remote_url.isnot(None),
@@ -114,7 +114,7 @@ async def _requeue_outdated(version: str) -> int:
 
 
 async def enqueue_local(drive_file_id: uuid.UUID) -> None:
-    """Enqueue face detection for a local DriveFile."""
+    """ローカルDriveFileの顔検出をキューに追加する。"""
     if not settings.face_detect_enabled:
         return
     job = {
@@ -129,7 +129,7 @@ async def enqueue_local(drive_file_id: uuid.UUID) -> None:
 
 
 async def enqueue_remote(note_id: uuid.UUID, attachment_ids: list[uuid.UUID]) -> None:
-    """Enqueue face detection for remote NoteAttachments."""
+    """リモートNoteAttachmentの顔検出をキューに追加する。"""
     if not settings.face_detect_enabled:
         return
     job = {
@@ -147,7 +147,7 @@ async def enqueue_remote(note_id: uuid.UUID, attachment_ids: list[uuid.UUID]) ->
 
 
 async def _process_local(job: dict) -> None:
-    """Process a local DriveFile face detection job."""
+    """ローカルDriveFileの顔検出ジョブを処理する。"""
     from sqlalchemy import select
 
     from app.database import async_session
@@ -168,7 +168,7 @@ async def _process_local(job: dict) -> None:
 
 
 async def _process_remote(job: dict) -> None:
-    """Process remote NoteAttachment face detection job."""
+    """リモートNoteAttachmentの顔検出ジョブを処理する。"""
     from app.services.focal_point_service import detect_remote_focal_points
 
     note_id = uuid.UUID(job["note_id"])
@@ -178,7 +178,7 @@ async def _process_remote(job: dict) -> None:
 
 
 async def _process_job(job: dict) -> None:
-    """Route and process a single job."""
+    """単一のジョブをルーティングして処理する。"""
     job_type = job.get("type")
     if job_type == "local":
         await _process_local(job)
@@ -189,7 +189,7 @@ async def _process_job(job: dict) -> None:
 
 
 async def _retry_or_dead(job: dict, error: str) -> None:
-    """Re-enqueue with backoff or move to dead-letter."""
+    """バックオフ付きで再キューするか、デッドレターに移動する。"""
     job["attempts"] = job.get("attempts", 0) + 1
     job["last_error"] = error
 
@@ -202,7 +202,7 @@ async def _retry_or_dead(job: dict, error: str) -> None:
         import random
 
         # L-3: ジッタを追加してthundering herdを防止
-        base_delay = min(30 * (2 ** job["attempts"]), 3600)  # Max 1 hour
+        base_delay = min(30 * (2 ** job["attempts"]), 3600)  # 最大1時間
         delay = base_delay * (0.5 + random.random())
         run_at = time.time() + delay
         await valkey_client.zadd(DELAYED_KEY, {json.dumps(job): run_at})
@@ -210,9 +210,9 @@ async def _retry_or_dead(job: dict, error: str) -> None:
 
 
 async def _promote_delayed() -> int:
-    """Move delayed jobs whose run_at has passed back to the main queue."""
+    """run_atが経過した遅延ジョブをメインキューに戻す。"""
     now = time.time()
-    # Get jobs ready to run
+    # 実行準備ができたジョブを取得
     ready = await valkey_client.zrangebyscore(DELAYED_KEY, "-inf", str(now), start=0, num=50)
     if not ready:
         return 0
@@ -223,7 +223,7 @@ async def _promote_delayed() -> int:
 
 
 async def _update_heartbeat() -> None:
-    """Update face-detect worker heartbeat."""
+    """face-detectワーカーのハートビートを更新する。"""
     try:
         from datetime import datetime, timezone
 
@@ -234,10 +234,10 @@ async def _update_heartbeat() -> None:
 
 
 async def run_face_detect_loop() -> None:
-    """Main face-detect worker loop.
+    """face-detectワーカーのメインループ。
 
-    Pops jobs from the Valkey queue, processes them with a concurrency semaphore,
-    and handles retries with exponential backoff.
+    Valkeyキューからジョブをポップし、並行数セマフォで処理し、
+    指数バックオフ付きでリトライを処理する。
     """
     global _current_version
 
@@ -248,7 +248,7 @@ async def run_face_detect_loop() -> None:
 
     logger.info("Face-detect worker started (max_concurrent=%d)", MAX_CONCURRENT)
 
-    # Fetch current version and check for version changes
+    # 現在のバージョンを取得してバージョン変更を確認
     _current_version = await _fetch_version()
     if _current_version:
         prev = await valkey_client.get(VERSION_KEY)
@@ -286,10 +286,10 @@ async def run_face_detect_loop() -> None:
         try:
             await _update_heartbeat()
 
-            # Promote any delayed jobs that are ready
+            # 準備ができた遅延ジョブを昇格
             await _promote_delayed()
 
-            # Try to pop a job (blocking with 3s timeout)
+            # ジョブをポップ (3秒タイムアウトのブロッキング)
             result = await valkey_client.brpop(QUEUE_KEY, timeout=3)
             if result:
                 _, raw = result
@@ -297,7 +297,7 @@ async def run_face_detect_loop() -> None:
                 tasks.add(task)
                 task.add_done_callback(tasks.discard)
             else:
-                # No job available, clean up completed tasks
+                # ジョブなし、完了済みタスクをクリーンアップ
                 pass
 
         except Exception:

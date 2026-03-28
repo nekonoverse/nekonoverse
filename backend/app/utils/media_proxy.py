@@ -6,7 +6,7 @@ from app.config import settings
 
 
 def _media_proxy_signing_key() -> bytes:
-    """Return the key used for media proxy HMAC signing."""
+    """メディアプロキシの HMAC 署名に使用する鍵を返す。"""
     key = settings.media_proxy_key or settings.derive_key("media-proxy")
     return key.encode()
 
@@ -17,12 +17,12 @@ def media_proxy_url(
     variant: str | None = None,
     static: bool = False,
 ) -> str:
-    """Convert a remote URL to an HMAC-signed proxy URL.
+    """リモート URL を HMAC 署名付きプロキシ URL に変換する。
 
-    Local URLs (starting with / or server_url) are returned as-is.
+    ローカル URL (/ または server_url で始まるもの) はそのまま返す。
 
-    variant: Misskey-compatible preset ("avatar", "emoji", "preview", "badge").
-    static: If True, extract first frame of animated images.
+    variant: Misskey 互換プリセット ("avatar", "emoji", "preview", "badge")。
+    static: True の場合、アニメーション画像の最初のフレームを抽出する。
     """
     if not original_url:
         return ""
@@ -40,7 +40,7 @@ def media_proxy_url(
 
 
 def verify_proxy_hmac(url: str, h: str) -> bool:
-    """Verify that the HMAC matches the given URL.
+    """HMAC が指定された URL と一致するか検証する。
 
     L-7: レガシー16文字HMAC互換とレガシーキー互換を廃止。
     32文字のHMAC署名のみ受け入れる。

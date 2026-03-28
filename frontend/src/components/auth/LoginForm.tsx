@@ -13,7 +13,7 @@ export default function LoginForm() {
   const [passkeyLoading, setPasskeyLoading] = createSignal(false);
   const navigate = useNavigate();
 
-  // TOTP state
+  // TOTP の状態
   const [totpRequired, setTotpRequired] = createSignal(false);
   const [totpToken, setTotpToken] = createSignal("");
   const [totpCode, setTotpCode] = createSignal("");

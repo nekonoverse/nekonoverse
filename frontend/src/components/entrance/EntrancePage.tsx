@@ -18,7 +18,7 @@ export default function EntrancePage() {
       const notes = await getPublicTimeline({ limit: 5, local: true });
       setPreviewNotes(notes);
     } catch {
-      // ignore
+      // 無視
     } finally {
       setLoadingPreview(false);
     }

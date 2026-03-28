@@ -1,4 +1,4 @@
-"""Announcement service: CRUD, active listing, dismiss, unread count."""
+"""お知らせサービス: CRUD、アクティブ一覧、既読化、未読数。"""
 
 import json
 import uuid
@@ -23,7 +23,7 @@ _ALLOWED_TAGS = [
 
 
 def _render_content(raw: str) -> str:
-    """Render Markdown content to sanitized HTML."""
+    """MarkdownコンテンツをサニタイズされたHTMLにレンダリングする。"""
     html = markdown.markdown(raw, extensions=["tables", "fenced_code"])
     return bleach.clean(html, tags=_ALLOWED_TAGS, attributes={"a": ["href"]}, strip=True)
 
@@ -68,7 +68,7 @@ async def update_announcement(
         if value is not None:
             setattr(announcement, key, value)
 
-    # Re-render HTML if content changed
+    # コンテンツが変更された場合はHTMLを再レンダリング
     if "content" in updates and updates["content"] is not None:
         announcement.content_html = _render_content(announcement.content)
 
@@ -106,7 +106,7 @@ async def list_announcements_admin(db: AsyncSession) -> list[Announcement]:
 
 
 def _active_filter() -> list:
-    """Return SQLAlchemy filter conditions for active announcements."""
+    """アクティブなお知らせ用のSQLAlchemyフィルタ条件を返す。"""
     now = datetime.now(timezone.utc)
     return [
         Announcement.published.is_(True),
@@ -171,7 +171,7 @@ async def get_unread_count(db: AsyncSession, user_id: uuid.UUID) -> int:
 
 
 async def publish_announcement_event(announcement: Announcement) -> None:
-    """Publish announcement event to Valkey for SSE."""
+    """SSE用にお知らせイベントをValkeyにパブリッシュする。"""
     from app.valkey_client import valkey as valkey_client
 
     event = json.dumps({

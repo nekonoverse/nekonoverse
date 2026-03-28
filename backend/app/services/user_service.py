@@ -29,7 +29,7 @@ RESERVED_USERNAMES: frozenset[str] = frozenset({
 
 
 def is_reserved_username(username: str) -> bool:
-    """Check if a username is reserved (case-insensitive)."""
+    """ユーザー名が予約語かどうかを確認する (大文字小文字を区別しない)。"""
     return username.lower() in RESERVED_USERNAMES
 
 
@@ -47,7 +47,7 @@ async def create_user(
     username = username.lower()
     if not skip_reserved_check and is_reserved_username(username):
         raise ValueError("This username is reserved")
-    # Check if username or email already exists
+    # ユーザー名またはメールアドレスが既に存在するか確認
     existing_actor = await db.execute(
         select(Actor).where(Actor.username == username, Actor.domain.is_(None))
     )
@@ -58,10 +58,10 @@ async def create_user(
     if existing_email.scalar_one_or_none():
         raise ValueError("Username or email is already in use")
 
-    # Generate RSA key pair
+    # RSA鍵ペアを生成
     private_pem, public_pem = generate_rsa_keypair()
 
-    # Create actor
+    # アクターを作成
     actor_id = uuid.uuid4()
     ap_id = f"{settings.server_url}/users/{username}"
     actor = Actor(
@@ -80,7 +80,7 @@ async def create_user(
     )
     db.add(actor)
 
-    # Create user
+    # ユーザーを作成
     user = User(
         email=email,
         password_hash=(

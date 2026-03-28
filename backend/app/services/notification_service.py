@@ -1,4 +1,4 @@
-"""Notification service: create, list, dismiss, clear."""
+"""通知サービス: 作成、一覧取得、既読化、全消去。"""
 
 import uuid
 
@@ -18,12 +18,12 @@ async def create_notification(
     note_id: uuid.UUID | None = None,
     reaction_emoji: str | None = None,
 ) -> Notification | None:
-    """Create a notification. Returns None if skipped (self-notification, blocked, muted)."""
-    # Don't notify yourself
+    """通知を作成する。自己通知、ブロック、ミュートの場合はNoneを返す。"""
+    # 自分自身には通知しない
     if sender_id and recipient_id == sender_id:
         return None
 
-    # Check if recipient blocks or mutes sender
+    # 受信者が送信者をブロックまたはミュートしているか確認
     if sender_id:
         from app.services.block_service import is_blocking
         from app.services.mute_service import is_muting
@@ -33,7 +33,7 @@ async def create_notification(
         if await is_muting(db, recipient_id, sender_id):
             return None
 
-    # Deduplicate: skip if identical notification already exists (read or unread)
+    # 重複排除: 同一の通知が既に存在する場合はスキップ (既読・未読問わず)
     dedup_filters = [
         Notification.type == type,
         Notification.recipient_id == recipient_id,
@@ -82,13 +82,13 @@ async def create_notification(
             sender_id=sender_id,
         )
     except Exception:
-        pass  # Don't fail notification creation if push fails
+        pass  # プッシュ失敗で通知作成を失敗させない
 
     return notification
 
 
 async def publish_notification(notification: Notification) -> None:
-    """Publish notification event to Valkey. Call AFTER db.commit()."""
+    """通知イベントをValkeyにパブリッシュする。db.commit()の後に呼び出すこと。"""
     try:
         import json
 
@@ -165,7 +165,7 @@ async def clear_notifications(db: AsyncSession, actor_id: uuid.UUID) -> None:
 
 
 async def get_unread_count(db: AsyncSession, actor_id: uuid.UUID) -> dict[str, int]:
-    """Return unread notification counts: total, mentions, other."""
+    """未読通知数を返す: 合計、メンション、その他。"""
     total_q = (
         select(func.count())
         .select_from(Notification)

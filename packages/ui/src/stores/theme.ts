@@ -365,7 +365,7 @@ export async function syncThemeFromServer() {
       setCustomThemeName(tc.name || "");
     }
   } catch {
-    // Use local values on failure
+    // 失敗時はローカルの値を使用
   }
 }
 

@@ -1,7 +1,7 @@
-"""Storage quota service.
+"""ストレージ容量制限サービス。
 
-Provides storage usage calculation and quota checks for users.
-Works with role_service to get quota limits from the user's role.
+ユーザーのストレージ使用量の計算と容量制限チェックを提供する。
+role_service と連携してユーザーのロールから容量制限を取得する。
 """
 
 from sqlalchemy import func, select
@@ -13,7 +13,7 @@ from app.services.role_service import get_quota_for_user
 
 
 async def get_storage_usage(db: AsyncSession, user_id) -> int:
-    """Return total bytes used by the user's drive files."""
+    """ユーザーのドライブファイルで使用されている合計バイト数を返す。"""
     result = await db.scalar(
         select(func.coalesce(func.sum(DriveFile.size_bytes), 0)).where(
             DriveFile.owner_id == user_id,
@@ -26,14 +26,14 @@ async def get_storage_usage(db: AsyncSession, user_id) -> int:
 async def check_quota(
     db: AsyncSession, user: User, additional_bytes: int
 ) -> tuple[bool, int, int]:
-    """Check if user can upload additional_bytes.
+    """ユーザーが additional_bytes をアップロード可能か確認する。
 
-    Returns (ok, current_usage, quota_limit).
-    quota_limit == 0 means unlimited.
+    (ok, current_usage, quota_limit) を返す。
+    quota_limit == 0 は無制限を意味する。
     """
     quota = await get_quota_for_user(db, user)
     if quota == 0:
-        # Unlimited
+        # 無制限
         usage = await get_storage_usage(db, user.id)
         return True, usage, 0
 

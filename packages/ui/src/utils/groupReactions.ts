@@ -35,8 +35,8 @@ export function groupReactions(
   const shortcodeToIdx = new Map<string, number>();
   const unicodeToIdx = new Map<string, number>();
 
-  // Phase 1: shortcode-based grouping (O(n))
-  // Unicode emoji → exact match, custom emoji → shortcode match
+  // フェーズ1: ショートコードベースのグルーピング (O(n))
+  // Unicode絵文字 → 完全一致、カスタム絵文字 → ショートコード一致
   for (const r of reactions) {
     if (!isCustomEmoji(r.emoji)) {
       const idx = unicodeToIdx.get(r.emoji);
@@ -61,7 +61,7 @@ export function groupReactions(
     groups.push(createGroup(r));
   }
 
-  // Phase 2: phash-based merging across different shortcodes (O(G²) on groups)
+  // フェーズ2: 異なるショートコード間の pHash ベースのマージ (グループに対して O(G²))
   const hashToIdx = new Map<string, number>();
   for (let i = 0; i < groups.length; i++) {
     const g = groups[i];

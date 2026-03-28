@@ -7,12 +7,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.hashtag import Hashtag, NoteHashtag
 
-# Matches hashtags: ASCII alphanumeric/underscore plus Japanese characters
+# ハッシュタグにマッチ: ASCII英数字/アンダースコアおよび日本語文字
 _HASHTAG_RE = re.compile(r"#([a-zA-Z0-9_\u3041-\u9fff\u30a0-\u30ff\uff66-\uff9f]+)")
 
 
 def extract_hashtags(text: str) -> list[str]:
-    """Extract hashtag names from text, lowercased and deduplicated."""
+    """テキストからハッシュタグ名を抽出し、小文字化して重複排除する。"""
     seen: set[str] = set()
     result: list[str] = []
     for match in _HASHTAG_RE.finditer(text):
@@ -24,7 +24,7 @@ def extract_hashtags(text: str) -> list[str]:
 
 
 def extract_hashtags_from_ap_tags(tags: list[dict]) -> list[str]:
-    """Extract hashtag names from an ActivityPub tag array."""
+    """ActivityPub の tag 配列からハッシュタグ名を抽出する。"""
     seen: set[str] = set()
     result: list[str] = []
     for tag in tags:
@@ -33,7 +33,7 @@ def extract_hashtags_from_ap_tags(tags: list[dict]) -> list[str]:
         if tag.get("type") != "Hashtag":
             continue
         name = tag.get("name", "")
-        # AP hashtags typically have # prefix
+        # AP のハッシュタグは通常 # プレフィックス付き
         name = name.lstrip("#").lower()
         if name and name not in seen:
             seen.add(name)
@@ -46,7 +46,7 @@ async def upsert_hashtags(
     note_id: uuid.UUID,
     hashtag_names: list[str],
 ) -> None:
-    """Create or update hashtags and link them to a note."""
+    """ハッシュタグを作成または更新し、ノートに紐付ける。"""
     if not hashtag_names:
         return
 
@@ -92,7 +92,7 @@ async def get_trending_tags(
     db: AsyncSession,
     limit: int = 10,
 ) -> list[Hashtag]:
-    """Return the most-used hashtags, ordered by usage_count descending."""
+    """使用回数が最も多いハッシュタグを usage_count 降順で返す。"""
     result = await db.execute(select(Hashtag).order_by(Hashtag.usage_count.desc()).limit(limit))
     return list(result.scalars().all())
 
@@ -104,7 +104,7 @@ async def get_notes_by_hashtag(
     max_id: uuid.UUID | None = None,
     current_actor_id: uuid.UUID | None = None,
 ) -> list:
-    """Return notes that have a specific hashtag, ordered by published desc."""
+    """特定のハッシュタグを持つノートを published 降順で返す。"""
     from app.models.actor import Actor
     from app.models.note import Note
     from app.services.note_service import _get_excluded_ids, _note_load_options
@@ -145,7 +145,7 @@ async def get_hashtags_for_note(
     db: AsyncSession,
     note_id: uuid.UUID,
 ) -> list[str]:
-    """Return the list of hashtag names for a given note."""
+    """指定されたノートのハッシュタグ名一覧を返す。"""
     result = await db.execute(
         select(Hashtag.name)
         .join(NoteHashtag, NoteHashtag.hashtag_id == Hashtag.id)
@@ -158,9 +158,9 @@ async def get_hashtags_for_notes(
     db: AsyncSession,
     note_ids: list[uuid.UUID],
 ) -> dict[uuid.UUID, list[str]]:
-    """Return hashtag names for multiple notes in a single query.
+    """複数ノートのハッシュタグ名を単一クエリで返す。
 
-    Returns a dict mapping note_id -> list of hashtag name strings.
+    note_id -> ハッシュタグ名リストの辞書を返す。
     """
     if not note_ids:
         return {}

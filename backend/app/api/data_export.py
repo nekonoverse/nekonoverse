@@ -1,4 +1,4 @@
-"""User data export API endpoints."""
+"""ユーザーデータエクスポート API エンドポイント。"""
 
 from datetime import datetime, timedelta, timezone
 from uuid import UUID
@@ -22,8 +22,8 @@ async def start_export(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Start a data export. Rate limited to once per 24 hours."""
-    # Check cooldown
+    """データエクスポートを開始する。24時間に1回のレート制限あり。"""
+    # クールダウン確認
     result = await db.execute(
         select(DataExport)
         .where(
@@ -58,7 +58,7 @@ async def get_export_status(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get the latest export status."""
+    """最新のエクスポートステータスを取得する。"""
     result = await db.execute(
         select(DataExport)
         .where(DataExport.user_id == user.id)
@@ -69,7 +69,7 @@ async def get_export_status(
     if not export:
         return None
 
-    # Check expiry
+    # 有効期限の確認
     now = datetime.now(timezone.utc)
     if export.status == "completed" and export.expires_at and now > export.expires_at:
         return {
@@ -94,7 +94,7 @@ async def download_export(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Download a completed export."""
+    """完了済みエクスポートをダウンロードする。"""
     result = await db.execute(
         select(DataExport).where(
             DataExport.id == export_id, DataExport.user_id == user.id

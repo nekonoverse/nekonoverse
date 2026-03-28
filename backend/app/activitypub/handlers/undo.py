@@ -1,4 +1,4 @@
-"""Handle Undo activities (Undo Follow, Undo Like, Undo Announce, etc.)."""
+"""Undo activity を処理する (Undo Follow, Undo Like, Undo Announce 等)。"""
 
 import logging
 from datetime import datetime, timezone
@@ -75,7 +75,7 @@ async def _undo_reaction(db: AsyncSession, activity: dict, inner: dict):
     if not note:
         return
 
-    # Find reaction by ap_id or actor+note
+    # ap_id または actor+note でリアクションを検索
     inner_id = inner.get("id")
     if inner_id:
         result = await db.execute(select(Reaction).where(Reaction.ap_id == inner_id))
@@ -109,7 +109,7 @@ async def _undo_announce(db: AsyncSession, activity: dict, inner: dict):
     if not actor:
         return
 
-    # Find the Announce note by its AP ID
+    # Announce ノートを AP ID で検索
     announce_ap_id = inner.get("id")
     if not announce_ap_id:
         return
@@ -118,10 +118,10 @@ async def _undo_announce(db: AsyncSession, activity: dict, inner: dict):
     if not announce_note or announce_note.actor_id != actor.id:
         return
 
-    # Soft delete the announce
+    # Announce を論理削除
     announce_note.deleted_at = datetime.now(timezone.utc)
 
-    # Decrement original note's renotes_count
+    # 元ノートの renotes_count をデクリメント
     if announce_note.renote_of_id:
         result = await db.execute(select(Note).where(Note.id == announce_note.renote_of_id))
         original = result.scalar_one_or_none()

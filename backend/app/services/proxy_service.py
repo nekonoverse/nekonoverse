@@ -1,8 +1,8 @@
-"""Service for managing proxy subscriptions via the system.proxy account.
+"""system.proxyアカウントによるプロキシ購読管理サービス。
 
-The proxy account follows remote actors on behalf of local users (e.g. for list
-subscriptions) so that the local server receives their public/unlisted posts
-even when no real user follows them.
+プロキシアカウントはローカルユーザーに代わってリモートアクターをフォローする
+(例: リスト購読)。これにより、実際のユーザーがフォローしていなくても
+ローカルサーバーがpublic/unlistedの投稿を受信できる。
 """
 
 import logging
@@ -20,15 +20,15 @@ logger = logging.getLogger(__name__)
 
 
 async def get_proxy_account(db: AsyncSession) -> User | None:
-    """Return the system.proxy User (convenience wrapper)."""
+    """system.proxy Userを返す (便利なラッパー)。"""
     return await get_proxy_actor(db)
 
 
 async def proxy_subscribe(db: AsyncSession, target_actor: Actor) -> Follow | None:
-    """Make the proxy account follow a remote actor.
+    """プロキシアカウントでリモートアクターをフォローする。
 
-    Returns the Follow record, or None if the proxy account does not exist
-    or the target is local.
+    Followレコードを返す。プロキシアカウントが存在しない場合や
+    対象がローカルの場合はNoneを返す。
     """
     if target_actor.is_local:
         logger.warning("proxy_subscribe called for local actor %s", target_actor.username)
@@ -79,9 +79,9 @@ async def proxy_subscribe(db: AsyncSession, target_actor: Actor) -> Follow | Non
 
 
 async def proxy_unsubscribe(db: AsyncSession, target_actor: Actor) -> bool:
-    """Make the proxy account unfollow a remote actor.
+    """プロキシアカウントでリモートアクターのフォローを解除する。
 
-    Returns True if the follow was removed, False otherwise.
+    フォローが削除された場合はTrueを返し、それ以外はFalseを返す。
     """
     proxy_user = await get_proxy_actor(db)
     if not proxy_user:
@@ -126,7 +126,7 @@ async def proxy_unsubscribe(db: AsyncSession, target_actor: Actor) -> bool:
 
 
 async def is_proxy_subscribed(db: AsyncSession, target_actor_id: uuid.UUID) -> bool:
-    """Check if the proxy account is following the given actor."""
+    """プロキシアカウントが指定アクターをフォローしているか確認する。"""
     proxy_user = await get_proxy_actor(db)
     if not proxy_user:
         return False
@@ -147,7 +147,7 @@ _SYSTEM_IDS_VALKEY_KEY = "cache:system_actor_ids"
 
 
 async def get_system_actor_ids(db: AsyncSession) -> set[uuid.UUID]:
-    """Return the set of actor IDs belonging to system accounts (Valkey cached)."""
+    """システムアカウントに属するアクターIDのセットを返す (Valkeyキャッシュ付き)。"""
     import json
 
     from app.valkey_client import valkey
@@ -174,10 +174,10 @@ async def get_system_actor_ids(db: AsyncSession) -> set[uuid.UUID]:
 
 
 async def has_real_local_follower(db: AsyncSession, remote_actor_id: uuid.UUID) -> bool:
-    """Check if any non-system local user follows the given remote actor.
+    """システムアカウント以外のローカルユーザーが指定リモートアクターをフォローしているか確認する。
 
-    Returns True if at least one real (non-system) local user has an accepted
-    follow relationship with the remote actor.
+    少なくとも1人の実ユーザー (非システム) がリモートアクターとの
+    承認済みフォロー関係を持つ場合にTrueを返す。
     """
     result = await db.execute(
         select(

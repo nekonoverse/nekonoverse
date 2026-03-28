@@ -176,7 +176,7 @@ export default function ThemeCustomizer() {
     const text = importText().trim();
     if (!text) return;
 
-    // Try JSON first
+    // まず JSON を試す
     const jsonTheme = parseThemeFromJSON(text);
     if (jsonTheme) {
       setTheme(jsonTheme.base);
@@ -187,7 +187,7 @@ export default function ThemeCustomizer() {
       return;
     }
 
-    // Try CSS
+    // CSS を試す
     const cssColors = parseThemeFromCSS(text);
     if (cssColors) {
       setCustomColors(cssColors);

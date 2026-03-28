@@ -1,4 +1,4 @@
-"""Handle incoming Create activities (mainly Create Note)."""
+"""受信した Create activity を処理する (主に Create Note)。"""
 
 import logging
 import math
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 async def handle_create(db: AsyncSession, activity: dict):
     obj = activity.get("object")
     if isinstance(obj, str):
-        # Object is a reference, skip for now (would need to fetch)
+        # オブジェクトが参照形式のためスキップ (フェッチが必要になる)
         logger.info("Create with object reference, skipping: %s", obj)
         return
 
@@ -27,7 +27,7 @@ async def handle_create(db: AsyncSession, activity: dict):
 
     obj_type = obj.get("type")
     if obj_type == "Note" and obj.get("name") and obj.get("inReplyTo"):
-        # A Note with 'name' + 'inReplyTo' is a poll vote (Mastodon convention)
+        # 'name' + 'inReplyTo' を持つ Note は投票への投票 (Mastodon の慣例)
         await _handle_poll_vote(db, activity, obj)
     elif obj_type in ("Note", "Question"):
         await handle_create_note(db, activity, obj)
@@ -40,7 +40,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     if not ap_id:
         return
 
-    # Skip if already exists
+    # 既に存在する場合はスキップ
     existing = await get_note_by_ap_id(db, ap_id)
     if existing:
         return
@@ -64,7 +64,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             )
             return
 
-    # Resolve actor
+    # アクターを解決
     actor = await get_actor_by_ap_id(db, actor_ap_id)
     if not actor:
         actor = await fetch_remote_actor(db, actor_ap_id)
@@ -75,7 +75,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     content = sanitize_html(note_data.get("content", ""))
     source = extract_mfm_source(note_data)
 
-    # Determine visibility
+    # 公開範囲を決定
     to_list = note_data.get("to", [])
     cc_list = note_data.get("cc", [])
     public = "https://www.w3.org/ns/activitystreams#Public"
@@ -100,7 +100,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             logger.debug("Discarding followers-only note %s (proxy-only subscription)", ap_id)
             return
 
-    # Resolve reply and quote
+    # リプライと引用を解決
     in_reply_to_ap_id = note_data.get("inReplyTo")
     quote_ap_id = (
         note_data.get("_misskey_quote") or note_data.get("quoteUrl") or note_data.get("quoteUri")
@@ -140,7 +140,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     if quoted_note:
         quote_id = quoted_note.id
 
-    # Extract mentions and custom emoji from tag array
+    # tag 配列からメンションとカスタム絵文字を抽出
     tags = note_data.get("tag", [])
     if isinstance(tags, dict):
         tags = [tags]
@@ -157,7 +157,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             if emoji_name and emoji_url and actor.domain:
                 from app.services.emoji_service import upsert_remote_emoji
 
-                # Extract extended fields (Misskey + CherryPick)
+                # 拡張フィールドを抽出 (Misskey + CherryPick)
                 static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
                 _ml = tag.get("_misskey_license")
                 license_text = tag.get("license") or (
@@ -180,7 +180,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                     category=tag.get("category"),
                 )
 
-    # Parse poll data (Question type)
+    # 投票データをパース (Question タイプ)
     is_poll = note_data.get("type") == "Question"
     poll_options = None
     poll_multiple = False
@@ -208,7 +208,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             except ValueError:
                 pass
 
-    # Parse _misskey_talk
+    # _misskey_talk をパース
     is_talk = bool(note_data.get("_misskey_talk", False))
 
     note = Note(
@@ -246,7 +246,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     db.add(note)
     await db.flush()
 
-    # Process attachments
+    # 添付ファイルを処理
     attachments = note_data.get("attachment", [])
     if isinstance(attachments, dict):
         attachments = [attachments]
@@ -269,7 +269,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         if not att_url or not isinstance(att_url, str):
             continue
 
-        # Parse focalPoint [x, y]
+        # focalPoint [x, y] をパース
         focal_x, focal_y = None, None
         fp = att_data.get("focalPoint")
         if isinstance(fp, list) and len(fp) >= 2:
@@ -296,7 +296,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         )
         db.add(attachment)
 
-    # Extract and upsert hashtags from AP tags
+    # AP タグからハッシュタグを抽出して upsert
     from app.services.hashtag_service import (
         extract_hashtags_from_ap_tags,
     )
@@ -308,17 +308,17 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     if hashtag_names:
         await upsert_ht(db, note.id, hashtag_names)
 
-    # Mention/reply notifications for local users
+    # ローカルユーザーへのメンション/リプライ通知
     from app.services.notification_service import create_notification, publish_notification
 
     pending_notifs = []
 
-    # Determine reply parent actor to avoid duplicate mention+reply notifications
+    # メンション+リプライ通知の重複を避けるためリプライ先のアクターを特定
     reply_recipient_id = None
     if in_reply_to_id:
         reply_note = await get_note_by_ap_id(db, in_reply_to_ap_id)
         if reply_note:
-            # Increment parent's replies_count
+            # 親ノートの replies_count をインクリメント
             reply_note.replies_count = reply_note.replies_count + 1
             if reply_note.actor and reply_note.actor.is_local and reply_note.actor_id != actor.id:
                 reply_recipient_id = reply_note.actor_id
@@ -355,7 +355,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     for notif in pending_notifs:
         await publish_notification(notif)
 
-    # Publish to Valkey for real-time SSE streaming
+    # リアルタイム SSE ストリーミング用に Valkey に publish
     try:
         import json
 
@@ -365,7 +365,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         event = json.dumps({"event": "update", "payload": {"id": str(note.id)}})
         if visibility == "public":
             await valkey_client.publish("timeline:public", event)
-        # Deliver to followers of this remote actor (local users who follow them)
+        # このリモートアクターのフォロワー (フォローしているローカルユーザー) に配信
         # システムアカウントのアクターIDを除外
         from app.services.proxy_service import get_system_actor_ids
 
@@ -391,13 +391,13 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     except Exception:
         logger.exception("Failed to publish remote note to streaming")
 
-    # Enqueue search indexing for remote public notes
+    # リモート公開ノートの検索インデックスをキューに追加
     if settings.neko_search_enabled and visibility == "public":
         from app.services.search_queue import enqueue_index
 
         await enqueue_index(note.id, source or "", note.published)
 
-    # Background focal point detection for remote image attachments
+    # リモート画像添付のバックグラウンドフォーカルポイント検出
     if settings.face_detect_enabled:
         from sqlalchemy import select as sel
 
@@ -428,20 +428,20 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
 
 
 async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
-    """Handle an incoming poll vote (Create Note with name + inReplyTo)."""
+    """受信した投票への投票を処理する (name + inReplyTo 付き Create Note)。"""
     in_reply_to = obj.get("inReplyTo")
     option_name = obj.get("name", "").strip()
     if not in_reply_to or not option_name:
         return
 
-    # Find the poll note
+    # 投票ノートを検索
     poll_note = await get_note_by_ap_id(db, in_reply_to)
     if not poll_note or not poll_note.is_poll or not poll_note.local:
         logger.debug("Poll vote for unknown/non-local poll: %s", in_reply_to)
         return
 
     options = poll_note.poll_options or []
-    # Find matching option index
+    # 一致する選択肢のインデックスを検索
     choice_index = None
     for i, opt in enumerate(options):
         if opt.get("title", "") == option_name:
@@ -452,7 +452,7 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
         logger.debug("Poll vote option '%s' not found in poll %s", option_name, in_reply_to)
         return
 
-    # Resolve voter actor
+    # 投票者アクターを解決
     voter_ap_id = obj.get("attributedTo") or activity.get("actor")
     if not voter_ap_id:
         return
@@ -464,7 +464,7 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
         logger.warning("Could not resolve voter actor %s", voter_ap_id)
         return
 
-    # Check for duplicate vote
+    # 重複投票をチェック
     from sqlalchemy import select
 
     from app.models.poll_vote import PollVote
@@ -496,7 +496,7 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
             logger.debug("Duplicate poll vote from %s on %s", voter_ap_id, in_reply_to)
             return
 
-    # Record vote
+    # 投票を記録
     vote = PollVote(
         note_id=poll_note.id,
         actor_id=voter.id,
@@ -504,7 +504,7 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
     )
     db.add(vote)
 
-    # Update JSONB vote count
+    # JSONB の得票数を更新
     options[choice_index]["votes_count"] = options[choice_index].get("votes_count", 0) + 1
     from sqlalchemy.orm.attributes import flag_modified
 

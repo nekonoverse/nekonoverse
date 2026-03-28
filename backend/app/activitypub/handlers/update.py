@@ -1,4 +1,4 @@
-"""Handle Update activities (Person profile updates, Note edits)."""
+"""Update activity を処理する (Person プロフィール更新、ノート編集)。"""
 
 import logging
 from datetime import datetime, timezone
@@ -33,7 +33,7 @@ async def handle_update(db: AsyncSession, activity: dict):
 
 
 async def _update_actor(db: AsyncSession, actor_ap_id: str, data: dict):
-    # Verify the actor updating is the same actor being updated
+    # 更新を行うアクターと更新対象のアクターが同一であることを検証
     obj_id = data.get("id")
     if obj_id != actor_ap_id:
         logger.warning("Update actor mismatch: actor=%s object.id=%s", actor_ap_id, obj_id)
@@ -53,13 +53,13 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
         logger.info("Update for unknown note %s, skipping", ap_id)
         return
 
-    # Verify ownership
+    # 所有権を検証
     actor = await get_actor_by_ap_id(db, actor_ap_id)
     if not actor or note.actor_id != actor.id:
         logger.warning("Update note denied: actor %s does not own note %s", actor_ap_id, ap_id)
         return
 
-    # Detect content changes
+    # コンテンツの変更を検出
     new_content = data.get("content")
     new_sanitized = sanitize_html(new_content) if new_content else None
     new_source = extract_mfm_source(data)
@@ -71,7 +71,7 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
         or new_spoiler != note.spoiler_text
     )
 
-    # Only create edit history if actual content changed (not just poll vote updates)
+    # 実際にコンテンツが変更された場合のみ編集履歴を作成 (投票の得票数更新だけでは作成しない)
     if content_changed:
         from app.models.note_edit import NoteEdit
 
@@ -91,7 +91,7 @@ async def _update_note(db: AsyncSession, actor_ap_id: str, data: dict):
         note.sensitive = data.get("sensitive", note.sensitive)
         note.updated_at = datetime.now(timezone.utc)
 
-    # Update poll data if Question type
+    # Question タイプの場合は投票データを更新
     if data.get("type") == "Question" and note.is_poll:
         one_of = data.get("oneOf")
         any_of = data.get("anyOf")

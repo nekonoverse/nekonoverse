@@ -19,13 +19,13 @@ class CustomEmoji(Base):
     visible_in_picker: Mapped[bool] = mapped_column(Boolean, default=True)
     category: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
-    # Misskey-compatible fields
+    # Misskey 互換フィールド
     aliases: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     license: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     is_sensitive: Mapped[bool] = mapped_column(Boolean, default=False)
     local_only: Mapped[bool] = mapped_column(Boolean, default=False)
 
-    # CherryPick (yojo-art) fields
+    # CherryPick (yojo-art) フィールド
     author: Mapped[str | None] = mapped_column(String(128), nullable=True)
     description: Mapped[str | None] = mapped_column(String(512), nullable=True)
     copy_permission: Mapped[str | None] = mapped_column(String(20), nullable=True)
@@ -33,7 +33,7 @@ class CustomEmoji(Base):
     is_based_on: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     import_from: Mapped[str | None] = mapped_column(String(1024), nullable=True)
 
-    # Link to DriveFile for local emoji images
+    # ローカル絵文字画像の DriveFile へのリンク
     drive_file_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), ForeignKey("drive_files.id", ondelete="SET NULL"), nullable=True
     )

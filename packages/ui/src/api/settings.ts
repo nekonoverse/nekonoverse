@@ -89,7 +89,7 @@ export async function updateHeaderFocus(x: number, y: number): Promise<CurrentUs
   });
 }
 
-// Server-side preferences
+// サーバーサイドプリファレンス
 
 export type SourceMediaType = "auto" | "mfm" | "plain";
 
@@ -130,7 +130,7 @@ export async function changePassword(currentPassword: string, newPassword: strin
   });
 }
 
-// Data export
+// データエクスポート
 
 export interface DataExportStatus {
   id: string;

@@ -83,7 +83,7 @@ export function turnstileSiteKey(): string | undefined {
   return instance()?.turnstile_site_key;
 }
 
-/** Get the upload size limit in bytes for the given MIME type. */
+/** 指定された MIME タイプのアップロードサイズ制限（バイト単位）を取得する。 */
 export function uploadSizeLimit(mimeType: string): number {
   const config = instance()?.configuration?.media_attachments;
   if (mimeType.startsWith("video/")) {
@@ -96,7 +96,7 @@ export function uploadSizeLimit(mimeType: string): number {
 }
 
 function updateDynamicIcons(iconUrl: string) {
-  // Favicon
+  // ファビコン
   let link = document.querySelector(
     "link[rel='icon']",
   ) as HTMLLinkElement | null;
@@ -107,19 +107,19 @@ function updateDynamicIcons(iconUrl: string) {
   }
   link.href = iconUrl;
 
-  // Apple touch icon
+  // Appleタッチアイコン
   const apple = document.querySelector(
     "link[rel='apple-touch-icon']",
   ) as HTMLLinkElement | null;
   if (apple) apple.href = iconUrl;
 }
 
-// --- Version detection keys ---
+// --- バージョン検出キー ---
 const SERVER_VERSION_KEY = "nekonoverse_version";
 const CLIENT_VERSION_KEY = "nekonoverse_client_version";
-const POLL_INTERVAL = 5 * 60 * 1000; // 5 minutes
+const POLL_INTERVAL = 5 * 60 * 1000; // 5分
 
-// --- BroadcastChannel for multi-tab sync ---
+// --- マルチタブ同期用 BroadcastChannel ---
 const versionChannel =
   typeof BroadcastChannel !== "undefined"
     ? new BroadcastChannel("nekonoverse_version")
@@ -131,7 +131,7 @@ versionChannel?.addEventListener("message", (e) => {
   }
 });
 
-// --- Clear all service workers and caches ---
+// --- すべての Service Worker とキャッシュをクリア ---
 export async function clearServiceWorkerAndCaches() {
   if ("serviceWorker" in navigator) {
     const regs = await navigator.serviceWorker.getRegistrations();
@@ -143,14 +143,14 @@ export async function clearServiceWorkerAndCaches() {
   }
 }
 
-// --- Apply update: clear SW, caches, notify other tabs, reload ---
+// --- アップデート適用: SW・キャッシュをクリア、他タブに通知、リロード ---
 export async function applyUpdate() {
   versionChannel?.postMessage({ type: "version-changed" });
   await clearServiceWorkerAndCaches();
   location.reload();
 }
 
-// --- Build-time client version check (call at module level) ---
+// --- ビルド時のクライアントバージョンチェック（モジュールレベルで呼び出す） ---
 export function checkClientVersion() {
   if (typeof __APP_VERSION__ === "undefined") return;
   const stored = localStorage.getItem(CLIENT_VERSION_KEY);
@@ -177,7 +177,7 @@ export async function fetchInstance() {
     setInstance(info);
     cacheInstance(info);
 
-    // Notify when server version changes (deploy)
+    // サーバーバージョンが変更された時に通知（デプロイ）
     const stored = localStorage.getItem(SERVER_VERSION_KEY);
     if (stored && stored !== info.version) {
       localStorage.setItem(SERVER_VERSION_KEY, info.version);
@@ -198,7 +198,7 @@ export async function fetchInstance() {
   }
 }
 
-// --- Periodic polling ---
+// --- 定期ポーリング ---
 export function startVersionPolling(): () => void {
   const id = setInterval(() => {
     fetchInstance();

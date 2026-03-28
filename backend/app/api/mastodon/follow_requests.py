@@ -1,4 +1,4 @@
-"""Mastodon-compatible follow requests API."""
+"""Mastodon 互換フォローリクエスト API。"""
 
 import uuid
 
@@ -39,7 +39,7 @@ async def list_follow_requests(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List pending follow requests for the current user."""
+    """現在のユーザーの保留中フォローリクエスト一覧を取得する。"""
     result = await db.execute(
         select(Follow)
         .options(joinedload(Follow.follower))
@@ -59,7 +59,7 @@ async def authorize_follow_request(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Accept a pending follow request."""
+    """保留中のフォローリクエストを承認する。"""
     result = await db.execute(
         select(Follow)
         .options(joinedload(Follow.follower))
@@ -76,7 +76,7 @@ async def authorize_follow_request(
     follow.accepted = True
     await db.flush()
 
-    # Create "follow" notification now that the request is accepted
+    # リクエスト承認後に「フォロー」通知を作成
     from app.services.notification_service import create_notification, publish_notification
 
     notif = await create_notification(db, "follow", user.actor_id, account_id)
@@ -84,7 +84,7 @@ async def authorize_follow_request(
         await db.flush()
         await publish_notification(notif)
 
-    # Send Accept activity to remote follower
+    # リモートフォロワーに Accept アクティビティを送信
     follower = follow.follower
     if follower and not follower.is_local and follower.inbox_url:
         from app.activitypub.renderer import render_accept_activity, render_follow_activity
@@ -109,7 +109,7 @@ async def reject_follow_request(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reject a pending follow request."""
+    """保留中のフォローリクエストを拒否する。"""
     result = await db.execute(
         select(Follow)
         .options(joinedload(Follow.follower))
@@ -127,7 +127,7 @@ async def reject_follow_request(
     await db.delete(follow)
     await db.flush()
 
-    # Send Reject activity to remote follower
+    # リモートフォロワーに Reject アクティビティを送信
     if follower and not follower.is_local and follower.inbox_url:
         from app.activitypub.renderer import render_follow_activity, render_reject_activity
         from app.services.delivery_service import enqueue_delivery

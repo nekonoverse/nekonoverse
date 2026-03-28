@@ -98,7 +98,7 @@ interface AdminSection {
   key: string;
   labelKey: string;
   descKey: string;
-  /** If set, moderators need this permission key to see the section. */
+  /** 設定されている場合、モデレーターがこのセクションを表示するにはこの権限キーが必要。 */
   permission?: string;
 }
 
@@ -211,7 +211,7 @@ export default function Admin() {
 
   const isAdmin = () => getRoleName(currentUser()?.role) === "admin";
 
-  // Fetch moderator permissions for non-admin staff to filter visible sections
+  // 管理者以外のスタッフ向けにモデレーター権限を取得して表示セクションをフィルタリング
   const [modPerms, setModPerms] = createSignal<Record<string, boolean> | null>(null);
 
   let permsInit = false;
@@ -222,24 +222,24 @@ export default function Admin() {
         try {
           setModPerms(await getModeratorPermissions());
         } catch {
-          // If fetch fails (e.g. admin-only endpoint), show all sections
+          // 取得失敗時（例: 管理者専用エンドポイント）は全セクションを表示
           setModPerms(null);
         }
       })();
     }
   });
 
-  /** Check whether a section should be visible to the current user. */
+  /** 現在のユーザーにセクションが表示されるべきかチェックする。 */
   const isSectionVisible = (s: AdminSection): boolean => {
-    // Registration section: only show when approval mode is active
+    // 登録セクション: 承認モードがアクティブな場合のみ表示
     if (s.key === "registrations" && registrationMode() !== "approval") return false;
-    // Admins can always see everything
+    // 管理者は常にすべてを表示可能
     if (isAdmin()) return true;
-    // No permission requirement means always visible to staff
+    // 権限要件なしはスタッフに常に表示
     if (!s.permission) return true;
-    // Moderator: check permission map
+    // モデレーター: 権限マップをチェック
     const perms = modPerms();
-    if (!perms) return true;  // Not loaded yet, show all
+    if (!perms) return true;  // 未読み込み、すべて表示
     return perms[s.permission] !== false;
   };
 
@@ -348,7 +348,7 @@ function OverviewTab() {
   const { t } = useI18n();
   const [stats, setStats] = createSignal<AdminStats | null>(null);
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let overviewInit = false;
   createEffect(() => {
     if (!overviewInit) {
@@ -411,7 +411,7 @@ function ServerSettingsTab() {
   const [katexEnabled, setKatexEnabled] = createSignal(false);
   let iconInput!: HTMLInputElement;
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let settingsInit = false;
   createEffect(() => {
     if (!settingsInit) {
@@ -853,7 +853,7 @@ function UsersTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let usersInit = false;
   createEffect(() => {
     if (!usersInit) {
@@ -1099,7 +1099,7 @@ function DomainsTab() {
   const [newSeverity, setNewSeverity] = createSignal("suspend");
   const [newReason, setNewReason] = createSignal("");
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let domainsInit = false;
   createEffect(() => {
     if (!domainsInit) {
@@ -1214,7 +1214,7 @@ function ReportsTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let reportsInit = false;
   createEffect(() => {
     if (!reportsInit) {
@@ -1315,7 +1315,7 @@ function LogTab() {
   const [entries, setEntries] = createSignal<ModerationLogEntry[]>([]);
   const [loading, setLoading] = createSignal(true);
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let logInit = false;
   createEffect(() => {
     if (!logInit) {
@@ -1369,12 +1369,12 @@ function EmojiTab() {
   type EmojiSubTab = "upload" | "zip" | "import" | "manage";
   const [emojiTab, setEmojiTab] = createSignal<EmojiSubTab>("manage");
 
-  // Local emoji state
+  // ローカル絵文字の状態
   const [emojis, setEmojis] = createSignal<AdminEmoji[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [manageSearch, setManageSearch] = createSignal("");
 
-  // Upload tab state
+  // アップロードタブの状態
   const [fields, setFields] = createSignal<EmojiEditFields>({
     shortcode: "", category: "", aliases: "", license: "", author: "", description: "", isSensitive: false,
   });
@@ -1383,7 +1383,7 @@ function EmojiTab() {
   const [adding, setAdding] = createSignal(false);
   let fileInput!: HTMLInputElement;
 
-  // ZIP tab state
+  // ZIPタブの状態
   const [importing, setImporting] = createSignal(false);
   const [importMsg, setImportMsg] = createSignal("");
   const [importErrors, setImportErrors] = createSignal<string[]>([]);
@@ -1391,7 +1391,7 @@ function EmojiTab() {
   const [importFileSize, setImportFileSize] = createSignal("");
   let importInput!: HTMLInputElement;
 
-  // Edit modal state
+  // 編集モーダルの状態
   const [editTarget, setEditTarget] = createSignal<AdminEmoji | null>(null);
   const [editFields, setEditFields] = createSignal<EmojiEditFields>({
     shortcode: "", category: "", author: "", license: "", description: "", isSensitive: false, aliases: "",
@@ -1402,13 +1402,13 @@ function EmojiTab() {
   const [editLocalOnly, setEditLocalOnly] = createSignal(false);
   const [editConfirmDelete, setEditConfirmDelete] = createSignal(false);
 
-  // Remote import tab state
+  // リモートインポートタブの状態
   const [remoteEmojis, setRemoteEmojis] = createSignal<RemoteEmoji[]>([]);
   const [remoteLoading, setRemoteLoading] = createSignal(false);
   const [remoteSearch, setRemoteSearch] = createSignal("");
   const [remoteMsg, setRemoteMsg] = createSignal("");
 
-  // Remote import modal state
+  // リモートインポートモーダルの状態
   const [importTarget, setImportTarget] = createSignal<RemoteEmoji | null>(null);
   const [importGroup, setImportGroup] = createSignal<RemoteEmoji[] | null>(null);
   const [importGroupIndex, setImportGroupIndex] = createSignal(0);
@@ -1418,7 +1418,7 @@ function EmojiTab() {
   const [impSaving, setImpSaving] = createSignal(false);
   const [impError, setImpError] = createSignal("");
 
-  // Grouped remote emojis by shortcode
+  // ショートコードでグループ化されたリモート絵文字
   const groupedRemote = createMemo(() => {
     const map = new Map<string, RemoteEmoji[]>();
     for (const e of remoteEmojis()) {
@@ -1428,7 +1428,7 @@ function EmojiTab() {
     return map;
   });
 
-  // Filtered local emojis for manage tab
+  // 管理タブ用のフィルタ済みローカル絵文字
   const filteredEmojis = createMemo(() => {
     const q = manageSearch().toLowerCase().trim();
     if (!q) return emojis();
@@ -1910,7 +1910,7 @@ function ServerFilesTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let filesInit = false;
   createEffect(() => {
     if (!filesInit) {
@@ -2037,7 +2037,7 @@ function InvitesTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let invitesInit = false;
   createEffect(() => {
     if (!invitesInit) {
@@ -2198,7 +2198,7 @@ function FederationTab() {
   const [detailLoading, setDetailLoading] = createSignal(false);
   const limit = 40;
 
-  // Domain action state
+  // ドメインアクションの状態
   const [domainAction, setDomainAction] = createSignal<{
     type: "suspend" | "silence";
     domain: string;
@@ -2226,7 +2226,7 @@ function FederationTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let federationInit = false;
   createEffect(() => {
     if (!federationInit) {
@@ -2290,7 +2290,7 @@ function FederationTab() {
     if (!action) return;
     setDomainActionLoading(true);
     try {
-      // If escalating from silence to suspend, remove existing block first
+      // サイレンスからサスペンドにエスカレートする場合、既存のブロックをまず解除
       const currentServer = servers().find((s) => s.domain === action.domain);
       if (currentServer?.block_severity && currentServer.block_severity !== action.type) {
         await removeDomainBlock(action.domain);
@@ -2298,7 +2298,7 @@ function FederationTab() {
       await createDomainBlock(action.domain, action.type, domainActionReason() || undefined);
       closeDomainAction();
       await load();
-      // Refresh detail if expanded
+      // 展開中なら詳細を更新
       if (expandedDomain() === action.domain) {
         setDetail(await getFederatedServerDetail(action.domain));
       }
@@ -2317,7 +2317,7 @@ function FederationTab() {
     try {
       await removeDomainBlock(domain);
       await load();
-      // Refresh detail if expanded
+      // 展開中なら詳細を更新
       if (expandedDomain() === domain) {
         setDetail(await getFederatedServerDetail(domain));
       }
@@ -3512,7 +3512,7 @@ function AnnouncementsTab() {
     try {
       const data = await getAnnouncements();
       setItems(data);
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
   };
 
   createEffect(() => { loadItems(); });
@@ -3558,7 +3558,7 @@ function AnnouncementsTab() {
       }
       resetForm();
       await loadItems();
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
     setSaving(false);
   };
 
@@ -3567,7 +3567,7 @@ function AnnouncementsTab() {
     try {
       await deleteAnnouncement(id);
       await loadItems();
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
   };
 
   return (

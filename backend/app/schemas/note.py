@@ -50,7 +50,7 @@ class NoteActorResponse(BaseModel):
     server_software_version: str | None = None
     server_name: str | None = None
     emojis: list["CustomEmojiInfo"] = []
-    # Mastodon Account compat
+    # Mastodon Account 互換フィールド
     acct: str = ""
     uri: str = ""
     url: str = ""
@@ -84,7 +84,7 @@ class ReactionSummary(BaseModel):
 
 
 class EmojiReaction(BaseModel):
-    """Fedibird-compatible emoji reaction format."""
+    """Fedibird 互換の絵文字リアクション形式。"""
 
     name: str
     count: int
@@ -193,7 +193,7 @@ class NoteResponse(BaseModel):
     pinned: bool = False
     emojis: list[CustomEmojiInfo] = []
     tags: list[TagInfo] = []
-    # Mastodon Status compat aliases
+    # Mastodon Status 互換エイリアス
     uri: str = ""
     url: str | None = None
     account: NoteActorResponse | None = None

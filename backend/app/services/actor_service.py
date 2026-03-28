@@ -13,10 +13,10 @@ logger = logging.getLogger(__name__)
 
 
 def actor_uri(actor: Actor) -> str:
-    """Return the canonical ActivityPub URI for an actor.
+    """アクターの正規 ActivityPub URI を返す。
 
-    For local actors, derives from settings.server_url to ensure correct
-    scheme.  For remote actors, returns the stored ap_id.
+    ローカルアクターの場合は settings.server_url から導出して正しいスキームを保証する。
+    リモートアクターの場合は保存された ap_id を返す。
     """
     if actor.domain is None:
         return f"{settings.server_url}/users/{actor.username}"
@@ -49,8 +49,8 @@ async def get_actor_by_ap_id(db: AsyncSession, ap_id: str) -> Actor | None:
     if actor:
         return actor
 
-    # Fallback: if ap_id looks like a local actor URL, try lookup by username.
-    # This handles http/https scheme mismatch in stored ap_id.
+    # フォールバック: ap_id がローカルアクターURLの形式であれば、ユーザー名で検索する。
+    # 保存された ap_id の http/https スキーム不一致に対応。
     from urllib.parse import urlparse
 
     parsed = urlparse(ap_id)
@@ -77,7 +77,7 @@ _signing_key_cache: tuple[str, str] | None | bool = False
 
 
 async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
-    """Get a local actor's key_id and private_key_pem for signed fetches."""
+    """署名付きフェッチ用にローカルアクターの key_id と private_key_pem を取得する。"""
     global _signing_key_cache
     if _signing_key_cache is not False:
         return _signing_key_cache  # type: ignore[return-value]
@@ -89,7 +89,7 @@ async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
     if not user or not user.actor:
         _signing_key_cache = None
         return None
-    # Use dynamic URL for local actor to ensure correct scheme
+    # ローカルアクターには動的URLを使用して正しいスキームを保証
     actor_url = f"{settings.server_url}/users/{user.actor.username}"
     key_id = f"{actor_url}#main-key"
     _signing_key_cache = (key_id, user.private_key_pem)
@@ -97,7 +97,7 @@ async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
 
 
 async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
-    """Perform a signed HTTP GET (Authorized Fetch / Secure Mode)."""
+    """署名付き HTTP GET を実行する (Authorized Fetch / Secure Mode)。"""
     from app.utils.network import is_safe_url
 
     if not is_safe_url(url):
@@ -125,12 +125,12 @@ async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
 
 
 async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
-    """Fetch a remote actor by AP ID, cache in DB."""
-    # Check cache first
+    """リモートアクターを AP ID で取得し、DBにキャッシュする。"""
+    # まずキャッシュを確認
     existing = await get_actor_by_ap_id(db, ap_id)
     if existing and existing.last_fetched_at:
         age = (datetime.now(timezone.utc) - existing.last_fetched_at).total_seconds()
-        if age < 3600:  # 1 hour cache
+        if age < 3600:  # 1時間キャッシュ
             return existing
 
     try:
@@ -165,7 +165,7 @@ async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
 
 
 async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
-    """Create or update a remote actor from JSON-LD data."""
+    """JSON-LD データからリモートアクターを作成または更新する。"""
     ap_id = data.get("id")
     if not ap_id:
         return None
@@ -192,7 +192,7 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     existing = await get_actor_by_ap_id(db, ap_id)
     now = datetime.now(timezone.utc)
 
-    # Parse profile fields from PropertyValue attachments
+    # PropertyValue 型の attachment からプロフィールフィールドを解析
     from app.utils.sanitize import sanitize_html
 
     attachments = data.get("attachment", [])
@@ -207,7 +207,7 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
             if isinstance(att, dict) and att.get("type") == "PropertyValue"
         ]
 
-    # Parse birthday from vcard:bday
+    # vcard:bday から誕生日を解析
     parsed_birthday = None
     bday = data.get("vcard:bday")
     if bday:
@@ -218,11 +218,11 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         except (ValueError, TypeError):
             pass
 
-    # Detect bot from actor type
+    # アクタータイプからボットを検出
     actor_type = data.get("type", "Person")
     is_bot = actor_type == "Service"
 
-    # Extract custom emoji from tags
+    # タグからカスタム絵文字を抽出
     tags = data.get("tag", [])
     if isinstance(tags, dict):
         tags = [tags]
@@ -344,8 +344,8 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
 
 
 async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Actor | None:
-    """Resolve a remote actor via WebFinger, then fetch their AP profile."""
-    # Check if we already have this actor cached
+    """WebFinger でリモートアクターを解決し、AP プロフィールを取得する。"""
+    # 既にキャッシュ済みか確認
     existing = await get_actor_by_username(db, username, domain)
     if existing:
         return existing
@@ -389,7 +389,7 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
         logger.exception("Error resolving WebFinger for %s@%s", username, domain)
         return None
 
-    # Find the self link with AP content type
+    # AP コンテンツタイプの self リンクを探す
     links = data.get("links", [])
     ap_id = None
     for link in links:
@@ -400,7 +400,7 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
             break
 
     if not ap_id:
-        # Try application/activity+json explicitly
+        # application/activity+json を明示的に試行
         for link in links:
             if link.get("rel") == "self" and "activity+json" in link.get("type", ""):
                 ap_id = link.get("href")
@@ -414,7 +414,7 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
 
 
 async def get_actor_public_key(db: AsyncSession, key_id: str) -> tuple[Actor | None, str]:
-    """Get actor and public key from a key ID (e.g. https://example.com/users/alice#main-key)."""
+    """鍵 ID (例: https://example.com/users/alice#main-key) からアクターと公開鍵を取得する。"""
     actor_ap_id = key_id.split("#")[0]
     actor = await fetch_remote_actor(db, actor_ap_id)
     if actor:

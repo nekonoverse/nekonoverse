@@ -1,4 +1,4 @@
-"""Background focal point detection for remote image attachments."""
+"""リモート画像添付ファイルのバックグラウンドフォーカルポイント検出。"""
 
 import asyncio
 import base64
@@ -22,11 +22,11 @@ async def detect_remote_focal_points(
     attachment_ids: list[uuid.UUID],
     detect_version: str | None = None,
 ) -> None:
-    """Background task: detect focal points for remote attachments.
+    """バックグラウンドタスク: リモート添付ファイルのフォーカルポイントを検出する。
 
-    Downloads each remote image, calls face-detect service, updates DB,
-    and publishes a streaming event.  Designed for asyncio.create_task();
-    never raises.
+    各リモート画像をダウンロードし、face-detectサービスを呼び出し、DBを更新し、
+    ストリーミングイベントをパブリッシュする。asyncio.create_task()用に設計されており、
+    例外を送出しない。
     """
     if not settings.face_detect_enabled:
         return
@@ -63,7 +63,7 @@ async def detect_remote_focal_points(
                 logger.info("Focal points updated for note %s, publishing update", note_id)
                 await _publish_update(note_id)
             elif any(not isinstance(r, Exception) for r in results):
-                # Version recorded but no focal point change — still commit
+                # バージョンは記録されたがフォーカルポイントの変更なし — それでもコミット
                 await db.commit()
     except Exception:
         logger.warning(
@@ -72,11 +72,11 @@ async def detect_remote_focal_points(
 
 
 async def _detect_single(att, detect_version: str | None = None) -> bool:
-    """Detect focal point for one attachment. Returns True if focal point updated."""
+    """1つの添付ファイルのフォーカルポイントを検出する。更新された場合はTrueを返す。"""
     if att.focal_detect_version == "manual":
         return False
     if detect_version and att.focal_detect_version == detect_version:
-        return False  # Already checked with this version
+        return False  # このバージョンで検出済み
     if not att.remote_url:
         return False
     if (att.remote_mime_type or "") not in _IMAGE_MIMES:
@@ -94,7 +94,7 @@ async def _detect_single(att, detect_version: str | None = None) -> bool:
         att.remote_focal_y = focal[1]
         focal_updated = True
 
-    # Record version regardless of result
+    # 結果に関わらずバージョンを記録
     if detect_version:
         att.focal_detect_version = detect_version
 
@@ -102,9 +102,9 @@ async def _detect_single(att, detect_version: str | None = None) -> bool:
 
 
 async def _download_image(url: str) -> bytes | None:
-    """Download remote image with SSRF protection and size limit.
+    """SSRF保護とサイズ制限付きでリモート画像をダウンロードする。
 
-    Manually follows redirects to validate each hop against private hosts.
+    リダイレクトを手動で追跡し、各ホップでプライベートホストかどうかを検証する。
     """
     from urllib.parse import urljoin, urlparse
 
@@ -150,7 +150,7 @@ async def _download_image(url: str) -> bytes | None:
 
 
 def _get_image_size(image_data: bytes) -> tuple[int, int] | None:
-    """Extract image dimensions from raw bytes without heavy dependencies."""
+    """重い依存ライブラリなしで生バイトから画像の寸法を抽出する。"""
     import io
     import struct
 
@@ -159,19 +159,19 @@ def _get_image_size(image_data: bytes) -> tuple[int, int] | None:
     if len(head) < 8:
         return None
 
-    # PNG
+    # PNG形式
     if head[:8] == b"\x89PNG\r\n\x1a\n":
         if len(head) >= 24:
             w, h = struct.unpack(">II", head[16:24])
             return (w, h)
         return None
 
-    # GIF
+    # GIF形式
     if head[:6] in (b"GIF87a", b"GIF89a"):
         w, h = struct.unpack("<HH", head[6:10])
         return (w, h)
 
-    # JPEG
+    # JPEG形式
     if head[:2] == b"\xff\xd8":
         data.seek(2)
         while True:
@@ -191,7 +191,7 @@ def _get_image_size(image_data: bytes) -> tuple[int, int] | None:
             length = struct.unpack(">H", data.read(2))[0]
             data.seek(length - 2, 1)
 
-    # WebP
+    # WebP形式
     if head[:4] == b"RIFF" and head[8:12] == b"WEBP":
         # VP8
         if head[12:16] == b"VP8 ":
@@ -223,11 +223,11 @@ async def _call_face_detect(
     width: int | None,
     height: int | None,
 ) -> tuple[float, float] | None:
-    """Call face-detect service. Returns (focal_x, focal_y) or None if no face.
+    """face-detectサービスを呼び出す。(focal_x, focal_y) を返す。顔未検出時はNone。
 
-    Raises on server/network errors so callers can distinguish from "no face".
+    サーバー/ネットワークエラー時は例外を送出するため、呼び出し元で「顔未検出」と区別できる。
     """
-    # Resolve actual image size if metadata is missing
+    # メタデータがない場合は実際の画像サイズを解決
     if not width or not height:
         size = _get_image_size(image_data)
         if size:
@@ -253,7 +253,7 @@ async def _call_face_detect(
 
 
 async def _publish_update(note_id: uuid.UUID) -> None:
-    """Publish streaming event so clients re-fetch the note."""
+    """クライアントがノートを再取得するようストリーミングイベントをパブリッシュする。"""
     import json
 
     from app.valkey_client import valkey as valkey_client

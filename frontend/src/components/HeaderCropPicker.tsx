@@ -9,7 +9,7 @@ interface Props {
   onClose: () => void;
 }
 
-const HEADER_ASPECT = 3; // width:height ≈ 3:1
+const HEADER_ASPECT = 3; // 幅:高さ ≈ 3:1
 
 export default function HeaderCropPicker(props: Props) {
   const { t } = useI18n();
@@ -30,13 +30,13 @@ export default function HeaderCropPicker(props: Props) {
     setDisplayW(dw);
     setDisplayH(dh);
 
-    // Crop window: full width, height determined by aspect ratio
+    // 切り抜きウィンドウ: 幅は全幅、高さはアスペクト比で決定
     const cw = dw;
     const ch = Math.min(dh, dw / HEADER_ASPECT);
     setCropW(cw);
     setCropH(ch);
 
-    // Initialize from existing focal point
+    // 既存のフォーカルポイントから初期化
     const ix = props.initialX ?? 0;
     const iy = props.initialY ?? 0;
     const centerX = ((ix + 1) / 2) * dw;

@@ -14,7 +14,7 @@ router = APIRouter(prefix="/api/v2", tags=["search"])
 
 
 def _escape_like(value: str) -> str:
-    """Escape special characters for LIKE/ILIKE patterns."""
+    """LIKE/ILIKE パターンの特殊文字をエスケープする。"""
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
@@ -27,7 +27,7 @@ async def search(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Unified search across accounts, statuses, and hashtags (auth required)."""
+    """アカウント、ステータス、ハッシュタグを横断検索する（認証必須）。"""
     accounts = []
     statuses = []
     hashtags = []
@@ -56,7 +56,7 @@ async def search(
 async def _search_accounts(
     db: AsyncSession, q: str, resolve: bool, limit: int
 ) -> list[dict]:
-    """Search for accounts by username or display_name."""
+    """ユーザー名または display_name でアカウントを検索する。"""
     from app.api.mastodon.accounts import _actor_to_account
 
     query_str = q.lstrip("@")
@@ -102,7 +102,7 @@ async def _search_statuses(
     current_actor_id=None,
     resolve: bool = False,
 ) -> list[dict]:
-    """Search public statuses by content or resolve by URL."""
+    """公開ステータスを content で検索、または URL で照会する。"""
     from app.api.mastodon.statuses import notes_to_responses
 
     # URL形式の場合はリモートノート照会を試みる
@@ -118,7 +118,7 @@ async def _search_statuses(
             except Exception:
                 await db.rollback()
         if note:
-            # Re-query with eager loading, visibility and soft-delete filter
+            # eager loading、visibility、論理削除フィルタ付きで再クエリ
             result = await db.execute(
                 select(Note)
                 .options(*_note_load_options())
@@ -138,7 +138,7 @@ async def _search_statuses(
             )
         return []
 
-    # Use neko-search if available
+    # neko-search が利用可能な場合は使用
     if settings.neko_search_enabled:
         neko_results = await _search_via_neko_search(q, limit)
         if neko_results is not None:
@@ -151,7 +151,7 @@ async def _search_statuses(
                 )
             return []
 
-    # Fallback: ILIKE search
+    # フォールバック: ILIKE 検索
     pattern = f"%{_escape_like(q)}%"
     query = (
         select(Note)
@@ -180,7 +180,7 @@ async def _search_statuses(
 
 
 async def _search_via_neko_search(q: str, limit: int) -> list[str] | None:
-    """Call neko-search API. Returns list of note_id strings or None on failure."""
+    """neko-search API を呼び出す。note_id 文字列のリストを返し、失敗時は None を返す。"""
     import logging
 
     from app.utils.http_client import make_neko_search_client
@@ -199,7 +199,7 @@ async def _search_via_neko_search(q: str, limit: int) -> list[str] | None:
 
 
 async def _fetch_notes_by_ids(db: AsyncSession, note_id_strs: list[str]) -> list:
-    """Fetch notes by ID strings, preserving order from search results."""
+    """ID 文字列からノートを取得し、検索結果の順序を維持する。"""
     import uuid
 
     try:
@@ -221,7 +221,7 @@ async def _fetch_notes_by_ids(db: AsyncSession, note_id_strs: list[str]) -> list
         )
     )
     notes_by_id = {n.id: n for n in result.scalars().all()}
-    # Preserve search ranking order
+    # 検索ランキング順を維持
     return [notes_by_id[uid] for uid in uuids if uid in notes_by_id]
 
 
@@ -231,7 +231,7 @@ async def suggest(
     limit: int = Query(default=10, ge=1, le=50),
     _user: User = Depends(get_current_user),
 ):
-    """Proxy suggest requests to neko-search (auth required)."""
+    """neko-search へのサジェストリクエストをプロキシする（認証必須）。"""
     if not settings.neko_search_enabled:
         return {"suggestions": [], "prefix": ""}
 
@@ -242,7 +242,7 @@ async def suggest(
 
 
 async def _suggest_via_neko_search(q: str, limit: int) -> dict | None:
-    """Call neko-search /suggest API. Returns response dict or None on failure."""
+    """neko-search /suggest API を呼び出す。レスポンス辞書を返し、失敗時は None を返す。"""
     import logging
 
     from app.utils.http_client import make_neko_search_client
@@ -260,7 +260,7 @@ async def _suggest_via_neko_search(q: str, limit: int) -> dict | None:
 
 
 async def _search_hashtags(db: AsyncSession, q: str, limit: int) -> list[dict]:
-    """Search hashtags by name."""
+    """名前でハッシュタグを検索する。"""
     pattern = f"%{_escape_like(q.lower())}%"
     result = await db.execute(
         select(Hashtag)
