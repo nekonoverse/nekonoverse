@@ -63,6 +63,107 @@ async def test_preferences_unauthenticated(app_client, mock_valkey):
     assert resp.status_code == 401
 
 
+async def test_preferences_includes_theme_customization(authed_client, mock_valkey):
+    """GET /api/v1/preferences includes theme_customization (default null)."""
+    resp = await authed_client.get("/api/v1/preferences")
+    assert resp.status_code == 200
+    assert resp.json()["theme_customization"] is None
+
+
+_VALID_THEME = {
+    "base": "dark",
+    "colors": {
+        "bg-primary": "#1a1a2e",
+        "bg-secondary": "#16213e",
+        "bg-card": "#0f3460",
+        "text-primary": "#e0e0e0",
+        "text-secondary": "#a0a0b0",
+        "accent": "#e94560",
+        "accent-hover": "#ff6b81",
+        "accent-text": "#ffffff",
+        "border": "#2a2a4a",
+        "reblog": "#2ecc71",
+        "favourite": "#f1c40f",
+    },
+    "name": "My Theme",
+}
+
+
+async def test_preferences_patch_theme_customization(authed_client, mock_valkey):
+    """PATCH /api/v1/preferences sets theme_customization."""
+    resp = await authed_client.patch(
+        "/api/v1/preferences",
+        json={"theme_customization": _VALID_THEME},
+    )
+    assert resp.status_code == 200
+    tc = resp.json()["theme_customization"]
+    assert tc["base"] == "dark"
+    assert tc["colors"]["accent"] == "#e94560"
+    assert tc["name"] == "My Theme"
+
+    # Verify persistence via GET
+    resp2 = await authed_client.get("/api/v1/preferences")
+    assert resp2.json()["theme_customization"]["base"] == "dark"
+
+
+async def test_preferences_patch_theme_customization_clear(authed_client, mock_valkey):
+    """PATCH theme_customization with false clears it."""
+    # Set first
+    await authed_client.patch(
+        "/api/v1/preferences",
+        json={"theme_customization": _VALID_THEME},
+    )
+    # Clear
+    resp = await authed_client.patch(
+        "/api/v1/preferences",
+        json={"theme_customization": False},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["theme_customization"] is None
+
+
+async def test_preferences_patch_theme_invalid_base(authed_client, mock_valkey):
+    """PATCH theme_customization with invalid base returns 422."""
+    bad = {**_VALID_THEME, "base": "neon"}
+    resp = await authed_client.patch(
+        "/api/v1/preferences",
+        json={"theme_customization": bad},
+    )
+    assert resp.status_code == 422
+
+
+async def test_preferences_patch_theme_invalid_color(authed_client, mock_valkey):
+    """PATCH theme_customization with non-hex color returns 422."""
+    bad_colors = {**_VALID_THEME["colors"], "accent": "red"}
+    bad = {**_VALID_THEME, "colors": bad_colors}
+    resp = await authed_client.patch(
+        "/api/v1/preferences",
+        json={"theme_customization": bad},
+    )
+    assert resp.status_code == 422
+
+
+async def test_preferences_patch_theme_missing_key(authed_client, mock_valkey):
+    """PATCH theme_customization with missing color key returns 422."""
+    incomplete = {k: v for k, v in _VALID_THEME["colors"].items() if k != "accent"}
+    bad = {**_VALID_THEME, "colors": incomplete}
+    resp = await authed_client.patch(
+        "/api/v1/preferences",
+        json={"theme_customization": bad},
+    )
+    assert resp.status_code == 422
+
+
+async def test_preferences_patch_theme_name_too_long(authed_client, mock_valkey):
+    """PATCH theme_customization with name > 50 chars returns 422."""
+    bad = {**_VALID_THEME, "name": "x" * 51}
+    resp = await authed_client.patch(
+        "/api/v1/preferences",
+        json={"theme_customization": bad},
+    )
+    assert resp.status_code == 422
+
+
 # --- favourites list ---
 
 
