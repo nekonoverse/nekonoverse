@@ -50,12 +50,12 @@ function doConnect(path: string) {
   es.addEventListener("notification", (e: MessageEvent) => {
     try {
       const data = JSON.parse(e.data);
-      setUnreadCount((c) => c + 1);
+      setUnreadCount((c: number) => c + 1);
       const type = (data as { type?: string }).type;
       if (type === "mention" || type === "reply") {
-        setUnreadMentions((c) => c + 1);
+        setUnreadMentions((c: number) => c + 1);
       } else {
-        setUnreadOther((c) => c + 1);
+        setUnreadOther((c: number) => c + 1);
       }
       if (type === "follow" || type === "follow_request") {
         fetchFollowRequestCount();
@@ -78,7 +78,7 @@ function doConnect(path: string) {
   es.addEventListener("announcement", (e: MessageEvent) => {
     try {
       const data = JSON.parse(e.data);
-      setUnreadAnnouncements((c) => c + 1);
+      setUnreadAnnouncements((c: number) => c + 1);
       announcementHandlers.forEach((h) => h(data));
     } catch { /* ignore */ }
   });

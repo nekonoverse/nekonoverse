@@ -95,7 +95,7 @@ export default function Profile() {
       // statuses取得とrelationship取得を並列実行
       const own = currentUser()?.username === acc.username && !acc.acct.includes("@");
       const promises: Promise<void>[] = [
-        getAccountStatuses(acc.id).then((statuses) => setNotes(statuses)),
+        getAccountStatuses(acc.id).then((statuses) => { setNotes(statuses); }),
       ];
       if (currentUser() && !own) {
         promises.push(
@@ -785,7 +785,7 @@ export default function Profile() {
                   </Show>
                   <Show when={acc.created_at}>
                     <span class="profile-joined">
-                      {acc.domain ? t("profile.firstSeen") : t("profile.joined")} {(() => { useTimeTick(); return formatTimestamp(acc.created_at!, t, true); })()}
+                      {acc.acct.includes("@") ? t("profile.firstSeen") : t("profile.joined")} {(() => { useTimeTick(); return formatTimestamp(acc.created_at!, t, true); })()}
                     </span>
                   </Show>
                 </div>

@@ -1,7 +1,10 @@
 import { createSignal } from "solid-js";
 import { timeFormat } from "../stores/theme";
 
-type TranslatorFn = (key: string) => string;
+// Accept any translator function — i18n t() has (key: keyof Dictionary) => string
+// but we build keys dynamically, so accept the widest compatible signature.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TranslatorFn = (key: any) => string;
 
 function formatAbsolute(iso: string): string {
   const d = new Date(iso);
@@ -77,6 +80,8 @@ export function formatTimestamp(iso: string, t: TranslatorFn, dateOnly = false, 
       return `${abs} (${formatRelative(iso, t, countdown)})`;
     case "unixtime":
       return formatUnixtime(iso);
+    default:
+      return abs;
   }
 }
 
@@ -84,7 +89,7 @@ export function formatTimestamp(iso: string, t: TranslatorFn, dateOnly = false, 
 const [timeTick, setTimeTick] = createSignal(0);
 
 if (typeof window !== "undefined") {
-  setInterval(() => setTimeTick((n) => n + 1), 60_000);
+  setInterval(() => setTimeTick((n: number) => n + 1), 60_000);
 }
 
 /**

@@ -13,6 +13,7 @@ export const en: Dictionary = {
   "common.copy": "Copy",
   "common.status": "Status",
   "common.save": "Save",
+  "common.loadError": "Failed to load",
   "auth.username": "Username",
   "auth.email": "Email",
   "auth.password": "Password",
@@ -637,6 +638,8 @@ export const en: Dictionary = {
   "admin.tabRegistrations": "Registrations",
   "admin.descRegistrations": "Manage pending registration requests",
   "admin.noRegistrations": "No pending registrations",
+  "admin.createdAt": "Created at",
+  "admin.actions": "Actions",
   "admin.approve": "Approve",
   "admin.confirmRejectRegistration":
     "Reject this registration? The user data will be deleted.",

@@ -13,6 +13,7 @@ export const neko: Dictionary = {
   "common.copy": "こぴーにゃ",
   "common.status": "にゃテータス",
   "common.save": "ほぞんにゃ",
+  "common.loadError": "よみこみにしっぱいしたにゃ",
   "auth.username": "にゃまえ",
   "auth.email": "にゃールアドレス",
   "auth.password": "にゃスワード",
@@ -636,6 +637,8 @@ export const neko: Dictionary = {
   "admin.tabRegistrations": "とうろくしんせいにゃ",
   "admin.descRegistrations": "しょうにんまちのとうろくかんりにゃ",
   "admin.noRegistrations": "しょうにんまちのしんせいはにゃいにゃ",
+  "admin.createdAt": "とうろくにちじにゃ",
+  "admin.actions": "そうさにゃ",
   "admin.approve": "しょうにんにゃ",
   "admin.confirmRejectRegistration":
     "このしんせいをきゃっかするにゃ？ユーザーデータはさくじょされるにゃ。",

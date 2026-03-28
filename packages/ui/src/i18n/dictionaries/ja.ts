@@ -11,6 +11,7 @@ export const ja = {
   "common.copy": "コピー",
   "common.status": "ステータス",
   "common.save": "保存",
+  "common.loadError": "読み込みに失敗しました",
   "auth.username": "ユーザー名",
   "auth.email": "メールアドレス",
   "auth.password": "パスワード",
@@ -635,6 +636,8 @@ export const ja = {
   "admin.tabRegistrations": "登録申請",
   "admin.descRegistrations": "承認待ちの登録申請の管理",
   "admin.noRegistrations": "承認待ちの登録申請はありません",
+  "admin.createdAt": "登録日時",
+  "admin.actions": "操作",
   "admin.approve": "承認",
   "admin.confirmRejectRegistration":
     "この登録申請を却下しますか？ユーザーデータは削除されます。",

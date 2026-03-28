@@ -17,7 +17,7 @@ export default function Search() {
     return null;
   }
   const [searchParams, setSearchParams] = useSearchParams();
-  const [query, setQuery] = createSignal(searchParams.q ?? "");
+  const [query, setQuery] = createSignal(String(searchParams.q ?? ""));
   const [noteResults, setNoteResults] = createSignal<Note[]>([]);
   const [searched, setSearched] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
@@ -59,7 +59,7 @@ export default function Search() {
 
   // Auto-search if q param is present on load
   if (searchParams.q) {
-    performSearch(searchParams.q);
+    performSearch(String(searchParams.q));
   }
 
   const handleSubmit = (e: Event) => {

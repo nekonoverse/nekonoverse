@@ -64,7 +64,7 @@ export async function subscribeToPush(): Promise<PushSubscriptionResponse | null
 
   const subscription = await registration.pushManager.subscribe({
     userVisibleOnly: true,
-    applicationServerKey,
+    applicationServerKey: applicationServerKey.buffer as ArrayBuffer,
   });
 
   const p256dh = arrayBufferToBase64url(subscription.getKey("p256dh")!);
