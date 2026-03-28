@@ -299,6 +299,56 @@ async def test_reblog_visibility_wider_than_original(authed_client, mock_valkey)
     assert resp.status_code == 422
 
 
+async def test_reblog_other_users_followers_note_rejected(
+    authed_client, test_user_b, app_client, mock_valkey,
+):
+    """他人のfollowersノートはブースト不可。"""
+    # User Aがfollowersノートを作成
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "My followers only", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+
+    # User Bに切り替え
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 422
+    assert "private" in resp.json()["detail"].lower()
+
+
+async def test_reblog_with_visibility_private_alias(authed_client, mock_valkey):
+    """Mastodon互換: 'private' は 'followers' のエイリアスとして動作する。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public post", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "private"},
+    )
+    assert resp.status_code == 200
+    # Mastodon APIではfollowersは"private"として返る
+    assert resp.json()["visibility"] == "private"
+
+
+async def test_reblog_unlisted_as_followers(authed_client, mock_valkey):
+    """unlistedノートをfollowersでブースト可能。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unlisted post", "visibility": "unlisted"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "followers"},
+    )
+    assert resp.status_code == 200
+    # Mastodon APIではfollowersは"private"として返る
+    assert resp.json()["visibility"] == "private"
+
+
 # --- Delete tests ---
 
 
