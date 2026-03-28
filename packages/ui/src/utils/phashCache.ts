@@ -8,7 +8,7 @@ interface PhashCacheEntry {
 
 type PhashCacheData = Record<string, PhashCacheEntry>;
 
-// Module-level memory cache to avoid redundant localStorage JSON.parse
+// 冗長な localStorage の JSON.parse を避けるためのモジュールレベルメモリキャッシュ
 let memoryCache: Map<string, string> | null = null;
 
 function loadCache(): PhashCacheData {
@@ -32,7 +32,7 @@ function saveCache(cache: PhashCacheData): void {
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(cache));
   } catch {
-    // localStorage full or unavailable
+    // localStorage が満杯または利用不可
   }
 }
 

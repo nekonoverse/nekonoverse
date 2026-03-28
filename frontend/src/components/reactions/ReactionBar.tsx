@@ -23,15 +23,15 @@ interface Props {
   serverSoftware?: string | null;
 }
 
-// Track in-flight phash computations to prevent duplicate work
+// 重複計算を防ぐため、処理中のpHash計算を追跡
 const inFlightUrls = new Set<string>();
 
-// Module-level state: preserve picker open/close across <For> re-creations
-// (When a streaming reaction event replaces the note object, <For> destroys
-//  and re-creates the component, resetting local signals.)
+// モジュールレベル状態: <For>の再生成をまたいでピッカーの開閉状態を保持
+// （ストリーミングのリアクションイベントがノートオブジェクトを置き換えると、
+//  <For>がコンポーネントを破棄・再生成し、ローカルシグナルがリセットされる）
 const openPickerNoteIds = new Set<string>();
-// Reactive signal: number of currently open emoji pickers (used by Home.tsx
-// to suppress the "new posts" banner while a picker is visible).
+// リアクティブシグナル: 現在開いている絵文字ピッカーの数（Home.tsxで
+// ピッカー表示中に「新着投稿」バナーを抑制するために使用）
 const [pickerOpenCount, setPickerOpenCount] = createSignal(0);
 export { pickerOpenCount };
 
@@ -56,14 +56,14 @@ export default function ReactionBar(props: Props) {
   let longPressTimer: ReturnType<typeof setTimeout> | null = null;
   let didLongPress = false;
 
-  // Hover popover (PC mode)
+  // ホバーポップオーバー（PCモード）
   const [hoverGroup, setHoverGroup] = createSignal<GroupedReaction | null>(null);
   const [hoverUsers, setHoverUsers] = createSignal<ReactionUser[]>([]);
   const [hoverLoading, setHoverLoading] = createSignal(false);
   let hoverShowTimer: ReturnType<typeof setTimeout> | null = null;
   let hoverHideTimer: ReturnType<typeof setTimeout> | null = null;
 
-  // pHash-based grouping
+  // pHashベースのグループ化
   const [hashMap, setHashMap] = createSignal<Map<string, string>>(
     getAllCachedPhashes(),
   );
@@ -86,12 +86,12 @@ export default function ReactionBar(props: Props) {
     });
   };
 
-  // Compute pHash only for custom emoji with unique shortcodes
-  // (same-shortcode emoji are already grouped in Phase 1 of groupReactions)
+  // ユニークなショートコードを持つカスタム絵文字に対してのみpHashを計算
+  // （同一ショートコードの絵文字はgroupReactionsのフェーズ1で既にグループ化済み）
   createEffect(() => {
     const currentMap = hashMap();
 
-    // Count shortcode occurrences — multi-occurrence shortcodes don't need phash
+    // ショートコードの出現回数をカウント — 複数回出現するショートコードはpHash不要
     const scCounts = new Map<string, number>();
     for (const r of props.reactions) {
       if (!r.emoji_url) continue;
@@ -134,7 +134,7 @@ export default function ReactionBar(props: Props) {
     });
   });
 
-  // Reaction confirmation dialog for unsupported servers
+  // 非対応サーバー向けリアクション確認ダイアログ
   const [pendingReactionEmoji, setPendingReactionEmoji] = createSignal<string | null>(null);
   const [confirmDontShow, setConfirmDontShow] = createSignal(false);
 
@@ -148,17 +148,17 @@ export default function ReactionBar(props: Props) {
       }
       props.onUpdate?.();
     } catch {
-      // ignore
+      // 無視
     }
   };
 
   const toggleReaction = async (emoji: string) => {
-    // Unreacting always works — no confirmation needed
+    // リアクション解除は常に動作する — 確認不要
     const existing = props.reactions.find((r) => r.emoji === emoji && r.me);
     if (existing) {
       return doReaction(emoji);
     }
-    // New reaction: check if server ignores reactions and confirmation isn't suppressed
+    // 新規リアクション: サーバーがリアクションを無視するか、確認が抑制されていないかチェック
     if (ignoresReactions() && localStorage.getItem("hideReactionConfirm") !== "1") {
       setPendingReactionEmoji(emoji);
       setConfirmDontShow(false);
@@ -264,7 +264,7 @@ export default function ReactionBar(props: Props) {
           }
         }
       } catch {
-        // ignore
+        // 無視
       }
       setHoverUsers(users);
       setHoverLoading(false);
@@ -400,7 +400,7 @@ export default function ReactionBar(props: Props) {
         </Show>
       </div>
 
-      {/* Emoji import modal */}
+      {/* 絵文字インポートモーダル */}
       <Show when={importEmoji()}>
         <EmojiImportModal
           emoji={importEmoji()!}
@@ -412,7 +412,7 @@ export default function ReactionBar(props: Props) {
         />
       </Show>
 
-      {/* Reaction users modal (long press) */}
+      {/* リアクションユーザーモーダル（ロングプレス） */}
       <Show when={modalEmoji()}>
         <div class="modal-overlay" onClick={closeModal}>
           <div class="modal-content reacted-by-modal" onClick={(e) => e.stopPropagation()}>
@@ -462,7 +462,7 @@ export default function ReactionBar(props: Props) {
         </div>
       </Show>
 
-      {/* Reaction confirmation dialog for unsupported servers */}
+      {/* 非対応サーバー向けリアクション確認ダイアログ */}
       <Show when={pendingReactionEmoji()}>
         <div class="modal-overlay" onClick={cancelReaction}>
           <div class="modal-content reaction-confirm-modal" onClick={(e) => e.stopPropagation()}>

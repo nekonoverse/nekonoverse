@@ -1,9 +1,9 @@
-"""Valkey-based job queue for email delivery.
+"""メール配信用のValkeyベースジョブキュー。
 
-Follows the same pattern as face_detect_queue.py:
-- Main queue (Valkey list)
-- Delayed queue (Valkey sorted set) for retries with exponential backoff
-- Dead-letter queue for permanently failed jobs
+face_detect_queue.py と同じパターンに従う:
+- メインキュー (Valkey リスト)
+- 遅延キュー (Valkey ソート済みセット) 指数バックオフ付きリトライ用
+- デッドレターキュー 恒久的に失敗したジョブ用
 """
 
 import asyncio
@@ -26,7 +26,7 @@ MAX_CONCURRENT = 2
 
 
 async def enqueue_email(to: str, subject: str, html: str, text: str) -> None:
-    """Enqueue an email for delivery."""
+    """配信用にメールをキューに追加する。"""
     job = {
         "to": to,
         "subject": subject,
@@ -40,7 +40,7 @@ async def enqueue_email(to: str, subject: str, html: str, text: str) -> None:
 
 
 async def _process_job(job: dict) -> None:
-    """Send a single email."""
+    """単一のメールを送信する。"""
     from app.services.email_service import send_email
 
     await send_email(
@@ -53,7 +53,7 @@ async def _process_job(job: dict) -> None:
 
 
 async def _retry_or_dead(job: dict, error: str) -> None:
-    """Re-enqueue with backoff or move to dead-letter."""
+    """バックオフ付きで再キューするか、デッドレターに移動する。"""
     job["attempts"] = job.get("attempts", 0) + 1
     job["last_error"] = error
 
@@ -74,7 +74,7 @@ async def _retry_or_dead(job: dict, error: str) -> None:
 
 
 async def _promote_delayed() -> int:
-    """Move delayed jobs whose run_at has passed back to the main queue."""
+    """run_at が経過した遅延ジョブをメインキューに戻す。"""
     now = time.time()
     ready = await valkey_client.zrangebyscore(DELAYED_KEY, "-inf", str(now), start=0, num=50)
     if not ready:
@@ -86,7 +86,7 @@ async def _promote_delayed() -> int:
 
 
 async def _update_heartbeat() -> None:
-    """Update email worker heartbeat."""
+    """メールワーカーのハートビートを更新する。"""
     try:
         from datetime import datetime, timezone
 
@@ -97,7 +97,7 @@ async def _update_heartbeat() -> None:
 
 
 async def run_email_loop() -> None:
-    """Main email worker loop."""
+    """メールワーカーのメインループ。"""
     if not settings.email_enabled:
         logger.info("SMTP not configured, email worker idle")
         while True:

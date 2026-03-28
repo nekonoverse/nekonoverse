@@ -6,22 +6,22 @@ interface Props {
   onReply?: (noteId: string) => void;
   onSearch?: () => void;
   onNavigate?: (path: string) => void;
-  /** Disable all shortcuts (e.g. when a modal is open) */
+  /** すべてのショートカットを無効化する（例: モーダルが開いている時） */
   disabled?: boolean;
 }
 
 /**
- * Global keyboard shortcuts handler.
- * - j/k: Focus next/previous note in timeline
- * - g: Scroll to top
- * - n: Open compose modal (new)
- * - q: Open compose modal with quote (focused note)
- * - t: Open compose modal with reply (focused note)
- * - f: Bookmark focused note
- * - r: Open reaction picker on focused note
- * - h: Navigate to home timeline
- * - p: Navigate to public timeline
- * - u: Open user search
+ * グローバルキーボードショートカットハンドラー
+ * - j/k: タイムラインの次/前のノートにフォーカス
+ * - g: トップにスクロール
+ * - n: 投稿モーダルを開く（新規）
+ * - q: 引用付き投稿モーダルを開く（フォーカス中のノート）
+ * - t: 返信付き投稿モーダルを開く（フォーカス中のノート）
+ * - f: フォーカス中のノートをブックマーク
+ * - r: フォーカス中のノートでリアクションピッカーを開く
+ * - h: ホームタイムラインに移動
+ * - p: 公開タイムラインに移動
+ * - u: ユーザー検索を開く
  */
 export default function KeyboardShortcuts(props: Props) {
   const isInputFocused = () => {
@@ -52,17 +52,17 @@ export default function KeyboardShortcuts(props: Props) {
       const card = cards[index];
       card.classList.add("keyboard-focused");
 
-      // scrollIntoView({ block: "nearest" }) doesn't account for sticky navbar
-      // when the element is partially visible. Manual scroll ensures the card
-      // is fully below the navbar.
+      // scrollIntoView({ block: "nearest" }) は要素が部分的に表示されている場合、
+      // 固定ナビバーを考慮しない。手動スクロールでカードがナビバーの下に
+      // 完全に表示されるようにする。
       const navbar = document.querySelector<HTMLElement>(".navbar");
       const navH = navbar ? navbar.getBoundingClientRect().height : 0;
       const rect = card.getBoundingClientRect();
       if (rect.top < navH) {
-        // Card is behind navbar — scroll it into view with margin
+        // カードがナビバーの裏に隠れている — マージン付きでスクロール表示
         window.scrollBy({ top: rect.top - navH - 4 });
       } else if (rect.bottom > window.innerHeight) {
-        // Card is below viewport — scroll minimum to show it
+        // カードがビューポートの下にある — 最小限のスクロールで表示
         card.scrollIntoView({ block: "nearest" });
       }
     }

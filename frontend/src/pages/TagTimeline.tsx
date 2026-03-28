@@ -32,7 +32,7 @@ export default function TagTimeline() {
         setNotes([...current, ...older]);
       }
     } catch {
-      // ignore
+      // 無視
     } finally {
       setLoadingMore(false);
     }
@@ -47,7 +47,7 @@ export default function TagTimeline() {
         return n;
       }));
     } catch {
-      // ignore
+      // 無視
     }
   };
 

@@ -1,4 +1,4 @@
-"""Mastodon-compatible Web Push subscription API."""
+"""Mastodon 互換 Web Push サブスクリプション API。"""
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel
@@ -50,7 +50,7 @@ class UpdatePushRequest(BaseModel):
 
 
 def _get_session_id(request: Request) -> str:
-    """Extract session ID from cookie or OAuth token."""
+    """Cookie または OAuth トークンからセッション ID を取得する。"""
     session_id = request.cookies.get("nekonoverse_session")
     if session_id:
         return session_id

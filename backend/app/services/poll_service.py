@@ -1,4 +1,4 @@
-"""Poll service: create poll notes, vote, get results."""
+"""投票サービス: 投票ノートの作成、投票、結果取得。"""
 
 import logging
 import uuid
@@ -21,7 +21,7 @@ async def vote_on_poll(
     note_id: uuid.UUID,
     choices: list[int],
 ) -> None:
-    """Cast votes on a poll. Raises ValueError on invalid input."""
+    """投票する。入力が無効な場合はValueErrorを送出。"""
     note = await get_note_by_id(db, note_id)
     if not note:
         raise ValueError("Note not found")
@@ -32,11 +32,11 @@ async def vote_on_poll(
     if not options:
         raise ValueError("Poll has no options")
 
-    # Check expiry
+    # 期限の確認
     if note.poll_expires_at and note.poll_expires_at < datetime.now(timezone.utc):
         raise ValueError("Poll has expired")
 
-    # Validate choices
+    # 選択肢の検証
     if not note.poll_multiple and len(choices) > 1:
         raise ValueError("Multiple choices not allowed")
 
@@ -46,7 +46,7 @@ async def vote_on_poll(
 
     actor = user.actor
 
-    # Check for existing votes
+    # 既存の投票を確認
     existing = await db.execute(
         select(PollVote).where(
             PollVote.note_id == note_id,
@@ -56,7 +56,7 @@ async def vote_on_poll(
     if existing.scalars().first():
         raise ValueError("Already voted")
 
-    # Create votes and update counts
+    # 投票を作成し、カウントを更新
     for idx in choices:
         vote = PollVote(
             note_id=note_id,
@@ -65,17 +65,17 @@ async def vote_on_poll(
         )
         db.add(vote)
 
-        # Update vote count in poll_options JSONB
+        # poll_options JSONB 内の投票数を更新
         options[idx]["votes_count"] = options[idx].get("votes_count", 0) + 1
 
-    # Force JSONB update detection
+    # JSONB の更新検出を強制
     from sqlalchemy.orm.attributes import flag_modified
 
     note.poll_options = list(options)
     flag_modified(note, "poll_options")
     await db.flush()
 
-    # Federate the vote
+    # 投票を連合配信
     try:
         await _federate_vote(db, user, note, choices)
     except Exception:
@@ -88,12 +88,12 @@ async def _federate_vote(
     note: Note,
     choices: list[int],
 ) -> None:
-    """Send AP activities after voting."""
+    """投票後に AP Activity を送信する。"""
     actor = user.actor
     options = note.poll_options or []
 
     if note.local:
-        # Local poll: send Update(Question) to followers with updated counts
+        # ローカル投票: 更新されたカウントで Update(Question) をフォロワーに送信
         from app.activitypub.renderer import render_poll_update_activity
         from app.services.delivery_service import enqueue_delivery
         from app.services.follow_service import get_follower_inboxes
@@ -103,7 +103,7 @@ async def _federate_vote(
         for inbox_url in inboxes:
             await enqueue_delivery(db, note.actor_id, inbox_url, activity)
     else:
-        # Remote poll: send Create(Note with name) to the poll author's inbox
+        # リモート投票: Create(Note with name) を投票作成者の inbox に送信
         from app.activitypub.renderer import render_vote_activity
         from app.services.delivery_service import enqueue_delivery
 
@@ -124,7 +124,7 @@ async def get_poll_data(
     current_actor_id: uuid.UUID | None = None,
     note: Note | None = None,
 ) -> dict | None:
-    """Get poll data for a note. Returns None if not a poll."""
+    """ノートの投票データを取得する。投票でない場合はNoneを返す。"""
     if note is None:
         note = await get_note_by_id(db, note_id)
     if not note or not note.is_poll:
@@ -132,7 +132,7 @@ async def get_poll_data(
 
     options = note.poll_options or []
 
-    # For local polls, compute vote counts from PollVote table (source of truth)
+    # ローカル投票の場合、PollVote テーブルから投票数を計算する (信頼できる情報源)
     if note.local:
         vote_counts_result = await db.execute(
             select(PollVote.choice_index, func.count(PollVote.id))
@@ -150,14 +150,14 @@ async def get_poll_data(
         ]
         votes_count = sum(vc for vc in vote_counts.values())
     else:
-        # Remote polls: use JSONB counts (remote server is source of truth)
+        # リモート投票: JSONB のカウントを使用 (リモートサーバーが信頼できる情報源)
         response_options = [
             {"title": opt.get("title", ""), "votes_count": opt.get("votes_count", 0)}
             for opt in options
         ]
         votes_count = sum(opt.get("votes_count", 0) for opt in options)
 
-    # Count unique voters
+    # ユニーク投票者数をカウント
     voters_result = await db.execute(
         select(func.count(func.distinct(PollVote.actor_id))).where(
             PollVote.note_id == note_id

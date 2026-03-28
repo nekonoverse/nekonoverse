@@ -1,11 +1,11 @@
-"""Server settings service with Valkey caching."""
+"""Valkeyキャッシュ付きサーバー設定サービス。"""
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.server_setting import ServerSetting
 
-CACHE_TTL = 300  # 5 minutes
+CACHE_TTL = 300  # 5分
 
 
 async def get_setting(db: AsyncSession, key: str) -> str | None:

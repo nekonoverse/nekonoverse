@@ -14,9 +14,9 @@ const NUMERIC_RE = /^\d+(\.\d+)?$/;
 const CSS_DURATION_RE = /^\d+(\.\d+)?(s|ms)$/;
 
 /**
- * Check whether a URL uses a safe protocol (http/https only).
- * Blocks javascript:, data:, vbscript:, and all other non-http protocols
- * to prevent XSS from malicious remote MFM content.
+ * URL が安全なプロトコル（http/https のみ）を使用しているかチェックする。
+ * 悪意のあるリモート MFM コンテンツからの XSS を防ぐため、
+ * javascript:、data:、vbscript: およびその他の非HTTPプロトコルをブロックする。
  */
 export function isSafeUrl(url: string): boolean {
   try {
@@ -28,8 +28,8 @@ export function isSafeUrl(url: string): boolean {
 }
 
 /**
- * Parse MFM source text and render it as DOM nodes into the target element.
- * All DOM nodes are created programmatically — no innerHTML, no XSS risk.
+ * MFM ソーステキストをパースして対象要素に DOM ノードとしてレンダリングする。
+ * すべての DOM ノードはプログラム的に作成される — innerHTML 不使用、XSS リスクなし。
  */
 export function renderMfm(
   el: HTMLElement,
@@ -174,7 +174,7 @@ function renderNode(
 
     case "link": {
       if (!isSafeUrl(node.props.url)) {
-        // Unsafe protocol — render children as plain text
+        // 安全でないプロトコル — 子要素をプレーンテキストとしてレンダリング
         const span = document.createElement("span");
         renderChildren(span, node.children, emojiMap, navigate, actorHost);
         return span;
@@ -189,7 +189,7 @@ function renderNode(
 
     case "url": {
       if (!isSafeUrl(node.props.url)) {
-        // Unsafe protocol — render as plain text
+        // 安全でないプロトコル — プレーンテキストとしてレンダリング
         return document.createTextNode(node.props.url);
       }
       const el = document.createElement("a");
@@ -298,7 +298,7 @@ function renderNode(
     }
 
     default: {
-      // Unknown node type: render children if they exist
+      // 不明なノードタイプ: 子要素があればレンダリング
       const frag = document.createDocumentFragment();
       if ("children" in node && Array.isArray((node as any).children)) {
         for (const child of (node as any).children) {
@@ -320,7 +320,7 @@ function renderFn(
   const el = document.createElement("span");
   el.classList.add("mfm-fn");
 
-  // Speed custom property (validate as CSS duration)
+  // Speed カスタムプロパティ（CSS duration として検証）
   if (typeof args.speed === "string" && CSS_DURATION_RE.test(args.speed)) {
     el.style.setProperty("--mfm-speed", args.speed);
   }
@@ -437,7 +437,7 @@ function renderFn(
     case "ruby": {
       const ruby = document.createElement("ruby");
       renderChildren(ruby, node.children, emojiMap, navigate, actorHost);
-      // mfm-js parses ruby as $[ruby text reading] where last child text is the reading
+      // mfm-js は ruby を $[ruby テキスト 読み] としてパースし、最後の子テキストが読みになる
       const texts = ruby.textContent?.split(" ") ?? [];
       if (texts.length >= 2) {
         const reading = texts.pop()!;
@@ -455,7 +455,7 @@ function renderFn(
       break;
 
     default:
-      // Unknown fn: just render children
+      // 不明な fn: 子要素のみレンダリング
       break;
   }
 

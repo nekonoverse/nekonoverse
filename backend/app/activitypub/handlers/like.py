@@ -1,4 +1,4 @@
-"""Handle Like and EmojiReact activities (Misskey/Pleroma compatible)."""
+"""Like および EmojiReact activity を処理する (Misskey/Pleroma 互換)。"""
 
 import logging
 import re
@@ -17,14 +17,14 @@ logger = logging.getLogger(__name__)
 
 
 async def handle_like(db: AsyncSession, activity: dict):
-    """Handle Like activity -- may contain Misskey-style _misskey_reaction."""
+    """Like activity を処理する -- Misskey 形式の _misskey_reaction を含む場合がある。"""
     actor_ap_id = activity.get("actor")
     note_ap_id = activity.get("object")
 
     if not actor_ap_id or not note_ap_id:
         return
 
-    # Determine emoji
+    # 絵文字を特定
     misskey_reaction = activity.get("_misskey_reaction")
     content = activity.get("content")
 
@@ -33,9 +33,9 @@ async def handle_like(db: AsyncSession, activity: dict):
     elif content and is_single_emoji(content):
         emoji = content
     else:
-        emoji = "\u2b50"  # ⭐ — bare Like (e.g. from Mastodon) = favourite
+        emoji = "\u2b50"  # ⭐ — 素の Like (例: Mastodon から) = お気に入り
 
-    # Cache custom emoji from tag array
+    # tag 配列からカスタム絵文字をキャッシュ
     if is_custom_emoji_shortcode(emoji):
         await _cache_custom_emoji(db, activity, emoji)
 
@@ -43,7 +43,7 @@ async def handle_like(db: AsyncSession, activity: dict):
 
 
 async def handle_emoji_react(db: AsyncSession, activity: dict):
-    """Handle EmojiReact activity (Pleroma/Akkoma style)."""
+    """EmojiReact activity を処理する (Pleroma/Akkoma 形式)。"""
     actor_ap_id = activity.get("actor")
     note_ap_id = activity.get("object")
     content = activity.get("content")
@@ -62,7 +62,7 @@ async def handle_emoji_react(db: AsyncSession, activity: dict):
 
 
 async def _normalize_emoji_to_local(db: AsyncSession, emoji: str) -> str:
-    """If a remote custom emoji has a local equivalent, use the local version."""
+    """リモートカスタム絵文字にローカル版がある場合、ローカル版を使用する。"""
     m = _CUSTOM_EMOJI_RE.match(emoji)
     if not m or not m.group(2):
         return emoji
@@ -79,10 +79,10 @@ async def _save_reaction(
     note_ap_id: str,
     emoji: str,
 ):
-    # Normalize remote emoji to local version if available
+    # 利用可能であればリモート絵文字をローカル版に正規化
     emoji = await _normalize_emoji_to_local(db, emoji)
 
-    # Resolve actor
+    # アクターを解決
     actor = await get_actor_by_ap_id(db, actor_ap_id)
     if not actor:
         actor = await fetch_remote_actor(db, actor_ap_id)
@@ -90,13 +90,13 @@ async def _save_reaction(
         logger.warning("Could not resolve actor %s for reaction", actor_ap_id)
         return
 
-    # Resolve note
+    # ノートを解決
     note = await get_note_by_ap_id(db, note_ap_id)
     if not note:
         logger.info("Note not found for reaction: %s", note_ap_id)
         return
 
-    # Check for duplicate
+    # 重複をチェック
     existing = await db.execute(
         select(Reaction).where(
             Reaction.actor_id == actor.id,
@@ -115,11 +115,11 @@ async def _save_reaction(
     )
     db.add(reaction)
 
-    # Update reaction count
+    # リアクション数を更新
     note.reactions_count = note.reactions_count + 1
     await db.flush()
 
-    # Notify local note author
+    # ローカルのノート作成者に通知
     notif = None
     if note.actor and note.actor.is_local:
         from app.services.notification_service import create_notification
@@ -148,7 +148,7 @@ async def _save_reaction(
 
 
 async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
-    """Cache custom emoji from activity's tag array."""
+    """activity の tag 配列からカスタム絵文字をキャッシュする。"""
     match = _CUSTOM_EMOJI_RE.match(emoji_str)
     if not match:
         return
@@ -156,7 +156,7 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
     shortcode = match.group(1)
     domain = match.group(2)
 
-    # Determine domain early (needed for both tag-based and fallback caching)
+    # ドメインを早期に特定 (タグベースとフォールバックの両方のキャッシュに必要)
     if not domain:
         actor_ap_id = activity.get("actor", "")
         from urllib.parse import urlparse
@@ -178,7 +178,7 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
             if url and domain:
                 from app.services.emoji_service import upsert_remote_emoji
 
-                # Extract extended fields (Misskey + CherryPick)
+                # 拡張フィールドを抽出 (Misskey + CherryPick)
                 static_url = icon.get("staticUrl") if isinstance(icon, dict) else None
                 _ml = tag.get("_misskey_license")
                 license_text = tag.get("license") or (
@@ -203,7 +203,7 @@ async def _cache_custom_emoji(db: AsyncSession, activity: dict, emoji_str: str):
                 found_tag = True
             break
 
-    # Fallback: fetch from remote instance API if tag was missing
+    # フォールバック: タグが見つからなかった場合はリモートインスタンスの API からフェッチ
     if not found_tag and domain:
         from app.services.emoji_service import fetch_and_cache_remote_emoji
 

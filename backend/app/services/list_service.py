@@ -1,4 +1,4 @@
-"""Service for managing user lists and list timelines."""
+"""ユーザーリストとリストタイムラインの管理サービス。"""
 
 import logging
 import uuid
@@ -15,7 +15,7 @@ from app.models.user import User
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# CRUD
+# CRUD操作
 # ---------------------------------------------------------------------------
 
 
@@ -87,7 +87,7 @@ async def delete_list(db: AsyncSession, lst: List) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Member management
+# メンバー管理
 # ---------------------------------------------------------------------------
 
 
@@ -96,7 +96,7 @@ async def add_list_member(
     lst: List,
     actor: Actor,
 ) -> ListMember:
-    # Check duplicate
+    # 重複チェック
     result = await db.execute(
         select(ListMember).where(
             ListMember.list_id == lst.id,
@@ -111,7 +111,7 @@ async def add_list_member(
     db.add(member)
     await db.flush()
 
-    # Proxy subscribe for remote actors without real local followers
+    # リモートアクターにローカルフォロワーがいない場合、プロキシ購読を開始
     if not actor.is_local:
         from app.services.proxy_service import has_real_local_follower
 
@@ -142,7 +142,7 @@ async def remove_list_member(
     await db.delete(member)
     await db.flush()
 
-    # Proxy unsubscribe if remote actor is no longer in any list and has no real followers
+    # リモートアクターがどのリストにも属さず、ローカルフォロワーもいなければプロキシ購読を解除
     if not actor.is_local:
         if not await is_actor_in_any_list(db, actor.id):
             from app.services.proxy_service import has_real_local_follower
@@ -166,7 +166,7 @@ async def is_actor_in_any_list(db: AsyncSession, actor_id: uuid.UUID) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Timeline
+# タイムライン
 # ---------------------------------------------------------------------------
 
 
@@ -197,7 +197,7 @@ async def get_list_timeline(
     if lst.replies_policy == "none":
         query = query.where(Note.in_reply_to_id.is_(None))
     elif lst.replies_policy == "list":
-        # Allow non-replies OR replies to other list members' notes
+        # 非リプライ、またはリストメンバーのノートへのリプライのみ許可
         member_note_ids = select(Note.id).where(Note.actor_id.in_(member_ids))
         query = query.where(
             or_(
@@ -206,7 +206,7 @@ async def get_list_timeline(
             )
         )
     elif lst.replies_policy == "followed":
-        # Allow non-replies OR replies to notes by users the list owner follows
+        # 非リプライ、またはリストオーナーがフォロー中のユーザーのノートへのリプライのみ許可
         from app.services.follow_service import get_following_ids
 
         following_ids = await get_following_ids(db, user.actor_id)
@@ -219,12 +219,12 @@ async def get_list_timeline(
             )
         )
 
-    # Exclude blocked/muted
+    # ブロック・ミュート済みを除外
     excluded = await _get_excluded_ids(db, user.actor_id)
     if excluded:
         query = query.where(Note.actor_id.not_in(excluded))
 
-    # Cursor pagination
+    # カーソルページネーション
     if max_id:
         sub = select(Note.published).where(Note.id == max_id).scalar_subquery()
         query = query.where(Note.published < sub)
@@ -235,12 +235,12 @@ async def get_list_timeline(
 
 
 # ---------------------------------------------------------------------------
-# Exclusive + streaming helpers
+# 排他リスト + ストリーミング用ヘルパー
 # ---------------------------------------------------------------------------
 
 
 async def get_exclusive_list_actor_ids(db: AsyncSession, user_id: uuid.UUID) -> set[uuid.UUID]:
-    """Get actor IDs in exclusive lists owned by user (for home TL exclusion)."""
+    """排他リストに含まれるアクターIDを取得（ホームTLからの除外用）。"""
     result = await db.execute(
         select(ListMember.actor_id)
         .join(List, ListMember.list_id == List.id)
@@ -250,7 +250,7 @@ async def get_exclusive_list_actor_ids(db: AsyncSession, user_id: uuid.UUID) -> 
 
 
 async def get_list_ids_for_actor(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
-    """Get all list IDs containing the given actor (for streaming dispatch)."""
+    """指定アクターが所属する全リストIDを取得（ストリーミング配信用）。"""
     result = await db.execute(select(ListMember.list_id).where(ListMember.actor_id == actor_id))
     return list(result.scalars().all())
 
@@ -258,7 +258,7 @@ async def get_list_ids_for_actor(db: AsyncSession, actor_id: uuid.UUID) -> list[
 async def get_user_lists_for_actor(
     db: AsyncSession, user_id: uuid.UUID, actor_id: uuid.UUID
 ) -> list[List]:
-    """Get lists owned by user_id that contain actor_id."""
+    """user_idが所有するリストのうち、actor_idが所属するものを取得。"""
     result = await db.execute(
         select(List)
         .join(ListMember, List.id == ListMember.list_id)
@@ -271,9 +271,9 @@ async def get_user_lists_for_actor(
 async def get_exclusive_list_user_actor_ids(
     db: AsyncSession, member_actor_id: uuid.UUID
 ) -> set[uuid.UUID]:
-    """Get actor_ids of users who have this actor in an exclusive list.
+    """このアクターを排他リストに含むユーザーのactor_idを取得。
 
-    These users should NOT receive this actor's notes in their home timeline SSE.
+    これらのユーザーにはホームタイムラインSSEでこのアクターのノートを配信しない。
     """
     result = await db.execute(
         select(User.actor_id)
@@ -288,10 +288,10 @@ async def get_exclusive_list_user_actor_ids(
 
 
 # ---------------------------------------------------------------------------
-# Cache invalidation (placeholder for Valkey TTL cache)
+# キャッシュ無効化（Valkey TTLキャッシュ用プレースホルダー）
 # ---------------------------------------------------------------------------
 
 
 def _invalidate_list_cache(list_id: uuid.UUID) -> None:
-    """Invalidate cached data related to a list. Currently a no-op placeholder."""
+    """リスト関連のキャッシュを無効化する。現在はno-opプレースホルダー。"""
     pass

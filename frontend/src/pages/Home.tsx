@@ -38,26 +38,26 @@ export default function Home() {
   const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
   const [newNoteIds, setNewNoteIds] = createSignal<Set<string>>(new Set());
 
-  // Infinite scroll state
+  // 無限スクロール状態
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
-  // Track raw pagination cursor separately (for when filtering removes all items)
+  // フィルタリングで全アイテムが除外された場合に備え、生のページネーションカーソルを別途追跡
   let rawPaginationCursor: string | null = null;
 
-  // New post buffering state
+  // 新規投稿バッファリング状態
   const [bufferedNotes, setBufferedNotes] = createSignal<Note[]>([]);
   const [isAtTop, setIsAtTop] = createSignal(true);
 
-  // Scroll-to-top button state
+  // トップへスクロールボタンの状態
   const [showScrollTop, setShowScrollTop] = createSignal(false);
 
-  // Suppress auto-scroll / banner while emoji picker or other popover is open
+  // 絵文字ピッカーなどのポップオーバーが開いている間は自動スクロール/バナーを抑制
   const isPopoverOpen = () => pickerOpenCount() > 0 || !!document.querySelector(".thread-modal");
 
   let sentinelRef: HTMLDivElement | undefined;
   let observer: IntersectionObserver | undefined;
 
-  // Callback ref: observe sentinel as soon as it appears in the DOM
+  // コールバックref: センチネルがDOMに現れたら即座に監視を開始
   const setSentinelRef = (el: HTMLDivElement) => {
     sentinelRef = el;
     if (observer && el) {
@@ -75,14 +75,14 @@ export default function Home() {
     const user = currentUser();
     const followed = followedIds();
     return data.filter((n) => {
-      // Check the actual note (or reblogged note)
+      // 実際のノート（またはリブログされたノート）を確認
       const target = n.reblog || n;
       if (!target.in_reply_to_id) return true;
-      // Self-reply (thread)
+      // セルフリプライ（スレッド）
       if (target.in_reply_to_account_id === target.actor.id) return true;
-      // Reply to self
+      // 自分への返信
       if (user && target.in_reply_to_account_id === user.id) return true;
-      // Reply to followed user
+      // フォロー中のユーザーへの返信
       if (target.in_reply_to_account_id && followed.has(target.in_reply_to_account_id))
         return true;
       return false;
@@ -105,12 +105,12 @@ export default function Home() {
     }
   };
 
-  // Load older posts (infinite scroll)
+  // 過去の投稿を読み込む（無限スクロール）
   const loadOlderNotes = async () => {
     if (loadingMore() || !hasMore()) return;
     const current = notes();
     if (current.length === 0) return;
-    // Use raw cursor when filtering removed all items from previous page
+    // フィルタリングで前ページの全アイテムが除外された場合は生カーソルを使用
     const lastId = rawPaginationCursor || current[current.length - 1].id;
     rawPaginationCursor = null;
     setLoadingMore(true);
@@ -131,17 +131,17 @@ export default function Home() {
         if (raw.length < 20) {
           setHasMore(false);
         } else if (data.length === 0) {
-          // All items filtered — advance cursor using last raw item
+          // 全アイテムがフィルタ除外された場合 — 最後の生アイテムでカーソルを進める
           rawPaginationCursor = raw[raw.length - 1].id;
         }
       }
     } catch {
-      // ignore
+      // 無視
     } finally {
       setLoadingMore(false);
-      // Re-observe sentinel: IntersectionObserver only fires on state *changes*,
-      // so if the sentinel is still in view after appending notes we must
-      // reset observation to trigger the next page load.
+      // センチネルを再監視: IntersectionObserverは状態の*変化*時のみ発火するため、
+      // ノート追加後にセンチネルがまだ表示内にある場合は
+      // 監視をリセットして次のページ読み込みをトリガーする必要がある
       if (observer && sentinelRef && hasMore()) {
         observer.unobserve(sentinelRef);
         observer.observe(sentinelRef);
@@ -149,7 +149,7 @@ export default function Home() {
     }
   };
 
-  // Scroll position tracking for new post buffering and scroll-to-top button
+  // 新規投稿バッファリングとトップへスクロールボタンのためのスクロール位置追跡
   const handleScroll = () => {
     const y = window.scrollY;
     setIsAtTop(y < 100);
@@ -160,7 +160,7 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Flush buffered notes into the timeline
+  // バッファされたノートをタイムラインに反映
   const flushBuffer = () => {
     const buffered = bufferedNotes();
     if (buffered.length === 0) return;
@@ -169,7 +169,7 @@ export default function Home() {
       const unique = buffered.filter((n) => !existingIds.has(n.id));
       return [...unique, ...prev];
     });
-    // Apply slide-in animation to flushed notes
+    // 反映されたノートにスライドインアニメーションを適用
     for (const n of buffered) {
       setNewNoteIds((s) => new Set(s).add(n.id));
       setTimeout(
@@ -186,37 +186,37 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // When user scrolls back to top, auto-flush buffer (unless popover is open)
+  // ユーザーがトップに戻ったらバッファを自動反映（ポップオーバーが開いている場合を除く）
   createEffect(() => {
     if (isAtTop() && bufferedNotes().length > 0 && !isPopoverOpen()) {
       flushBuffer();
     }
   });
 
-  // Initial load: wait for auth to settle (App.tsx Layout handles fetchCurrentUser)
+  // 初回読み込み: 認証の確定を待つ（App.tsxのLayoutがfetchCurrentUserを担当）
   const [initialData] = createResource(
     () => (!authLoading() ? true : false),
     () => loadTimeline(),
   );
-  // Track whether initial load completed for tl switch effect
+  // TL切り替えエフェクト用に初回読み込み完了を追跡
   const loaded = () => initialData.state === "ready";
 
-  // Subscribe to real-time timeline updates from global stream
+  // グローバルストリームからのリアルタイムタイムライン更新を購読
   const unsub = onUpdate(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
     try {
       const note = await getNote(id);
-      // On public timeline, only show public notes (match REST API filtering)
+      // 公開タイムラインでは公開ノートのみ表示（REST APIのフィルタリングと一致させる）
       if (!isHomeTL() && note.visibility !== "public") {
         return;
       }
-      // On home TL, filter replies to non-followed users
+      // ホームTLでは、フォローしていないユーザーへの返信をフィルタリング
       if (isHomeTL() && filterHomeTLReplies([note]).length === 0) {
         return;
       }
-      // If this note already exists (directly, as reblog, or as quote),
-      // update it in-place (handles focal point updates, edits, etc.)
+      // このノートが既に存在する場合（直接、リブログとして、または引用として）、
+      // その場で更新する（フォーカルポイントの更新、編集などに対応）
       const inTimeline = notes().some(
         (n) => n.id === id || n.reblog?.id === id || n.quote?.id === id,
       );
@@ -239,7 +239,7 @@ export default function Home() {
         return;
 
       if (isAtTop() && !isPopoverOpen()) {
-        // User is at top and no popover: insert directly with animation
+        // ユーザーがトップにいてポップオーバーなし: アニメーション付きで直接挿入
         setNotes((prev) => {
           if (prev.some((n) => n.id === id)) return prev;
           return [note, ...prev];
@@ -255,14 +255,14 @@ export default function Home() {
           600,
         );
       } else {
-        // User is scrolling: buffer the note
+        // ユーザーがスクロール中: ノートをバッファに格納
         setBufferedNotes((prev) => {
           if (prev.some((n) => n.id === id)) return prev;
           return [note, ...prev];
         });
       }
     } catch {
-      /* ignore */
+      /* 無視 */
     }
   });
 
@@ -294,7 +294,7 @@ export default function Home() {
   onMount(() => {
     window.addEventListener("scroll", handleScroll, { passive: true });
 
-    // IntersectionObserver for infinite scroll
+    // 無限スクロール用のIntersectionObserver
     observer = new IntersectionObserver(
       (entries) => {
         if (entries[0]?.isIntersecting) {
@@ -303,7 +303,7 @@ export default function Home() {
       },
       { rootMargin: "200px" },
     );
-    // If sentinel already rendered (e.g. fast load), observe it now
+    // センチネルが既にレンダリング済みの場合（例: 高速ロード）、今すぐ監視を開始
     if (sentinelRef) {
       observer.observe(sentinelRef);
     }
@@ -320,7 +320,7 @@ export default function Home() {
     }
   });
 
-  // Reload only when tl search param changes (explicit dependency)
+  // tlの検索パラメータが変更された時のみ再読み込み（明示的な依存関係）
   createEffect(
     on(
       () => searchParams.tl,
@@ -355,7 +355,7 @@ export default function Home() {
       setNotes((prev) => prev.map(mapper));
       setBufferedNotes((prev) => prev.map(mapper));
     } catch {
-      // ignore
+      // 無視
     }
   };
 
@@ -372,7 +372,7 @@ export default function Home() {
           <div class="timeline">
             <h2>{isHomeTL() ? t("timeline.home") : t("timeline.public")}</h2>
 
-            {/* New posts banner (hidden while emoji picker is open to prevent layout shift) */}
+            {/* 新着投稿バナー（レイアウトシフト防止のため絵文字ピッカーが開いている間は非表示） */}
             <Show when={bufferedNotes().length > 0 && !isPopoverOpen()}>
               <button class="new-posts-banner" onClick={flushBuffer}>
                 {t("timeline.newPosts").replace(
@@ -410,22 +410,22 @@ export default function Home() {
                 </For>
               </Show>
 
-              {/* Sentinel element for infinite scroll */}
+              {/* 無限スクロール用のセンチネル要素 */}
               <div ref={setSentinelRef} class="timeline-sentinel" />
 
-              {/* Loading indicator */}
+              {/* 読み込みインジケーター */}
               <Show when={loadingMore()}>
                 <p class="timeline-loading">{t("timeline.loadingMore")}</p>
               </Show>
 
-              {/* End of timeline */}
+              {/* タイムラインの末尾 */}
               <Show when={!hasMore() && notes().length > 0}>
                 <p class="timeline-end">{t("timeline.noMore")}</p>
               </Show>
             </Show>
           </div>
 
-          {/* Scroll-to-top floating button */}
+          {/* トップへスクロールフローティングボタン */}
           <Show when={showScrollTop()}>
             <button
               class="scroll-to-top"
@@ -446,7 +446,7 @@ export default function Home() {
             </button>
           </Show>
 
-          {/* Thread modal */}
+          {/* スレッドモーダル */}
           <Show when={threadNoteId()}>
             <NoteThreadModal
               noteId={threadNoteId()!}
@@ -462,7 +462,7 @@ export default function Home() {
             />
           </Show>
 
-          {/* Compose modal (reply / quote) */}
+          {/* 投稿モーダル（返信/引用） */}
           <ComposeModal
             open={!!replyTarget() || !!quoteTarget()}
             onClose={() => { setReplyTarget(null); setQuoteTarget(null); }}

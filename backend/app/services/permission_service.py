@@ -1,6 +1,6 @@
-"""Moderator permission service — delegates to role_service.
+"""モデレーター権限サービス — role_service に委譲する。
 
-Maintained for backward compatibility. New code should use role_service directly.
+後方互換性のために維持。新しいコードは role_service を直接使用すること。
 """
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -19,7 +19,7 @@ MODERATOR_PERMISSIONS = [
 
 
 async def get_moderator_permissions(db: AsyncSession) -> dict[str, bool]:
-    """Return the moderator role's permission map."""
+    """モデレーターロールの権限マップを返す。"""
     from app.services.role_service import get_role
 
     role = await get_role(db, "moderator")
@@ -32,7 +32,7 @@ async def get_moderator_permissions(db: AsyncSession) -> dict[str, bool]:
 async def set_moderator_permissions(
     db: AsyncSession, permissions: dict[str, bool]
 ) -> None:
-    """Update the moderator role's permission flags."""
+    """モデレーターロールの権限フラグを更新する。"""
     from app.services.role_service import get_role
 
     role = await get_role(db, "moderator")
@@ -52,7 +52,7 @@ async def set_moderator_permissions(
 async def has_moderator_permission(
     db: AsyncSession, user: User, permission: str
 ) -> bool:
-    """Check whether user holds the given permission. Delegates to role_service."""
+    """ユーザーが指定の権限を持っているか確認する。role_service に委譲。"""
     from app.services.role_service import has_permission
 
     return await has_permission(db, user, permission)

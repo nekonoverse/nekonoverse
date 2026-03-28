@@ -12,7 +12,7 @@ router = APIRouter()
 
 @router.get("/.well-known/host-meta")
 async def host_meta():
-    """XRD host-meta for LRDD discovery (used by Pleroma/GNU Social)."""
+    """LRDD ディスカバリ用の XRD host-meta (Pleroma/GNU Social で使用)。"""
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">'

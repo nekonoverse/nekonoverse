@@ -31,7 +31,7 @@ export default function SearchModal(props: Props) {
   onMount(() => {
     document.addEventListener("keydown", handleKeyDown);
     document.body.style.overflow = "hidden";
-    // Autofocus with a small delay for the modal to render
+    // モーダルがレンダリングされるまで少し遅延してからオートフォーカス
     setTimeout(() => inputRef?.focus(), 50);
   });
 
@@ -80,13 +80,13 @@ export default function SearchModal(props: Props) {
       }
       setSearched(true);
     } catch {
-      // Ignore errors silently
+      // エラーは無視する
     }
     setLoading(false);
     setResolving(false);
   };
 
-  // Debounced local search + suggest on input
+  // 入力時のデバウンス付きローカル検索＋サジェスト
   createEffect(() => {
     const q = query();
     clearTimeout(debounceTimer);
@@ -106,7 +106,7 @@ export default function SearchModal(props: Props) {
     }, 300);
   });
 
-  // Submit triggers a resolve search (for remote users/notes)
+  // 送信時にresolve検索をトリガー（リモートユーザー/ノート用）
   const handleSubmit = (e: Event) => {
     e.preventDefault();
     clearTimeout(debounceTimer);

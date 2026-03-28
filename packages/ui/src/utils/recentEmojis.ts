@@ -19,15 +19,15 @@ export function getRecentEmojis(): RecentEmoji[] {
 
 export function addRecentEmoji(entry: RecentEmoji): void {
   const list = getRecentEmojis();
-  // Remove duplicate
+  // 重複を除去
   const filtered = list.filter((e) => e.emoji !== entry.emoji);
-  // Add to front
+  // 先頭に追加
   filtered.unshift(entry);
-  // Trim
+  // 上限まで切り詰め
   const trimmed = filtered.slice(0, MAX_RECENT);
   try {
     localStorage.setItem(STORAGE_KEY, JSON.stringify(trimmed));
   } catch {
-    // localStorage full or unavailable — ignore
+    // localStorage が満杯または利用不可 — 無視
   }
 }

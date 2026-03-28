@@ -6,7 +6,7 @@ import { useI18n } from "@nekonoverse/ui/i18n";
 import NoteCard from "../components/notes/NoteCard";
 import NoteComposer from "../components/notes/NoteComposer";
 
-/** Build a depth map for descendants based on in_reply_to_id chains. */
+/** in_reply_to_idチェーンに基づいて子孫ノートの深さマップを構築する。 */
 function buildDepthMap(targetId: string, descendants: Note[]): Map<string, number> {
   const depthMap = new Map<string, number>();
   depthMap.set(targetId, 0);
@@ -17,7 +17,7 @@ function buildDepthMap(targetId: string, descendants: Note[]): Map<string, numbe
   return depthMap;
 }
 
-/** Build a lookup from note id -> actor info, for showing "Replying to" */
+/** 「返信先」表示用に、ノートID → アクター情報のルックアップを構築する */
 function buildActorMap(
   target: Note,
   ancestors: Note[],
@@ -43,7 +43,7 @@ export default function NoteThread() {
   const [notFound, setNotFound] = createSignal(false);
   const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
 
-  // Effective reply target: replyTarget if set, otherwise the target note
+  // 実効的な返信先: replyTargetが設定されていればそれ、なければ対象ノート
   const effectiveReplyTarget = () => replyTarget() || targetNote();
 
   const [initialData] = createResource(
@@ -78,7 +78,7 @@ export default function NoteThread() {
 
   const handleReply = async (newNote: Note) => {
     setReplyTarget(null);
-    // Reload thread to show the new reply
+    // 新しい返信を表示するためにスレッドを再読み込み
     await loadThread();
   };
 
@@ -136,7 +136,7 @@ export default function NoteThread() {
           <div class="thread-view">
             <h2>{t("thread.title")}</h2>
 
-            {/* Ancestors */}
+            {/* 祖先ノート */}
             <Show when={context()?.ancestors && context()!.ancestors.length > 0}>
               <div class="thread-ancestors">
                 <For each={context()!.ancestors}>
@@ -160,7 +160,7 @@ export default function NoteThread() {
               </div>
             </Show>
 
-            {/* Target note (highlighted) */}
+            {/* 対象ノート（ハイライト表示） */}
             <Show when={targetNote()}>
               {(note) => {
                 const actorMap = () => buildActorMap(note(), context()?.ancestors || [], context()?.descendants || []);
@@ -178,7 +178,7 @@ export default function NoteThread() {
               }}
             </Show>
 
-            {/* Reply composer */}
+            {/* 返信コンポーザー */}
             <Show when={currentUser() && targetNote()}>
               <div class="thread-reply-composer">
                 <Show when={replyTarget() && replyTarget()!.id !== targetNote()?.id}>
@@ -203,7 +203,7 @@ export default function NoteThread() {
               </div>
             </Show>
 
-            {/* Descendants */}
+            {/* 子孫ノート */}
             <Show when={context()?.descendants && context()!.descendants.length > 0}>
               <div class="thread-descendants">
                 <For each={context()!.descendants}>

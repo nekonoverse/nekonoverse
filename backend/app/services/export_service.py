@@ -1,4 +1,4 @@
-"""User data export: generate ZIP archive with AP data, CSVs, and media."""
+"""ユーザーデータエクスポート: APデータ、CSV、メディアを含むZIPアーカイブを生成する。"""
 
 import csv
 import io
@@ -29,14 +29,14 @@ NOTE_BATCH_SIZE = 1000
 
 
 def _actor_address(actor) -> str:
-    """Return Mastodon-compatible account address (user@domain)."""
+    """Mastodon互換のアカウントアドレス (user@domain) を返す。"""
     if actor.domain:
         return f"{actor.username}@{actor.domain}"
     return f"{actor.username}@{settings.domain}"
 
 
 async def generate_export(db: AsyncSession, export: DataExport) -> None:
-    """Generate ZIP archive and upload to S3."""
+    """ZIPアーカイブを生成してS3にアップロードする。"""
     user = export.user
     actor = user.actor
 
@@ -69,7 +69,7 @@ async def generate_export(db: AsyncSession, export: DataExport) -> None:
     export.expires_at = datetime.now(timezone.utc) + EXPORT_EXPIRY
     await db.flush()
 
-    # Send completion email
+    # 完了通知メールを送信
     if settings.email_enabled and user.email:
         try:
             from app.services.email_queue import enqueue_email
@@ -99,7 +99,7 @@ async def generate_export(db: AsyncSession, export: DataExport) -> None:
 
 
 async def _write_outbox(db: AsyncSession, zf: zipfile.ZipFile, actor) -> None:
-    """Write all notes as AP OrderedCollection to outbox.json."""
+    """全ノートをAP OrderedCollectionとしてoutbox.jsonに書き出す。"""
     items = []
     offset = 0
     while True:
@@ -228,7 +228,7 @@ async def _write_muted_csv(
 async def _write_media(
     db: AsyncSession, zf: zipfile.ZipFile, user
 ) -> None:
-    """Download user's media files from S3 and add to ZIP."""
+    """ユーザーのメディアファイルをS3からダウンロードしてZIPに追加する。"""
     result = await db.execute(
         select(DriveFile).where(
             DriveFile.owner_id == user.id, DriveFile.server_file.is_(False)

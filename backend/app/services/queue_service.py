@@ -1,4 +1,4 @@
-"""Queue management service for admin dashboard."""
+"""管理ダッシュボード用キュー管理サービス。"""
 
 import uuid
 from datetime import datetime, timezone
@@ -10,7 +10,7 @@ from app.models.delivery import DeliveryJob
 
 
 async def get_queue_stats(db: AsyncSession) -> dict:
-    """Get overall queue statistics."""
+    """キュー全体の統計情報を取得する。"""
     result = await db.execute(
         select(DeliveryJob.status, func.count(DeliveryJob.id)).group_by(DeliveryJob.status)
     )
@@ -48,7 +48,7 @@ async def get_queue_jobs(
     limit: int = 50,
     offset: int = 0,
 ) -> tuple[list[DeliveryJob], int]:
-    """Get paginated list of queue jobs with optional filtering."""
+    """フィルタリング対応のページネーション付きキュージョブ一覧を取得する。"""
     query = select(DeliveryJob)
     count_query = select(func.count(DeliveryJob.id))
 
@@ -73,7 +73,7 @@ async def get_queue_jobs(
 
 
 async def retry_job(db: AsyncSession, job_id: uuid.UUID) -> bool:
-    """Retry a single dead job."""
+    """単一のデッドジョブをリトライする。"""
     result = await db.execute(
         update(DeliveryJob)
         .where(DeliveryJob.id == job_id, DeliveryJob.status == "dead")
@@ -89,7 +89,7 @@ async def retry_job(db: AsyncSession, job_id: uuid.UUID) -> bool:
 
 
 async def retry_all_dead(db: AsyncSession, domain: str | None = None) -> int:
-    """Retry all dead jobs, optionally filtered by domain."""
+    """全デッドジョブをリトライする。ドメインでフィルタリング可能。"""
     query = (
         update(DeliveryJob)
         .where(DeliveryJob.status == "dead")
@@ -110,7 +110,7 @@ async def retry_all_dead(db: AsyncSession, domain: str | None = None) -> int:
 
 
 async def purge_delivered(db: AsyncSession, older_than_hours: int = 24) -> int:
-    """Purge delivered jobs older than specified hours."""
+    """指定時間以上前の配信済みジョブを削除する。"""
     from datetime import timedelta
 
     cutoff = datetime.now(timezone.utc).replace(microsecond=0) - timedelta(hours=older_than_hours)

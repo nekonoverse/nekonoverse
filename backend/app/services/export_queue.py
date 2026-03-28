@@ -1,6 +1,6 @@
-"""Valkey-based job queue for user data export.
+"""ユーザーデータエクスポート用のValkeyベースジョブキュー。
 
-Follows the same pattern as email_queue.py.
+email_queue.py と同じパターンに従う。
 """
 
 import asyncio
@@ -22,7 +22,7 @@ MAX_CONCURRENT = 1
 
 
 async def enqueue_export(export_id: str) -> None:
-    """Enqueue a data export job."""
+    """データエクスポートジョブをキューに追加する。"""
     job = {
         "export_id": export_id,
         "attempts": 0,
@@ -33,7 +33,7 @@ async def enqueue_export(export_id: str) -> None:
 
 
 async def _process_job(job: dict) -> None:
-    """Process a single export job."""
+    """単一のエクスポートジョブを処理する。"""
     from uuid import UUID
 
     from sqlalchemy import select
@@ -73,7 +73,7 @@ async def _process_job(job: dict) -> None:
 
 
 async def _retry_or_dead(job: dict, error: str) -> None:
-    """Re-enqueue with backoff or move to dead-letter."""
+    """バックオフ付きで再キューするか、デッドレターに移動する。"""
     job["attempts"] = job.get("attempts", 0) + 1
     job["last_error"] = error
 
@@ -115,7 +115,7 @@ async def _update_heartbeat() -> None:
 
 
 async def run_export_loop() -> None:
-    """Main export worker loop."""
+    """エクスポートワーカーのメインループ。"""
     logger.info("Export worker started (max_concurrent=%d)", MAX_CONCURRENT)
     sem = asyncio.Semaphore(MAX_CONCURRENT)
 

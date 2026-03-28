@@ -381,7 +381,7 @@ function PostingTab() {
     setSourceMediaType(value);
     try {
       await updateSourceMediaType(value);
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
   };
 
   return (
@@ -464,7 +464,7 @@ function SecurityTab(props: { onLogout: () => void }) {
   const [pwMsg, setPwMsg] = createSignal("");
   const [pwError, setPwError] = createSignal("");
 
-  // TOTP state
+  // TOTP の状態
   const [totpEnabled, setTotpEnabled] = createSignal(false);
   const [totpLoading, setTotpLoading] = createSignal(true);
   const [totpStep, setTotpStep] = createSignal<
@@ -1348,7 +1348,7 @@ function DataExportTab() {
       const status = await getExportStatus();
       setExportStatus(status);
     } catch {
-      // ignore
+      // 無視
     } finally {
       setLoading(false);
     }
@@ -1358,7 +1358,7 @@ function DataExportTab() {
     if (currentUser()) fetchStatus();
   });
 
-  // Poll while pending/processing
+  // pending/processing 中にポーリング
   createEffect(() => {
     const st = exportStatus();
     if (st && (st.status === "pending" || st.status === "processing")) {

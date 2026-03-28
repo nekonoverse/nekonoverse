@@ -1,4 +1,4 @@
-"""Invitation code API endpoints."""
+"""招待コード API エンドポイント。"""
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,7 +16,7 @@ router = APIRouter(prefix="/api/v1/invites", tags=["invites"])
 
 
 def _can_create_invites(user: User, required_role: str) -> bool:
-    """Check if user meets the minimum role requirement for creating invites."""
+    """招待作成に必要な最低ロール要件をユーザーが満たしているか確認する。"""
     if required_role == "user":
         return True
     if required_role == "moderator":

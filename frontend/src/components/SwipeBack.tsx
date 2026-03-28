@@ -1,9 +1,9 @@
 import { createSignal, onCleanup, Show } from "solid-js";
 import { isTouchMode } from "@nekonoverse/ui/stores/theme";
 
-const EDGE_ZONE = 50;       // px from left edge
-const THRESHOLD = 100;      // px to trigger back
-const ANGLE_LIMIT = 30;     // degrees — horizontal lock
+const EDGE_ZONE = 50;       // 左端からのpx
+const THRESHOLD = 100;      // 戻るをトリガーするpx
+const ANGLE_LIMIT = 30;     // 度 — 水平ロック
 
 export default function SwipeBack() {
   if (!isTouchMode()) return null;
@@ -39,7 +39,7 @@ export default function SwipeBack() {
     const dx = touch.clientX - startX;
     const dy = touch.clientY - startY;
 
-    // Determine direction on first significant move
+    // 最初の有意な移動で方向を決定
     if (locked === null) {
       const dist = Math.sqrt(dx * dx + dy * dy);
       if (dist < 10) return;

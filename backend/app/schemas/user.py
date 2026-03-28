@@ -33,7 +33,7 @@ _COMMON_PASSWORDS = frozenset(
 
 
 def _validate_password_strength(v: str) -> str:
-    """M-6: Validate password has sufficient complexity."""
+    """M-6: パスワードの複雑さが十分かを検証する。"""
     # 少なくとも3種類の文字クラスを要求
     classes = 0
     if re.search(r"[a-z]", v):

@@ -48,7 +48,7 @@ export default function RegisterForm(props: RegisterFormProps) {
     checkTimer = setTimeout(async () => {
       try {
         const available = await checkUsernameAvailable(val);
-        // Only update if username hasn't changed during the request
+        // リクエスト中にユーザー名が変更されていない場合のみ更新
         if (username() === val) {
           setUsernameStatus(available ? "available" : "taken");
         }
@@ -58,7 +58,7 @@ export default function RegisterForm(props: RegisterFormProps) {
     }, 500);
   }));
 
-  // Turnstile dynamic loading
+  // Turnstileの動的読み込み
   onMount(() => {
     const siteKey = turnstileSiteKey();
     if (!siteKey) return;
@@ -83,7 +83,7 @@ export default function RegisterForm(props: RegisterFormProps) {
         script.onload = () => renderWidget();
         document.head.appendChild(script);
       } else {
-        // Script already loading, poll for availability
+        // スクリプト読み込み中、利用可能になるまでポーリング
         const poll = setInterval(() => {
           if (window.turnstile) {
             clearInterval(poll);
@@ -123,7 +123,7 @@ export default function RegisterForm(props: RegisterFormProps) {
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : t("auth.registerFailed"));
-      // Reset Turnstile widget on failure so user can retry
+      // 失敗時にTurnstileウィジェットをリセットしてリトライ可能にする
       if (turnstileWidgetId && window.turnstile) {
         window.turnstile.reset(turnstileWidgetId);
         setCaptchaToken("");

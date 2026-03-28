@@ -1,4 +1,4 @@
-"""Web Push notification service: VAPID key management, subscription CRUD, push delivery."""
+"""Web Push 通知サービス: VAPID鍵管理、購読CRUD、プッシュ配信。"""
 
 import base64
 import hashlib
@@ -20,13 +20,13 @@ _cached_db_vapid_key: str | None = None
 
 
 def set_db_vapid_key(key: str) -> None:
-    """Set the DB-stored VAPID key in memory cache (called from admin endpoint)."""
+    """DB保存されたVAPID鍵をインメモリキャッシュに設定する (管理エンドポイントから呼出)。"""
     global _cached_db_vapid_key
     _cached_db_vapid_key = key
 
 
 async def load_db_vapid_key_async(db: AsyncSession) -> None:
-    """Load VAPID private key from DB into memory cache (called on startup)."""
+    """VAPID秘密鍵をDBからインメモリキャッシュに読み込む (起動時に呼出)。"""
     global _cached_db_vapid_key
     from app.services.server_settings_service import get_setting
 
@@ -49,9 +49,9 @@ NOTIFICATION_TYPE_TO_ALERT = {
 
 
 def _get_vapid_private_key_bytes() -> bytes:
-    """Get VAPID private key as raw 32 bytes.
+    """VAPID秘密鍵を生の32バイトとして取得する。
 
-    Priority: DB setting (in-memory cache) > VAPID_PRIVATE_KEY env var > derived from SECRET_KEY.
+    優先順位: DB設定 (インメモリキャッシュ) > VAPID_PRIVATE_KEY 環境変数 > SECRET_KEY から導出。
     """
     # 1. インメモリキャッシュ (管理画面で生成された鍵、起動時にDBからロード)
     if _cached_db_vapid_key:
@@ -69,7 +69,7 @@ def _get_vapid_private_key_bytes() -> bytes:
 
 
 def _private_key_to_ec():
-    """Convert raw 32-byte private key to cryptography EC private key object."""
+    """生の32バイト秘密鍵を cryptography EC 秘密鍵オブジェクトに変換する。"""
     from cryptography.hazmat.primitives.asymmetric import ec
 
     raw = _get_vapid_private_key_bytes()
@@ -77,10 +77,10 @@ def _private_key_to_ec():
 
 
 def get_vapid_public_key_base64url() -> str:
-    """Get VAPID public key as base64url-encoded string (for client subscription)."""
+    """VAPID公開鍵をbase64urlエンコード文字列で取得する (クライアント購読用)。"""
     ec_key = _private_key_to_ec()
     pub_numbers = ec_key.public_key().public_numbers()
-    # Uncompressed point format: 0x04 + x (32 bytes) + y (32 bytes)
+    # 非圧縮ポイント形式: 0x04 + x (32バイト) + y (32バイト)
     x_bytes = pub_numbers.x.to_bytes(32, "big")
     y_bytes = pub_numbers.y.to_bytes(32, "big")
     raw_public = b"\x04" + x_bytes + y_bytes
@@ -88,14 +88,14 @@ def get_vapid_public_key_base64url() -> str:
 
 
 def _get_vapid_claims() -> dict:
-    """Build VAPID claims for pywebpush."""
+    """pywebpush 用の VAPID claims を構築する。"""
     return {
         "sub": f"mailto:admin@{settings.domain}",
     }
 
 
 def _get_vapid_private_key_pem() -> str:
-    """Get VAPID private key as PEM string for pywebpush."""
+    """pywebpush 用に VAPID 秘密鍵を PEM 文字列として取得する。"""
     from cryptography.hazmat.primitives import serialization
 
     ec_key = _private_key_to_ec()
@@ -106,7 +106,7 @@ def _get_vapid_private_key_pem() -> str:
     ).decode()
 
 
-# --- Subscription CRUD ---
+# --- 購読 CRUD ---
 
 
 async def get_subscription_by_session(
@@ -128,7 +128,7 @@ async def create_subscription(
     alerts: dict | None = None,
     policy: str = "all",
 ) -> PushSubscription:
-    """Create or replace push subscription for a session."""
+    """セッションのプッシュ購読を作成または置換する。"""
     # セッションにつき1購読 — 既存があれば削除
     await db.execute(
         delete(PushSubscription).where(PushSubscription.session_id == session_id)
@@ -194,11 +194,11 @@ async def get_subscriptions_for_actor(
     return list(result.scalars().all())
 
 
-# --- Push delivery ---
+# --- プッシュ配信 ---
 
 
 async def is_push_enabled(db: AsyncSession) -> bool:
-    """Check if push notifications are enabled server-wide."""
+    """サーバー全体でプッシュ通知が有効か確認する。"""
     from app.services.server_settings_service import get_setting
 
     val = await get_setting(db, "push_enabled")
@@ -214,7 +214,7 @@ async def send_web_push(
     notification_id: str | None = None,
     sender_id: uuid.UUID | None = None,
 ) -> None:
-    """Send Web Push to all subscriptions for a recipient, filtered by alert settings."""
+    """受信者の全購読にアラート設定でフィルタリングしてWeb Pushを送信する。"""
     # サーバー全体でプッシュ通知が無効な場合はスキップ
     if not await is_push_enabled(db):
         return
@@ -305,7 +305,7 @@ def _build_title(notification_type: str, sender_name: str | None) -> str:
 async def _get_follow_status(
     db: AsyncSession, recipient_id: uuid.UUID, sender_id: uuid.UUID
 ) -> dict[str, bool]:
-    """Check mutual follow status between recipient and sender."""
+    """受信者と送信者の相互フォロー状態を確認する。"""
     from app.models.follow import Follow
 
     result = await db.execute(

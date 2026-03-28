@@ -6,7 +6,7 @@ import {
 import { instance } from "../stores/instance";
 
 /**
- * Check if push notifications are supported in this browser.
+ * このブラウザでプッシュ通知がサポートされているか確認する。
  */
 export function isPushSupported(): boolean {
   return (
@@ -17,7 +17,7 @@ export function isPushSupported(): boolean {
 }
 
 /**
- * Get current Notification permission state.
+ * 現在の通知パーミッション状態を取得する。
  */
 export function getPermissionState(): NotificationPermission {
   return Notification.permission;
@@ -44,11 +44,11 @@ function arrayBufferToBase64url(buffer: ArrayBuffer): string {
 }
 
 /**
- * Subscribe to push notifications.
- * 1. Request notification permission
- * 2. Get VAPID public key from instance info
- * 3. Subscribe via PushManager
- * 4. Send subscription to server
+ * プッシュ通知を購読する。
+ * 1. 通知パーミッションをリクエスト
+ * 2. インスタンス情報から VAPID 公開鍵を取得
+ * 3. PushManager 経由で購読
+ * 4. 購読情報をサーバーに送信
  */
 export async function subscribeToPush(): Promise<PushSubscriptionResponse | null> {
   if (!isPushSupported()) return null;
@@ -74,7 +74,7 @@ export async function subscribeToPush(): Promise<PushSubscriptionResponse | null
 }
 
 /**
- * Unsubscribe from push notifications.
+ * プッシュ通知の購読を解除する。
  */
 export async function unsubscribeFromPush(): Promise<void> {
   try {
@@ -93,7 +93,7 @@ export async function unsubscribeFromPush(): Promise<void> {
 }
 
 /**
- * Check if currently subscribed to push notifications.
+ * 現在プッシュ通知を購読中か確認する。
  */
 export async function isSubscribedToPush(): Promise<boolean> {
   if (!isPushSupported()) return false;

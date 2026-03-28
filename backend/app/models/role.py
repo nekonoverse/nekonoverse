@@ -1,4 +1,4 @@
-"""Role model for dynamic role management."""
+"""動的ロール管理用の Role モデル。"""
 
 from datetime import datetime, timezone
 

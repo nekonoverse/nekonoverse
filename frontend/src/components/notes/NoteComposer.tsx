@@ -47,17 +47,17 @@ interface Props {
   onClearQuote?: () => void;
   replyTo?: Note | null;
   onClearReply?: () => void;
-  /** Increment to reset the form */
+  /** フォームをリセットするためにインクリメントする */
   key?: number;
-  /** Called when content or visibility changes */
+  /** コンテンツまたは公開範囲が変更された時に呼ばれる */
   onContentChange?: (content: string, visibility: Visibility) => void;
-  /** Initial content for draft restore */
+  /** 下書き復元用の初期コンテンツ */
   initialContent?: string;
-  /** Initial visibility for draft restore */
+  /** 下書き復元用の初期公開範囲 */
   initialVisibility?: Visibility;
-  /** Called when upload state changes */
+  /** アップロード状態が変更された時に呼ばれる */
   onUploadingChange?: (uploading: boolean) => void;
-  /** External files dropped on parent (e.g. modal) */
+  /** 親要素にドロップされた外部ファイル（例: モーダル） */
   externalFiles?: FileList | null;
 }
 
@@ -90,8 +90,8 @@ export default function NoteComposer(props: Props) {
   let textareaRef!: HTMLTextAreaElement;
   let suggestKeyHandler: ((e: KeyboardEvent) => boolean) | undefined;
 
-  // Auto-set visibility when replying or quoting:
-  // Use the more restrictive of user's default and the target note's visibility
+  // 返信または引用時に公開範囲を自動設定:
+  // ユーザーのデフォルトと対象ノートの公開範囲のうち、より制限の厳しい方を使用
   createEffect(() => {
     const targetNote = props.replyTo || props.quoteNote;
     if (targetNote) {
@@ -104,7 +104,7 @@ export default function NoteComposer(props: Props) {
     } else {
       setParentVisibility(null);
     }
-    // Auto-prepend @mention for the replied-to user (skip self-mention)
+    // 返信先ユーザーの@メンションを自動付加（セルフメンションはスキップ）
     if (props.replyTo) {
       const actor = props.replyTo.actor;
       if (actor && !content()) {
@@ -119,12 +119,12 @@ export default function NoteComposer(props: Props) {
     }
   });
 
-  // Reset form when key changes (modal re-opened)
+  // keyが変わった時にフォームをリセット（モーダルが再オープンされた場合）
   createEffect(() => {
     const _key = props.key;
     if (_key !== undefined && _key > 0) {
       setContent(props.initialContent || "");
-      // Visibility: draft > reply/quote inheritance > user default
+      // 公開範囲: 下書き > 返信/引用の継承 > ユーザーデフォルト
       if (props.initialVisibility) {
         setVisibility(props.initialVisibility);
       } else {
@@ -153,17 +153,17 @@ export default function NoteComposer(props: Props) {
     }
   });
 
-  // Report content changes to parent
+  // コンテンツの変更を親に通知
   createEffect(() => {
     props.onContentChange?.(content(), visibility());
   });
 
-  // Report upload state to parent
+  // アップロード状態を親に通知
   createEffect(() => {
     props.onUploadingChange?.(uploading());
   });
 
-  // Handle files dropped on parent (e.g. modal wrapper)
+  // 親要素にドロップされたファイルを処理（例: モーダルラッパー）
   createEffect(() => {
     const files = props.externalFiles;
     if (files && files.length > 0) {
@@ -173,14 +173,14 @@ export default function NoteComposer(props: Props) {
 
   const visEmoji = () => VISIBILITY_OPTIONS.find((o) => o.key === visibility())?.emoji || "\u{1F310}";
 
-  // Warn when user selects a visibility wider than the parent note
+  // ユーザーが親ノートより広い公開範囲を選択した場合に警告
   const isVisibilityWider = () => {
     const pv = parentVisibility();
     if (!pv) return false;
     return (VISIBILITY_RANK[visibility()] ?? 0) < (VISIBILITY_RANK[pv] ?? 0);
   };
 
-  // Close visibility menu on outside click
+  // 外部クリックで公開範囲メニューを閉じる
   const handleDocClick = (e: MouseEvent) => {
     if (!(e.target as HTMLElement).closest(".composer-vis-wrap")) {
       setVisMenuOpen(false);
@@ -209,7 +209,7 @@ export default function NoteComposer(props: Props) {
           setError(t("composer.fileTooLarge").replace("{limit}", String(limitMB)));
           break;
         }
-        // Strip EXIF metadata (GPS, camera info, etc.) from images before upload
+        // アップロード前に画像からEXIFメタデータ（GPS、カメラ情報等）を除去
         const processed = file.type.startsWith("image/") ? await stripExifFromFile(file) : file;
         const media = await uploadMedia(processed);
         setAttachments((prev) => [...prev, media]);
@@ -237,7 +237,7 @@ export default function NoteComposer(props: Props) {
       const updated = await updateMedia(media.id, undefined, `${x},${y}`);
       setAttachments((prev) => prev.map((a) => a.id === media.id ? updated : a));
     } catch {
-      // silent — focal point is optional
+      // 無視 — フォーカルポイントは任意
     }
     setFocalPickerMedia(null);
   };
@@ -354,7 +354,7 @@ export default function NoteComposer(props: Props) {
   };
 
   const handleSuggestSelect = (emojiText: string) => {
-    // Replace from colonPos to current cursor with emojiText + space
+    // colonPosから現在のカーソル位置までをemojiText + スペースで置換
     const before = content().slice(0, colonPos());
     const after = content().slice(textareaRef?.selectionStart ?? content().length);
     setContent(before + emojiText + " " + after);
@@ -440,7 +440,7 @@ export default function NoteComposer(props: Props) {
           onInput={(e) => {
             const textarea = e.currentTarget;
             setContent(textarea.value);
-            // Detect :query pattern before cursor
+            // カーソル前の:queryパターンを検出
             const before = textarea.value.slice(0, textarea.selectionStart);
             const match = before.match(/(?:^|\s):([a-zA-Z0-9_]*)$/);
             if (match) {
@@ -452,7 +452,7 @@ export default function NoteComposer(props: Props) {
             }
           }}
           onKeyDown={(e) => {
-            // Forward to emoji suggest if open
+            // 絵文字サジェストが開いていればそちらに転送
             if (suggestOpen() && suggestKeyHandler?.(e)) {
               return;
             }

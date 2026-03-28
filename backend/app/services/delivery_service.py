@@ -1,4 +1,4 @@
-"""Activity delivery service -- enqueues activities for the worker to deliver."""
+"""Activity 配送サービス -- ワーカーによる配送のためにアクティビティをキューに追加する。"""
 
 import logging
 import uuid
@@ -17,8 +17,8 @@ async def enqueue_delivery(
     target_inbox_url: str,
     payload: dict,
 ) -> DeliveryJob | None:
-    """Enqueue an activity for delivery to a remote inbox."""
-    # Check domain block
+    """リモート inbox への配送用にアクティビティをキューに追加する。"""
+    # ドメインブロックの確認
     domain = urlparse(target_inbox_url).hostname
     if domain:
         from app.services.domain_block_service import is_domain_blocked
@@ -36,7 +36,7 @@ async def enqueue_delivery(
     db.add(job)
     await db.commit()
 
-    # Notify worker via Valkey
+    # Valkey 経由でワーカーに通知
     from app.valkey_client import valkey
 
     await valkey.lpush("delivery:queue", str(job.id))
@@ -50,7 +50,7 @@ async def enqueue_deliveries(
     inbox_urls: list[str],
     payload: dict,
 ) -> list[DeliveryJob]:
-    """H-3: Enqueue delivery jobs in bulk (single commit)."""
+    """H-3: 配送ジョブを一括でキューに追加する (単一コミット)。"""
     from app.services.domain_block_service import is_domain_blocked
 
     jobs = []
@@ -72,7 +72,7 @@ async def enqueue_deliveries(
     db.add_all(jobs)
     await db.commit()
 
-    # Notify worker via Valkey
+    # Valkey 経由でワーカーに通知
     from app.valkey_client import valkey
 
     pipe = valkey.pipeline()

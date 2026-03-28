@@ -41,7 +41,7 @@ class ServerSettingsUpdate(BaseModel):
 
 
 class PendingRegistrationResponse(BaseModel):
-    """Pending registration awaiting admin approval."""
+    """管理者の承認待ちの登録申請。"""
 
     id: uuid.UUID
     username: str
@@ -175,11 +175,11 @@ class ImportByShortcodeRequest(BaseModel):
     aliases: list[str] | None = None
 
 
-# --- Federation ---
+# --- 連合 ---
 
 
 class DeliveryStatsResponse(BaseModel):
-    """Delivery statistics for a federated server."""
+    """連合サーバーの配送統計。"""
 
     success: int = 0
     failure: int = 0
@@ -188,7 +188,7 @@ class DeliveryStatsResponse(BaseModel):
 
 
 class FederatedServerResponse(BaseModel):
-    """Summary of a federated remote server."""
+    """連合リモートサーバーの概要。"""
 
     domain: str
     user_count: int
@@ -201,14 +201,14 @@ class FederatedServerResponse(BaseModel):
 
 
 class FederatedServerListResponse(BaseModel):
-    """Paginated list of federated servers."""
+    """連合サーバーのページネーション付きリスト。"""
 
     servers: list[FederatedServerResponse]
     total: int
 
 
 class ActorSummaryResponse(BaseModel):
-    """Brief actor info for federation detail view."""
+    """連合詳細ビュー用の簡略アクター情報。"""
 
     username: str
     display_name: str | None
@@ -217,7 +217,7 @@ class ActorSummaryResponse(BaseModel):
 
 
 class FederatedServerDetailResponse(FederatedServerResponse):
-    """Detailed info for a single federated server."""
+    """単一の連合サーバーの詳細情報。"""
 
     block_reason: str | None = None
     recent_actors: list[ActorSummaryResponse]
@@ -238,11 +238,11 @@ class AdminEmojiUpdate(BaseModel):
     is_based_on: str | None = Field(None, max_length=1024)
 
 
-# --- Queue Management ---
+# --- キュー管理 ---
 
 
 class QueueStatsResponse(BaseModel):
-    """Overall delivery queue statistics."""
+    """配送キュー全体の統計。"""
 
     pending: int = 0
     processing: int = 0
@@ -254,7 +254,7 @@ class QueueStatsResponse(BaseModel):
 
 
 class QueueJobResponse(BaseModel):
-    """Single delivery queue job."""
+    """単一の配送キュージョブ。"""
 
     id: uuid.UUID
     target_inbox_url: str
@@ -270,19 +270,19 @@ class QueueJobResponse(BaseModel):
 
 
 class QueueJobListResponse(BaseModel):
-    """Paginated list of queue jobs."""
+    """キュージョブのページネーション付きリスト。"""
 
     jobs: list[QueueJobResponse]
     total: int
 
 
-# --- System Stats ---
+# --- システム統計 ---
 
 
 class SystemStatsResponse(BaseModel):
-    """System resource and service health stats."""
+    """システムリソースとサービスヘルスの統計。"""
 
-    # Database pool
+    # データベースプール
     db_pool_size: int = 0
     db_pool_checked_in: int = 0
     db_pool_checked_out: int = 0
@@ -291,7 +291,7 @@ class SystemStatsResponse(BaseModel):
     valkey_connected_clients: int = 0
     valkey_used_memory_human: str = ""
     valkey_total_keys: int = 0
-    # System
+    # システム
     load_avg_1m: float = 0.0
     load_avg_5m: float = 0.0
     load_avg_15m: float = 0.0
@@ -299,12 +299,12 @@ class SystemStatsResponse(BaseModel):
     memory_available_mb: int = 0
     memory_percent: float = 0.0
     uptime_seconds: float = 0.0
-    # Worker
+    # ワーカー
     worker_alive: bool = False
     worker_last_heartbeat: str | None = None
 
 
-# --- Roles ---
+# --- ロール ---
 
 
 class RoleResponse(BaseModel):
@@ -333,7 +333,7 @@ class RoleUpdateRequest(BaseModel):
     priority: int | None = None
 
 
-# --- Storage ---
+# --- ストレージ ---
 
 
 class StorageResponse(BaseModel):

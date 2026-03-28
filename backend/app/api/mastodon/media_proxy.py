@@ -13,7 +13,7 @@ _MAX_SIZE = 20 * 1024 * 1024  # 20 MB
 _ALLOWED_CONTENT_PREFIXES = ("image/", "video/", "audio/")
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 
-# Magic byte signatures for image detection when Content-Type is unreliable
+# Content-Type が信頼できない場合の画像検出用マジックバイトシグネチャ
 _IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
     (b"\x89PNG\r\n\x1a\n", "image/png"),   # PNG / APNG
     (b"\xff\xd8\xff", "image/jpeg"),
@@ -29,13 +29,13 @@ _IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
 
 
 def _detect_image_type(head: bytes) -> str | None:
-    """Detect image MIME type from magic bytes. Returns None if unknown."""
+    """マジックバイトから画像の MIME タイプを検出する。不明な場合は None を返す。"""
     for sig, mime in _IMAGE_SIGNATURES:
         if head[:len(sig)] == sig:
             if sig == b"RIFF" and head[8:12] != b"WEBP":
                 continue
             return mime
-    # AVIF/HEIF: ftyp box at offset 4
+    # AVIF/HEIF: オフセット4の ftyp ボックス
     if len(head) >= 12 and head[4:8] == b"ftyp":
         brand = head[8:12]
         if brand in (b"avif", b"avis", b"mif1", b"heic", b"heix"):
@@ -44,7 +44,7 @@ def _detect_image_type(head: bytes) -> str | None:
 
 
 async def _transform_image(body: bytes, **params) -> tuple[bytes, str]:
-    """Send image to external transform service. Falls back to original on error."""
+    """画像を外部変換サービスに送信する。エラー時は元画像にフォールバックする。"""
     from app.config import settings
     from app.utils.http_client import make_media_transform_client
 
@@ -130,7 +130,7 @@ async def proxy_media(
         if len(body) > _MAX_SIZE:
             raise HTTPException(status_code=413, detail="Response too large")
 
-    # Transform if params present, image content, and service configured
+    # パラメータが指定されており、画像コンテンツかつサービスが設定済みの場合に変換
     from app.config import settings
 
     needs_transform = any([avatar, emoji, preview, static, badge])

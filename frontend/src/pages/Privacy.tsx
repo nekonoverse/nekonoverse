@@ -28,7 +28,7 @@ export default function Privacy() {
           );
         }
       } catch {
-        // ignore
+        // 無視
       }
       setLoaded(true);
     })();

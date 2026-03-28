@@ -16,7 +16,7 @@ async def create_session_with_metadata(
     ip: str,
     user_agent: str | None,
 ) -> None:
-    """Create session key and store metadata alongside it."""
+    """セッションキーを作成し、メタデータと共に保存する。"""
     await valkey.set(f"session:{session_id}", str(user_id), ex=SESSION_TTL)
     await valkey.hset(
         f"session_meta:{session_id}",
@@ -32,7 +32,7 @@ async def create_session_with_metadata(
 
 
 async def list_user_sessions(valkey, user_id: uuid.UUID) -> list[dict]:
-    """Return active sessions for a user, pruning expired ones."""
+    """ユーザーのアクティブセッション一覧を返す。期限切れのものは削除する。"""
     session_ids = await valkey.smembers(f"user_sessions:{user_id}")
     sessions = []
     for sid in session_ids:
@@ -48,7 +48,7 @@ async def list_user_sessions(valkey, user_id: uuid.UUID) -> list[dict]:
 async def delete_session(
     valkey, user_id: uuid.UUID, session_id: str
 ) -> bool:
-    """Delete a specific session belonging to the user. Returns False if not owned."""
+    """ユーザーに属する特定のセッションを削除する。所有者でない場合はFalseを返す。"""
     owner = await valkey.get(f"session:{session_id}")
     if owner != str(user_id):
         return False
@@ -61,7 +61,7 @@ async def delete_session(
 async def cleanup_session_metadata(
     valkey, user_id: uuid.UUID, session_id: str
 ) -> None:
-    """Clean up metadata keys for a session (used by logout/invalidation)."""
+    """セッションのメタデータキーをクリーンアップする (ログアウト/無効化時に使用)。"""
     await valkey.delete(f"session_meta:{session_id}")
     await valkey.srem(f"user_sessions:{user_id}", session_id)
 
@@ -74,7 +74,7 @@ async def record_login(
     method: str,
     success: bool = True,
 ) -> None:
-    """Record a login attempt in the database."""
+    """ログイン試行をデータベースに記録する。"""
     entry = LoginHistory(
         user_id=user_id,
         ip_address=ip,
@@ -92,7 +92,7 @@ async def get_login_history(
     limit: int = 20,
     offset: int = 0,
 ) -> list[LoginHistory]:
-    """Return login history for a user, newest first."""
+    """ユーザーのログイン履歴を新しい順に返す。"""
     result = await db.execute(
         select(LoginHistory)
         .where(LoginHistory.user_id == user_id)

@@ -27,7 +27,7 @@ def sign_request(
     url: str,
     body: bytes | None = None,
 ) -> dict[str, str]:
-    """Sign an HTTP request for ActivityPub delivery."""
+    """ActivityPub 配送用に HTTP リクエストに署名する。"""
     parsed = urlparse(url)
     path = parsed.path
     if parsed.query:
@@ -78,7 +78,7 @@ def sign_request(
 
 
 def parse_signature_header(sig_header: str) -> dict[str, str]:
-    """Parse an HTTP Signature header into its components."""
+    """HTTP Signature ヘッダーをコンポーネントにパースする。"""
     params = {}
     for part in sig_header.split(","):
         part = part.strip()
@@ -98,13 +98,13 @@ def verify_signature(
     path: str,
     headers: dict[str, str],
 ) -> bool:
-    """Verify an HTTP Signature against a public key."""
+    """公開鍵に対して HTTP Signature を検証する。"""
     params = parse_signature_header(signature_header)
 
     if "signature" not in params or "headers" not in params or "keyId" not in params:
         return False
 
-    # Check Date header freshness (allow 12 hours skew, same as Mastodon)
+    # Date ヘッダーの鮮度チェック (Mastodon と同じく 12 時間のズレを許容)
     if "date" in headers:
         try:
             request_date = parsedate_to_datetime(headers["date"])
@@ -114,7 +114,7 @@ def verify_signature(
         except Exception:
             return False
 
-    # Reconstruct signed string
+    # 署名文字列を再構成
     signed_headers = params["headers"].split()
     signed_parts = []
     for h in signed_headers:

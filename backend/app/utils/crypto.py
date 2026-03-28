@@ -3,7 +3,7 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 
 
 def generate_rsa_keypair() -> tuple[str, str]:
-    """Generate an RSA key pair and return (private_pem, public_pem) as strings."""
+    """RSA 鍵ペアを生成し、(private_pem, public_pem) を文字列として返す。"""
     private_key = rsa.generate_private_key(
         public_exponent=65537,
         key_size=2048,

@@ -1,4 +1,4 @@
-"""Invitation code service."""
+"""招待コードサービス。"""
 
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -18,7 +18,7 @@ async def create_invitation(
     max_uses: int | None = 1,
     expires_in_days: int | None = None,
 ) -> InvitationCode:
-    """Create a new invitation code with optional usage limit and expiration."""
+    """使用回数上限と有効期限を任意で指定できる新しい招待コードを作成する。"""
     code = uuid.uuid4().hex
     expires_at = None
     if expires_in_days is not None and expires_in_days > 0:
@@ -36,7 +36,7 @@ async def create_invitation(
 
 
 async def list_invitations(db: AsyncSession, user: User) -> list[InvitationCode]:
-    """List invitation codes created by a user."""
+    """ユーザーが作成した招待コード一覧を返す。"""
     result = await db.execute(
         select(InvitationCode)
         .where(InvitationCode.created_by_id == user.id)
@@ -47,7 +47,7 @@ async def list_invitations(db: AsyncSession, user: User) -> list[InvitationCode]
 
 
 async def validate_invitation_code(db: AsyncSession, code: str) -> InvitationCode | None:
-    """Return the invitation if valid (exists, not exhausted, not expired), else None."""
+    """有効な招待コード(存在し、使用回数未到達、未期限切れ)を返す。無効ならNone。"""
     result = await db.execute(select(InvitationCode).where(InvitationCode.code == code))
     invite = result.scalar_one_or_none()
     if invite is None:
@@ -61,7 +61,7 @@ async def validate_invitation_code(db: AsyncSession, code: str) -> InvitationCod
 
 
 async def redeem_invitation(db: AsyncSession, invite: InvitationCode, user: User) -> None:
-    """Mark an invitation code as used (increment use_count)."""
+    """招待コードを使用済みとしてマーク(use_countをインクリメント)する。"""
     invite.use_count += 1
     invite.used_by_id = user.id
     invite.used_at = datetime.now(timezone.utc)
@@ -69,7 +69,7 @@ async def redeem_invitation(db: AsyncSession, invite: InvitationCode, user: User
 
 
 async def delete_invitation(db: AsyncSession, code: str, user: User) -> bool:
-    """Delete an invitation code. Only the creator or an admin can delete."""
+    """招待コードを削除する。作成者または管理者のみ削除可能。"""
     result = await db.execute(select(InvitationCode).where(InvitationCode.code == code))
     invite = result.scalar_one_or_none()
     if invite is None:

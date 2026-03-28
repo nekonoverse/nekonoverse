@@ -1,4 +1,4 @@
-"""Report (moderation) service."""
+"""通報(モデレーション)サービス。"""
 
 import uuid
 from datetime import datetime, timezone

@@ -1,24 +1,24 @@
 /**
- * Post-process mention links in rendered HTML to show full handle for remote users.
- * Rewrites remote mention hrefs to local profile paths (/@user@domain) and
- * intercepts clicks to navigate within the app via SolidJS Router.
- * Also converts "@username" display text to "@username@domain" with styled domain.
- * Call this after setting innerHTML.
+ * レンダリング済み HTML のメンションリンクを後処理し、リモートユーザーのフルハンドルを表示する。
+ * リモートメンションの href をローカルプロフィールパス (/@user@domain) に書き換え、
+ * クリックを傍受して SolidJS Router でアプリ内ナビゲーションを行う。
+ * また "@username" 表示テキストを "@username@domain" に変換し、ドメイン部分にスタイルを適用する。
+ * innerHTML を設定した後に呼び出すこと。
  *
- * Handles various AP implementation formats:
+ * 各種 AP 実装のフォーマットに対応:
  * - Mastodon:    <a class="u-url mention">@<span>user</span></a>
- * - Pleroma/GoToSocial: <a class="mention">@user</a> (no inner span)
+ * - Pleroma/GoToSocial: <a class="mention">@user</a> (内側の span なし)
  */
 export function mentionify(
   el: HTMLElement,
   navigate?: (path: string) => void,
 ): void {
   const currentHost = window.location.hostname;
-  // Broad selector: some AP implementations omit the u-url class
+  // 広めのセレクタ: 一部の AP 実装は u-url クラスを省略する
   const mentions = el.querySelectorAll<HTMLAnchorElement>("a.mention");
 
   for (const link of mentions) {
-    // Mastodon hashtag links have class="mention hashtag" — skip them
+    // Mastodon のハッシュタグリンクは class="mention hashtag" — スキップ
     if (link.classList.contains("hashtag")) continue;
 
     try {

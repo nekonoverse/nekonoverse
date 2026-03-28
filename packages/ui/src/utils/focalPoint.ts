@@ -1,8 +1,8 @@
 /**
- * Convert Mastodon focal point (x, y) to CSS object-position.
+ * Mastodon のフォーカルポイント (x, y) を CSS object-position に変換する。
  *
- * Focal point: x [-1..1] (left..right), y [-1..1] (bottom..top)
- * CSS object-position: x [0%..100%] (left..right), y [0%..100%] (top..bottom)
+ * フォーカルポイント: x [-1..1] (左..右), y [-1..1] (下..上)
+ * CSS object-position: x [0%..100%] (左..右), y [0%..100%] (上..下)
  */
 export function focalPointToObjectPosition(
   focus: { x: number; y: number } | undefined | null,

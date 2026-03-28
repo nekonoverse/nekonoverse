@@ -1,4 +1,4 @@
-"""Service for managing system accounts (instance.actor, etc.)."""
+"""システムアカウント管理サービス (instance.actor等)。"""
 
 import logging
 import secrets
@@ -32,7 +32,7 @@ async def ensure_system_account(
     username: str,
     display_name: str,
 ) -> User:
-    """Create a system account if it does not already exist. Idempotent."""
+    """システムアカウントが存在しない場合に作成する。冪等。"""
     result = await db.execute(
         select(Actor).where(Actor.username == username, Actor.domain.is_(None))
     )
@@ -87,13 +87,13 @@ async def ensure_system_account(
 
 
 async def ensure_system_accounts(db: AsyncSession) -> None:
-    """Ensure all required system accounts exist. Called on startup."""
+    """必要なすべてのシステムアカウントが存在することを確認する。起動時に呼び出される。"""
     for account in SYSTEM_ACCOUNTS:
         await ensure_system_account(db, account["username"], account["display_name"])
 
 
 async def get_system_account(db: AsyncSession, username: str) -> User | None:
-    """Get a system account by username."""
+    """ユーザー名でシステムアカウントを取得する。"""
     # Userを直接クエリすることでUser.actorのselectin eager loadを確実に発火させる
     result = await db.execute(
         select(User)
@@ -104,10 +104,10 @@ async def get_system_account(db: AsyncSession, username: str) -> User | None:
 
 
 async def get_instance_actor(db: AsyncSession) -> User | None:
-    """Get the instance.actor system account."""
+    """instance.actorシステムアカウントを取得する。"""
     return await get_system_account(db, "instance.actor")
 
 
 async def get_proxy_actor(db: AsyncSession) -> User | None:
-    """Get the system.proxy system account."""
+    """system.proxyシステムアカウントを取得する。"""
     return await get_system_account(db, "system.proxy")

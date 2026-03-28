@@ -777,7 +777,7 @@ export const EMOJI_CATEGORIES = [
 
 export type EmojiCategoryId = (typeof EMOJI_CATEGORIES)[number]["id"];
 
-/** Pre-built index: category -> emojis */
+/** ビルド済みインデックス: カテゴリ → 絵文字リスト */
 const _byCat = new Map<string, UnicodeEmojiDef[]>();
 for (const e of UNICODE_EMOJIS) {
   let arr = _byCat.get(e.category);

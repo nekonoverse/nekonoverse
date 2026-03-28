@@ -55,7 +55,7 @@ export default function Notifications() {
         const result = await subscribeToPush();
         setPushSubscribed(result !== null);
       }
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
     setPushToggling(false);
   };
 
@@ -100,7 +100,7 @@ export default function Notifications() {
       try {
         await markAllNotificationsAsRead();
         setAllNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
-      } catch { /* ignore */ }
+      } catch { /* 無視 */ }
       return data;
     },
   );
@@ -123,7 +123,7 @@ export default function Notifications() {
         }
         await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
       }
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
     resetUnread();
   });
 
@@ -139,10 +139,10 @@ export default function Notifications() {
     try {
       const fresh = await getUserAnnouncements();
       setAnnouncements(fresh);
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
   });
 
-  // Load announcements when tab is selected, auto-dismiss unread
+  // タブ選択時にお知らせを読み込み、未読を自動的に既読にする
   createEffect(async () => {
     if (tab() === "announcements" && !announcementsLoaded()) {
       try {
@@ -150,13 +150,13 @@ export default function Notifications() {
         setAnnouncements(data);
         setAnnouncementsLoaded(true);
         resetUnreadAnnouncements();
-        // Auto-dismiss unread announcements so they don't reappear as new on next load
+        // 未読のお知らせを自動既読にして、次回読み込み時に新規として再表示されないようにする
         const unread = data.filter((a) => !a.read);
         if (unread.length > 0) {
           await Promise.all(unread.map((a) => dismissAnnouncement(a.id)));
           setAnnouncements((prev) => prev.map((a) => ({ ...a, read: true })));
         }
-      } catch { /* ignore */ }
+      } catch { /* 無視 */ }
     }
   });
 
@@ -425,7 +425,7 @@ export default function Notifications() {
         </Show>
       </Show>
 
-      {/* Thread modal */}
+      {/* スレッドモーダル */}
       <Show when={threadNoteId()}>
         <NoteThreadModal
           noteId={threadNoteId()!}

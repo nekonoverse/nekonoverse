@@ -131,7 +131,7 @@ app = FastAPI(
 cors_origins = [settings.server_url]
 if settings.debug:
     cors_origins.append("http://localhost:3000")
-# Allow frontend URL configured via environment
+# 環境変数で設定されたフロントエンド URL を許可
 if settings.frontend_url and settings.frontend_url not in cors_origins:
     cors_origins.append(settings.frontend_url)
 
@@ -145,7 +145,7 @@ app.add_middleware(
 
 
 async def _build_contact(db) -> dict:
-    """Build Mastodon-compatible contact object with admin account."""
+    """管理者アカウントを含む Mastodon 互換のコンタクトオブジェクトを構築する。"""
     from sqlalchemy import select
 
     from app.api.mastodon.statuses import _to_mastodon_datetime
@@ -364,7 +364,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         resp["turnstile_site_key"] = settings.turnstile_site_key
     resp["katex_enabled"] = katex_enabled
 
-    # Legal page URLs
+    # 法的ページの URL
     try:
         tos_content = await get_setting(db, "terms_of_service")
         if tos_content:
@@ -389,7 +389,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
 
 @app.get("/api/v2/instance")
 async def instance_info_v2(db: AsyncSession = Depends(get_db)):
-    """Mastodon API v2 instance endpoint (required by DAWN, Ice Cubes, etc.)."""
+    """Mastodon API v2 インスタンスエンドポイント (DAWN、Ice Cubes 等で必要)。"""
     import json as _json2
 
     from app.valkey_client import valkey as _valkey2
@@ -587,7 +587,7 @@ def _render_legal_markdown(raw: str) -> str:
 
 @app.get("/api/v1/instance/terms")
 async def get_instance_terms(db: AsyncSession = Depends(get_db)):
-    """Return terms of service content (public, no auth required)."""
+    """利用規約の内容を返す (公開、認証不要)。"""
     from app.services.server_settings_service import get_setting
 
     raw = await get_setting(db, "terms_of_service")
@@ -598,7 +598,7 @@ async def get_instance_terms(db: AsyncSession = Depends(get_db)):
 
 @app.get("/api/v1/instance/privacy")
 async def get_instance_privacy(db: AsyncSession = Depends(get_db)):
-    """Return privacy policy content (public, no auth required)."""
+    """プライバシーポリシーの内容を返す (公開、認証不要)。"""
     from app.services.server_settings_service import get_setting
 
     raw = await get_setting(db, "privacy_policy")
@@ -668,7 +668,7 @@ async def favicon_ico(db: AsyncSession = Depends(get_db)):
     if url:
         return RedirectResponse(url=url, status_code=302)
 
-    # Default: serve the built-in SVG cat icon
+    # デフォルト: 組み込みの SVG 猫アイコンを配信
     return Response(
         content=_DEFAULT_FAVICON_SVG,
         media_type="image/svg+xml",
@@ -723,7 +723,7 @@ async def get_remote_emoji_info(
     user=Depends(get_permitted_staff("emoji")),
     db=Depends(get_db),
 ):
-    """Get metadata for a remote custom emoji (requires emoji permission)."""
+    """リモートカスタム絵文字のメタデータを取得する (絵文字権限が必要)。"""
     from app.schemas.admin import AdminRemoteEmojiResponse
     from app.services.emoji_service import get_custom_emoji
 
@@ -739,7 +739,7 @@ async def get_remote_emoji_sources(
     user=Depends(get_permitted_staff("emoji")),
     db=Depends(get_db),
 ):
-    """List all remote sources for a given emoji shortcode."""
+    """指定された絵文字ショートコードのリモートソース一覧を返す。"""
     from app.schemas.admin import AdminRemoteEmojiResponse
     from app.services.emoji_service import list_remote_emoji_sources
 

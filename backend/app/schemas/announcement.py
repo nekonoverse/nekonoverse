@@ -1,4 +1,4 @@
-"""Pydantic schemas for announcements."""
+"""お知らせ用の Pydantic スキーマ。"""
 
 import uuid
 from datetime import datetime

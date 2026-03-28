@@ -1,8 +1,8 @@
-"""Shared Valkey Pub/Sub hub that fans out messages to per-client queues.
+"""クライアントごとのキューにメッセージを配信する共有 Valkey Pub/Sub ハブ。
 
-Instead of creating one Valkey pubsub connection per SSE client,
-PubSubHub maintains a single shared connection and routes messages
-to asyncio.Queue instances registered by each client.
+SSE クライアントごとに Valkey pubsub 接続を作成する代わりに、
+PubSubHub は単一の共有接続を維持し、各クライアントが登録した
+asyncio.Queue インスタンスにメッセージをルーティングする。
 """
 
 import asyncio
@@ -19,23 +19,23 @@ _QUEUE_MAXSIZE = 256
 
 
 class PubSubHub:
-    """Singleton hub managing a single Valkey pubsub connection."""
+    """単一の Valkey pubsub 接続を管理するシングルトンハブ。"""
 
     def __init__(self) -> None:
-        # channel -> set of asyncio.Queue
+        # チャンネル -> asyncio.Queue の集合
         self._subscribers: dict[str, set[asyncio.Queue]] = {}
         self._pubsub: PubSub | None = None
         self._reader_task: asyncio.Task | None = None
         self._lock = asyncio.Lock()
 
     async def start(self) -> None:
-        """Start the background reader task."""
+        """バックグラウンドリーダータスクを開始する。"""
         self._pubsub = valkey.pubsub()
         self._reader_task = asyncio.create_task(self._reader_loop())
         logger.info("PubSubHub started")
 
     async def stop(self) -> None:
-        """Stop the background reader and close the pubsub connection."""
+        """バックグラウンドリーダーを停止し、pubsub 接続を閉じる。"""
         if self._reader_task:
             self._reader_task.cancel()
             try:
@@ -53,10 +53,10 @@ class PubSubHub:
         logger.info("PubSubHub stopped")
 
     async def subscribe(self, channels: list[str]) -> asyncio.Queue:
-        """Register a new listener for the given channels.
+        """指定されたチャンネルの新しいリスナーを登録する。
 
-        Returns an asyncio.Queue that will receive messages
-        as dicts with 'channel' and 'data' keys.
+        'channel' と 'data' キーを持つ辞書としてメッセージを
+        受信する asyncio.Queue を返す。
         """
         queue: asyncio.Queue = asyncio.Queue(maxsize=_QUEUE_MAXSIZE)
         async with self._lock:
@@ -73,9 +73,9 @@ class PubSubHub:
         return queue
 
     async def unsubscribe(self, queue: asyncio.Queue, channels: list[str]) -> None:
-        """Remove a listener from the given channels.
+        """指定されたチャンネルからリスナーを削除する。
 
-        Unsubscribes from Valkey when the last listener leaves a channel.
+        チャンネルの最後のリスナーが離脱した時に Valkey から購読解除する。
         """
         async with self._lock:
             orphaned_channels = []
@@ -92,7 +92,7 @@ class PubSubHub:
                 await self._pubsub.unsubscribe(*orphaned_channels)
 
     async def _reader_loop(self) -> None:
-        """Background loop: read from Valkey pubsub and dispatch to queues."""
+        """バックグラウンドループ: Valkey pubsub から読み取りキューにディスパッチする。"""
         while True:
             try:
                 await self._read_messages()
@@ -104,7 +104,7 @@ class PubSubHub:
                 await self._reconnect()
 
     async def _read_messages(self) -> None:
-        """Read messages from the shared pubsub connection."""
+        """共有 pubsub 接続からメッセージを読み取る。"""
         while True:
             if not self._pubsub or not self._subscribers:
                 # 購読チャンネルがない間はポーリングを待機
@@ -132,7 +132,7 @@ class PubSubHub:
                     pass
 
     async def _reconnect(self) -> None:
-        """Reconnect to Valkey and re-subscribe to all active channels."""
+        """Valkey に再接続し、全アクティブチャンネルに再購読する。"""
         try:
             if self._pubsub:
                 await self._pubsub.close()

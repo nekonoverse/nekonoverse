@@ -1,4 +1,4 @@
-"""User block service: block, unblock, check, list."""
+"""ユーザーブロックサービス: ブロック、ブロック解除、確認、一覧。"""
 
 import uuid
 
@@ -15,7 +15,7 @@ from app.services.actor_service import actor_uri
 async def block_actor(db: AsyncSession, user: User, target_actor: Actor) -> UserBlock:
     actor = user.actor
 
-    # Check if already blocking
+    # 既にブロック済みか確認
     existing = await db.execute(
         select(UserBlock).where(
             UserBlock.actor_id == actor.id,
@@ -28,7 +28,7 @@ async def block_actor(db: AsyncSession, user: User, target_actor: Actor) -> User
     block = UserBlock(actor_id=actor.id, target_id=target_actor.id)
     db.add(block)
 
-    # Remove follow in both directions
+    # 双方向のフォローを削除
     for follower_id, following_id in [
         (actor.id, target_actor.id),
         (target_actor.id, actor.id),
@@ -45,7 +45,7 @@ async def block_actor(db: AsyncSession, user: User, target_actor: Actor) -> User
 
     await db.flush()
 
-    # Deliver Block activity to remote
+    # リモートにBlock Activityを配送
     if not target_actor.is_local:
         from app.activitypub.renderer import render_block_activity
         from app.config import settings
@@ -74,7 +74,7 @@ async def unblock_actor(db: AsyncSession, user: User, target_actor: Actor) -> No
     await db.delete(block)
     await db.flush()
 
-    # Deliver Undo(Block) to remote
+    # リモートにUndo(Block)を配送
     if not target_actor.is_local:
         from app.activitypub.renderer import render_block_activity, render_undo_activity
         from app.config import settings

@@ -1,4 +1,4 @@
-"""Handle incoming Move activities (account migration)."""
+"""受信した Move activity を処理する (アカウント移行)。"""
 
 import logging
 
@@ -17,7 +17,7 @@ async def handle_move(db: AsyncSession, activity: dict):
         logger.warning("Move activity missing actor or target")
         return
 
-    # Verify actor == Move actor
+    # actor が Move の actor と一致するか検証
     source_actor = await get_actor_by_ap_id(db, actor_ap_id)
     if not source_actor:
         source_actor = await fetch_remote_actor(db, actor_ap_id)

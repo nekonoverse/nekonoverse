@@ -1,4 +1,4 @@
-"""Handle Follow/Accept/Reject activities."""
+"""Follow/Accept/Reject activity を処理する。"""
 
 import logging
 import uuid
@@ -20,7 +20,7 @@ async def handle_follow(db: AsyncSession, activity: dict):
     if not actor_ap_id or not target_ap_id:
         return
 
-    # Resolve follower (remote actor)
+    # フォロワー (リモートアクター) を解決
     follower = await get_actor_by_ap_id(db, actor_ap_id)
     if not follower:
         follower = await fetch_remote_actor(db, actor_ap_id)
@@ -28,13 +28,13 @@ async def handle_follow(db: AsyncSession, activity: dict):
         logger.warning("Could not resolve follower actor %s", actor_ap_id)
         return
 
-    # Resolve target (should be local)
+    # ターゲットを解決 (ローカルであるべき)
     target = await get_actor_by_ap_id(db, target_ap_id)
     if not target or not target.is_local:
         logger.info("Follow target %s is not a local actor", target_ap_id)
         return
 
-    # Check existing follow
+    # 既存のフォローをチェック
     existing = await db.execute(
         select(Follow).where(
             Follow.follower_id == follower.id,
@@ -53,7 +53,7 @@ async def handle_follow(db: AsyncSession, activity: dict):
         db.add(follow)
         await db.commit()
 
-        # Notify the local target about the new follower
+        # 新しいフォロワーについてローカルのターゲットに通知
         from app.services.notification_service import create_notification, publish_notification
 
         notif_type = "follow" if not target.manually_approves_followers else "follow_request"
@@ -62,13 +62,13 @@ async def handle_follow(db: AsyncSession, activity: dict):
         if notif:
             await publish_notification(notif)
 
-    # Auto-accept if not manually approving
+    # 手動承認でない場合は自動承認
     if not target.manually_approves_followers:
         from app.activitypub.renderer import render_accept_activity
         from app.services.delivery_service import enqueue_delivery
 
         accept_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
-        # Use dynamic URL for local actor to ensure correct scheme
+        # 正しいスキームを保証するためローカルアクターの動的 URL を使用
         actor_ap_id = f"{settings.server_url}/users/{target.username}"
         accept = render_accept_activity(accept_id, actor_ap_id, activity)
 
@@ -79,12 +79,12 @@ async def handle_follow(db: AsyncSession, activity: dict):
 async def _resolve_follow_from_object(
     db: AsyncSession, activity: dict
 ) -> Follow | None:
-    """Resolve Follow record from Accept/Reject object (dict or string URI)."""
+    """Accept/Reject の object (dict または文字列 URI) から Follow レコードを解決する。"""
     accept_actor = activity.get("actor")
     inner = activity.get("object")
 
     if isinstance(inner, str):
-        # object is a URI reference to the Follow activity (e.g. Mitra)
+        # object が Follow activity の URI 参照 (例: Mitra)
         if not accept_actor:
             logger.warning("Accept/Reject missing actor field for string object %s", inner)
             return None
@@ -93,7 +93,7 @@ async def _resolve_follow_from_object(
         if not follow:
             logger.warning("No follow found for ap_id %s", inner)
             return None
-        # Verify Accept/Reject actor matches the follow target
+        # Accept/Reject の actor がフォローターゲットと一致するか検証
         target = await get_actor_by_ap_id(db, accept_actor)
         if not target or target.id != follow.following_id:
             logger.warning(
@@ -138,7 +138,7 @@ async def _resolve_follow_from_object(
 
 
 async def handle_accept(db: AsyncSession, activity: dict):
-    """Handle Accept(Follow) -- remote server accepted our follow request."""
+    """Accept(Follow) を処理する -- リモートサーバーがフォローリクエストを承認した。"""
     follow = await _resolve_follow_from_object(db, activity)
     if follow:
         follow.accepted = True
@@ -147,7 +147,7 @@ async def handle_accept(db: AsyncSession, activity: dict):
 
 
 async def handle_reject(db: AsyncSession, activity: dict):
-    """Handle Reject(Follow) -- remote server rejected our follow request."""
+    """Reject(Follow) を処理する -- リモートサーバーがフォローリクエストを拒否した。"""
     follow = await _resolve_follow_from_object(db, activity)
     if follow:
         await db.delete(follow)

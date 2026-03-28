@@ -1,11 +1,11 @@
 /**
- * Perceptual hash (pHash) computation for emoji images via Canvas API.
+ * Canvas API 経由の絵文字画像の知覚ハッシュ（pHash）計算。
  *
- * Algorithm:
- * 1. Load image → draw onto 32x32 canvas → extract grayscale pixels
- * 2. Compute 2D DCT on 32x32 matrix
- * 3. Take top-left 8x8 DCT coefficients (excluding DC)
- * 4. Threshold by median → 64-bit hash as hex string
+ * アルゴリズム:
+ * 1. 画像を読み込み → 32x32 Canvas に描画 → グレースケールピクセルを抽出
+ * 2. 32x32 行列に 2D DCT を計算
+ * 3. 左上 8x8 の DCT 係数を取得（DC成分を除く）
+ * 4. 中央値で閾値処理 → 64ビットハッシュを16進文字列として出力
  */
 
 const HASH_SIZE = 8;
@@ -34,7 +34,7 @@ function getGrayscalePixels(img: HTMLImageElement): Float64Array | null {
 
   for (let i = 0; i < pixels.length; i++) {
     const offset = i * 4;
-    // ITU-R BT.601 luminance
+    // ITU-R BT.601 輝度
     pixels[i] =
       0.299 * imageData.data[offset] +
       0.587 * imageData.data[offset + 1] +

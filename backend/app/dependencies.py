@@ -57,9 +57,9 @@ async def get_current_user(
         await valkey.delete(f"session:{session_id}")
         raise HTTPException(status_code=403, detail="System accounts cannot authenticate")
 
-    # Deny access if the user's actor has been suspended
+    # アクターが凍結されている場合はアクセスを拒否
     if user.actor and user.actor.is_suspended:
-        # Invalidate this session so the client does not retry
+        # クライアントがリトライしないようセッションを無効化
         await valkey.delete(f"session:{session_id}")
         raise HTTPException(status_code=403, detail="Account is suspended")
 
@@ -82,8 +82,8 @@ async def get_staff_user(
 
 
 def get_permitted_staff(permission: str):
-    """Return a dependency that checks the user is admin, or moderator with
-    the specified permission enabled."""
+    """ユーザーが管理者、または指定された権限を持つモデレーターであることを
+    確認する依存関数を返す。"""
 
     async def dependency(
         request: Request,
@@ -117,7 +117,7 @@ async def get_oauth_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ) -> User:
-    """Authenticate a user via OAuth Bearer token (Authorization header)."""
+    """OAuth Bearer トークン (Authorization ヘッダー) でユーザーを認証する。"""
     auth_header = request.headers.get("authorization", "")
     if not auth_header.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing Bearer token")
@@ -173,10 +173,10 @@ async def get_oauth_user(
 
 
 def require_oauth_scope(scope: str):
-    """Dependency that checks the OAuth token has the required scope.
+    """OAuth トークンが必要なスコープを持っているか確認する依存関数。
 
-    For session-based auth, all scopes are implicitly granted.
-    Scope hierarchy: 'read' grants 'read:*', 'write' grants 'write:*'.
+    セッション認証の場合、全スコープが暗黙的に付与される。
+    スコープ階層: 'read' は 'read:*' を含み、'write' は 'write:*' を含む。
     """
 
     async def dependency(request: Request):

@@ -55,7 +55,7 @@ async def username_available(
 ):
     from app.valkey_client import valkey
 
-    # Rate limit by IP
+    # IPベースのレート制限
     client_ip = request.client.host if request.client else "unknown"
     rl_key = f"username_check:{client_ip}"
     attempts = await valkey.get(rl_key)
@@ -107,7 +107,7 @@ async def register(
             detail="Too many registration attempts. Please try again later.",
         )
 
-    # Turnstile CAPTCHA verification (when configured)
+    # Turnstile CAPTCHA 検証（設定時）
     if settings.turnstile_secret_key:
         if not body.captcha_token:
             raise HTTPException(status_code=422, detail="CAPTCHA token required")
@@ -125,12 +125,12 @@ async def register(
         if not ts_resp.json().get("success"):
             raise HTTPException(status_code=422, detail="CAPTCHA verification failed")
 
-    # Determine registration mode
+    # 登録モードの判定
     mode_setting = await get_setting(db, "registration_mode")
     if mode_setting is not None:
         mode = mode_setting
     else:
-        # Fallback to legacy registration_open setting
+        # レガシーの registration_open 設定にフォールバック
         reg_setting = await get_setting(db, "registration_open")
         reg_open = (
             (reg_setting == "true") if reg_setting is not None else settings.registration_open
@@ -140,7 +140,7 @@ async def register(
     if mode == "closed":
         raise HTTPException(status_code=403, detail="Registration is closed")
 
-    # Validate invite code when in invite mode
+    # 招待モード時に招待コードを検証
     invite = None
     if mode == "invite":
         if not body.invite_code:
@@ -177,14 +177,14 @@ async def register(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Redeem invite code after successful user creation
+    # ユーザー作成成功後に招待コードを使用済みにする
     if invite:
         from app.services.invitation_service import redeem_invitation
 
         await redeem_invitation(db, invite, user)
         await db.commit()
 
-    # Send verification email if SMTP is configured
+    # SMTP が設定されている場合に確認メールを送信
     if settings.email_enabled:
         try:
             from app.services.email_service import send_verification_email
@@ -192,7 +192,7 @@ async def register(
             await send_verification_email(db, user)
             await db.commit()
         except Exception:
-            pass  # Don't fail registration if email fails
+            pass  # メール送信に失敗しても登録を失敗させない
 
     # 登録レートリミットのカウントを増加
     await valkey.incr(reg_key)
@@ -251,7 +251,7 @@ async def login(
 
     from app.services.session_service import create_session_with_metadata, record_login
 
-    # If TOTP is enabled, return a temporary token instead of a session
+    # TOTP が有効な場合、セッションの代わりに一時トークンを返す
     if user.totp_enabled:
         from app.valkey_client import valkey
 
@@ -291,7 +291,7 @@ async def logout(
     if session_id:
         from app.valkey_client import valkey
 
-        # Resolve user_id before deleting the session key
+        # セッションキー削除前に user_id を解決
         user_id_str = await valkey.get(f"session:{session_id}")
         await valkey.delete(f"session:{session_id}")
         if user_id_str:
@@ -391,7 +391,7 @@ async def get_account_storage(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return storage usage and quota for the current user."""
+    """現在のユーザーのストレージ使用量とクォータを返す。"""
     from app.services.quota_service import check_quota
 
     _, usage, quota = await check_quota(db, user, 0)
@@ -404,7 +404,7 @@ DEFAULT_AVATAR_URL = f"{settings.server_url}/default-avatar.svg"
 
 
 def _focal_from_drive_file(drive_file) -> FocalPoint | None:
-    """Extract focal point from a DriveFile."""
+    """DriveFile からフォーカルポイントを取得する。"""
     if drive_file and drive_file.focal_x is not None and drive_file.focal_y is not None:
         return FocalPoint(x=drive_file.focal_x, y=drive_file.focal_y)
     return None
@@ -412,7 +412,7 @@ def _focal_from_drive_file(drive_file) -> FocalPoint | None:
 
 async def _user_response(user: User, db: AsyncSession) -> UserResponse:
     actor = user.actor
-    # Ensure drive file relationships are loaded for focal point data
+    # フォーカルポイントデータ用にドライブファイルのリレーションをロード
     await db.refresh(actor, ["avatar_file", "header_file"])
     return UserResponse(
         id=user.id,
@@ -434,14 +434,14 @@ async def _user_response(user: User, db: AsyncSession) -> UserResponse:
 
 
 def _focal_to_dict(drive_file) -> dict | None:
-    """Extract focal point as plain dict for JSON serialization."""
+    """JSON シリアライズ用にフォーカルポイントをプレーンな辞書として取得する。"""
     if drive_file and drive_file.focal_x is not None and drive_file.focal_y is not None:
         return {"x": drive_file.focal_x, "y": drive_file.focal_y}
     return None
 
 
 async def _credential_account_response(user: User, db: AsyncSession) -> dict:
-    """Build Mastodon CredentialAccount response with nekonoverse extensions."""
+    """Mastodon CredentialAccount レスポンスを nekonoverse 拡張付きで構築する。"""
     import re
 
     actor = user.actor
@@ -450,7 +450,7 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
     sc = await get_statuses_count(db, actor.id)
 
     data = {
-        # Mastodon CredentialAccount fields
+        # Mastodon CredentialAccount フィールド
         "id": str(actor.id),
         "username": actor.username,
         "acct": actor.username,
@@ -488,7 +488,7 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
                 for f in (actor.fields or [])
             ],
         },
-        # Nekonoverse extensions (used by our frontend)
+        # Nekonoverse 拡張（フロントエンドで使用）
         "avatar_url": actor.avatar_url or DEFAULT_AVATAR_PATH,
         "header_url": actor.header_url,
         "avatar_focal": _focal_to_dict(actor.avatar_file),
@@ -506,7 +506,7 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
         },
     }
 
-    # Nekonoverse: effective permissions for frontend feature gating
+    # Nekonoverse: フロントエンドの機能ゲーティング用の有効な権限
     from app.services.role_service import MODERATOR_PERMISSIONS
 
     if user.is_admin:
@@ -524,7 +524,7 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
     else:
         data["nekonoverse_permissions"] = []
 
-    # Resolve custom emoji
+    # カスタム絵文字の解決
     shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
     texts = [data["display_name"] or "", data["note"]]
     for f in actor.fields or []:
@@ -639,7 +639,7 @@ async def update_credentials(
         user.actor.manually_approves_followers = locked
         changed = True
 
-        # Auto-accept all pending follow requests when turning off locked mode
+        # ロックモード解除時に保留中のフォローリクエストをすべて自動承認
         if was_locked and not locked:
             from sqlalchemy import select as sel
             from sqlalchemy.orm import joinedload
@@ -657,7 +657,7 @@ async def update_credentials(
             pending_follows = pending_result.scalars().unique().all()
             for pf in pending_follows:
                 pf.accepted = True
-                # Send Accept to remote followers
+                # リモートフォロワーに Accept を送信
                 if pf.follower and not pf.follower.is_local and pf.follower.inbox_url:
                     from app.activitypub.renderer import (
                         render_accept_activity,
@@ -758,7 +758,7 @@ async def update_credentials(
         await db.commit()
         await db.refresh(user)
 
-        # Federate profile update to followers
+        # フォロワーにプロフィール更新を連合配信
         from app.activitypub.renderer import (
             render_actor,
             render_update_activity,
@@ -830,7 +830,7 @@ async def change_password_endpoint(
     return {"ok": True}
 
 
-# ── TOTP endpoints ──
+# ── TOTP エンドポイント ──
 
 
 class TotpSetupRequest(BaseModel):
@@ -965,7 +965,7 @@ async def totp_verify(
 ):
     from app.valkey_client import valkey
 
-    # Check brute-force lockout before doing anything else
+    # 他の処理の前にブルートフォースロックアウトを確認
     attempts_key = f"totp_attempts:{body.totp_token}"
     attempts = await valkey.get(attempts_key)
     if attempts is not None and int(attempts) >= TOTP_MAX_ATTEMPTS:
@@ -991,10 +991,10 @@ async def totp_verify(
     code = body.code.strip().replace("-", "")
 
     if verify_totp_code(secret, code):
-        # Valid TOTP code — create session
+        # 有効な TOTP コード — セッションを作成
         pass
     elif user.totp_recovery_codes:
-        # Try recovery code
+        # リカバリーコードを試行
         from app.services.totp_service import verify_recovery_code
 
         valid, remaining = await asyncio.to_thread(
@@ -1003,7 +1003,7 @@ async def totp_verify(
             user.totp_recovery_codes,
         )
         if not valid:
-            # Increment attempt counter on failure
+            # 失敗時に試行カウンターをインクリメント
             await valkey.incr(attempts_key)
             await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
             raise HTTPException(
@@ -1013,12 +1013,12 @@ async def totp_verify(
         user.totp_recovery_codes = remaining
         await db.commit()
     else:
-        # Increment attempt counter on failure
+        # 失敗時に試行カウンターをインクリメント
         await valkey.incr(attempts_key)
         await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
         raise HTTPException(status_code=401, detail="Invalid TOTP code")
 
-    # Successful verification — clean up attempt counter and pending token
+    # 検証成功 — 試行カウンターと保留中トークンをクリーンアップ
     await valkey.delete(attempts_key)
     await valkey.delete(f"totp_pending:{body.totp_token}")
 
@@ -1027,7 +1027,7 @@ async def totp_verify(
     client_ip = request.client.host if request.client else "unknown"
     client_ua = request.headers.get("user-agent")
 
-    # Create session
+    # セッションを作成
     session_id = secrets.token_urlsafe(32)
     await create_session_with_metadata(valkey, user.id, session_id, client_ip, client_ua)
     await record_login(db, user.id, client_ip, client_ua, "totp")
