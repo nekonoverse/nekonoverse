@@ -142,7 +142,7 @@ export default function Notifications() {
     } catch { /* ignore */ }
   });
 
-  // Load announcements when tab is selected
+  // Load announcements when tab is selected, auto-dismiss unread
   createEffect(async () => {
     if (tab() === "announcements" && !announcementsLoaded()) {
       try {
@@ -150,6 +150,12 @@ export default function Notifications() {
         setAnnouncements(data);
         setAnnouncementsLoaded(true);
         resetUnreadAnnouncements();
+        // Auto-dismiss unread announcements so they don't reappear as new on next load
+        const unread = data.filter((a) => !a.read);
+        if (unread.length > 0) {
+          await Promise.all(unread.map((a) => dismissAnnouncement(a.id)));
+          setAnnouncements((prev) => prev.map((a) => ({ ...a, read: true })));
+        }
       } catch { /* ignore */ }
     }
   });
@@ -310,7 +316,7 @@ export default function Notifications() {
               <For each={announcements()}>
                 {(ann) => (
                   <div class={`notification-item announcement-item${ann.read ? "" : " unread"}`}>
-                    <div class="notification-icon">{"\u{1F4E2}"}</div>
+                    <div class="notification-icon" ref={(el) => { el.textContent = "\u{1F4E2}"; twemojify(el); }} />
                     <div class="notification-body">
                       <div class="notification-meta">
                         <strong class="announcement-server-name">{t("announcements.fromServer" as keyof Dictionary)}</strong>
@@ -351,7 +357,7 @@ export default function Notifications() {
                 <For each={filtered()}>
                   {(notif) => (
                     <div class={`notification-item${notif.read ? "" : " unread"}`}>
-                      <div class="notification-icon">{notifIcon(notif.type)}</div>
+                      <div class="notification-icon" ref={(el) => { el.textContent = notifIcon(notif.type); twemojify(el); }} />
                       <div class="notification-body">
                         <div class="notification-meta">
                           <Show when={notif.account}>
