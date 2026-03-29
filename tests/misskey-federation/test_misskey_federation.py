@@ -1134,48 +1134,46 @@ class TestMoveFederation:
 
         手順:
         1. Misskey で移行先ユーザー carol を作成
-        2. carol の alsoKnownAs に alice の AP ID を設定
-        3. Misskey で carol_follower を作成し carol をフォロー (移行後の確認用)
-        4. bob@misskey が alice@neko をフォロー (移行前)
-        5. alice が carol への Move を実行
-        6. Misskey 側で alice の movedTo が設定されていることを確認
+        2. bob が alice@neko を解決+フォロー (Misskey にキャッシュさせる)
+        3. carol の alsoKnownAs に alice の AP ID を設定
+        4. alice が carol への Move を実行
+        5. Misskey 側で alice の movedTo が設定されていることを確認
         """
-        # 1. Misskey に移行先ユーザー carol を作成
+        # 1. Misskey に移行先ユーザー carol を作成 (bob の admin トークンで)
         old_token = misskey.token
         carol_data = misskey.create_user("carol", "password1234")
         carol_token = carol_data.get("token")
+        assert carol_token, "carol token not returned from admin/accounts/create"
         misskey.token = old_token  # bob に戻す
 
-        # bob が alice@neko をフォロー (移行前にフォロー関係を作る)
+        # 2. bob が alice@neko を解決+フォロー (Misskey が alice を知る)
         resolved = misskey.search_user_by_username("alice", host=NEKO_DOMAIN)
         try:
             misskey.follow(resolved["id"])
         except Exception:
-            pass  # 既にフォロー済みの場合
+            pass  # 既にフォロー済み
 
-        # bob → alice のフォローが確立するのを待つ
         def check_following():
             user = misskey._api("users/show", {"userId": resolved["id"]})
             return user.get("isFollowing", False)
 
         poll_until(check_following, timeout=60, interval=2, desc="bob follows alice")
 
-        # 2. carol の alsoKnownAs に alice の AP ID を設定
-        alice_ap = neko.get_actor_ap("alice")
-        alice_ap_id = alice_ap["id"]
-
+        # 3. carol の alsoKnownAs に alice の acct を設定
+        # Misskey の i/update は alsoKnownAs を Acct.parse() で処理するため
+        # AP URI ではなく acct 形式 (user@host) で渡す必要がある
         misskey.token = carol_token
-        misskey.update_also_known_as([alice_ap_id])
+        misskey.update_also_known_as([f"alice@{NEKO_DOMAIN}"])
         misskey.token = old_token  # bob に戻す
 
-        # carol の AP ID を取得
-        carol_info_resp = misskey._api("users/show", {"username": "carol"})
-        carol_ap_id = carol_info_resp.get("uri") or f"{MISSKEY_URL}/users/{carol_info_resp['id']}"
+        # carol の AP ID を取得 (Misskey はローカルユーザーに uri を返さないので構築)
+        carol_info = misskey._api("users/show", {"username": "carol"})
+        carol_ap_id = carol_info.get("uri") or f"{MISSKEY_URL}/users/{carol_info['id']}"
 
-        # 3. alice が Neko 側で Move を実行
+        # 4. alice が Neko 側で Move を実行
         neko.move_account(carol_ap_id)
 
-        # 4. Misskey 側で alice の movedTo が設定されるのを確認
+        # 5. Misskey 側で alice の movedTo が設定されるのを確認
         def check_moved():
             user = misskey._api("users/show", {"userId": resolved["id"]})
             return user.get("movedTo") is not None
@@ -1185,7 +1183,7 @@ class TestMoveFederation:
             desc="alice@neko movedTo set on misskey"
         )
 
-        # 5. alice の AP 表現で movedTo が設定されていることを確認
+        # alice の AP 表現で movedTo が設定されていることを確認
         alice_ap_after = neko.get_actor_ap("alice")
         assert "movedTo" in alice_ap_after, "alice AP actor should have movedTo"
 
@@ -1194,51 +1192,64 @@ class TestMoveFederation:
     ):
         """Misskey ユーザーが Neko に引っ越し: Move 受信テスト。
 
+        Misskey の root ユーザー (最初に作成された管理者) は i/move を実行できないため、
+        非 root ユーザー (eve) を作成して引っ越しを行う。
+
         手順:
-        1. Neko で移行先ユーザー dave を作成
-        2. dave の alsoKnownAs に bob の AP ID を設定
-        3. alice@neko が bob@misskey をフォロー (移行前)
-        4. bob が dave への Move を実行
-        5. Neko 側で bob の movedTo が設定されていることを確認
-        6. alice のフォロー先に dave が含まれることを確認
+        1. Misskey で eve (非 root ユーザー) を作成
+        2. Neko で移行先ユーザー dave を作成
+        3. dave の alsoKnownAs に eve の AP ID を設定
+        4. alice@neko が eve@misskey をフォロー (移行前)
+        5. eve が dave への Move を実行
+        6. Neko 側で eve の movedTo が設定されていることを確認
         """
-        # 1. Neko に移行先ユーザー dave を作成
+        # 1. Misskey で eve を作成
+        old_token = misskey.token
+        eve_data = misskey.create_user("eve", "password1234")
+        eve_token = eve_data.get("token")
+        assert eve_token, "eve token not returned"
+        misskey.token = old_token  # bob に戻す
+
+        # 2. Neko に移行先ユーザー dave を作成
         neko_dave = NekoClient(neko.base_url, neko.domain)
-        dave = neko_dave.register("dave", "dave@example.com", "password1234", "Dave")
+        neko_dave.register("dave", "dave@example.com", "password1234", "Dave")
         neko_dave.login("dave", "password1234")
 
-        # 2. dave の alsoKnownAs に bob の AP ID を設定
-        bob_ap = misskey.get_actor_ap("bob")
-        bob_ap_id = bob_ap["id"]
-        neko_dave.set_also_known_as([bob_ap_id])
+        # 3. dave の alsoKnownAs に eve の AP ID を設定
+        eve_info = misskey._api("users/show", {"username": "eve"})
+        eve_ap_id = f"{MISSKEY_URL}/users/{eve_info['id']}"
+        neko_dave.set_also_known_as([eve_ap_id])
 
-        # 3. alice が bob@misskey をフォロー (移行前のフォロー関係)
-        results = neko.search_accounts(f"bob@{MISSKEY_DOMAIN}", resolve=True)
-        assert len(results) > 0, "Could not resolve bob@misskey on Neko"
-        bob_on_neko = results[0]
+        # 4. alice が eve@misskey をフォロー (移行前のフォロー関係)
+        results = neko.search_accounts(f"eve@{MISSKEY_DOMAIN}", resolve=True)
+        assert len(results) > 0, "Could not resolve eve@misskey on Neko"
+        eve_on_neko = results[0]
         try:
-            neko.follow(bob_on_neko["id"])
+            neko.follow(eve_on_neko["id"])
         except Exception:
             pass  # 既にフォロー済み
         time.sleep(5)
 
-        # dave の AP ID を取得
-        dave_ap = neko.get_actor_ap("dave")
-        dave_ap_id = dave_ap["id"]
-        dave_acct = f"dave@{NEKO_DOMAIN}"
+        # 5. eve が Misskey で Move を実行
+        misskey.token = eve_token
+        # dave を解決してから Move
+        try:
+            misskey._api("users/show", {"username": "dave", "host": NEKO_DOMAIN})
+        except Exception:
+            pass
+        time.sleep(3)
+        misskey.move(f"dave@{NEKO_DOMAIN}", password="password1234")
+        misskey.token = old_token  # bob に戻す
 
-        # 4. bob が Misskey で Move を実行
-        misskey.move(dave_acct)
-
-        # 5. Neko 側で bob の account に movedTo がつくか確認
+        # 6. Neko 側で eve の account に movedTo がつくか確認
         def check_moved_on_neko():
             try:
-                account = neko.get_account(bob_on_neko["id"])
+                account = neko.get_account(eve_on_neko["id"])
                 return account.get("moved") is not None
             except Exception:
                 return False
 
         poll_until(
             check_moved_on_neko, timeout=60, interval=2,
-            desc="bob@misskey movedTo set on neko"
+            desc="eve@misskey movedTo set on neko"
         )

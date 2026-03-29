@@ -300,8 +300,8 @@ class MisskeyClient:
         })
 
     def login_as(self, username: str, password: str):
-        """指定ユーザーでログインし、トークンを差し替える。"""
-        resp = self.http.post("/api/signin", json={
+        """指定ユーザーでログインし、トークンを差し替える (Misskey 2025.x)。"""
+        resp = self.http.post("/api/signin-flow", json={
             "username": username,
             "password": password,
         })
@@ -312,11 +312,27 @@ class MisskeyClient:
 
     def update_also_known_as(self, also_known_as: list[str]):
         """alsoKnownAs を設定する。"""
-        return self._api("i/update", {"alsoKnownAs": also_known_as})
+        payload = {"alsoKnownAs": also_known_as}
+        if self.token:
+            payload["i"] = self.token
+        resp = self.http.post("/api/i/update", json=payload)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"i/update failed ({resp.status_code}): {resp.text[:500]}"
+            )
+        return resp.json()
 
-    def move(self, move_to_account: str):
+    def move(self, move_to_account: str, password: str):
         """アカウント移行を実行する (moveToAccount は acct 形式)。"""
-        return self._api("i/move", {"moveToAccount": move_to_account})
+        payload = {"moveToAccount": move_to_account, "password": password}
+        if self.token:
+            payload["i"] = self.token
+        resp = self.http.post("/api/i/move", json=payload)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"i/move failed ({resp.status_code}): {resp.text[:500]}"
+            )
+        return resp.json() if resp.content else {}
 
     def get_user_info(self):
         """自分のアカウント情報を取得する。"""
