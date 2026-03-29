@@ -1,3 +1,18 @@
+## [20260329-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260329-2) — 2026-03-29
+
+### 追加
+
+- **画像自動タグ付け (neko-vision)** — Ollama連携で画像にタグ・キャプションを自動付与。Valkey ジョブキューで非同期処理、リプライツリーコンテキスト対応、再タグ付けCLI (#314, #929)
+- **メディアタイムライン** — `/media` で画像付きノートをギャラリーグリッド表示。vision tags/caption + ノート本文での検索、無限スクロール対応 (#314, #929)
+
+### 修正
+
+- **お知らせ更新時の日付クリア不可** — `starts_at`/`ends_at` を null に設定可能に修正
+- **お知らせ SSE 二重エンコード** — payload の `json.dumps` 二重適用を修正
+- **docker-compose.prod.yml neko-vision UDS 対応** — UDS 環境変数・ソケットボリューム追加
+
+---
+
 ## [20260329-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260329-1) — 2026-03-29
 
 ### セキュリティ
@@ -19,8 +34,6 @@
 - **リアクションユーザー一覧のリモートドメイン欠落** — `reacted_by` レスポンスに `domain` フィールドを追加 (#927, #926)
 - **tsc --noEmit エラー解消** — TypeScript の型エラーをすべて修正 (#906, #907)
 - **お知らせ既読管理** — 既読状態の永続化と通知アイコンの twemoji 化 (#905)
-- **お知らせ更新時の日付クリア不可** — `starts_at`/`ends_at` を null に設定可能に修正
-- **お知らせ SSE 二重エンコード** — payload の `json.dumps` 二重適用を修正
 
 ### 内部改善
 

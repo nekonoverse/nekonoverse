@@ -32,6 +32,7 @@ const Profile = lazy(() => import("./pages/Profile"));
 const FollowList = lazy(() => import("./pages/FollowList"));
 const FollowRequests = lazy(() => import("./pages/FollowRequests"));
 const TagTimeline = lazy(() => import("./pages/TagTimeline"));
+const MediaTimeline = lazy(() => import("./pages/MediaTimeline"));
 const NoteThread = lazy(() => import("./pages/NoteThread"));
 const Terms = lazy(() => import("./pages/Terms"));
 const Privacy = lazy(() => import("./pages/Privacy"));
@@ -130,6 +131,7 @@ export default function App() {
         <Route path="/lists/:id" component={ListTimeline} />
         <Route path="/follow-requests" component={FollowRequests} />
         <Route path="/search" component={Search} />
+        <Route path="/media" component={MediaTimeline} />
         <Route path="/terms" component={Terms} />
         <Route path="/privacy" component={Privacy} />
         <Route path="/tags/:tag" component={TagTimeline} />

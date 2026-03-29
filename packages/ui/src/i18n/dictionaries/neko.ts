@@ -823,6 +823,10 @@ export const neko: Dictionary = {
   "announcements.startsAt": "かいしにちじにゃ",
   "announcements.endsAt": "しゅうりょうにちじにゃ",
 
+  "mediaTimeline.title": "めでぃにゃ",
+  "mediaTimeline.searchPlaceholder": "けんさくにゃ...",
+  "mediaTimeline.empty": "めでぃあつきのとうこうがにゃいにゃ。",
+
   "themeCustomizer.colors": "いろをカスタマイズにゃ",
   "themeCustomizer.bgPrimary": "はいけいにゃ",
   "themeCustomizer.bgSecondary": "セカンダリはいけいにゃ",
