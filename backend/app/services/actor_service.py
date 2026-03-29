@@ -2,7 +2,7 @@ import logging
 from datetime import datetime, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -67,8 +67,20 @@ async def get_actor_by_username(
     username: str,
     domain: str | None = None,
 ) -> Actor | None:
-    lookup = username.lower() if domain is None else username
-    result = await db.execute(select(Actor).where(Actor.username == lookup, Actor.domain == domain))
+    if domain is None:
+        result = await db.execute(
+            select(Actor).where(
+                Actor.username == username.lower(), Actor.domain.is_(None)
+            )
+        )
+    else:
+        # リモートユーザーはケース非依存で検索（ix_actors_lower_username_domain インデックスを活用）
+        result = await db.execute(
+            select(Actor).where(
+                func.lower(Actor.username) == username.lower(),
+                Actor.domain == domain,
+            )
+        )
     return result.scalar_one_or_none()
 
 

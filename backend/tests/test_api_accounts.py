@@ -656,3 +656,24 @@ async def test_batch_accounts_single(app_client, test_user, mock_valkey):
     data = resp.json()
     assert len(data) == 1
     assert data[0]["username"] == "testuser"
+
+
+async def test_lookup_remote_actor_case_insensitive(app_client, db, mock_valkey):
+    """リモートアクターのlookupはケース非依存で一致する。"""
+    # preferredUsernameが大文字始まりのリモートアクターを作成
+    await make_remote_actor(db, username="Alice", domain="remote.example")
+    await db.commit()
+
+    # 小文字で検索しても見つかる
+    resp = await app_client.get(
+        "/api/v1/accounts/lookup", params={"acct": "alice@remote.example"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["username"] == "Alice"
+
+    # 大文字で検索しても見つかる
+    resp = await app_client.get(
+        "/api/v1/accounts/lookup", params={"acct": "Alice@remote.example"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["username"] == "Alice"

@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,34 @@ router = APIRouter(prefix="/api/v2", tags=["search"])
 def _escape_like(value: str) -> str:
     """LIKE/ILIKE パターンの特殊文字をエスケープする。"""
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _parse_user_url(url: str) -> tuple[str, str] | None:
+    """ユーザーURLからユーザー名とドメインを抽出する。
+
+    対応形式:
+      - https://domain.com/@username (Mastodon/Misskey)
+      - https://domain.com/users/username (ActivityPub標準)
+    """
+    parsed = urlparse(url.strip())
+    domain = parsed.hostname
+    if not domain:
+        return None
+
+    path = parsed.path.strip("/")
+
+    # /@username 形式
+    if path.startswith("@"):
+        username = path[1:]
+        if "/" not in username and username:
+            return (username, domain)
+
+    # /users/username 形式
+    parts = path.split("/")
+    if len(parts) == 2 and parts[0] in ("users", "actors") and parts[1]:
+        return (parts[1], domain)
+
+    return None
 
 
 @router.get("/search")
@@ -61,6 +91,23 @@ async def _search_accounts(
 
     query_str = q.lstrip("@")
     accounts = []
+
+    # URL形式: https://misskey.io/@nananek
+    if query_str.startswith("https://"):
+        parsed = _parse_user_url(query_str)
+        if parsed and resolve:
+            username, domain = parsed
+            from app.services.actor_service import get_actor_by_username, resolve_webfinger
+
+            actor = await get_actor_by_username(db, username, domain)
+            if not actor:
+                try:
+                    actor = await resolve_webfinger(db, username, domain)
+                except Exception:
+                    pass
+            if actor:
+                accounts.append(await _actor_to_account(actor, db=db))
+        return accounts
 
     # user@domain形式の場合
     if "@" in query_str:
