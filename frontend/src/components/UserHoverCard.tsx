@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { getAccount, followAccount, unfollowAccount, blockAccount, muteAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { getAccount, getRelationship, followAccount, unfollowAccount, blockAccount, muteAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { getLists, addListAccounts, type ListInfo } from "@nekonoverse/ui/api/lists";
 import { isFollowing, addFollowedId, removeFollowedId } from "@nekonoverse/ui/stores/followedUsers";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
@@ -35,6 +35,7 @@ export default function UserHoverCard(props: Props) {
   const navigate = useNavigate();
   const [visible, setVisible] = createSignal(false);
   const [account, setAccount] = createSignal<Account | null>(null);
+  const [isFollowedBy, setIsFollowedBy] = createSignal(false);
   const [followLoading, setFollowLoading] = createSignal(false);
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
   const [moreOpen, setMoreOpen] = createSignal(false);
@@ -53,13 +54,19 @@ export default function UserHoverCard(props: Props) {
     const cached = cache.get(props.actorId);
     if (cached) {
       setAccount(cached);
-      return;
+    } else {
+      try {
+        const acc = await getAccount(props.actorId);
+        cacheSet(props.actorId, acc);
+        setAccount(acc);
+      } catch {}
     }
-    try {
-      const acc = await getAccount(props.actorId);
-      cacheSet(props.actorId, acc);
-      setAccount(acc);
-    } catch {}
+    if (currentUser()) {
+      try {
+        const rel = await getRelationship(props.actorId);
+        setIsFollowedBy(rel.followed_by);
+      } catch {}
+    }
   };
 
   // --- Click handler: desktop only (タッチデバイスはtouchイベントで処理) ---
@@ -309,6 +316,9 @@ export default function UserHoverCard(props: Props) {
                         }} />
                       </a>
                       <span class="hover-card-handle">@{acc.acct.includes("@") ? acc.acct : `${acc.acct}@${instance()?.uri || ""}`}</span>
+                      <Show when={!isOwnAccount() && currentUser() && isFollowedBy()}>
+                        <span class="follows-you-badge">{t("profile.followsYou")}</span>
+                      </Show>
                     </div>
                   </div>
                   <Show when={acc.note}>

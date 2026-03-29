@@ -713,6 +713,36 @@ async def test_reacted_by(authed_client, mock_valkey):
     assert actor["url"] != ""
     assert actor["uri"] != ""
     assert actor["avatar"] != ""
+    assert actor["domain"] is None
+
+
+async def test_reacted_by_remote_actor_has_domain(authed_client, test_user, db, mock_valkey):
+    """リモートユーザーのリアクションでdomainフィールドが返却される。"""
+    from tests.conftest import make_remote_actor
+
+    from app.models.reaction import Reaction
+
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Remote react test", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+
+    remote_actor = await make_remote_actor(db, username="remotereact", domain="remote.example")
+    reaction = Reaction(
+        note_id=uuid.UUID(note_id),
+        actor_id=remote_actor.id,
+        emoji="🎉",
+    )
+    db.add(reaction)
+    await db.commit()
+
+    resp = await authed_client.get(f"/api/v1/statuses/{note_id}/reacted_by")
+    assert resp.status_code == 200
+    data = resp.json()
+    remote_reactions = [r for r in data if r["actor"]["username"] == "remotereact"]
+    assert len(remote_reactions) == 1
+    assert remote_reactions[0]["actor"]["domain"] == "remote.example"
+    assert remote_reactions[0]["actor"]["acct"] == "remotereact@remote.example"
 
 
 async def test_reacted_by_filter_emoji(authed_client, mock_valkey):
