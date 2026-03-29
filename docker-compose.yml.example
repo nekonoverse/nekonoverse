@@ -229,7 +229,7 @@ services:
   # Set NEKO_VISION_URL=http://neko-vision:8004/tag in app/worker environment.
   # After first start: docker compose exec ollama ollama pull gemma3:4b
   # neko-vision:
-  #   build: ./neko-vision
+  #   image: ghcr.io/nekonoverse/neko-vision:latest
   #   restart: unless-stopped
   #   environment:
   #     OLLAMA_URL: http://ollama:11434
