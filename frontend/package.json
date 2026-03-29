@@ -1,6 +1,6 @@
 {
   "name": "nekonoverse-frontend",
-  "version": "20260329-2",
+  "version": "20260329-3",
   "private": true,
   "type": "module",
   "scripts": {
