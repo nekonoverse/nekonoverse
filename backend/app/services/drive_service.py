@@ -199,7 +199,7 @@ async def _reencode_via_transform(data: bytes) -> tuple[bytes, str]:
             data={"no_resize": "1"},
         )
         resp.raise_for_status()
-        new_mime = resp.headers.get("content-type", "image/webp")
+        new_mime = resp.headers.get("content-type", "image/webp").split(";")[0].strip()
         return resp.content, new_mime
 
 

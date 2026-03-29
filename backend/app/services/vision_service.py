@@ -115,8 +115,7 @@ async def tag_remote_attachments(
 ) -> None:
     """リモート添付ファイルのバッチタグ付け。
 
-    各リモート画像をダウンロードし、neko-vision を呼び出し、DBを更新し、
-    ストリーミングイベントをパブリッシュする。
+    各リモート画像をダウンロードし、neko-vision を呼び出し、DBを更新する。
     """
     if not settings.neko_vision_enabled:
         return
