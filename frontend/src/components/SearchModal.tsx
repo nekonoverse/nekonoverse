@@ -63,6 +63,13 @@ export default function SearchModal(props: Props) {
           props.onClose();
           return;
         }
+        // URL照会でユーザー1件のみ＆ノート0件 → 直接遷移
+        if (cleaned.startsWith("https://") && data.accounts.length === 1
+            && data.statuses.length === 0) {
+          navigate(`/@${data.accounts[0].acct}`);
+          props.onClose();
+          return;
+        }
         // user@domain照会でユーザー1件のみ → 直接遷移
         if (cleaned.includes("@") && !cleaned.startsWith("https://")
             && data.accounts.length === 1) {

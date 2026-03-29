@@ -273,6 +273,75 @@ async def test_search_queue_enqueue_delete(mock_valkey):
             assert job["note_id"] == str(note_id)
 
 
+async def test_parse_user_url():
+    """_parse_user_url が各種ユーザーURL形式を正しく解析する。"""
+    from app.api.mastodon.search import _parse_user_url
+
+    # /@username 形式
+    assert _parse_user_url("https://misskey.io/@nananek") == ("nananek", "misskey.io")
+
+    # /users/username 形式
+    assert _parse_user_url("https://example.com/users/alice") == ("alice", "example.com")
+
+    # /actors/username 形式
+    assert _parse_user_url("https://example.com/actors/bob") == ("bob", "example.com")
+
+    # 不正なURL
+    assert _parse_user_url("https://example.com/some/other/path") is None
+    assert _parse_user_url("not-a-url") is None
+
+    # 末尾スラッシュ
+    assert _parse_user_url("https://example.com/@user/") == ("user", "example.com")
+
+
+async def test_search_accounts_by_user_url(authed_client, test_user, db, mock_valkey):
+    """resolve=true でユーザーURLからアカウントを検索できる。"""
+    from tests.conftest import make_remote_actor
+
+    actor = await make_remote_actor(db, username="urltest", domain="remote.example")
+    await db.commit()
+
+    # resolve=true で /@username 形式のURLを検索
+    resp = await authed_client.get(
+        "/api/v2/search?q=https://remote.example/@urltest&resolve=true&type=accounts"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["accounts"]) == 1
+    assert data["accounts"][0]["username"] == "urltest"
+
+
+async def test_search_accounts_by_user_url_no_resolve(authed_client, test_user, db, mock_valkey):
+    """resolve=false ではユーザーURLからアカウントを検索しない。"""
+    from tests.conftest import make_remote_actor
+
+    await make_remote_actor(db, username="noresolve", domain="remote.example")
+    await db.commit()
+
+    resp = await authed_client.get(
+        "/api/v2/search?q=https://remote.example/@noresolve&type=accounts"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["accounts"]) == 0
+
+
+async def test_search_accounts_by_user_url_users_path(authed_client, test_user, db, mock_valkey):
+    """resolve=true で /users/username 形式のURLからもアカウントを検索できる。"""
+    from tests.conftest import make_remote_actor
+
+    actor = await make_remote_actor(db, username="pathtest", domain="remote.example")
+    await db.commit()
+
+    resp = await authed_client.get(
+        "/api/v2/search?q=https://remote.example/users/pathtest&resolve=true&type=accounts"
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["accounts"]) == 1
+    assert data["accounts"][0]["username"] == "pathtest"
+
+
 async def test_search_queue_disabled(mock_valkey):
     """When neko-search is disabled, enqueue does nothing."""
     import uuid
