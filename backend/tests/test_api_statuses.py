@@ -349,6 +349,94 @@ async def test_reblog_unlisted_as_followers(authed_client, mock_valkey):
     assert resp.json()["visibility"] == "private"
 
 
+async def test_reblog_other_users_public_as_followers(
+    authed_client, test_user_b, app_client, mock_valkey,
+):
+    """他人のpublicノートをfollowersでブースト可能。"""
+    # User Aがpublicノートを作成
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public post by A", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+
+    # User Bに切り替え
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "followers"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["visibility"] == "private"
+
+
+async def test_reblog_other_users_unlisted_as_followers(
+    authed_client, test_user_b, app_client, mock_valkey,
+):
+    """他人のunlistedノートをfollowersでブースト可能。"""
+    # User Aがunlistedノートを作成
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unlisted post by A", "visibility": "unlisted"
+    })
+    note_id = create_resp.json()["id"]
+
+    # User Bに切り替え
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "followers"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["visibility"] == "private"
+
+
+async def test_reblog_other_users_public_as_unlisted(
+    authed_client, test_user_b, app_client, mock_valkey,
+):
+    """他人のpublicノートをunlistedでブースト可能。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public post by A for unlisted reblog", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "unlisted"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["visibility"] == "unlisted"
+
+
+async def test_reblog_other_users_followers_with_visibility_rejected(
+    authed_client, test_user_b, app_client, mock_valkey,
+):
+    """他人のfollowersノートはvisibility指定してもブースト不可。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Followers post by A", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    # followers指定でも拒否される
+    resp = await app_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "followers"},
+    )
+    assert resp.status_code == 422
+
+
 # --- Delete tests ---
 
 
