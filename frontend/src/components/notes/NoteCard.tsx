@@ -434,7 +434,8 @@ export default function NoteCard(props: Props) {
 
   /** ブースト可能な公開範囲の選択肢を返す */
   const boostVisibilityOptions = (): { key: Visibility; emoji: string }[] => {
-    const vis = displayNote().visibility as Visibility;
+    const rawVis = displayNote().visibility;
+    const vis = (rawVis === "private" ? "followers" : rawVis) as Visibility;
     const rank = VISIBILITY_RANK[vis] ?? 0;
     const isOwn = currentUser()?.id === displayNote().account?.id;
     const all: { key: Visibility; emoji: string }[] = [
@@ -469,6 +470,8 @@ export default function NoteCard(props: Props) {
       boostLongPressTimer = null;
     }
   };
+
+  onCleanup(() => cancelBoostLongPress());
 
   const handleBoost = async () => {
     if (boostDidLongPress || actionDidLongPress) return;

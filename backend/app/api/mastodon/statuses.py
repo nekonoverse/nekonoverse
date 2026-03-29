@@ -1396,7 +1396,8 @@ async def reblog_status(
         from app.valkey_client import valkey as valkey_client
 
         event = _json.dumps({"event": "update", "payload": {"id": str(reblog_note.id)}})
-        await valkey_client.publish("timeline:public", event)
+        if reblog_vis == "public":
+            await valkey_client.publish("timeline:public", event)
         follower_ids = await get_follower_ids(db, actor.id)
         for fid in follower_ids:
             await valkey_client.publish(f"timeline:home:{fid}", event)
