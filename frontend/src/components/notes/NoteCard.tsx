@@ -1488,9 +1488,9 @@ export default function NoteCard(props: Props) {
                   <button
                     class="boost-visibility-modal-btn"
                     onClick={() => { closeActionModal(); handleBoostWithVisibility(opt.key); }}
+                    title={t(`visibility.${opt.key}` as any)}
                   >
                     <span class="boost-visibility-emoji" ref={(el) => { el.textContent = opt.emoji; twemojify(el); }} />
-                    <span>{t(`visibility.${opt.key}` as any)}</span>
                   </button>
                 )}
               </For>
