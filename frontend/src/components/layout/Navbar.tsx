@@ -286,7 +286,7 @@ export default function Navbar() {
                         {t("bookmark.title")}
                       </a>
                       <a
-                        href="/media"
+                        href="/media-timeline"
                         class="navbar-dropdown-item"
                         onClick={() => setMenuOpen(false)}
                       >
