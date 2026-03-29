@@ -153,7 +153,6 @@ async def tag_remote_attachments(
                 await db.commit()
                 if changed:
                     logger.info("Vision tags updated for note %s", note_id)
-                    await _publish_update(note_id)
     except Exception:
         logger.warning(
             "Background vision tagging failed for note %s", note_id, exc_info=True
@@ -280,32 +279,3 @@ async def _download_image(url: str) -> bytes | None:
         return resp.content
 
 
-async def _publish_update(note_id: uuid.UUID) -> None:
-    """クライアントがノートを再取得するようストリーミングイベントをパブリッシュする。"""
-    import json
-
-    from app.valkey_client import valkey as valkey_client
-
-    try:
-        event = json.dumps({"event": "update", "payload": {"id": str(note_id)}})
-
-        from sqlalchemy import select
-
-        from app.database import async_session
-        from app.models.note import Note
-        from app.services.follow_service import get_follower_ids
-
-        async with async_session() as db:
-            row = (
-                await db.execute(
-                    select(Note.actor_id, Note.visibility).where(Note.id == note_id)
-                )
-            ).one_or_none()
-            if row:
-                actor_id, visibility = row
-                if visibility == "public":
-                    await valkey_client.publish("timeline:public", event)
-                for fid in await get_follower_ids(db, actor_id):
-                    await valkey_client.publish(f"timeline:home:{fid}", event)
-    except Exception:
-        logger.debug("Failed to publish vision update for %s", note_id, exc_info=True)
