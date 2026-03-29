@@ -445,8 +445,8 @@ export default function NoteCard(props: Props) {
     ];
     return all.filter((o) => {
       if (VISIBILITY_RANK[o.key] < rank) return false;
-      // 他人のノートは followers でブーストできない
-      if (o.key === "followers" && !isOwn) return false;
+      // 元ノートが followers の場合、他人のノートはブースト不可（ボタン自体が disabled）
+      // ここでは元ノートの公開範囲以下の選択肢を全て表示する
       return true;
     });
   };
