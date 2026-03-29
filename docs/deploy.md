@@ -631,3 +631,192 @@ curl http://<GPU_IP>:8100/health
 ```
 
 `label` は `anime_face`（アニメ検出）または `face`（実写検出）。バックエンドはバウンディングボックスの中心座標を正規化 `[-1, 1]` のフォーカルポイントに変換して `drive_files.focal_x` / `focal_y` に保存する（`label` は参照しない）。
+
+## 画像自動タグ付けサービス (neko-vision)
+
+[`neko-vision/`](https://github.com/nekonoverse/neko-vision)（git submodule）は Ollama 連携の画像自動タグ付け/キャプション生成マイクロサービス。アップロードされた画像やリモートノートの添付画像に対して、日本語のタグ（3〜7個）とキャプションを自動付与する。ノート本文やリプライツリーの文脈をコンテキストとして渡すことで、固有名詞の捕捉精度が向上する。
+
+!!! note "オプション機能"
+    画像タグ付けは `NEKO_VISION_URL` が未設定なら完全にスキップされる。サービスがダウンしていても画像アップロードや連合は正常に動作する（silent fail）。
+
+### 構成図
+
+```
+Client → メインサーバー (backend) → neko-vision → Ollama (gemma3:4b)
+                                     POST /tag
+```
+
+バックエンドは画像のアップロード時やリモートノート取得時に Valkey ジョブキューにエンキューし、ワーカーが非同期で neko-vision API を呼び出す。タグ付け完了後は SSE でクライアントに通知する。
+
+### 要件
+
+| 項目 | 要件 |
+|------|------|
+| GPU | NVIDIA GPU + nvidia-container-toolkit（Ollama 用） |
+| VRAM | 4GB 以上推奨（gemma3:4b） |
+| ディスク | ~3GB（モデル重み） |
+
+### セットアップ: Docker Compose 同梱（推奨）
+
+メインの `docker-compose.yml` / `docker-compose.prod.yml` に neko-vision + Ollama のサービス定義がコメントアウトされている。以下の手順で有効化する:
+
+1. docker-compose ファイルの `neko-vision` と `ollama` サービスのコメントを解除
+2. `volumes` セクションの `ollama-data` のコメントを解除
+3. サービスを起動し、Ollama にモデルをダウンロード:
+
+```bash
+docker compose up -d
+# 初回のみ: モデルダウンロード（数分かかる）
+docker compose exec ollama ollama pull gemma3:4b
+```
+
+4. `.env` に環境変数を追加:
+
+```bash
+# Docker Compose 同梱の場合
+NEKO_VISION_URL=http://neko-vision:8004
+```
+
+### セットアップ: 別マシンに分離
+
+GPU マシンを分離する場合は `neko-vision/docker-compose.yml.example` を使用する:
+
+```bash
+# GPU マシンで
+cd neko-vision
+cp docker-compose.yml.example docker-compose.yml
+docker compose up -d
+
+# 初回のみ: モデルダウンロード
+docker compose exec ollama ollama pull gemma3:4b
+```
+
+ポート 8004 で neko-vision API が公開される。
+
+### 直接実行
+
+```bash
+# GPU マシンで Ollama をインストール・起動
+# https://ollama.com/download
+ollama pull gemma3:4b
+
+# neko-vision を起動
+cd neko-vision
+pip install -r requirements.txt
+OLLAMA_URL=http://localhost:11434 OLLAMA_MODEL=gemma3:4b \
+  uvicorn main:app --host 0.0.0.0 --port 8004
+```
+
+### systemd サービス例
+
+```ini
+# /etc/systemd/system/neko-vision.service
+[Unit]
+Description=Nekonoverse Vision Tagging
+After=network.target ollama.service
+
+[Service]
+Type=exec
+User=nekonoverse
+WorkingDirectory=/opt/neko-vision
+Environment=OLLAMA_URL=http://localhost:11434
+Environment=OLLAMA_MODEL=gemma3:4b
+ExecStart=/opt/neko-vision/.venv/bin/uvicorn main:app --host 0.0.0.0 --port 8004
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+```
+
+### メインサーバー側の設定
+
+`.env` に追加:
+
+```bash
+# TCP（リモートマシン）
+NEKO_VISION_URL=http://<GPUマシンのIP>:8004
+
+# UDS（同一マシン）
+NEKO_VISION_URL=http://localhost
+NEKO_VISION_UDS=/var/run/neko-vision/uvicorn.sock
+```
+
+Docker Compose の場合は `docker-compose.yml` の `app` / `worker` サービスの `environment` に追加する。
+
+### ネットワーク
+
+| 方式 | 設定例 | 備考 |
+|------|--------|------|
+| Tailscale (推奨) | `http://100.x.x.x:8004` | 設定不要で暗号化 |
+| VPN / プライベートネットワーク | `http://192.168.x.x:8004` | ファイアウォールで 8004 を制限 |
+
+!!! warning "セキュリティ"
+    neko-vision API は認証なしのため、公開ネットワークに露出させないこと。Tailscale やファイアウォールでメインサーバーからのアクセスのみ許可する。
+
+### 動作確認
+
+```bash
+# ヘルスチェック
+curl http://<GPU_IP>:8004/health
+# → {"status":"ok","model":"gemma3:4b","ollama_url":"http://ollama:11434","ollama_connected":true}
+```
+
+### API 仕様
+
+| エンドポイント | メソッド | 説明 |
+|---------------|---------|------|
+| `/health` | GET | ヘルスチェック。Ollama 接続状態とモデル情報を返す |
+| `/tag` | POST | 画像にタグとキャプションを付与する |
+
+リクエスト例 (`POST /tag`):
+
+```json
+{
+  "image": "<base64エンコードされた画像データ>",
+  "text": "投稿本文（オプション）",
+  "context": ["リプライツリーの親ノート本文（古い順、オプション）"]
+}
+```
+
+レスポンス例:
+
+```json
+{
+  "tags": ["猫", "写真", "かわいい", "三毛猫", "室内"],
+  "caption": "窓辺でくつろぐ三毛猫の写真"
+}
+```
+
+`text` と `context` はオプション。指定すると投稿文脈を考慮してより的確なタグとキャプションを生成する。`context` はリプライツリーの親ノート本文を古い順に最大5件まで渡せる。
+
+### 再タグ付け CLI
+
+モデル更新やプロンプト改善後に既存画像を再判定する CLI ツール:
+
+```bash
+# 特定日以前にタグ付けされた画像を再判定
+docker compose exec app python -m scripts.vision_retag --before 2026-03-01
+
+# 全画像を再判定（件数確認のみ）
+docker compose exec app python -m scripts.vision_retag --all --dry-run
+
+# 未タグ付けの画像のみ（100件まで）
+docker compose exec app python -m scripts.vision_retag --untagged --limit 100
+```
+
+| オプション | 説明 |
+|-----------|------|
+| `--before YYYY-MM-DD` | 指定日以前にタグ付けされた画像 + 未タグ付け画像を再判定 |
+| `--all` | タグ付け済みの全画像を再判定 |
+| `--untagged` | 未タグ付けの画像のみエンキュー |
+| `--dry-run` | 件数確認のみ（エンキューしない） |
+| `--limit N` | 処理件数を制限（0 = 無制限） |
+
+### メディアタイムライン
+
+neko-vision でタグ付けされた画像は `/media` ページのメディアタイムラインで活用される:
+
+- 3カラムの正方形サムネイルグリッド（モバイルは2カラム）
+- ホバーで vision タグとキャプションをオーバーレイ表示
+- タグ・キャプション・ノート本文での全文検索に対応
+- クリックでノート詳細を表示
