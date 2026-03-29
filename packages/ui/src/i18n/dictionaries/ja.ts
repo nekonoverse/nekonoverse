@@ -371,6 +371,13 @@ export const ja = {
     "本当にアカウントを移行しますか？この操作は取り消せません。",
   "migration.success": "移行リクエストを送信しました",
   "migration.failed": "移行に失敗しました",
+  "migration.aliasTitle": "アカウントエイリアス",
+  "migration.aliasDescription":
+    "他のサーバーからの引っ越し先としてこのアカウントを使うには、移行元のActivityPub IDをエイリアスとして登録してください。",
+  "migration.aliasAdd": "エイリアスを追加",
+  "migration.aliasPlaceholder": "https://example.com/users/username",
+  "migration.aliasEmpty": "エイリアスは登録されていません",
+  "migration.aliasSaved": "エイリアスを保存しました",
   "settings.tabMigration": "移行",
   "settings.tabDataExport": "データエクスポート",
   "settings.tabApps": "認可済みアプリ",

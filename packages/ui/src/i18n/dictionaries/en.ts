@@ -373,6 +373,13 @@ export const en: Dictionary = {
     "Are you sure you want to migrate? This cannot be undone.",
   "migration.success": "Migration request sent",
   "migration.failed": "Migration failed",
+  "migration.aliasTitle": "Account Aliases",
+  "migration.aliasDescription":
+    "To accept migrations from other servers, add the source account's ActivityPub ID as an alias.",
+  "migration.aliasAdd": "Add alias",
+  "migration.aliasPlaceholder": "https://example.com/users/username",
+  "migration.aliasEmpty": "No aliases registered",
+  "migration.aliasSaved": "Aliases saved",
   "settings.tabMigration": "Migration",
   "settings.tabDataExport": "Data Export",
   "settings.tabApps": "Authorized Apps",

@@ -80,6 +80,15 @@ export async function updateAvatarFocus(x: number, y: number): Promise<CurrentUs
   });
 }
 
+export async function updateAlsoKnownAs(apIds: string[]): Promise<CurrentUser> {
+  const formData = new FormData();
+  formData.append("also_known_as", JSON.stringify(apIds));
+  return apiRequest<CurrentUser>("/api/v1/accounts/update_credentials", {
+    method: "PATCH",
+    formData,
+  });
+}
+
 export async function updateHeaderFocus(x: number, y: number): Promise<CurrentUser> {
   const formData = new FormData();
   formData.append("header_focus", `${x},${y}`);

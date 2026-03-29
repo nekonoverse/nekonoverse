@@ -372,6 +372,13 @@ export const neko: Dictionary = {
   "migration.confirm": "ほんとにおひっこしするにゃ？もどせにゃいにゃ。",
   "migration.success": "おひっこしリクエストおくったにゃ",
   "migration.failed": "おひっこしできにゃかったにゃ",
+  "migration.aliasTitle": "エイリアスにゃ",
+  "migration.aliasDescription":
+    "よそのサーバーからおひっこしてくるには、もとのアカウントのIDをとうろくするにゃ。",
+  "migration.aliasAdd": "ついかするにゃ",
+  "migration.aliasPlaceholder": "https://example.com/users/username",
+  "migration.aliasEmpty": "エイリアスはにゃいにゃ",
+  "migration.aliasSaved": "ほぞんしたにゃ",
   "settings.tabMigration": "おひっこしにゃ",
   "settings.tabDataExport": "データおもちだしにゃ",
   "settings.tabApps": "にんかずみアプリにゃ",
