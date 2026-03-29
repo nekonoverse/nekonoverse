@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi import HTTPException
 
-from app.dependencies import get_current_user, get_optional_user
+from app.dependencies import get_current_user, get_deletion_pending_user, get_optional_user
 
 
 @pytest.fixture
@@ -170,3 +170,74 @@ async def test_invalidate_user_sessions(mock_valkey, test_user):
     assert "session:aaa" in delete_calls
     assert "session:ccc" in delete_calls
     assert "session:bbb" not in delete_calls
+
+
+# ── Deletion pending user checks ──
+
+
+async def test_get_current_user_deletion_pending(db, test_user, mock_request, mock_valkey):
+    """削除予約中のユーザーは 403 + X-Deletion-Pending ヘッダーが返り、
+    セッションは保持される（削除されない）。"""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    test_user.actor.suspended_at = now
+    test_user.actor.deletion_scheduled_at = now + timedelta(days=30)
+    await db.flush()
+
+    mock_request.cookies = {"nekonoverse_session": "pending-session"}
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(mock_request, db)
+
+    assert exc_info.value.status_code == 403
+    assert "deletion is pending" in exc_info.value.detail.lower()
+    assert exc_info.value.headers.get("X-Deletion-Pending") == "true"
+    # セッションは削除されていないことを確認
+    mock_valkey.delete.assert_not_called()
+
+
+async def test_get_current_user_deleted_actor(db, test_user, mock_request, mock_valkey):
+    """削除済みアクターは 403 でアクセス不可。"""
+    from datetime import datetime, timezone
+
+    test_user.actor.deleted_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    mock_request.cookies = {"nekonoverse_session": "deleted-session"}
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_current_user(mock_request, db)
+
+    assert exc_info.value.status_code == 403
+    assert "deleted" in exc_info.value.detail.lower()
+    mock_valkey.delete.assert_called_with("session:deleted-session")
+
+
+async def test_get_deletion_pending_user_success(db, test_user, mock_request, mock_valkey):
+    """削除予約中のユーザーは get_deletion_pending_user で認証できる。"""
+    from datetime import datetime, timedelta, timezone
+
+    now = datetime.now(timezone.utc)
+    test_user.actor.deletion_scheduled_at = now + timedelta(days=30)
+    await db.flush()
+
+    mock_request.cookies = {"nekonoverse_session": "pending-session"}
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+
+    user = await get_deletion_pending_user(mock_request, db)
+    assert user.id == test_user.id
+
+
+async def test_get_deletion_pending_user_not_pending(db, test_user, mock_request, mock_valkey):
+    """削除予約されていないユーザーは get_deletion_pending_user で拒否される。"""
+    mock_request.cookies = {"nekonoverse_session": "normal-session"}
+    mock_valkey.get = AsyncMock(return_value=str(test_user.id))
+
+    with pytest.raises(HTTPException) as exc_info:
+        await get_deletion_pending_user(mock_request, db)
+
+    assert exc_info.value.status_code == 403
+    assert "not pending deletion" in exc_info.value.detail.lower()

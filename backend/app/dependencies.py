@@ -57,8 +57,20 @@ async def get_current_user(
         await valkey.delete(f"session:{session_id}")
         raise HTTPException(status_code=403, detail="System accounts cannot authenticate")
 
+    # 削除済みアクターはアクセス不可
+    if user.actor and user.actor.is_deleted:
+        await valkey.delete(f"session:{session_id}")
+        raise HTTPException(status_code=403, detail="Account is deleted")
+
     # アクターが凍結されている場合はアクセスを拒否
     if user.actor and user.actor.is_suspended:
+        # 削除猶予期間中: セッションは保持し、特別なレスポンスを返す
+        if user.actor.is_deletion_pending:
+            raise HTTPException(
+                status_code=403,
+                detail="Account deletion is pending",
+                headers={"X-Deletion-Pending": "true"},
+            )
         # クライアントがリトライしないようセッションを無効化
         await valkey.delete(f"session:{session_id}")
         raise HTTPException(status_code=403, detail="Account is suspended")
@@ -163,6 +175,9 @@ async def get_oauth_user(
     if user.is_system:
         raise HTTPException(status_code=403, detail="System accounts cannot authenticate")
 
+    if user.actor and user.actor.is_deleted:
+        raise HTTPException(status_code=403, detail="Account is deleted")
+
     if user.actor and user.actor.is_suspended:
         raise HTTPException(status_code=403, detail="Account is suspended")
 
@@ -224,11 +239,42 @@ async def get_optional_user(
     if user and user.is_system:
         await valkey.delete(f"session:{session_id}")
         return None
+    if user and user.actor and user.actor.is_deleted:
+        await valkey.delete(f"session:{session_id}")
+        return None
     if user and user.actor and user.actor.is_suspended:
         await valkey.delete(f"session:{session_id}")
         return None
     if user and user.approval_status == "pending":
         await valkey.delete(f"session:{session_id}")
         return None
+
+    return user
+
+
+async def get_deletion_pending_user(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """削除猶予期間中のユーザーを認証する (削除キャンセル/ステータス確認用)。
+
+    通常の停止ユーザーはアクセス不可だが、削除予約中のユーザーのみ許可する。
+    """
+    session_id = request.cookies.get("nekonoverse_session")
+    if not session_id:
+        raise HTTPException(status_code=401, detail="Not authenticated")
+
+    from app.valkey_client import valkey
+
+    user_id_str = await valkey.get(f"session:{session_id}")
+    if not user_id_str:
+        raise HTTPException(status_code=401, detail="Session expired")
+
+    user = await get_user_by_id(db, uuid.UUID(user_id_str))
+    if not user or not user.actor:
+        raise HTTPException(status_code=401, detail="User not found")
+
+    if not user.actor.is_deletion_pending:
+        raise HTTPException(status_code=403, detail="Account is not pending deletion")
 
     return user

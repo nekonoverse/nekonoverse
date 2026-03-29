@@ -10,6 +10,7 @@ logger = logging.getLogger("nekonoverse.worker")
 async def run_worker():
     logger.info("Nekonoverse worker started")
 
+    from app.services.deletion_queue import run_deletion_check_loop
     from app.services.email_queue import run_email_loop
     from app.services.export_queue import run_export_loop
     from app.services.face_detect_queue import run_face_detect_loop
@@ -25,6 +26,7 @@ async def run_worker():
         run_export_loop(),
         run_search_index_loop(),
         run_vision_loop(),
+        run_deletion_check_loop(),
     )
 
 

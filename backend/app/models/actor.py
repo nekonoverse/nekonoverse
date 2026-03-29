@@ -81,6 +81,10 @@ class Actor(Base):
     featured_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     moved_to_ap_id: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     also_known_as: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    deletion_scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
     avatar_file = relationship(
         "DriveFile", foreign_keys=[avatar_file_id], lazy="selectin",
@@ -109,3 +113,11 @@ class Actor(Base):
     @property
     def is_silenced(self) -> bool:
         return self.silenced_at is not None
+
+    @property
+    def is_deleted(self) -> bool:
+        return self.deleted_at is not None
+
+    @property
+    def is_deletion_pending(self) -> bool:
+        return self.deletion_scheduled_at is not None

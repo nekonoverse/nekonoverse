@@ -24,7 +24,7 @@ import {
 import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "@nekonoverse/ui/stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
-import { changePassword, startExport, getExportStatus, getPreferences, updateSourceMediaType, updateAlsoKnownAs, type DataExportStatus, type SourceMediaType } from "@nekonoverse/ui/api/settings";
+import { changePassword, startExport, getExportStatus, getPreferences, updateSourceMediaType, updateAlsoKnownAs, requestAccountDeletion, cancelAccountDeletion, getDeletionStatus, type DataExportStatus, type SourceMediaType } from "@nekonoverse/ui/api/settings";
 import { getAuthorizedApps, revokeAuthorizedApp, type AuthorizedApp } from "@nekonoverse/ui/api/authorizedApps";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type LoginHistoryEntry } from "@nekonoverse/ui/api/sessions";
@@ -65,6 +65,7 @@ const categories: SettingsCategory[] = [
       { key: "sessions", labelKey: "settings.tabSessions", descKey: "settings.descSessions" },
       { key: "migration", labelKey: "settings.tabMigration", descKey: "settings.descMigration" },
       { key: "dataExport", labelKey: "settings.tabDataExport", descKey: "settings.descDataExport" },
+      { key: "deletion", labelKey: "settings.tabDeletion", descKey: "settings.descDeletion" },
     ],
   },
   {
@@ -137,6 +138,7 @@ export default function Settings() {
           <Match when={section() === "sessions"}><SessionsTab /></Match>
           <Match when={section() === "migration"}><MigrationTab /></Match>
           <Match when={section() === "dataExport"}><DataExportTab /></Match>
+          <Match when={section() === "deletion"}><DeletionTab /></Match>
           <Match when={section() === "about"}><AboutTab /></Match>
         </Switch>
       </Show>
@@ -1551,6 +1553,144 @@ function DataExportTab() {
             }
             return null;
           })()}
+        </Show>
+      </div>
+    </AuthGuard>
+  );
+}
+
+function DeletionTab() {
+  const { t } = useI18n();
+  const [password, setPassword] = createSignal("");
+  const [loading, setLoading] = createSignal(false);
+  const [error, setError] = createSignal("");
+  const [msg, setMsg] = createSignal("");
+  const [scheduledAt, setScheduledAt] = createSignal<string | null>(null);
+  const [checkingStatus, setCheckingStatus] = createSignal(true);
+
+  // 削除予約状況を確認
+  createEffect(() => {
+    if (!currentUser()) return;
+    setCheckingStatus(true);
+    getDeletionStatus()
+      .then((data) => {
+        setScheduledAt(data.deletion_scheduled_at);
+      })
+      .catch(() => {
+        // 403 = not pending → 通常状態
+        setScheduledAt(null);
+      })
+      .finally(() => setCheckingStatus(false));
+  });
+
+  const handleRequest = async () => {
+    if (!password().trim()) return;
+    if (!confirm(t("deletion.confirm" as any))) return;
+    setError("");
+    setMsg("");
+    setLoading(true);
+    try {
+      const result = await requestAccountDeletion(password());
+      setScheduledAt(result.deletion_scheduled_at);
+      setMsg(t("deletion.success" as any));
+      setPassword("");
+    } catch (e: any) {
+      setError(e.message || t("deletion.failed" as any));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCancel = async () => {
+    if (!password().trim()) return;
+    if (!confirm(t("deletion.cancelConfirm" as any))) return;
+    setError("");
+    setMsg("");
+    setLoading(true);
+    try {
+      await cancelAccountDeletion(password());
+      setScheduledAt(null);
+      setMsg(t("deletion.cancelSuccess" as any));
+      setPassword("");
+    } catch (e: any) {
+      setError(e.message || t("deletion.cancelFailed" as any));
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <AuthGuard>
+      <div class="settings-section">
+        <h3>{t("deletion.title" as any)}</h3>
+        <p style={{ color: "var(--text-secondary)", "margin-bottom": "16px" }}>
+          {t("deletion.description" as any)}
+        </p>
+
+        <Show when={msg()}><p class="settings-success">{msg()}</p></Show>
+        <Show when={error()}><p class="error">{error()}</p></Show>
+
+        <Show when={checkingStatus()}>
+          <p>{t("common.loading")}</p>
+        </Show>
+
+        <Show when={!checkingStatus()}>
+          <Show
+            when={scheduledAt()}
+            fallback={
+              <>
+                <div class="settings-form-group">
+                  <label>{t("deletion.password" as any)}</label>
+                  <input
+                    type="password"
+                    value={password()}
+                    onInput={(e) => setPassword(e.currentTarget.value)}
+                    placeholder=""
+                  />
+                </div>
+                <button
+                  class="btn btn-small btn-danger"
+                  onClick={handleRequest}
+                  disabled={loading() || !password().trim()}
+                >
+                  {loading() ? t("common.loading") : t("deletion.request" as any)}
+                </button>
+              </>
+            }
+          >
+            <div
+              style={{
+                background: "var(--bg-warning, #fff3cd)",
+                border: "1px solid var(--border-warning, #ffc107)",
+                padding: "16px",
+                "border-radius": "8px",
+                "margin-bottom": "16px",
+              }}
+            >
+              <h4 style={{ margin: "0 0 8px 0" }}>{t("deletion.pendingTitle" as any)}</h4>
+              <p style={{ margin: "0 0 8px 0" }}>{t("deletion.pendingDescription" as any)}</p>
+              <p style={{ margin: "0" }}>
+                <strong>{t("deletion.scheduledAt" as any)}: </strong>
+                {new Date(scheduledAt()!).toLocaleDateString()}
+              </p>
+            </div>
+            <div class="settings-form-group">
+              <label>{t("deletion.password" as any)}</label>
+              <input
+                type="password"
+                value={password()}
+                onInput={(e) => setPassword(e.currentTarget.value)}
+                placeholder=""
+              />
+            </div>
+            <button
+              class="btn btn-small"
+              onClick={handleCancel}
+              disabled={loading() || !password().trim()}
+            >
+              {loading() ? t("common.loading") : t("deletion.cancel" as any)}
+            </button>
+          </Show>
         </Show>
       </div>
     </AuthGuard>
