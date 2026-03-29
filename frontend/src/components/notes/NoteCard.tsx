@@ -460,6 +460,8 @@ export default function NoteCard(props: Props) {
     boostDidLongPress = false;
     boostLongPressTimer = setTimeout(() => {
       boostDidLongPress = true;
+      // ホバーポップオーバーと排他: メニュー表示時はホバーを閉じる
+      setHoverTarget(null);
       setBoostMenuOpen(true);
     }, 500);
   };
