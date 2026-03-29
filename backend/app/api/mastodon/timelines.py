@@ -8,6 +8,7 @@ from app.models.user import User
 from app.schemas.note import NoteResponse
 from app.services.note_service import (
     get_home_timeline,
+    get_media_timeline,
     get_public_timeline,
     get_reaction_summaries,
 )
@@ -149,6 +150,28 @@ async def tag_timeline(
     actor_id = user.actor_id if user else None
     notes = await get_notes_by_hashtag(
         db, tag_name=tag, limit=actual_limit, max_id=max_id, current_actor_id=actor_id
+    )
+    note_ids = [n.id for n in notes]
+    reactions_map = await get_reaction_summaries(db, note_ids, actor_id)
+    return await notes_to_responses(notes, reactions_map, db, actor_id=actor_id)
+
+
+@router.get("/media", response_model=list[NoteResponse])
+async def media_timeline(
+    q: str | None = Query(None, min_length=1, max_length=200),
+    max_id: uuid.UUID | None = Query(None),
+    limit: int | None = Query(None, ge=1),
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """メディア添付を持つノートのギャラリータイムライン。
+
+    vision_tags、vision_caption、ノート本文での検索に対応。
+    """
+    actual_limit = await _resolve_limit(db, limit)
+    actor_id = user.actor_id if user else None
+    notes = await get_media_timeline(
+        db, limit=actual_limit, max_id=max_id, q=q, current_actor_id=actor_id,
     )
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(db, note_ids, actor_id)

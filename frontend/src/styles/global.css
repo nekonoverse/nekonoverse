@@ -8290,3 +8290,135 @@ html[data-cursor="paw"] [contenteditable="true"] {
   font-size: 0.8em;
   resize: vertical;
 }
+
+/* Media Timeline Gallery */
+
+.media-timeline {
+  max-width: 680px;
+  margin: 0 auto;
+  padding: 0 8px;
+}
+
+.media-timeline h2 {
+  margin: 16px 0 12px;
+}
+
+.media-timeline-search {
+  margin-bottom: 16px;
+}
+
+.media-timeline-search-input {
+  width: 100%;
+  padding: 10px 14px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font-size: 0.95rem;
+  outline: none;
+  transition: border-color 0.2s;
+  box-sizing: border-box;
+}
+
+.media-timeline-search-input:focus {
+  border-color: var(--accent);
+}
+
+.media-gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 4px;
+}
+
+.media-gallery-item {
+  position: relative;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  background: var(--bg-tertiary);
+  border-radius: 2px;
+}
+
+.media-gallery-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+  transition: transform 0.2s;
+}
+
+.media-gallery-item:hover .media-gallery-img {
+  transform: scale(1.03);
+}
+
+.media-gallery-img-blurred {
+  filter: blur(20px);
+}
+
+.media-gallery-sensitive {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.media-gallery-sensitive-label {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-size: 0.8rem;
+  font-weight: 600;
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.media-gallery-overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  padding: 8px;
+  background: linear-gradient(to top, rgba(0, 0, 0, 0.7) 0%, transparent 60%);
+  opacity: 0;
+  transition: opacity 0.2s;
+  pointer-events: none;
+}
+
+.media-gallery-item:hover .media-gallery-overlay {
+  opacity: 1;
+}
+
+.media-gallery-caption {
+  color: #fff;
+  font-size: 0.75rem;
+  line-height: 1.3;
+  margin: 0 0 4px 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.media-gallery-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.media-gallery-tag {
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+}
+
+@media (max-width: 480px) {
+  .media-gallery-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

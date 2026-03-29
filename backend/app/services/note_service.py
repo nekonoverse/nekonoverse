@@ -545,6 +545,120 @@ async def get_public_timeline(
     return list(result.scalars().all())
 
 
+def _escape_like(value: str) -> str:
+    """LIKE/ILIKE パターンの特殊文字をエスケープする。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def get_media_timeline(
+    db: AsyncSession,
+    limit: int = 20,
+    max_id: uuid.UUID | None = None,
+    q: str | None = None,
+    current_actor_id: uuid.UUID | None = None,
+) -> list[Note]:
+    """メディア添付を持つノートのタイムラインを取得する。
+
+    画像/動画のあるノートを新しい順に返す。
+    q が指定された場合、vision_tags / vision_caption / ノート本文で全文検索する。
+    """
+    from sqlalchemy import Text, exists
+
+    from app.models.drive_file import DriveFile
+    from app.models.note_attachment import NoteAttachment
+
+    # メディア添付の EXISTS サブクエリ
+    media_exists = (
+        select(NoteAttachment.id)
+        .outerjoin(DriveFile, NoteAttachment.drive_file_id == DriveFile.id)
+        .where(
+            NoteAttachment.note_id == Note.id,
+            or_(
+                DriveFile.mime_type.like("image/%"),
+                DriveFile.mime_type.like("video/%"),
+                NoteAttachment.remote_mime_type.like("image/%"),
+                NoteAttachment.remote_mime_type.like("video/%"),
+            ),
+        )
+        .correlate(Note)
+    )
+
+    query = (
+        select(Note)
+        .join(Actor, Note.actor_id == Actor.id)
+        .options(*_note_load_options())
+        .where(
+            exists(media_exists),
+            Note.visibility.in_(("public", "unlisted")),
+            Note.deleted_at.is_(None),
+            Note.renote_of_id.is_(None),
+            Actor.silenced_at.is_(None),
+        )
+    )
+
+    # 検索フィルタ: vision + ノート本文
+    if q:
+        pattern = f"%{_escape_like(q)}%"
+        # vision フィールドに一致する添付の EXISTS
+        vision_match = (
+            select(NoteAttachment.id)
+            .outerjoin(DriveFile, NoteAttachment.drive_file_id == DriveFile.id)
+            .where(
+                NoteAttachment.note_id == Note.id,
+                or_(
+                    DriveFile.vision_caption.ilike(pattern),
+                    DriveFile.vision_tags.cast(Text).ilike(pattern),
+                    NoteAttachment.remote_vision_caption.ilike(pattern),
+                    NoteAttachment.remote_vision_tags.cast(Text).ilike(pattern),
+                ),
+            )
+            .correlate(Note)
+        )
+        query = query.where(
+            or_(
+                exists(vision_match),
+                Note.source.ilike(pattern),
+                Note.content.ilike(pattern),
+            )
+        )
+
+    # ブロック/ミュート除外
+    if current_actor_id:
+        excluded = await _get_excluded_ids(db, current_actor_id)
+        if excluded:
+            query = query.where(Note.actor_id.not_in(excluded))
+    else:
+        query = query.where(Actor.require_signin_to_view.is_(False))
+
+    # しきい値より前の非表示ノートを除外
+    query = query.where(
+        or_(
+            Actor.make_notes_hidden_before.is_(None),
+            Note.published > func.to_timestamp(
+                Actor.make_notes_hidden_before / 1000.0
+            ),
+        )
+    )
+    if not current_actor_id:
+        query = query.where(
+            or_(
+                Actor.make_notes_followers_only_before.is_(None),
+                Note.published > func.to_timestamp(
+                    Actor.make_notes_followers_only_before / 1000.0
+                ),
+            )
+        )
+
+    # カーソルページネーション
+    if max_id:
+        sub = select(Note.published).where(Note.id == max_id).scalar_subquery()
+        query = query.where(Note.published < sub)
+
+    query = query.order_by(Note.published.desc()).limit(limit)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
 async def get_home_timeline(
     db: AsyncSession,
     user: User,
