@@ -1284,6 +1284,9 @@ async def reblog_status(
 
     actor = user.actor
 
+    if not await check_note_visible(db, original, actor.id):
+        raise HTTPException(status_code=404, detail="Note not found")
+
     # direct でのブーストは常に不可
     if original.visibility == "direct":
         raise HTTPException(status_code=422, detail="Cannot reblog a direct post")
