@@ -64,8 +64,9 @@ async def update_announcement(
     if not announcement:
         return None
 
+    nullable_fields = {"starts_at", "ends_at"}
     for key, value in updates.items():
-        if value is not None:
+        if value is not None or key in nullable_fields:
             setattr(announcement, key, value)
 
     # コンテンツが変更された場合はHTMLを再レンダリング
@@ -176,7 +177,7 @@ async def publish_announcement_event(announcement: Announcement) -> None:
 
     event = json.dumps({
         "event": "announcement",
-        "payload": json.dumps({
+        "payload": {
             "id": str(announcement.id),
             "content": announcement.content_html,
             "starts_at": announcement.starts_at.isoformat() if announcement.starts_at else None,
@@ -184,6 +185,6 @@ async def publish_announcement_event(announcement: Announcement) -> None:
             "all_day": announcement.all_day,
             "published_at": announcement.created_at.isoformat(),
             "updated_at": announcement.updated_at.isoformat(),
-        }),
+        },
     })
     await valkey_client.publish("announcements", event)
