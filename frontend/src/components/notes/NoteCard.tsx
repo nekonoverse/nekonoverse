@@ -295,6 +295,8 @@ export default function NoteCard(props: Props) {
   const [actionModalTitle, setActionModalTitle] = createSignal<string | null>(null);
   const [actionModalUsers, setActionModalUsers] = createSignal<ActionByUser[]>([]);
   const [actionModalLoading, setActionModalLoading] = createSignal(false);
+  // モーダル内にブースト公開範囲ボタンを表示するか
+  const [actionModalShowBoostVis, setActionModalShowBoostVis] = createSignal(false);
   let actionLongPressTimer: ReturnType<typeof setTimeout> | null = null;
   let actionDidLongPress = false;
 
@@ -460,9 +462,18 @@ export default function NoteCard(props: Props) {
     boostDidLongPress = false;
     boostLongPressTimer = setTimeout(() => {
       boostDidLongPress = true;
-      // ホバーポップオーバーと排他: メニュー表示時はホバーを閉じる
-      setHoverTarget(null);
-      setBoostMenuOpen(true);
+      if (isTouchMode()) {
+        // モバイル: 既存アクションモーダルに公開範囲ボタンを表示
+        activateTouchGuard();
+        setActionModalTitle(t("boost.boost"));
+        setActionModalUsers([]);
+        setActionModalLoading(false);
+        setActionModalShowBoostVis(true);
+      } else {
+        // PC: ドロップダウンメニュー
+        setHoverTarget(null);
+        setBoostMenuOpen(true);
+      }
     }, 500);
   };
 
@@ -535,7 +546,9 @@ export default function NoteCard(props: Props) {
   const closeActionModal = () => {
     setActionModalTitle(null);
     setActionModalUsers([]);
+    setActionModalShowBoostVis(false);
     actionDidLongPress = false;
+    boostDidLongPress = false;
   };
 
   const startActionLongPress = (
@@ -1205,7 +1218,7 @@ export default function NoteCard(props: Props) {
                   </button>
                 );
               })()}
-              <Show when={boostMenuOpen()}>
+              <Show when={boostMenuOpen() && !isTouchMode()}>
                 <div class="boost-visibility-menu">
                   <For each={boostVisibilityOptions()}>
                     {(opt) => (
@@ -1434,39 +1447,56 @@ export default function NoteCard(props: Props) {
           <div class="reacted-by-emoji-hero">
             <span style="font-size: 1.5rem; font-weight: 600">{actionModalTitle()}</span>
           </div>
-          <div class="reacted-by-list">
-            <Show when={actionModalLoading()}>
-              <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
-                {t("common.loading")}
-              </div>
-            </Show>
-            <Show when={!actionModalLoading() && actionModalUsers().length === 0}>
-              <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
-                —
-              </div>
-            </Show>
-            <For each={actionModalUsers()}>
-              {(u) => {
-                const handle = u.acct.includes("@") ? `@${u.acct}` : `@${u.acct}`;
-                return (
+          <Show when={!actionModalShowBoostVis()}>
+            <div class="reacted-by-list">
+              <Show when={actionModalLoading()}>
+                <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
+                  {t("common.loading")}
+                </div>
+              </Show>
+              <Show when={!actionModalLoading() && actionModalUsers().length === 0}>
+                <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
+                  —
+                </div>
+              </Show>
+              <For each={actionModalUsers()}>
+                {(u) => {
+                  const handle = u.acct.includes("@") ? `@${u.acct}` : `@${u.acct}`;
+                  return (
+                    <button
+                      class="reacted-by-item"
+                      onClick={() => { closeActionModal(); navigate(`/@${u.acct}`); }}
+                    >
+                      <img
+                        class="reacted-by-avatar"
+                        src={u.avatar || defaultAvatar()}
+                        alt=""
+                      />
+                      <div class="reacted-by-names">
+                        <span class="reacted-by-display">{u.display_name || u.username}</span>
+                        <span class="reacted-by-handle">{handle}</span>
+                      </div>
+                    </button>
+                  );
+                }}
+              </For>
+            </div>
+          </Show>
+          <Show when={actionModalShowBoostVis()}>
+            <div class="boost-visibility-modal-buttons">
+              <For each={boostVisibilityOptions()}>
+                {(opt) => (
                   <button
-                    class="reacted-by-item"
-                    onClick={() => { closeActionModal(); navigate(`/@${u.acct}`); }}
+                    class="boost-visibility-modal-btn"
+                    onClick={() => { closeActionModal(); handleBoostWithVisibility(opt.key); }}
                   >
-                    <img
-                      class="reacted-by-avatar"
-                      src={u.avatar || defaultAvatar()}
-                      alt=""
-                    />
-                    <div class="reacted-by-names">
-                      <span class="reacted-by-display">{u.display_name || u.username}</span>
-                      <span class="reacted-by-handle">{handle}</span>
-                    </div>
+                    <span class="boost-visibility-emoji" ref={(el) => { el.textContent = opt.emoji; twemojify(el); }} />
+                    <span>{t(`visibility.${opt.key}` as any)}</span>
                   </button>
-                );
-              }}
-            </For>
-          </div>
+                )}
+              </For>
+            </div>
+          </Show>
         </div>
       </div>
     </Show>
