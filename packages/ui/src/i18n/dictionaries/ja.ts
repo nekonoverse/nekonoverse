@@ -821,7 +821,7 @@ export const ja = {
   "announcements.startsAt": "開始日時",
   "announcements.endsAt": "終了日時",
 
-  "mediaTimeline.title": "メディア",
+  "mediaTimeline.title": "メディアタイムライン",
   "mediaTimeline.searchPlaceholder": "タグ・キャプション・本文で検索...",
   "mediaTimeline.empty": "メディア付きの投稿がありません。",
 

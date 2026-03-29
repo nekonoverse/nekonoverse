@@ -825,7 +825,7 @@ export const en: Dictionary = {
   "announcements.startsAt": "Starts at",
   "announcements.endsAt": "Ends at",
 
-  "mediaTimeline.title": "Media",
+  "mediaTimeline.title": "Media Timeline",
   "mediaTimeline.searchPlaceholder": "Search tags, captions, content...",
   "mediaTimeline.empty": "No posts with media yet.",
 

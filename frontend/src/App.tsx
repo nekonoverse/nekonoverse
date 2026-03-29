@@ -131,7 +131,7 @@ export default function App() {
         <Route path="/lists/:id" component={ListTimeline} />
         <Route path="/follow-requests" component={FollowRequests} />
         <Route path="/search" component={Search} />
-        <Route path="/media" component={MediaTimeline} />
+        <Route path="/media-timeline" component={MediaTimeline} />
         <Route path="/terms" component={Terms} />
         <Route path="/privacy" component={Privacy} />
         <Route path="/tags/:tag" component={TagTimeline} />
