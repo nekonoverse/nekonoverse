@@ -463,12 +463,13 @@ export default function NoteCard(props: Props) {
     boostLongPressTimer = setTimeout(() => {
       boostDidLongPress = true;
       if (isTouchMode()) {
-        // モバイル: 既存アクションモーダルに公開範囲ボタンを表示
+        // モバイル: リノートした人一覧 + 公開範囲ボタンをモーダルに表示
         activateTouchGuard();
-        setActionModalTitle(t("boost.boost"));
-        setActionModalUsers([]);
-        setActionModalLoading(false);
         setActionModalShowBoostVis(true);
+        openActionModal(
+          t("boost.boostedBy" as any),
+          () => getRebloggedBy(displayNote().id),
+        );
       } else {
         // PC: ドロップダウンメニュー
         setHoverTarget(null);
@@ -1447,41 +1448,39 @@ export default function NoteCard(props: Props) {
           <div class="reacted-by-emoji-hero">
             <span style="font-size: 1.5rem; font-weight: 600">{actionModalTitle()}</span>
           </div>
-          <Show when={!actionModalShowBoostVis()}>
-            <div class="reacted-by-list">
-              <Show when={actionModalLoading()}>
-                <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
-                  {t("common.loading")}
-                </div>
-              </Show>
-              <Show when={!actionModalLoading() && actionModalUsers().length === 0}>
-                <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
-                  —
-                </div>
-              </Show>
-              <For each={actionModalUsers()}>
-                {(u) => {
-                  const handle = u.acct.includes("@") ? `@${u.acct}` : `@${u.acct}`;
-                  return (
-                    <button
-                      class="reacted-by-item"
-                      onClick={() => { closeActionModal(); navigate(`/@${u.acct}`); }}
-                    >
-                      <img
-                        class="reacted-by-avatar"
-                        src={u.avatar || defaultAvatar()}
-                        alt=""
-                      />
-                      <div class="reacted-by-names">
-                        <span class="reacted-by-display">{u.display_name || u.username}</span>
-                        <span class="reacted-by-handle">{handle}</span>
-                      </div>
-                    </button>
-                  );
-                }}
-              </For>
-            </div>
-          </Show>
+          <div class="reacted-by-list">
+            <Show when={actionModalLoading()}>
+              <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
+                {t("common.loading")}
+              </div>
+            </Show>
+            <Show when={!actionModalLoading() && actionModalUsers().length === 0}>
+              <div style="padding: 24px; text-align: center; color: var(--text-secondary)">
+                —
+              </div>
+            </Show>
+            <For each={actionModalUsers()}>
+              {(u) => {
+                const handle = u.acct.includes("@") ? `@${u.acct}` : `@${u.acct}`;
+                return (
+                  <button
+                    class="reacted-by-item"
+                    onClick={() => { closeActionModal(); navigate(`/@${u.acct}`); }}
+                  >
+                    <img
+                      class="reacted-by-avatar"
+                      src={u.avatar || defaultAvatar()}
+                      alt=""
+                    />
+                    <div class="reacted-by-names">
+                      <span class="reacted-by-display">{u.display_name || u.username}</span>
+                      <span class="reacted-by-handle">{handle}</span>
+                    </div>
+                  </button>
+                );
+              }}
+            </For>
+          </div>
           <Show when={actionModalShowBoostVis()}>
             <div class="boost-visibility-modal-buttons">
               <For each={boostVisibilityOptions()}>
