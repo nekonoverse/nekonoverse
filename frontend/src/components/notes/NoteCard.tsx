@@ -548,6 +548,7 @@ export default function NoteCard(props: Props) {
     setActionModalUsers([]);
     setActionModalShowBoostVis(false);
     actionDidLongPress = false;
+    boostDidLongPress = false;
   };
 
   const startActionLongPress = (
