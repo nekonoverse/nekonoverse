@@ -345,6 +345,15 @@ async def create_note(
 
         await enqueue_index(note_id, content, note.published)
 
+    # 画像タグ付けをエンキュー (neko-visionが設定されている場合)
+    if settings.neko_vision_enabled and media_ids:
+        from app.services.vision_queue import enqueue_local as enqueue_vision
+        from app.services.vision_service import collect_reply_context
+
+        reply_ctx = await collect_reply_context(db, note)
+        for file_id in media_ids:
+            await enqueue_vision(file_id, note_id, note_text=content, context=reply_ctx)
+
     # M-12: statuses_countキャッシュを無効化
     try:
         await valkey_client.delete(f"perf:statuses_count:{actor.id}")
@@ -531,6 +540,120 @@ async def get_public_timeline(
         # カーソルページネーション用にmax_idノートの投稿日時を取得
         sub = select(Note.published).where(Note.id == max_id).scalar_subquery()
         query = query.where(Note.published < sub)
+    query = query.order_by(Note.published.desc()).limit(limit)
+    result = await db.execute(query)
+    return list(result.scalars().all())
+
+
+def _escape_like(value: str) -> str:
+    """LIKE/ILIKE パターンの特殊文字をエスケープする。"""
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+async def get_media_timeline(
+    db: AsyncSession,
+    limit: int = 20,
+    max_id: uuid.UUID | None = None,
+    q: str | None = None,
+    current_actor_id: uuid.UUID | None = None,
+) -> list[Note]:
+    """メディア添付を持つノートのタイムラインを取得する。
+
+    画像/動画のあるノートを新しい順に返す。
+    q が指定された場合、vision_tags / vision_caption / ノート本文で全文検索する。
+    """
+    from sqlalchemy import Text, exists
+
+    from app.models.drive_file import DriveFile
+    from app.models.note_attachment import NoteAttachment
+
+    # メディア添付の EXISTS サブクエリ
+    media_exists = (
+        select(NoteAttachment.id)
+        .outerjoin(DriveFile, NoteAttachment.drive_file_id == DriveFile.id)
+        .where(
+            NoteAttachment.note_id == Note.id,
+            or_(
+                DriveFile.mime_type.like("image/%"),
+                DriveFile.mime_type.like("video/%"),
+                NoteAttachment.remote_mime_type.like("image/%"),
+                NoteAttachment.remote_mime_type.like("video/%"),
+            ),
+        )
+        .correlate(Note)
+    )
+
+    query = (
+        select(Note)
+        .join(Actor, Note.actor_id == Actor.id)
+        .options(*_note_load_options())
+        .where(
+            exists(media_exists),
+            Note.visibility.in_(("public", "unlisted")),
+            Note.deleted_at.is_(None),
+            Note.renote_of_id.is_(None),
+            Actor.silenced_at.is_(None),
+        )
+    )
+
+    # 検索フィルタ: vision + ノート本文
+    if q:
+        pattern = f"%{_escape_like(q)}%"
+        # vision フィールドに一致する添付の EXISTS
+        vision_match = (
+            select(NoteAttachment.id)
+            .outerjoin(DriveFile, NoteAttachment.drive_file_id == DriveFile.id)
+            .where(
+                NoteAttachment.note_id == Note.id,
+                or_(
+                    DriveFile.vision_caption.ilike(pattern),
+                    DriveFile.vision_tags.cast(Text).ilike(pattern),
+                    NoteAttachment.remote_vision_caption.ilike(pattern),
+                    NoteAttachment.remote_vision_tags.cast(Text).ilike(pattern),
+                ),
+            )
+            .correlate(Note)
+        )
+        query = query.where(
+            or_(
+                exists(vision_match),
+                Note.source.ilike(pattern),
+                Note.content.ilike(pattern),
+            )
+        )
+
+    # ブロック/ミュート除外
+    if current_actor_id:
+        excluded = await _get_excluded_ids(db, current_actor_id)
+        if excluded:
+            query = query.where(Note.actor_id.not_in(excluded))
+    else:
+        query = query.where(Actor.require_signin_to_view.is_(False))
+
+    # しきい値より前の非表示ノートを除外
+    query = query.where(
+        or_(
+            Actor.make_notes_hidden_before.is_(None),
+            Note.published > func.to_timestamp(
+                Actor.make_notes_hidden_before / 1000.0
+            ),
+        )
+    )
+    if not current_actor_id:
+        query = query.where(
+            or_(
+                Actor.make_notes_followers_only_before.is_(None),
+                Note.published > func.to_timestamp(
+                    Actor.make_notes_followers_only_before / 1000.0
+                ),
+            )
+        )
+
+    # カーソルページネーション
+    if max_id:
+        sub = select(Note.published).where(Note.id == max_id).scalar_subquery()
+        query = query.where(Note.published < sub)
+
     query = query.order_by(Note.published.desc()).limit(limit)
     result = await db.execute(query)
     return list(result.scalars().all())
@@ -896,6 +1019,29 @@ async def fetch_remote_note(
                 from app.services.face_detect_queue import enqueue_remote
 
                 await enqueue_remote(existing.id, att_ids)
+
+        # 画像タグ付け (neko-vision)
+        if settings.neko_vision_enabled:
+            from app.models.note_attachment import NoteAttachment as NAV
+
+            att_rows_v = await db.execute(
+                select(NAV.id).where(
+                    NAV.note_id == existing.id,
+                    NAV.remote_url.isnot(None),
+                    NAV.vision_at.is_(None),
+                    NAV.remote_mime_type.in_(
+                        ["image/jpeg", "image/png", "image/webp", "image/gif",
+                         "image/avif", "image/apng"]
+                    ),
+                )
+            )
+            att_ids_v = [row[0] for row in att_rows_v.all()]
+            if att_ids_v:
+                from app.services.vision_queue import enqueue_remote as enqueue_vision_remote
+
+                await enqueue_vision_remote(
+                    existing.id, att_ids_v, note_text=existing.content
+                )
         return existing
 
     try:
@@ -1161,6 +1307,31 @@ async def fetch_remote_note(
             from app.services.face_detect_queue import enqueue_remote
 
             await enqueue_remote(note.id, att_ids)
+
+    # リモート画像添付ファイルのバックグラウンドタグ付け
+    if settings.neko_vision_enabled:
+        await db.flush()
+        from sqlalchemy import select as sel_v
+
+        from app.models.note_attachment import NoteAttachment as NAV
+
+        att_rows_v = await db.execute(
+            sel_v(NAV.id).where(
+                NAV.note_id == note.id,
+                NAV.remote_url.isnot(None),
+                NAV.vision_at.is_(None),
+                NAV.remote_mime_type.in_(
+                    ["image/jpeg", "image/png", "image/webp", "image/gif",
+                     "image/avif", "image/apng"]
+                ),
+            )
+        )
+        att_ids_v = [row[0] for row in att_rows_v.all()]
+        if att_ids_v:
+            from app.services.vision_queue import enqueue_remote as enqueue_vision_remote
+
+            note_text = source or content
+            await enqueue_vision_remote(note.id, att_ids_v, note_text=note_text)
 
     # リモートリプライの親ノートの返信数をインクリメント
     if in_reply_to_id:

@@ -27,6 +27,8 @@ class Settings(BaseSettings):
     summary_proxy_uds: str | None = None
     neko_search_url: str | None = None
     neko_search_uds: str | None = None
+    neko_vision_url: str | None = None
+    neko_vision_uds: str | None = None
 
     # SMTP (optional — メール機能は設定時のみ有効)
     smtp_host: str | None = None
@@ -106,6 +108,14 @@ class Settings(BaseSettings):
     @property
     def neko_search_base_url(self) -> str:
         return self.neko_search_url or "http://localhost"
+
+    @property
+    def neko_vision_enabled(self) -> bool:
+        return bool(self.neko_vision_url or self.neko_vision_uds)
+
+    @property
+    def neko_vision_base_url(self) -> str:
+        return self.neko_vision_url or "http://localhost"
 
     model_config = {"env_file": ".env"}
 

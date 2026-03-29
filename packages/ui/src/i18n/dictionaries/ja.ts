@@ -821,6 +821,10 @@ export const ja = {
   "announcements.startsAt": "開始日時",
   "announcements.endsAt": "終了日時",
 
+  "mediaTimeline.title": "メディア",
+  "mediaTimeline.searchPlaceholder": "タグ・キャプション・本文で検索...",
+  "mediaTimeline.empty": "メディア付きの投稿がありません。",
+
   "themeCustomizer.colors": "カラーカスタマイズ",
   "themeCustomizer.bgPrimary": "背景",
   "themeCustomizer.bgSecondary": "セカンダリ背景",

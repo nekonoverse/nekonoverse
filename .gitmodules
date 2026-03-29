@@ -7,3 +7,6 @@
 [submodule "neko-search"]
 	path = neko-search
 	url = https://github.com/nekonoverse/neko-search.git
+[submodule "neko-vision"]
+	path = neko-vision
+	url = https://github.com/nekonoverse/neko-vision.git

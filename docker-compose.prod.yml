@@ -121,6 +121,8 @@ services:
       # media-proxy-rs (optional — set in .env)
       MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
       MEDIA_PROXY_TRANSFORM_UDS: ${MEDIA_PROXY_TRANSFORM_UDS:-}
+      # neko-vision (optional — set in .env)
+      NEKO_VISION_URL: ${NEKO_VISION_URL:-}
       # Cloudflare Turnstile CAPTCHA (optional — set in .env)
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
@@ -134,7 +136,7 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,neko-vision,localhost}
     volumes:
       - app_sock:/var/run/nekonoverse-app
       - pg_sock:/var/run/postgresql
@@ -176,6 +178,8 @@ services:
       # media-proxy-rs (optional — set in .env)
       MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
       MEDIA_PROXY_TRANSFORM_UDS: ${MEDIA_PROXY_TRANSFORM_UDS:-}
+      # neko-vision (optional — set in .env)
+      NEKO_VISION_URL: ${NEKO_VISION_URL:-}
       # SMTP (optional — set in .env)
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -186,7 +190,7 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,face-detect,neko-vision,localhost}
     volumes:
       - pg_sock:/var/run/postgresql
       - valkey_sock:/var/run/valkey
@@ -277,6 +281,33 @@ services:
   #     - ./media-proxy-rs/config.prod.json:/config/config.json:ro
   #     - media_proxy_rs_sock:/var/run/media-proxy-rs
 
+  # Optional: Ollama vision tagging/captioning service (uncomment to use)
+  # Requires NVIDIA GPU + nvidia-container-toolkit.
+  # Set NEKO_VISION_URL=http://neko-vision:8004/tag in app/worker environment.
+  # After first start: docker compose exec ollama ollama pull gemma3:4b
+  # neko-vision:
+  #   build: ./neko-vision
+  #   restart: unless-stopped
+  #   environment:
+  #     OLLAMA_URL: http://ollama:11434
+  #     OLLAMA_MODEL: gemma3:4b
+  #   expose:
+  #     - "8004"
+  #   depends_on:
+  #     - ollama
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cp .env.cloudflared.example .env.cloudflared してトークンを設定
   # 使用時は nginx の ports を削除し networks: [internal] のみにする。
@@ -326,6 +357,7 @@ volumes:
   # face_detect_sock:
   # media-proxy-rs UDS 使用時はコメント解除
   # media_proxy_rs_sock:
+  # ollama-data:
 
 # Optional: Cloudflare Tunnel / Tailscale 使用時はコメント解除
 # networks:

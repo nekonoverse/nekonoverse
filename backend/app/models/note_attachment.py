@@ -1,7 +1,8 @@
 import uuid
+from datetime import datetime
 
-from sqlalchemy import Float, ForeignKey, Integer, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy import DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -29,6 +30,9 @@ class NoteAttachment(Base):
     remote_focal_x: Mapped[float | None] = mapped_column(Float, nullable=True)
     remote_focal_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     focal_detect_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    remote_vision_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    remote_vision_caption: Mapped[str | None] = mapped_column(String(1500), nullable=True)
+    vision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     note = relationship("Note", back_populates="attachments")
     drive_file = relationship("DriveFile", lazy="selectin")

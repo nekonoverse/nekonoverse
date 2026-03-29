@@ -93,6 +93,14 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
             if meta is None:
                 meta = {}
             meta["focus"] = {"x": att.drive_file.focal_x, "y": att.drive_file.focal_y}
+        if att.drive_file.vision_tags or att.drive_file.vision_caption:
+            if meta is None:
+                meta = {}
+            meta["vision"] = {}
+            if att.drive_file.vision_tags:
+                meta["vision"]["tags"] = att.drive_file.vision_tags
+            if att.drive_file.vision_caption:
+                meta["vision"]["caption"] = att.drive_file.vision_caption
         return NoteMediaAttachment(
             id=str(att.id),
             type=_mime_to_media_type(mime),
@@ -111,6 +119,14 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
         if meta is None:
             meta = {}
         meta["focus"] = {"x": att.remote_focal_x, "y": att.remote_focal_y}
+    if att.remote_vision_tags or att.remote_vision_caption:
+        if meta is None:
+            meta = {}
+        meta["vision"] = {}
+        if att.remote_vision_tags:
+            meta["vision"]["tags"] = att.remote_vision_tags
+        if att.remote_vision_caption:
+            meta["vision"]["caption"] = att.remote_vision_caption
     proxied = media_proxy_url(att.remote_url)
     preview = media_proxy_url(att.remote_url, variant="preview")
     return NoteMediaAttachment(

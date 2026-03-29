@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import BigInteger, Boolean, DateTime, Float, ForeignKey, Index, Integer, String
-from sqlalchemy.dialects.postgresql import UUID
+from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -29,6 +29,9 @@ class DriveFile(Base):
     focal_x: Mapped[float | None] = mapped_column(Float, nullable=True)
     focal_y: Mapped[float | None] = mapped_column(Float, nullable=True)
     focal_detect_version: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    vision_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    vision_caption: Mapped[str | None] = mapped_column(String(1500), nullable=True)
+    vision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     server_file: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False

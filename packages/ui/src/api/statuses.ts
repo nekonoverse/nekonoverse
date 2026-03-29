@@ -36,6 +36,7 @@ export interface MediaAttachment {
   meta: {
     original?: { width: number; height: number };
     focus?: { x: number; y: number };
+    vision?: { tags?: string[]; caption?: string };
   } | null;
 }
 
@@ -362,6 +363,19 @@ export async function getTagTimeline(tag: string, params?: {
   return apiRequest<Note[]>(
     `/api/v1/timelines/tag/${encodeURIComponent(tag)}${qs ? `?${qs}` : ""}`,
   );
+}
+
+export async function getMediaTimeline(params?: {
+  q?: string;
+  max_id?: string;
+  limit?: number;
+}): Promise<Note[]> {
+  const query = new URLSearchParams();
+  if (params?.q) query.set("q", params.q);
+  if (params?.max_id) query.set("max_id", params.max_id);
+  if (params?.limit) query.set("limit", String(params.limit));
+  const qs = query.toString();
+  return apiRequest<Note[]>(`/api/v1/timelines/media${qs ? `?${qs}` : ""}`);
 }
 
 export interface TrendingTag {
