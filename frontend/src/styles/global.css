@@ -3335,7 +3335,7 @@ a:hover {
   border-radius: 8px;
   min-width: 180px;
   box-shadow: 0 4px 16px rgba(0, 0, 0, 0.3);
-  z-index: 200;
+  z-index: 310;
   overflow: hidden;
 }
 
