@@ -29,7 +29,7 @@ jobs:
         with:
           python-version: "3.12"
 
-      - run: pip install mkdocs-material
+      - run: pip install mkdocs-material "pygments<2.20"
 
       - run: mkdocs build --strict
 
