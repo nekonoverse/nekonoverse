@@ -1373,6 +1373,49 @@ async def reblog_status(
     original.renotes_count = original.renotes_count + 1
     await db.commit()
 
+    # 元ノートの画像にフォーカルポイント検出・vision タグ付けを実行
+    try:
+        from sqlalchemy import select as _sel
+
+        from app.models.note_attachment import NoteAttachment as _NA
+
+        _IMAGE_MIMES = [
+            "image/jpeg", "image/png", "image/webp",
+            "image/gif", "image/avif", "image/apng",
+        ]
+
+        if settings.face_detect_enabled:
+            _att_rows = await db.execute(
+                _sel(_NA.id).where(
+                    _NA.note_id == original.id,
+                    _NA.remote_url.isnot(None),
+                    _NA.remote_focal_x.is_(None),
+                    _NA.remote_mime_type.in_(_IMAGE_MIMES),
+                )
+            )
+            _att_ids = [row[0] for row in _att_rows.all()]
+            if _att_ids:
+                from app.services.face_detect_queue import enqueue_remote as _enqueue_fd
+
+                await _enqueue_fd(original.id, _att_ids)
+
+        if settings.neko_vision_enabled:
+            _att_rows_v = await db.execute(
+                _sel(_NA.id).where(
+                    _NA.note_id == original.id,
+                    _NA.remote_url.isnot(None),
+                    _NA.vision_at.is_(None),
+                    _NA.remote_mime_type.in_(_IMAGE_MIMES),
+                )
+            )
+            _att_ids_v = [row[0] for row in _att_rows_v.all()]
+            if _att_ids_v:
+                from app.services.vision_queue import enqueue_remote as _enqueue_vis
+
+                await _enqueue_vis(original.id, _att_ids_v, note_text=original.content)
+    except Exception:
+        pass  # 画像処理の失敗でブーストを失敗させない
+
     # 元ノートの作成者に通知
     if original.actor.is_local:
         from app.services.notification_service import create_notification, publish_notification

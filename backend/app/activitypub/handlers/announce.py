@@ -88,24 +88,26 @@ async def handle_announce(db: AsyncSession, activity: dict):
     await db.commit()
     logger.info("Saved remote Announce %s from %s", activity_id, actor_ap_id)
 
-    # 必要に応じて元ノートのフォーカルポイント検出をキューに追加
+    # 必要に応じて元ノートのフォーカルポイント検出・vision タグ付けをキューに追加
     if original:
         try:
+            from sqlalchemy import select as sel
+
             from app.config import settings
+            from app.models.note_attachment import NoteAttachment as NA
+
+            _IMAGE_MIMES = [
+                "image/jpeg", "image/png", "image/webp",
+                "image/gif", "image/avif", "image/apng",
+            ]
 
             if settings.face_detect_enabled:
-                from sqlalchemy import select as sel
-
-                from app.models.note_attachment import NoteAttachment as NA
-
                 att_rows = await db.execute(
                     sel(NA.id).where(
                         NA.note_id == original.id,
                         NA.remote_url.isnot(None),
                         NA.remote_focal_x.is_(None),
-                        NA.remote_mime_type.in_(
-                            ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
-                        ),
+                        NA.remote_mime_type.in_(_IMAGE_MIMES),
                     )
                 )
                 att_ids = [row[0] for row in att_rows.all()]
@@ -113,8 +115,25 @@ async def handle_announce(db: AsyncSession, activity: dict):
                     from app.services.face_detect_queue import enqueue_remote
 
                     await enqueue_remote(original.id, att_ids)
+
+            if settings.neko_vision_enabled:
+                att_rows_v = await db.execute(
+                    sel(NA.id).where(
+                        NA.note_id == original.id,
+                        NA.remote_url.isnot(None),
+                        NA.vision_at.is_(None),
+                        NA.remote_mime_type.in_(_IMAGE_MIMES),
+                    )
+                )
+                att_ids_v = [row[0] for row in att_rows_v.all()]
+                if att_ids_v:
+                    from app.services.vision_queue import enqueue_remote as enqueue_vision_remote
+
+                    await enqueue_vision_remote(
+                        original.id, att_ids_v, note_text=original.content
+                    )
         except Exception:
-            logger.debug("Failed to enqueue focal detection for Announce", exc_info=True)
+            logger.debug("Failed to enqueue image processing for Announce", exc_info=True)
 
     # 元ノートの作成者に通知 (ローカルの場合)
     if original:
