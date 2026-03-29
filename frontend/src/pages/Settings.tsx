@@ -24,7 +24,7 @@ import {
 import { instance, defaultAvatar, clearServiceWorkerAndCaches } from "@nekonoverse/ui/stores/instance";
 import VisibilitySelector from "../components/notes/VisibilitySelector";
 import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
-import { changePassword, startExport, getExportStatus, getPreferences, updateSourceMediaType, type DataExportStatus, type SourceMediaType } from "@nekonoverse/ui/api/settings";
+import { changePassword, startExport, getExportStatus, getPreferences, updateSourceMediaType, updateAlsoKnownAs, type DataExportStatus, type SourceMediaType } from "@nekonoverse/ui/api/settings";
 import { getAuthorizedApps, revokeAuthorizedApp, type AuthorizedApp } from "@nekonoverse/ui/api/authorizedApps";
 import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, moveAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type LoginHistoryEntry } from "@nekonoverse/ui/api/sessions";
@@ -1213,6 +1213,47 @@ function MigrationTab() {
   const [msg, setMsg] = createSignal("");
   const [error, setError] = createSignal("");
 
+  // エイリアス管理
+  const [aliases, setAliases] = createSignal<string[]>([]);
+  const [newAlias, setNewAlias] = createSignal("");
+  const [aliasSaving, setAliasSaving] = createSignal(false);
+  const [aliasMsg, setAliasMsg] = createSignal("");
+  const [aliasError, setAliasError] = createSignal("");
+
+  createEffect(() => {
+    const user = currentUser();
+    if (user && (user as any).also_known_as) {
+      setAliases((user as any).also_known_as);
+    }
+  });
+
+  const saveAliases = async (newList: string[]) => {
+    setAliasSaving(true);
+    setAliasMsg("");
+    setAliasError("");
+    try {
+      await updateAlsoKnownAs(newList);
+      setAliases(newList);
+      setAliasMsg(t("migration.aliasSaved"));
+      await fetchCurrentUser();
+    } catch (e: any) {
+      setAliasError(e.message || t("migration.failed"));
+    } finally {
+      setAliasSaving(false);
+    }
+  };
+
+  const addAlias = () => {
+    const val = newAlias().trim();
+    if (!val || aliases().includes(val)) return;
+    saveAliases([...aliases(), val]);
+    setNewAlias("");
+  };
+
+  const removeAlias = (ap_id: string) => {
+    saveAliases(aliases().filter((a) => a !== ap_id));
+  };
+
   const handleMove = async () => {
     if (!targetApId().trim()) return;
     if (!confirm(t("migration.confirm"))) return;
@@ -1232,6 +1273,52 @@ function MigrationTab() {
 
   return (
     <AuthGuard>
+      {/* エイリアス管理 (引っ越し先として受け入れるための設定) */}
+      <div class="settings-section">
+        <h3>{t("migration.aliasTitle")}</h3>
+        <p class="settings-desc">{t("migration.aliasDescription")}</p>
+        <Show when={aliasMsg()}><p class="settings-success">{aliasMsg()}</p></Show>
+        <Show when={aliasError()}><p class="error">{aliasError()}</p></Show>
+        <Show when={aliases().length > 0} fallback={
+          <p class="settings-desc" style="font-style: italic">{t("migration.aliasEmpty")}</p>
+        }>
+          <ul style="list-style: none; padding: 0; margin: 0 0 8px">
+            <For each={aliases()}>
+              {(alias) => (
+                <li style="display: flex; align-items: center; gap: 8px; margin-bottom: 4px">
+                  <code style="flex: 1; word-break: break-all">{alias}</code>
+                  <button
+                    class="btn btn-small btn-danger"
+                    onClick={() => removeAlias(alias)}
+                    disabled={aliasSaving()}
+                  >
+                    &times;
+                  </button>
+                </li>
+              )}
+            </For>
+          </ul>
+        </Show>
+        <div style="display: flex; gap: 8px">
+          <input
+            type="text"
+            value={newAlias()}
+            onInput={(e) => setNewAlias(e.currentTarget.value)}
+            placeholder={t("migration.aliasPlaceholder")}
+            style="flex: 1"
+            onKeyDown={(e) => { if (e.key === "Enter") addAlias(); }}
+          />
+          <button
+            class="btn btn-small btn-primary"
+            onClick={addAlias}
+            disabled={aliasSaving() || !newAlias().trim()}
+          >
+            {t("migration.aliasAdd")}
+          </button>
+        </div>
+      </div>
+
+      {/* アカウント移行 (引っ越し元として移行を開始する) */}
       <div class="settings-section">
         <h3>{t("migration.title")}</h3>
         <p class="settings-desc">{t("migration.description")}</p>

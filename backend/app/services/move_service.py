@@ -1,9 +1,11 @@
 """アカウント移行サービス: Move Activity の処理。"""
 
 import logging
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.models.actor import Actor
 from app.models.follow import Follow
@@ -17,7 +19,11 @@ async def handle_incoming_move(
     source_actor: Actor,
     target_ap_id: str,
 ) -> bool:
-    """受信した Move Activity を処理する: movedTo を設定し、フォロワーを移行する。"""
+    """受信した Move Activity を処理する: movedTo を設定し、フォロワーを移行する。
+
+    ローカルフォロワーには move 通知を作成し、移行先がリモートの場合は
+    ローカルフォロワーから Follow Activity を配送する。
+    """
     from app.services.actor_service import fetch_remote_actor
 
     target_actor = await fetch_remote_actor(db, target_ap_id)
@@ -41,14 +47,21 @@ async def handle_incoming_move(
 
     # ローカルフォロワーを移行先に移行
     result = await db.execute(
-        select(Follow).where(
+        select(Follow)
+        .where(
             Follow.following_id == source_actor.id,
             Follow.accepted.is_(True),
         )
+        .options(selectinload(Follow.follower))
     )
     follows = list(result.scalars().all())
 
+    migrated = 0
     for follow in follows:
+        follower_actor = follow.follower
+        if not follower_actor:
+            continue
+
         # 既に移行先をフォロー済みか確認
         existing = await db.execute(
             select(Follow).where(
@@ -57,24 +70,75 @@ async def handle_incoming_move(
             )
         )
         if existing.scalar_one_or_none():
+            # 既にフォロー済みでも通知は送る
+            await _notify_move(db, follower_actor, source_actor)
             continue
 
         # 移行先への新しいフォローを作成
         new_follow = Follow(
             follower_id=follow.follower_id,
             following_id=target_actor.id,
-            accepted=True,
+            accepted=not target_actor.is_local or True,
         )
         db.add(new_follow)
+        migrated += 1
+
+        # ローカルフォロワー → リモート移行先の場合、Follow Activity を配送
+        if follower_actor.is_local and not target_actor.is_local and target_actor.inbox_url:
+            await _send_follow_to_target(
+                db, follower_actor, target_actor, new_follow
+            )
+
+        # ローカルフォロワーに move 通知を作成
+        await _notify_move(db, follower_actor, source_actor)
 
     await db.commit()
     logger.info(
-        "Processed Move from %s to %s, migrated %d followers",
+        "Processed Move from %s to %s, migrated %d/%d followers",
         source_actor.ap_id,
         target_ap_id,
+        migrated,
         len(follows),
     )
     return True
+
+
+async def _notify_move(
+    db: AsyncSession,
+    follower_actor: Actor,
+    source_actor: Actor,
+) -> None:
+    """ローカルフォロワーに move 通知を作成する。"""
+    if not follower_actor.is_local:
+        return
+
+    from app.services.notification_service import create_notification
+
+    await create_notification(
+        db,
+        type="move",
+        recipient_id=follower_actor.id,
+        sender_id=source_actor.id,
+    )
+
+
+async def _send_follow_to_target(
+    db: AsyncSession,
+    follower_actor: Actor,
+    target_actor: Actor,
+    follow: Follow,
+) -> None:
+    """ローカルフォロワーから移行先リモートアクターへ Follow Activity を配送する。"""
+    from app.activitypub.renderer import render_follow_activity
+    from app.services.delivery_service import enqueue_delivery
+
+    follow_id = f"{follower_actor.ap_id}#follows/{uuid.uuid4()}"
+    activity = render_follow_activity(
+        activity_id=follow_id,
+        actor_ap_id=follower_actor.ap_id,
+        target_ap_id=target_actor.ap_id,
+    )
+    await enqueue_delivery(db, follower_actor.id, target_actor.inbox_url, activity)
 
 
 async def initiate_move(

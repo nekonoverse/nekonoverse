@@ -159,6 +159,32 @@ class NekoClient:
         resp.raise_for_status()
         return resp.json()
 
+    def set_also_known_as(self, ap_ids: list[str]):
+        """alsoKnownAs を設定する。"""
+        import json
+        formdata = {"also_known_as": json.dumps(ap_ids)}
+        resp = self.http.patch(
+            "/api/v1/accounts/update_credentials",
+            data=formdata,
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def move_account(self, target_ap_id: str):
+        """アカウント移行を開始する。"""
+        resp = self.http.post(
+            "/api/v1/accounts/move",
+            json={"target_ap_id": target_ap_id},
+        )
+        resp.raise_for_status()
+        return resp.json()
+
+    def get_account(self, actor_id: str):
+        """アカウント情報を取得する。"""
+        resp = self.http.get(f"/api/v1/accounts/{actor_id}")
+        resp.raise_for_status()
+        return resp.json()
+
 
 class MisskeyClient:
     """Helper to interact with Misskey instance."""
@@ -265,6 +291,52 @@ class MisskeyClient:
             "text": text,
             "poll": {"choices": choices, "multiple": multiple},
         })
+
+    def create_user(self, username: str, password: str):
+        """管理者として新しいユーザーを作成する。"""
+        return self._api("admin/accounts/create", {
+            "username": username,
+            "password": password,
+        })
+
+    def login_as(self, username: str, password: str):
+        """指定ユーザーでログインし、トークンを差し替える (Misskey 2025.x)。"""
+        resp = self.http.post("/api/signin-flow", json={
+            "username": username,
+            "password": password,
+        })
+        resp.raise_for_status()
+        data = resp.json()
+        self.token = data.get("i") or data.get("token")
+        return data
+
+    def update_also_known_as(self, also_known_as: list[str]):
+        """alsoKnownAs を設定する。"""
+        payload = {"alsoKnownAs": also_known_as}
+        if self.token:
+            payload["i"] = self.token
+        resp = self.http.post("/api/i/update", json=payload)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"i/update failed ({resp.status_code}): {resp.text[:500]}"
+            )
+        return resp.json()
+
+    def move(self, move_to_account: str, password: str):
+        """アカウント移行を実行する (moveToAccount は acct 形式)。"""
+        payload = {"moveToAccount": move_to_account, "password": password}
+        if self.token:
+            payload["i"] = self.token
+        resp = self.http.post("/api/i/move", json=payload)
+        if resp.status_code != 200:
+            raise RuntimeError(
+                f"i/move failed ({resp.status_code}): {resp.text[:500]}"
+            )
+        return resp.json() if resp.content else {}
+
+    def get_user_info(self):
+        """自分のアカウント情報を取得する。"""
+        return self._api("i")
 
 
 @pytest.fixture(scope="session", autouse=True)
