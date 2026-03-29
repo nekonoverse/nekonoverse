@@ -3396,6 +3396,10 @@ a:hover {
   user-select: none;
 }
 
+.boost-visibility-modal-btn .boost-visibility-emoji {
+  width: auto;
+}
+
 .boost-visibility-modal-btn:active {
   background: var(--bg-primary);
 }
