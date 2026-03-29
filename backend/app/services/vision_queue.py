@@ -99,8 +99,8 @@ async def _process_local(job: dict) -> None:
             logger.warning("DriveFile %s not found, skipping vision job", drive_file_id)
             return
 
-        # 既にタグ付け済みの場合はスキップ
-        if drive_file.vision_at is not None:
+        # 既にタグ付け済みの場合はスキップ（retagジョブは除外）
+        if drive_file.vision_at is not None and not job.get("retag"):
             logger.debug("DriveFile %s already tagged, skipping", drive_file_id)
             return
 

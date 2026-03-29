@@ -136,6 +136,7 @@ async def main():
         job = {
             "type": "local",
             "drive_file_id": str(fid),
+            "retag": True,
             "attempts": 0,
             "created_at": time.time(),
         }

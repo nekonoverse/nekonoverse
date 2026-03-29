@@ -1022,12 +1022,14 @@ async def fetch_remote_note(
 
         # 画像タグ付け (neko-vision)
         if settings.neko_vision_enabled:
+            from app.models.note_attachment import NoteAttachment as NAV
+
             att_rows_v = await db.execute(
-                select(NA.id).where(
-                    NA.note_id == existing.id,
-                    NA.remote_url.isnot(None),
-                    NA.vision_at.is_(None),
-                    NA.remote_mime_type.in_(
+                select(NAV.id).where(
+                    NAV.note_id == existing.id,
+                    NAV.remote_url.isnot(None),
+                    NAV.vision_at.is_(None),
+                    NAV.remote_mime_type.in_(
                         ["image/jpeg", "image/png", "image/webp", "image/gif",
                          "image/avif", "image/apng"]
                     ),
