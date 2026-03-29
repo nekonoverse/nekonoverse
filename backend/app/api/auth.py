@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.config import settings
-from app.dependencies import get_current_user, get_db
+from app.dependencies import get_current_user, get_db, get_deletion_pending_user
 from app.models.user import User
 from app.schemas.user import (
     ChangePasswordRequest,
@@ -1048,3 +1048,73 @@ async def totp_verify(
 @router.get("/auth/totp/status")
 async def totp_status(user: User = Depends(get_current_user)):
     return {"totp_enabled": user.totp_enabled}
+
+
+# ── Account Deletion ──────────────────────────────────────────
+
+
+class DeleteAccountRequest(BaseModel):
+    password: str
+
+
+@router.post("/auth/delete_account")
+async def request_account_deletion(
+    body: DeleteAccountRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """アカウント削除を予約する (30日間の猶予期間)。パスワード確認が必要。"""
+    import bcrypt as _bcrypt
+
+    valid = await asyncio.to_thread(
+        _bcrypt.checkpw, body.password.encode(), user.password_hash.encode()
+    )
+    if not valid:
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    from app.services.account_deletion_service import request_deletion
+
+    try:
+        scheduled_at = await request_deletion(db, user)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    await db.commit()
+    return {"ok": True, "deletion_scheduled_at": scheduled_at.isoformat()}
+
+
+@router.post("/auth/cancel_deletion")
+async def cancel_account_deletion(
+    body: DeleteAccountRequest,
+    user: User = Depends(get_deletion_pending_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """猶予期間中のアカウント削除をキャンセルする。パスワード確認が必要。"""
+    import bcrypt as _bcrypt
+
+    valid = await asyncio.to_thread(
+        _bcrypt.checkpw, body.password.encode(), user.password_hash.encode()
+    )
+    if not valid:
+        raise HTTPException(status_code=401, detail="Invalid password")
+
+    from app.services.account_deletion_service import cancel_deletion
+
+    try:
+        await cancel_deletion(db, user)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+
+    await db.commit()
+    return {"ok": True}
+
+
+@router.get("/auth/deletion_status")
+async def get_deletion_status(
+    user: User = Depends(get_deletion_pending_user),
+):
+    """現在の削除予約状況を返す。"""
+    scheduled_at = user.actor.deletion_scheduled_at
+    return {
+        "deletion_scheduled_at": scheduled_at.isoformat() if scheduled_at else None,
+    }

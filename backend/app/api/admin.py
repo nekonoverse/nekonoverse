@@ -404,6 +404,29 @@ async def unsuspend_user(
     return {"ok": True}
 
 
+@router.post("/users/{user_id}/delete")
+async def admin_delete_user(
+    user_id: uuid.UUID,
+    body: ModerationActionRequest = ModerationActionRequest(),
+    user: User = Depends(get_admin_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """管理者によるアカウント即時削除。猶予期間なし。"""
+    from app.services.account_deletion_service import admin_force_delete
+
+    target = await _get_user(db, user_id)
+    if target.is_system:
+        raise HTTPException(status_code=422, detail="Cannot delete system account")
+    if target.id == user.id:
+        raise HTTPException(status_code=422, detail="Cannot delete self")
+    if target.actor and target.actor.is_deleted:
+        raise HTTPException(status_code=422, detail="Already deleted")
+
+    await admin_force_delete(db, target.actor, user, body.reason)
+    await db.commit()
+    return {"ok": True}
+
+
 @router.post("/users/{user_id}/silence")
 async def silence_user(
     user_id: uuid.UUID,

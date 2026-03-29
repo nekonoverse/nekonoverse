@@ -157,3 +157,29 @@ export async function startExport(): Promise<{ id: string; status: string }> {
 export async function getExportStatus(): Promise<DataExportStatus | null> {
   return apiRequest("/api/v1/export", { method: "GET" });
 }
+
+// アカウント削除
+
+export interface DeletionStatus {
+  deletion_scheduled_at: string | null;
+}
+
+export async function requestAccountDeletion(
+  password: string,
+): Promise<{ ok: boolean; deletion_scheduled_at: string }> {
+  return apiRequest("/api/v1/auth/delete_account", {
+    method: "POST",
+    body: { password },
+  });
+}
+
+export async function cancelAccountDeletion(password: string): Promise<{ ok: boolean }> {
+  return apiRequest("/api/v1/auth/cancel_deletion", {
+    method: "POST",
+    body: { password },
+  });
+}
+
+export async function getDeletionStatus(): Promise<DeletionStatus> {
+  return apiRequest("/api/v1/auth/deletion_status", { method: "GET" });
+}
