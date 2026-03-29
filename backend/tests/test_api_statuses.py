@@ -208,30 +208,18 @@ async def test_unreblog_not_reblogged(authed_client, mock_valkey):
     assert resp.status_code == 422
 
 
-async def test_reblog_followers_only_rejected(authed_client, mock_valkey):
-    """Reblogging a followers-only note should be rejected with 422."""
-    create_resp = await authed_client.post("/api/v1/statuses", json={
-        "content": "Followers only post", "visibility": "followers"
-    })
-    note_id = create_resp.json()["id"]
-    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
-    assert resp.status_code == 422
-    assert "private" in resp.json()["detail"].lower()
-
-
 async def test_reblog_direct_rejected(authed_client, mock_valkey):
-    """Reblogging a direct message should be rejected with 422."""
+    """directノートのブーストは常に拒否。"""
     create_resp = await authed_client.post("/api/v1/statuses", json={
         "content": "Direct message", "visibility": "direct"
     })
     note_id = create_resp.json()["id"]
     resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
     assert resp.status_code == 422
-    assert "private" in resp.json()["detail"].lower()
 
 
 async def test_reblog_unlisted_allowed(authed_client, mock_valkey):
-    """Reblogging an unlisted note should be allowed."""
+    """unlistedノートのブーストは成功。"""
     create_resp = await authed_client.post("/api/v1/statuses", json={
         "content": "Unlisted post", "visibility": "unlisted"
     })
@@ -239,6 +227,126 @@ async def test_reblog_unlisted_allowed(authed_client, mock_valkey):
     resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
     assert resp.status_code == 200
     assert resp.json()["reblog"] is not None
+
+
+async def test_reblog_own_followers_note(authed_client, mock_valkey):
+    """自分のfollowersノートはブースト可能。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Followers only post", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 200
+    data = resp.json()
+    # Mastodon API互換: followers → private として返される
+    assert data["visibility"] == "private"
+
+
+async def test_reblog_with_visibility_unlisted(authed_client, mock_valkey):
+    """publicノートをunlistedでブースト可能。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public post", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "unlisted"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["visibility"] == "unlisted"
+
+
+async def test_reblog_with_visibility_followers(authed_client, mock_valkey):
+    """自分のpublicノートをfollowersでブースト可能。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public post", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "followers"},
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    # Mastodon API互換: followers → private として返される
+    assert data["visibility"] == "private"
+
+
+async def test_reblog_with_visibility_direct_rejected(authed_client, mock_valkey):
+    """directでのブーストは拒否。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public post", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "direct"},
+    )
+    assert resp.status_code == 422
+
+
+async def test_reblog_visibility_wider_than_original(authed_client, mock_valkey):
+    """元ノートより広い公開範囲でのブーストは拒否。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unlisted post", "visibility": "unlisted"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "public"},
+    )
+    assert resp.status_code == 422
+
+
+async def test_reblog_other_users_followers_note_rejected(
+    authed_client, test_user_b, app_client, mock_valkey,
+):
+    """他人のfollowersノートはブースト不可。"""
+    # User Aがfollowersノートを作成
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "My followers only", "visibility": "followers"
+    })
+    note_id = create_resp.json()["id"]
+
+    # User Bに切り替え
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    resp = await app_client.post(f"/api/v1/statuses/{note_id}/reblog")
+    assert resp.status_code == 422
+    assert "private" in resp.json()["detail"].lower()
+
+
+async def test_reblog_with_visibility_private_alias(authed_client, mock_valkey):
+    """Mastodon互換: 'private' は 'followers' のエイリアスとして動作する。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public post", "visibility": "public"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "private"},
+    )
+    assert resp.status_code == 200
+    # Mastodon APIではfollowersは"private"として返る
+    assert resp.json()["visibility"] == "private"
+
+
+async def test_reblog_unlisted_as_followers(authed_client, mock_valkey):
+    """unlistedノートをfollowersでブースト可能。"""
+    create_resp = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unlisted post", "visibility": "unlisted"
+    })
+    note_id = create_resp.json()["id"]
+    resp = await authed_client.post(
+        f"/api/v1/statuses/{note_id}/reblog",
+        json={"visibility": "followers"},
+    )
+    assert resp.status_code == 200
+    # Mastodon APIではfollowersは"private"として返る
+    assert resp.json()["visibility"] == "private"
 
 
 # --- Delete tests ---

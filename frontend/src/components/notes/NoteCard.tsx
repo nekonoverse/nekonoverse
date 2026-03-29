@@ -23,6 +23,8 @@ import { getAllCachedPhashes } from "@nekonoverse/ui/utils/phashCache";
 import Emoji from "../Emoji";
 import ImageLightbox from "../ImageLightbox";
 import { currentUser, canModerateContent } from "@nekonoverse/ui/stores/auth";
+import { VISIBILITY_RANK } from "@nekonoverse/ui/stores/composer";
+import type { Visibility } from "@nekonoverse/ui/stores/composer";
 import { adminDeleteNote } from "@nekonoverse/ui/api/admin";
 import UserHoverCard from "../UserHoverCard";
 import { useI18n } from "@nekonoverse/ui/i18n";
@@ -259,6 +261,7 @@ export default function NoteCard(props: Props) {
   const [boosted, setBoosted] = createSignal(props.note.reblogged || (props.note.reblog?.reblogged ?? false));
   const [boostLoading, setBoostLoading] = createSignal(false);
   const [boostCount, setBoostCount] = createSignal(0);
+  const [boostMenuOpen, setBoostMenuOpen] = createSignal(false);
   const [bookmarked, setBookmarked] = createSignal(false);
   const [favourited, setFavourited] = createSignal(false);
   const [favCount, setFavCount] = createSignal(0);
@@ -325,17 +328,20 @@ export default function NoteCard(props: Props) {
     return user && user.username === note.actor.username && !note.actor.domain;
   };
 
-  // 外側クリックでその他メニューを閉じる
+  // 外側クリックでメニューを閉じる
   const handleDocClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest(".note-more-menu")) {
       setMoreOpen(false);
     }
+    if (!target.closest(".action-popover-wrapper")) {
+      setBoostMenuOpen(false);
+    }
   };
 
   // M-19: ドロップダウンが開いている時だけリスナーを追加してパフォーマンス改善
   createEffect(() => {
-    if (moreOpen()) {
+    if (moreOpen() || boostMenuOpen()) {
       document.addEventListener("click", handleDocClick);
     } else {
       document.removeEventListener("click", handleDocClick);
@@ -426,20 +432,80 @@ export default function NoteCard(props: Props) {
     } catch {}
   };
 
+  /** ブースト可能な公開範囲の選択肢を返す */
+  const boostVisibilityOptions = (): { key: Visibility; emoji: string }[] => {
+    const rawVis = displayNote().visibility;
+    const vis = (rawVis === "private" ? "followers" : rawVis) as Visibility;
+    const rank = VISIBILITY_RANK[vis] ?? 0;
+    const isOwn = currentUser()?.id === displayNote().account?.id;
+    const all: { key: Visibility; emoji: string }[] = [
+      { key: "public", emoji: "\u{1F310}" },
+      { key: "unlisted", emoji: "\u{1F513}" },
+      { key: "followers", emoji: "\u{1F512}" },
+    ];
+    return all.filter((o) => {
+      if (VISIBILITY_RANK[o.key] < rank) return false;
+      // 他人のノートは followers でブーストできない
+      if (o.key === "followers" && !isOwn) return false;
+      return true;
+    });
+  };
+
+  // ブースト長押しで公開範囲メニューを表示するタイマー
+  let boostLongPressTimer: ReturnType<typeof setTimeout> | null = null;
+  let boostDidLongPress = false;
+
+  const startBoostLongPress = () => {
+    if (boosted()) return;
+    boostDidLongPress = false;
+    boostLongPressTimer = setTimeout(() => {
+      boostDidLongPress = true;
+      setBoostMenuOpen(true);
+    }, 500);
+  };
+
+  const cancelBoostLongPress = () => {
+    if (boostLongPressTimer) {
+      clearTimeout(boostLongPressTimer);
+      boostLongPressTimer = null;
+    }
+  };
+
+  onCleanup(() => cancelBoostLongPress());
+
   const handleBoost = async () => {
-    if (actionDidLongPress) return;
+    if (boostDidLongPress || actionDidLongPress) return;
     if (boostLoading()) return;
-    setBoostLoading(true);
-    try {
-      if (boosted()) {
+    if (boosted()) {
+      // ブースト済み→アンブースト
+      setBoostLoading(true);
+      try {
         await unreblogNote(displayNote().id);
         setBoosted(false);
         setBoostCount((c) => Math.max(0, c - 1));
-      } else {
-        await reblogNote(displayNote().id);
+      } catch {}
+      setBoostLoading(false);
+    } else {
+      // 未ブースト→元ノートの公開範囲でブースト
+      setBoostLoading(true);
+      try {
+        const vis = displayNote().visibility === "private" ? "followers" : displayNote().visibility;
+        await reblogNote(displayNote().id, vis as Visibility);
         setBoosted(true);
         setBoostCount((c) => c + 1);
-      }
+      } catch {}
+      setBoostLoading(false);
+    }
+  };
+
+  const handleBoostWithVisibility = async (vis: Visibility) => {
+    setBoostMenuOpen(false);
+    if (boostLoading()) return;
+    setBoostLoading(true);
+    try {
+      await reblogNote(displayNote().id, vis);
+      setBoosted(true);
+      setBoostCount((c) => c + 1);
     } catch {}
     setBoostLoading(false);
   };
@@ -1083,41 +1149,75 @@ export default function NoteCard(props: Props) {
             </button>
             <div
               class="action-popover-wrapper"
-              onMouseEnter={() => { if (!isTouchMode() && boostCount() > 0) startActionHover("boost", t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
-              onMouseLeave={() => { if (!isTouchMode()) scheduleHideHover(); }}
+              onMouseEnter={() => { if (!isTouchMode() && boostCount() > 0 && !boostMenuOpen()) startActionHover("boost", t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
+              onMouseLeave={() => { if (!isTouchMode()) { scheduleHideHover(); } }}
             >
-              <button
-                class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${note().visibility === "private" || note().visibility === "direct" ? " disabled" : ""}`}
-                onClick={handleBoost}
-                onTouchStart={() => { if (isTouchMode() && boostCount() > 0) startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id)); }}
-                onTouchEnd={(e) => { cancelActionLongPress(); if (actionDidLongPress) e.preventDefault(); }}
-                onContextMenu={(e) => e.preventDefault()}
-                disabled={boostLoading() || note().visibility === "private" || note().visibility === "direct"}
-                title={
-                  note().visibility === "private" || note().visibility === "direct"
-                    ? t("boost.cannotRenote")
-                    : t(boosted() ? "boost.unboost" : "boost.boost")
-                }
-              >
-                <svg
-                  width="18"
-                  height="18"
-                  viewBox="0 0 24 24"
-                  fill="none"
-                  stroke="currentColor"
-                  stroke-width="2"
-                  stroke-linecap="round"
-                  stroke-linejoin="round"
-                >
-                  <polyline points="17 1 21 5 17 9" />
-                  <path d="M3 11V9a4 4 0 0 1 4-4h14" />
-                  <polyline points="7 23 3 19 7 15" />
-                  <path d="M21 13v2a4 4 0 0 1-4 4H3" />
-                </svg>
-                <Show when={boostCount() > 0}>
-                  <span class="note-action-count">{boostCount()}</span>
-                </Show>
-              </button>
+              {(() => {
+                const isDisabled = () => {
+                  const vis = displayNote().visibility;
+                  if (vis === "direct") return true;
+                  if ((vis === "private" || vis === "followers") && currentUser()?.id !== displayNote().account?.id) return true;
+                  return false;
+                };
+                return (
+                  <button
+                    class={`note-action-btn note-boost-btn${boosted() ? " boosted" : ""}${isDisabled() ? " disabled" : ""}`}
+                    onClick={handleBoost}
+                    onMouseDown={() => { if (!isTouchMode() && !boosted()) startBoostLongPress(); }}
+                    onMouseUp={cancelBoostLongPress}
+                    onMouseLeave={cancelBoostLongPress}
+                    onTouchStart={() => {
+                      if (isTouchMode() && boostCount() > 0 && boosted()) {
+                        startActionLongPress(t("boost.boostedBy" as any), () => getRebloggedBy(displayNote().id));
+                      } else if (isTouchMode() && !boosted()) {
+                        startBoostLongPress();
+                      }
+                    }}
+                    onTouchEnd={(e) => { cancelActionLongPress(); cancelBoostLongPress(); if (actionDidLongPress || boostDidLongPress) e.preventDefault(); }}
+                    onContextMenu={(e) => e.preventDefault()}
+                    disabled={boostLoading() || isDisabled()}
+                    title={
+                      isDisabled()
+                        ? t("boost.cannotRenote")
+                        : t(boosted() ? "boost.unboost" : "boost.boost")
+                    }
+                  >
+                    <svg
+                      width="18"
+                      height="18"
+                      viewBox="0 0 24 24"
+                      fill="none"
+                      stroke="currentColor"
+                      stroke-width="2"
+                      stroke-linecap="round"
+                      stroke-linejoin="round"
+                    >
+                      <polyline points="17 1 21 5 17 9" />
+                      <path d="M3 11V9a4 4 0 0 1 4-4h14" />
+                      <polyline points="7 23 3 19 7 15" />
+                      <path d="M21 13v2a4 4 0 0 1-4 4H3" />
+                    </svg>
+                    <Show when={boostCount() > 0}>
+                      <span class="note-action-count">{boostCount()}</span>
+                    </Show>
+                  </button>
+                );
+              })()}
+              <Show when={boostMenuOpen()}>
+                <div class="boost-visibility-menu">
+                  <For each={boostVisibilityOptions()}>
+                    {(opt) => (
+                      <button
+                        class="boost-visibility-item"
+                        onClick={(e) => { e.stopPropagation(); handleBoostWithVisibility(opt.key); }}
+                      >
+                        <span class="boost-visibility-emoji" ref={(el) => { el.textContent = opt.emoji; twemojify(el); }} />
+                        <span>{t(`visibility.${opt.key}` as any)}</span>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </Show>
               <Show when={hoverTarget() === "boost"}>
                 <div
                   class="action-popover"

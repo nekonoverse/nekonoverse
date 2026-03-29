@@ -186,9 +186,10 @@ export async function getContext(noteId: string): Promise<NoteContext> {
   return apiRequest<NoteContext>(`/api/v1/statuses/${noteId}/context`);
 }
 
-export async function reblogNote(noteId: string): Promise<Note> {
+export async function reblogNote(noteId: string, visibility?: string): Promise<Note> {
   return apiRequest<Note>(`/api/v1/statuses/${noteId}/reblog`, {
     method: "POST",
+    body: visibility ? { visibility } : undefined,
   });
 }
 
