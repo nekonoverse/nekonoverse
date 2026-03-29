@@ -255,3 +255,97 @@ async def test_cursor_pagination(db, mock_valkey):
     first_ids = {n.id for n in first_page}
     second_ids = {n.id for n in second_page}
     assert first_ids.isdisjoint(second_ids)
+
+
+# --- IDOR / アクセス制御 ---
+
+
+async def test_excludes_direct_notes(db, mock_valkey):
+    """DM (direct) ノートはメディアタイムラインに表示されない。"""
+    from app.services.note_service import get_media_timeline
+
+    actor = await make_remote_actor(db, username="mt_dm", domain="mt14.example")
+    note = await make_note(db, actor, content="Secret DM", local=False,
+                           visibility="direct")
+    await _make_attachment(db, note, url="https://r.example/dm.jpg")
+
+    # 匿名
+    result = await get_media_timeline(db)
+    assert result == []
+
+    # 認証済みでも見えない
+    result = await get_media_timeline(db, current_actor_id=actor.id)
+    assert result == []
+
+
+async def test_excludes_followers_only_for_non_follower(db, mock_valkey):
+    """フォロワー限定ノートは認証済み非フォロワーにも見えない。"""
+    from app.services.note_service import get_media_timeline
+
+    author = await make_remote_actor(db, username="mt_fo_author", domain="mt15.example")
+    viewer = await make_remote_actor(db, username="mt_fo_viewer", domain="mt16.example")
+
+    note = await make_note(db, author, content="Followers only",
+                           local=False, visibility="followers")
+    await _make_attachment(db, note, url="https://r.example/fo.jpg")
+
+    # viewer はフォロワーではない
+    result = await get_media_timeline(db, current_actor_id=viewer.id)
+    assert result == []
+
+
+async def test_excludes_blocked_user_notes(db, mock_valkey):
+    """ブロックしたユーザーのノートは表示されない。"""
+    from app.models.user_block import UserBlock
+    from app.services.note_service import get_media_timeline
+
+    author = await make_remote_actor(db, username="mt_blk_author", domain="mt17.example")
+    viewer = await make_remote_actor(db, username="mt_blk_viewer", domain="mt18.example")
+
+    note = await make_note(db, author, content="Blocked", local=False)
+    await _make_attachment(db, note, url="https://r.example/blk.jpg")
+
+    # viewer が author をブロック
+    db.add(UserBlock(actor_id=viewer.id, target_id=author.id))
+    await db.flush()
+
+    result = await get_media_timeline(db, current_actor_id=viewer.id)
+    assert result == []
+
+
+async def test_excludes_require_signin_anonymous(db, mock_valkey):
+    """require_signin_to_view のアクターのノートは匿名で見えない。"""
+    from app.services.note_service import get_media_timeline
+
+    actor = await make_remote_actor(db, username="mt_signin", domain="mt19.example")
+    actor.require_signin_to_view = True
+    await db.flush()
+
+    note = await make_note(db, actor, content="Signin required", local=False)
+    await _make_attachment(db, note, url="https://r.example/signin.jpg")
+
+    # 匿名では見えない
+    result = await get_media_timeline(db)
+    assert result == []
+
+    # 認証済みなら見える
+    other = await make_remote_actor(db, username="mt_signin_v", domain="mt20.example")
+    result = await get_media_timeline(db, current_actor_id=other.id)
+    assert len(result) == 1
+
+
+async def test_excludes_deleted_notes(db, mock_valkey):
+    """削除済みノートはメディアタイムラインに表示されない。"""
+    from datetime import datetime, timezone
+
+    from app.services.note_service import get_media_timeline
+
+    actor = await make_remote_actor(db, username="mt_del", domain="mt21.example")
+    note = await make_note(db, actor, content="Deleted", local=False)
+    await _make_attachment(db, note, url="https://r.example/del.jpg")
+
+    note.deleted_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    result = await get_media_timeline(db)
+    assert result == []
