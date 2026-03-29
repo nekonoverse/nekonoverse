@@ -1,4 +1,4 @@
-"""Render Python objects to ActivityPub JSON-LD."""
+"""Python オブジェクトを ActivityPub JSON-LD にレンダリングする。"""
 
 from datetime import datetime
 
@@ -10,7 +10,7 @@ from app.services.actor_service import actor_uri
 
 
 def _iso_z(dt: datetime) -> str:
-    """Format datetime as ISO 8601 with Z suffix (no +00:00)."""
+    """datetime を ISO 8601 形式 (Z サフィックス付き、+00:00 なし) にフォーマットする。"""
     return dt.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
@@ -48,7 +48,7 @@ AP_PUBLIC = "https://www.w3.org/ns/activitystreams#Public"
 
 
 def render_actor(actor: Actor) -> dict:
-    # For local actors, always derive URLs from server_url to ensure correct scheme
+    # ローカルアクターの場合、正しいスキームを保証するため常に server_url から URL を導出
     if actor.domain is None:
         actor_url = f"{settings.server_url}/users/{actor.username}"
         inbox = f"{actor_url}/inbox"
@@ -156,12 +156,12 @@ def render_note(note: Note) -> dict:
     if note.in_reply_to_ap_id:
         data["inReplyTo"] = note.in_reply_to_ap_id
 
-    # Quote renote
+    # 引用リノート
     if hasattr(note, "quote_ap_id") and note.quote_ap_id:
         data["_misskey_quote"] = note.quote_ap_id
         data["quoteUrl"] = note.quote_ap_id
 
-    # Attachments
+    # 添付ファイル
     if hasattr(note, "attachments") and note.attachments:
         attachment_list = []
         for att in note.attachments:
@@ -195,7 +195,7 @@ def render_note(note: Note) -> dict:
         if attachment_list:
             data["attachment"] = attachment_list
 
-    # Tags (mentions + emoji)
+    # タグ (メンション + 絵文字)
     tag = []
     if hasattr(note, "mentions") and note.mentions:
         for m in note.mentions:
@@ -208,7 +208,7 @@ def render_note(note: Note) -> dict:
                 }
             )
 
-    # Hashtag tags
+    # ハッシュタグ
     if hasattr(note, "_hashtag_names") and note._hashtag_names:
         for ht_name in note._hashtag_names:
             tag.append(
@@ -219,10 +219,10 @@ def render_note(note: Note) -> dict:
                 }
             )
 
-    # Custom emoji tags
+    # カスタム絵文字タグ
     if hasattr(note, "_emoji_tags") and note._emoji_tags:
         for e in note._emoji_tags:
-            # Guess media type from URL extension
+            # URL の拡張子からメディアタイプを推測
             url = e["url"]
             ext = url.rsplit(".", 1)[-1].lower() if "." in url else "png"
             media_type = {
@@ -241,11 +241,11 @@ def render_note(note: Note) -> dict:
                 "name": f":{e['shortcode']}:",
                 "icon": {"type": "Image", "mediaType": media_type, "url": url},
             }
-            # Misskey-compatible license
+            # Misskey 互換ライセンス
             if e.get("license"):
                 emoji_tag["_misskey_license"] = {"freeText": e["license"]}
                 emoji_tag["license"] = e["license"]
-            # CherryPick / extended fields
+            # CherryPick / 拡張フィールド
             if e.get("aliases"):
                 emoji_tag["keywords"] = e["aliases"]
             if e.get("is_sensitive"):
@@ -267,7 +267,7 @@ def render_note(note: Note) -> dict:
     if tag:
         data["tag"] = tag
 
-    # Poll (Question type)
+    # 投票 (Question タイプ)
     if getattr(note, "is_poll", False) and getattr(note, "poll_options", None):
         choices_key = "anyOf" if note.poll_multiple else "oneOf"
         data[choices_key] = [
@@ -286,7 +286,7 @@ def render_note(note: Note) -> dict:
         total_votes = sum(opt.get("votes_count", 0) for opt in note.poll_options)
         data["votersCount"] = total_votes
 
-    # Misskey talk flag
+    # Misskey トークフラグ
     if getattr(note, "is_talk", False):
         data["_misskey_talk"] = True
 
@@ -294,7 +294,7 @@ def render_note(note: Note) -> dict:
 
 
 def render_vote_activity(poll_note: Note, voter: Actor, option_name: str) -> dict:
-    """Render a vote on a remote poll as Create(Note) with name field."""
+    """リモート投票への投票を name フィールド付き Create(Note) としてレンダリングする。"""
     import uuid as _uuid
 
     vote_id = f"{actor_uri(voter)}#vote-{_uuid.uuid4().hex[:8]}"
@@ -317,7 +317,7 @@ def render_vote_activity(poll_note: Note, voter: Actor, option_name: str) -> dic
 
 
 def render_poll_update_activity(note: Note) -> dict:
-    """Render an Update(Question) activity for a local poll (vote count update)."""
+    """ローカル投票の Update(Question) activity をレンダリングする (得票数更新)。"""
     import uuid as _uuid
 
     activity_id = f"{note.ap_id}#update-{_uuid.uuid4().hex[:8]}"
@@ -338,10 +338,10 @@ def render_create_activity(note: Note) -> dict:
 
 
 def render_like_activity(activity_id: str, actor_ap_id: str, note_ap_id: str, emoji: str) -> dict:
-    """Render a Like activity.
+    """Like activity をレンダリングする。
 
-    For ⭐ (favourite): standard AP Like without content (all servers understand).
-    For other emoji: Like with content + _misskey_reaction (Misskey format).
+    ⭐ (お気に入り) の場合: content なしの標準 AP Like (全サーバーが理解可能)。
+    その他の絵文字の場合: content + _misskey_reaction 付き Like (Misskey 形式)。
     """
     activity: dict = {
         "@context": AP_CONTEXT,
@@ -359,7 +359,7 @@ def render_like_activity(activity_id: str, actor_ap_id: str, note_ap_id: str, em
 def render_emoji_react_activity(
     activity_id: str, actor_ap_id: str, note_ap_id: str, emoji: str
 ) -> dict:
-    """Render an EmojiReact activity (Fedibird/Pleroma/Akkoma compatible)."""
+    """EmojiReact activity をレンダリングする (Fedibird/Pleroma/Akkoma 互換)。"""
     return {
         "@context": AP_CONTEXT,
         "id": activity_id,
@@ -477,7 +477,7 @@ def render_flag_activity(
     note_ap_ids: list[str] | None = None,
     content: str = "",
 ) -> dict:
-    """Render a Flag (report) activity for federation."""
+    """連合用の Flag (通報) activity をレンダリングする。"""
     obj = [target_actor_ap_id]
     if note_ap_ids:
         obj.extend(note_ap_ids)

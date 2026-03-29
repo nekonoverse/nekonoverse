@@ -1,4 +1,4 @@
-"""Invitation code model for invite-only registration."""
+"""招待制登録用の招待コードモデル。"""
 
 import uuid
 from datetime import datetime, timezone

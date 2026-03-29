@@ -1,4 +1,4 @@
-"""Server icon generation: favicon.ico, PWA PNGs."""
+"""サーバーアイコン生成: favicon.ico、PWA用PNG。"""
 
 import importlib.resources
 import io
@@ -16,13 +16,13 @@ ICO_SIZES = [(16, 16), (32, 32), (48, 48)]
 
 
 def _load_default_icon() -> bytes:
-    """Load the bundled default 512x512 PNG icon."""
+    """バンドルされたデフォルトの512x512 PNGアイコンを読み込む。"""
     ref = importlib.resources.files("app.assets").joinpath("default-icon-512.png")
     return ref.read_bytes()
 
 
 def _resize_png(image_data: bytes, size: int) -> bytes:
-    """Resize image to square PNG of given size."""
+    """画像を指定サイズの正方形PNGにリサイズする。"""
     from PIL import Image
 
     img = Image.open(io.BytesIO(image_data))
@@ -34,7 +34,7 @@ def _resize_png(image_data: bytes, size: int) -> bytes:
 
 
 def generate_ico_bytes(image_data: bytes) -> bytes | None:
-    """Convert image data to ICO format with multiple sizes."""
+    """画像データを複数サイズのICO形式に変換する。"""
     try:
         from PIL import Image
 
@@ -54,10 +54,10 @@ async def generate_all_icons(
     *,
     set_server_icon: bool = True,
 ) -> dict[str, str]:
-    """Generate all icon variants and save URLs to settings.
+    """全アイコンバリエーションを生成し、URLを設定に保存する。
 
-    Generates: 512 PNG, 192 PNG, favicon.ico.
-    Returns dict of setting_key -> url.
+    生成対象: 512 PNG、192 PNG、favicon.ico。
+    setting_key -> url の辞書を返す。
     """
     suffix = uuid.uuid4().hex[:8]
     urls: dict[str, str] = {}
@@ -96,7 +96,7 @@ async def generate_all_icons(
 
 
 async def ensure_default_icons(db: AsyncSession) -> None:
-    """Set up default icons if server_icon_url is not configured."""
+    """server_icon_url が未設定の場合、デフォルトアイコンをセットアップする。"""
     existing = await get_setting(db, "server_icon_url")
     if existing:
         return

@@ -57,6 +57,10 @@ import {
   retryQueueJob,
   retryAllDeadJobs,
   purgeDeliveredJobs,
+  getAnnouncements,
+  createAnnouncement,
+  updateAnnouncement,
+  deleteAnnouncement,
   getSystemStats,
   getPendingRegistrations,
   approveRegistration,
@@ -86,6 +90,7 @@ import {
   type QueueJob,
   type QueueJobList,
   type SystemStats,
+  type Announcement,
   type PendingRegistration,
 } from "@nekonoverse/ui/api/admin";
 
@@ -93,7 +98,7 @@ interface AdminSection {
   key: string;
   labelKey: string;
   descKey: string;
-  /** If set, moderators need this permission key to see the section. */
+  /** 設定されている場合、モデレーターがこのセクションを表示するにはこの権限キーが必要。 */
   permission?: string;
 }
 
@@ -141,6 +146,12 @@ const categories: AdminCategory[] = [
         permission: "federation",
       },
       { key: "emoji", labelKey: "admin.tabEmoji", descKey: "admin.descEmoji", permission: "emoji" },
+      {
+        key: "announcements",
+        labelKey: "admin.tabAnnouncements",
+        descKey: "admin.descAnnouncements",
+        permission: "announcements",
+      },
     ],
   },
   {
@@ -200,7 +211,7 @@ export default function Admin() {
 
   const isAdmin = () => getRoleName(currentUser()?.role) === "admin";
 
-  // Fetch moderator permissions for non-admin staff to filter visible sections
+  // 管理者以外のスタッフ向けにモデレーター権限を取得して表示セクションをフィルタリング
   const [modPerms, setModPerms] = createSignal<Record<string, boolean> | null>(null);
 
   let permsInit = false;
@@ -211,24 +222,24 @@ export default function Admin() {
         try {
           setModPerms(await getModeratorPermissions());
         } catch {
-          // If fetch fails (e.g. admin-only endpoint), show all sections
+          // 取得失敗時（例: 管理者専用エンドポイント）は全セクションを表示
           setModPerms(null);
         }
       })();
     }
   });
 
-  /** Check whether a section should be visible to the current user. */
+  /** 現在のユーザーにセクションが表示されるべきかチェックする。 */
   const isSectionVisible = (s: AdminSection): boolean => {
-    // Registration section: only show when approval mode is active
+    // 登録セクション: 承認モードがアクティブな場合のみ表示
     if (s.key === "registrations" && registrationMode() !== "approval") return false;
-    // Admins can always see everything
+    // 管理者は常にすべてを表示可能
     if (isAdmin()) return true;
-    // No permission requirement means always visible to staff
+    // 権限要件なしはスタッフに常に表示
     if (!s.permission) return true;
-    // Moderator: check permission map
+    // モデレーター: 権限マップをチェック
     const perms = modPerms();
-    if (!perms) return true;  // Not loaded yet, show all
+    if (!perms) return true;  // 未読み込み、すべて表示
     return perms[s.permission] !== false;
   };
 
@@ -323,6 +334,9 @@ export default function Admin() {
             <Match when={section() === "system"}>
               <SystemTab />
             </Match>
+            <Match when={section() === "announcements"}>
+              <AnnouncementsTab />
+            </Match>
           </Switch>
         </Show>
       </Show>
@@ -334,7 +348,7 @@ function OverviewTab() {
   const { t } = useI18n();
   const [stats, setStats] = createSignal<AdminStats | null>(null);
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let overviewInit = false;
   createEffect(() => {
     if (!overviewInit) {
@@ -397,7 +411,7 @@ function ServerSettingsTab() {
   const [katexEnabled, setKatexEnabled] = createSignal(false);
   let iconInput!: HTMLInputElement;
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let settingsInit = false;
   createEffect(() => {
     if (!settingsInit) {
@@ -839,7 +853,7 @@ function UsersTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let usersInit = false;
   createEffect(() => {
     if (!usersInit) {
@@ -1085,7 +1099,7 @@ function DomainsTab() {
   const [newSeverity, setNewSeverity] = createSignal("suspend");
   const [newReason, setNewReason] = createSignal("");
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let domainsInit = false;
   createEffect(() => {
     if (!domainsInit) {
@@ -1200,7 +1214,7 @@ function ReportsTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let reportsInit = false;
   createEffect(() => {
     if (!reportsInit) {
@@ -1301,7 +1315,7 @@ function LogTab() {
   const [entries, setEntries] = createSignal<ModerationLogEntry[]>([]);
   const [loading, setLoading] = createSignal(true);
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let logInit = false;
   createEffect(() => {
     if (!logInit) {
@@ -1355,12 +1369,12 @@ function EmojiTab() {
   type EmojiSubTab = "upload" | "zip" | "import" | "manage";
   const [emojiTab, setEmojiTab] = createSignal<EmojiSubTab>("manage");
 
-  // Local emoji state
+  // ローカル絵文字の状態
   const [emojis, setEmojis] = createSignal<AdminEmoji[]>([]);
   const [loading, setLoading] = createSignal(true);
   const [manageSearch, setManageSearch] = createSignal("");
 
-  // Upload tab state
+  // アップロードタブの状態
   const [fields, setFields] = createSignal<EmojiEditFields>({
     shortcode: "", category: "", aliases: "", license: "", author: "", description: "", isSensitive: false,
   });
@@ -1369,7 +1383,7 @@ function EmojiTab() {
   const [adding, setAdding] = createSignal(false);
   let fileInput!: HTMLInputElement;
 
-  // ZIP tab state
+  // ZIPタブの状態
   const [importing, setImporting] = createSignal(false);
   const [importMsg, setImportMsg] = createSignal("");
   const [importErrors, setImportErrors] = createSignal<string[]>([]);
@@ -1377,7 +1391,7 @@ function EmojiTab() {
   const [importFileSize, setImportFileSize] = createSignal("");
   let importInput!: HTMLInputElement;
 
-  // Edit modal state
+  // 編集モーダルの状態
   const [editTarget, setEditTarget] = createSignal<AdminEmoji | null>(null);
   const [editFields, setEditFields] = createSignal<EmojiEditFields>({
     shortcode: "", category: "", author: "", license: "", description: "", isSensitive: false, aliases: "",
@@ -1388,13 +1402,13 @@ function EmojiTab() {
   const [editLocalOnly, setEditLocalOnly] = createSignal(false);
   const [editConfirmDelete, setEditConfirmDelete] = createSignal(false);
 
-  // Remote import tab state
+  // リモートインポートタブの状態
   const [remoteEmojis, setRemoteEmojis] = createSignal<RemoteEmoji[]>([]);
   const [remoteLoading, setRemoteLoading] = createSignal(false);
   const [remoteSearch, setRemoteSearch] = createSignal("");
   const [remoteMsg, setRemoteMsg] = createSignal("");
 
-  // Remote import modal state
+  // リモートインポートモーダルの状態
   const [importTarget, setImportTarget] = createSignal<RemoteEmoji | null>(null);
   const [importGroup, setImportGroup] = createSignal<RemoteEmoji[] | null>(null);
   const [importGroupIndex, setImportGroupIndex] = createSignal(0);
@@ -1404,7 +1418,7 @@ function EmojiTab() {
   const [impSaving, setImpSaving] = createSignal(false);
   const [impError, setImpError] = createSignal("");
 
-  // Grouped remote emojis by shortcode
+  // ショートコードでグループ化されたリモート絵文字
   const groupedRemote = createMemo(() => {
     const map = new Map<string, RemoteEmoji[]>();
     for (const e of remoteEmojis()) {
@@ -1414,7 +1428,7 @@ function EmojiTab() {
     return map;
   });
 
-  // Filtered local emojis for manage tab
+  // 管理タブ用のフィルタ済みローカル絵文字
   const filteredEmojis = createMemo(() => {
     const q = manageSearch().toLowerCase().trim();
     if (!q) return emojis();
@@ -1896,7 +1910,7 @@ function ServerFilesTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let filesInit = false;
   createEffect(() => {
     if (!filesInit) {
@@ -2023,7 +2037,7 @@ function InvitesTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let invitesInit = false;
   createEffect(() => {
     if (!invitesInit) {
@@ -2184,7 +2198,7 @@ function FederationTab() {
   const [detailLoading, setDetailLoading] = createSignal(false);
   const limit = 40;
 
-  // Domain action state
+  // ドメインアクションの状態
   const [domainAction, setDomainAction] = createSignal<{
     type: "suspend" | "silence";
     domain: string;
@@ -2212,7 +2226,7 @@ function FederationTab() {
     setLoading(false);
   };
 
-  // Use createEffect for reliable initialization inside Switch/Match
+  // Switch/Match 内での確実な初期化のため createEffect を使用
   let federationInit = false;
   createEffect(() => {
     if (!federationInit) {
@@ -2276,7 +2290,7 @@ function FederationTab() {
     if (!action) return;
     setDomainActionLoading(true);
     try {
-      // If escalating from silence to suspend, remove existing block first
+      // サイレンスからサスペンドにエスカレートする場合、既存のブロックをまず解除
       const currentServer = servers().find((s) => s.domain === action.domain);
       if (currentServer?.block_severity && currentServer.block_severity !== action.type) {
         await removeDomainBlock(action.domain);
@@ -2284,7 +2298,7 @@ function FederationTab() {
       await createDomainBlock(action.domain, action.type, domainActionReason() || undefined);
       closeDomainAction();
       await load();
-      // Refresh detail if expanded
+      // 展開中なら詳細を更新
       if (expandedDomain() === action.domain) {
         setDetail(await getFederatedServerDetail(action.domain));
       }
@@ -2303,7 +2317,7 @@ function FederationTab() {
     try {
       await removeDomainBlock(domain);
       await load();
-      // Refresh detail if expanded
+      // 展開中なら詳細を更新
       if (expandedDomain() === domain) {
         setDetail(await getFederatedServerDetail(domain));
       }
@@ -3114,6 +3128,7 @@ const PERMISSION_KEYS = [
   "federation",
   "emoji",
   "registrations",
+  "announcements",
 ] as const;
 
 const PERM_LABEL_KEYS: Record<string, string> = {
@@ -3124,6 +3139,7 @@ const PERM_LABEL_KEYS: Record<string, string> = {
   federation: "admin.permFederation",
   emoji: "admin.permEmoji",
   registrations: "admin.permRegistrations",
+  announcements: "admin.permAnnouncements",
 };
 
 const PERM_DESC_KEYS: Record<string, string> = {
@@ -3134,6 +3150,7 @@ const PERM_DESC_KEYS: Record<string, string> = {
   federation: "admin.permFederationDesc",
   emoji: "admin.permEmojiDesc",
   registrations: "admin.permRegistrationsDesc",
+  announcements: "admin.permAnnouncementsDesc",
 };
 
 function formatQuota(bytes: number): string {
@@ -3472,6 +3489,190 @@ function RolesTab() {
               </div>
             </div>
           </Show>
+        </div>
+      </Show>
+    </div>
+  );
+}
+
+function AnnouncementsTab() {
+  const { t } = useI18n();
+  const [items, setItems] = createSignal<Announcement[]>([]);
+  const [editing, setEditing] = createSignal<Announcement | null>(null);
+  const [showForm, setShowForm] = createSignal(false);
+  const [title, setTitle] = createSignal("");
+  const [content, setContent] = createSignal("");
+  const [published, setPublished] = createSignal(false);
+  const [allDay, setAllDay] = createSignal(false);
+  const [startsAt, setStartsAt] = createSignal("");
+  const [endsAt, setEndsAt] = createSignal("");
+  const [saving, setSaving] = createSignal(false);
+
+  const loadItems = async () => {
+    try {
+      const data = await getAnnouncements();
+      setItems(data);
+    } catch { /* 無視 */ }
+  };
+
+  createEffect(() => { loadItems(); });
+
+  const resetForm = () => {
+    setEditing(null);
+    setTitle("");
+    setContent("");
+    setPublished(false);
+    setAllDay(false);
+    setStartsAt("");
+    setEndsAt("");
+    setShowForm(false);
+  };
+
+  const startEdit = (ann: Announcement) => {
+    setEditing(ann);
+    setTitle(ann.title);
+    setContent(ann.content);
+    setPublished(ann.published);
+    setAllDay(ann.all_day);
+    setStartsAt(ann.starts_at ? ann.starts_at.slice(0, 16) : "");
+    setEndsAt(ann.ends_at ? ann.ends_at.slice(0, 16) : "");
+    setShowForm(true);
+  };
+
+  const handleSave = async () => {
+    if (!title().trim() || !content().trim()) return;
+    setSaving(true);
+    try {
+      const data: any = {
+        title: title(),
+        content: content(),
+        published: published(),
+        all_day: allDay(),
+        starts_at: startsAt() ? new Date(startsAt()).toISOString() : null,
+        ends_at: endsAt() ? new Date(endsAt()).toISOString() : null,
+      };
+      if (editing()) {
+        await updateAnnouncement(editing()!.id, data);
+      } else {
+        await createAnnouncement(data);
+      }
+      resetForm();
+      await loadItems();
+    } catch { /* 無視 */ }
+    setSaving(false);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm(t("announcements.confirmDelete" as any))) return;
+    try {
+      await deleteAnnouncement(id);
+      await loadItems();
+    } catch { /* 無視 */ }
+  };
+
+  return (
+    <div class="settings-section">
+      <div style={{ display: "flex", "justify-content": "space-between", "align-items": "center", "margin-bottom": "16px" }}>
+        <h3>{t("admin.tabAnnouncements" as any)}</h3>
+        <button class="btn btn-small btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
+          {t("announcements.create" as any)}
+        </button>
+      </div>
+
+      <Show when={showForm()}>
+        <div style={{ "margin-bottom": "1rem", padding: "1rem", border: "1px solid var(--border)", "border-radius": "8px" }}>
+          <div class="settings-form-group">
+            <label>{t("announcements.titleLabel" as any)}</label>
+            <input
+              type="text"
+              value={title()}
+              onInput={(e) => setTitle(e.currentTarget.value)}
+              placeholder={t("announcements.titlePlaceholder" as any)}
+            />
+          </div>
+          <div class="settings-form-group">
+            <label>{t("announcements.contentLabel" as any)}</label>
+            <textarea
+              rows={5}
+              value={content()}
+              onInput={(e) => setContent(e.currentTarget.value)}
+              placeholder={t("announcements.contentPlaceholder" as any)}
+            />
+          </div>
+          <div style={{ display: "flex", gap: "1rem", "flex-wrap": "wrap", "margin-bottom": "16px" }}>
+            <label style={{ display: "flex", "align-items": "center", gap: "4px" }}>
+              <input type="checkbox" checked={published()} onChange={(e) => setPublished(e.currentTarget.checked)} />
+              {t("announcements.published" as any)}
+            </label>
+            <label style={{ display: "flex", "align-items": "center", gap: "4px" }}>
+              <input type="checkbox" checked={allDay()} onChange={(e) => setAllDay(e.currentTarget.checked)} />
+              {t("announcements.allDay" as any)}
+            </label>
+          </div>
+          <div style={{ display: "flex", gap: "1rem", "flex-wrap": "wrap", "margin-bottom": "16px" }}>
+            <div class="settings-form-group">
+              <label>{t("announcements.startsAt" as any)}</label>
+              <input type="datetime-local" value={startsAt()} onInput={(e) => setStartsAt(e.currentTarget.value)} />
+            </div>
+            <div class="settings-form-group">
+              <label>{t("announcements.endsAt" as any)}</label>
+              <input type="datetime-local" value={endsAt()} onInput={(e) => setEndsAt(e.currentTarget.value)} />
+            </div>
+          </div>
+          <div style={{ display: "flex", gap: "0.5rem" }}>
+            <button class="btn btn-primary" onClick={handleSave} disabled={saving()}>
+              {saving() ? t("common.loading") : editing() ? t("common.save") : t("announcements.create" as any)}
+            </button>
+            <button class="btn btn-small" onClick={resetForm}>
+              {t("common.cancel")}
+            </button>
+          </div>
+        </div>
+      </Show>
+
+      <Show when={items().length > 0} fallback={<p class="admin-empty">{t("announcements.empty" as any)}</p>}>
+        <div style={{ display: "flex", "flex-direction": "column", gap: "8px" }}>
+          <For each={items()}>
+            {(ann) => (
+              <div style={{ padding: "12px", border: "1px solid var(--border)", "border-radius": "8px" }}>
+                <div style={{ display: "flex", "justify-content": "space-between", "align-items": "flex-start" }}>
+                  <div>
+                    <strong>{ann.title}</strong>
+                    <span
+                      style={{
+                        "margin-left": "8px",
+                        "font-size": "0.75rem",
+                        padding: "2px 6px",
+                        "border-radius": "4px",
+                        background: ann.published ? "var(--reblog)" : "var(--text-secondary)",
+                        color: "#fff",
+                      }}
+                    >
+                      {ann.published ? t("announcements.published" as any) : t("announcements.draft" as any)}
+                    </span>
+                  </div>
+                  <div style={{ display: "flex", gap: "4px" }}>
+                    <button class="btn btn-small" onClick={() => startEdit(ann)}>
+                      {t("announcements.edit" as any)}
+                    </button>
+                    <button class="btn btn-small btn-danger" onClick={() => handleDelete(ann.id)}>
+                      {t("announcements.delete" as any)}
+                    </button>
+                  </div>
+                </div>
+                <div style={{ "margin-top": "8px", "font-size": "0.9rem", color: "var(--text-secondary)" }} innerHTML={ann.content_html} />
+                <div style={{ "margin-top": "4px", "font-size": "0.75rem", color: "var(--text-secondary)", opacity: "0.7" }}>
+                  {new Date(ann.created_at).toLocaleString()}
+                  <Show when={ann.starts_at}>
+                    {" "} | {t("announcements.startsAt" as any)}: {new Date(ann.starts_at!).toLocaleString()}
+                  </Show>
+                  <Show when={ann.ends_at}>
+                    {" "} | {t("announcements.endsAt" as any)}: {new Date(ann.ends_at!).toLocaleString()}
+                  </Show>
+                </div>
+              </div>
+            )}
+          </For>
         </div>
       </Show>
     </div>

@@ -1,4 +1,4 @@
-"""Network security utilities (SSRF protection)."""
+"""ネットワークセキュリティユーティリティ (SSRF 保護)。"""
 
 import ipaddress
 import socket
@@ -6,7 +6,7 @@ from urllib.parse import urlparse
 
 
 def is_private_host(hostname: str) -> bool:
-    """Block requests to private/loopback IP ranges (SSRF protection)."""
+    """プライベート/ループバック IP 範囲へのリクエストをブロックする (SSRF 保護)。"""
     from app.config import settings
 
     if settings.allow_private_networks:
@@ -17,7 +17,7 @@ def is_private_host(hostname: str) -> bool:
             if addr.is_private or addr.is_loopback or addr.is_reserved or addr.is_link_local:
                 return True
     except (socket.gaierror, ValueError):
-        return True  # can't resolve → block
+        return True  # 解決不可 → ブロック
     return False
 
 
@@ -47,7 +47,7 @@ def resolve_and_validate_host(hostname: str) -> list[str]:
 
 
 def is_safe_url(url: str) -> bool:
-    """Check if a URL is safe for outbound requests (http/https, non-private host)."""
+    """URL が外部リクエストに安全か確認する (http/https、非プライベートホスト)。"""
     parsed = urlparse(url)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         return False

@@ -1,4 +1,4 @@
-"""S3-compatible storage client using httpx and AWS SigV4."""
+"""httpx と AWS SigV4 を使用した S3 互換ストレージクライアント。"""
 
 import hashlib
 import hmac
@@ -100,7 +100,7 @@ def _auth_headers(
 
 
 async def ensure_bucket() -> None:
-    """Create the bucket if it doesn't exist."""
+    """バケットが存在しない場合に作成する。"""
     path = f"/{settings.s3_bucket}"
     content_sha256 = hashlib.sha256(b"").hexdigest()
     headers = _auth_headers("PUT", path, content_sha256)
@@ -111,7 +111,7 @@ async def ensure_bucket() -> None:
 
 
 async def upload_file(key: str, data: bytes, content_type: str) -> str:
-    """Upload a file to S3. Returns the ETag."""
+    """ファイルを S3 にアップロードする。ETag を返す。"""
     path = f"/{settings.s3_bucket}/{key}"
     content_sha256 = hashlib.sha256(data).hexdigest()
     extra = {"content-type": content_type}
@@ -124,7 +124,7 @@ async def upload_file(key: str, data: bytes, content_type: str) -> str:
 
 
 async def delete_file(key: str) -> None:
-    """Delete a file from S3."""
+    """S3 からファイルを削除する。"""
     path = f"/{settings.s3_bucket}/{key}"
     content_sha256 = hashlib.sha256(b"").hexdigest()
     headers = _auth_headers("DELETE", path, content_sha256)
@@ -135,7 +135,7 @@ async def delete_file(key: str) -> None:
 
 
 async def download_file(key: str) -> bytes:
-    """Download a file from S3 and return its contents."""
+    """S3 からファイルをダウンロードし、その内容を返す。"""
     path = f"/{settings.s3_bucket}/{key}"
     content_sha256 = "UNSIGNED-PAYLOAD"
     headers = _auth_headers("GET", path, content_sha256)
@@ -146,7 +146,7 @@ async def download_file(key: str) -> bytes:
 
 
 async def get_file_stream(key: str) -> tuple[AsyncIterator[bytes], str, int]:
-    """Get a file from S3 as a stream. Returns (stream, content_type, size)."""
+    """S3 からファイルをストリームとして取得する。(stream, content_type, size) を返す。"""
     path = f"/{settings.s3_bucket}/{key}"
     content_sha256 = "UNSIGNED-PAYLOAD"
     headers = _auth_headers("GET", path, content_sha256)
@@ -171,5 +171,5 @@ async def get_file_stream(key: str) -> tuple[AsyncIterator[bytes], str, int]:
 
 
 def get_public_url(key: str) -> str:
-    """Return the public URL for a given S3 key."""
+    """指定された S3 キーの公開 URL を返す。"""
     return f"{settings.media_url}/{key}"

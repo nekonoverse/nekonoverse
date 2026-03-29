@@ -10,16 +10,16 @@ export async function fetchFollowedIds() {
     const ids = await apiRequest<string[]>("/api/v1/following_ids");
     setFollowedIds(new Set(ids));
   } catch {
-    // not logged in or error
+    // 未ログインまたはエラー
   }
 }
 
 export function addFollowedId(id: string) {
-  setFollowedIds((prev) => new Set(prev).add(id));
+  setFollowedIds((prev: Set<string>) => new Set(prev).add(id));
 }
 
 export function removeFollowedId(id: string) {
-  setFollowedIds((prev) => {
+  setFollowedIds((prev: Set<string>) => {
     const next = new Set(prev);
     next.delete(id);
     return next;

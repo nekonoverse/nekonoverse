@@ -35,7 +35,7 @@ export default function FocalPointPicker(props: Props) {
     document.addEventListener("mouseup", onUp);
   };
 
-  // Convert focal point to CSS percentage for marker position
+  // フォーカルポイントをマーカー位置用のCSSパーセンテージに変換
   const markerLeft = () => `${((x() + 1) / 2) * 100}%`;
   const markerTop = () => `${((1 - y()) / 2) * 100}%`;
 

@@ -1,4 +1,4 @@
-"""Mastodon-compatible List API endpoints."""
+"""Mastodon 互換リスト API エンドポイント。"""
 
 import uuid
 
@@ -35,7 +35,7 @@ def _list_response(lst) -> dict:
 
 
 async def _get_owned_list(db: AsyncSession, list_id: uuid.UUID, user: User):
-    """Fetch a list and verify ownership. Raises 404 if not found or not owned."""
+    """リストを取得し所有権を確認する。未検出または所有していない場合は 404 を返す。"""
     lst = await get_list(db, list_id)
     if not lst or lst.user_id != user.id:
         raise HTTPException(status_code=404, detail="List not found")

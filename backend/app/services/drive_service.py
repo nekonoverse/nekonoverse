@@ -1,4 +1,4 @@
-"""Drive file management service."""
+"""ドライブファイル管理サービス。"""
 
 import base64
 import logging
@@ -64,10 +64,10 @@ _MAGIC_BYTES: dict[str, list[bytes]] = {
     "image/webp": [b"RIFF"],  # RIFF????WEBP
     # L-12: AVIFのftypボックスチェック追加
     "image/avif": [b"\x00\x00\x00"],  # ftypボックス (先頭4バイトはサイズ、8-11バイトが"ftyp")
-    # Video
+    # 動画
     "video/webm": [b"\x1a\x45\xdf\xa3"],  # EBML header (Matroska/WebM)
     "video/x-matroska": [b"\x1a\x45\xdf\xa3"],
-    # Audio
+    # 音声
     "audio/mpeg": [b"ID3", b"\xff\xfb", b"\xff\xf3", b"\xff\xf2"],  # ID3 tag or MPEG sync
     "audio/ogg": [b"OggS"],
     "audio/wav": [b"RIFF"],  # RIFF????WAVE
@@ -77,7 +77,7 @@ _MAGIC_BYTES: dict[str, list[bytes]] = {
 
 
 def _validate_magic_bytes(data: bytes, mime_type: str) -> None:
-    """Validate that file content matches the declared MIME type."""
+    """ファイル内容が申告されたMIMEタイプと一致するか検証する。"""
     # ftyp ボックスベースのフォーマット (AVIF, MP4, QuickTime, AAC/M4A)
     _FTYP_BRANDS: dict[str, set[bytes]] = {
         "image/avif": {b"avif", b"avis", b"mif1"},
@@ -101,12 +101,12 @@ def _validate_magic_bytes(data: bytes, mime_type: str) -> None:
             return
     raise ValueError(f"File content does not match declared type {mime_type}")
 
-# PNG signature
+# PNGシグネチャ
 _PNG_SIGNATURE = b"\x89PNG\r\n\x1a\n"
 
 
 def _remove_jpeg_app1(data: bytes) -> bytes:
-    """Remove APP1 (EXIF) segments from JPEG at byte level (no image decoding)."""
+    """JPEGからAPP1 (EXIF) セグメントをバイトレベルで除去する (画像デコード不要)。"""
     import struct
 
     if len(data) < 2 or data[:2] != b"\xff\xd8":
@@ -121,7 +121,7 @@ def _remove_jpeg_app1(data: bytes) -> bytes:
         if marker == b"\xff\xda":  # SOS — rest is image data
             result.extend(data[pos:])
             break
-        # Standalone markers (no length field)
+        # スタンドアロンマーカー (長さフィールドなし)
         if marker[1] in range(0xD0, 0xDA) or marker == b"\xff\x01":
             result.extend(marker)
             pos += 2
@@ -140,7 +140,7 @@ def _remove_jpeg_app1(data: bytes) -> bytes:
 
 
 def _strip_exif_jpeg(data: bytes) -> bytes:
-    """Remove EXIF from JPEG at byte level. No image decoding."""
+    """JPEGからEXIFをバイトレベルで除去する。画像デコード不要。"""
     try:
         return _remove_jpeg_app1(data)
     except Exception:
@@ -148,7 +148,7 @@ def _strip_exif_jpeg(data: bytes) -> bytes:
 
 
 def _strip_exif_png(data: bytes) -> bytes:
-    """Remove eXIf chunk from PNG at byte level (no image decoding)."""
+    """PNGからeXIfチャンクをバイトレベルで除去する (画像デコード不要)。"""
     if len(data) < 8 or data[:8] != _PNG_SIGNATURE:
         return data
     result = bytearray(data[:8])
@@ -169,11 +169,11 @@ def _strip_exif_png(data: bytes) -> bytes:
 
 
 def strip_exif(data: bytes, mime_type: str) -> bytes:
-    """Remove EXIF metadata from image data at byte level (no image decoding).
+    """画像データからEXIFメタデータをバイトレベルで除去する (画像デコード不要)。
 
-    JPEG: Removes APP1 segments. PNG: Removes eXIf chunks.
-    Other formats: Returned unchanged.
-    Orientation correction is the client's responsibility.
+    JPEG: APP1セグメントを除去。PNG: eXIfチャンクを除去。
+    その他のフォーマット: そのまま返す。
+    向き補正はクライアント側の責任。
     """
     if mime_type == "image/jpeg":
         return _strip_exif_jpeg(data)
@@ -204,7 +204,7 @@ async def upload_drive_file(
     if mime_type not in ALLOWED_MEDIA_TYPES:
         raise ValueError(f"Unsupported file type: {mime_type}")
 
-    # Quota check (skip for server files)
+    # 容量制限チェック (サーバーファイルはスキップ)
     if owner and not server_file:
         from app.services.quota_service import check_quota
 
@@ -215,7 +215,7 @@ async def upload_drive_file(
     # マジックバイト検証: 申告されたMIMEタイプと実際のファイル内容が一致するか確認
     _validate_magic_bytes(data, mime_type)
 
-    # Strip EXIF metadata before storing (defense-in-depth for privacy, images only)
+    # 保存前にEXIFメタデータを除去 (プライバシー保護の多層防御、画像のみ)
     if mime_type.startswith("image/"):
         data = strip_exif(data, mime_type)
 
@@ -283,7 +283,7 @@ async def update_drive_file_meta(
     focal_x: float | None = None,
     focal_y: float | None = None,
 ) -> DriveFile:
-    """Update description and/or focal point of a drive file."""
+    """ドライブファイルの説明文やフォーカルポイントを更新する。"""
     if description is not None:
         drive_file.description = description
     if focal_x is not None and math.isfinite(focal_x):
@@ -303,14 +303,14 @@ async def auto_detect_focal_point(
     image_data: bytes | None = None,
     detect_version: str | None = None,
 ) -> None:
-    """Call face detection service to auto-set focal point. Fails silently.
+    """顔検出サービスを呼び出してフォーカルポイントを自動設定する。失敗時は無視する。
 
     Args:
-        db: Database session.
-        drive_file: The drive file to detect focal point for.
-        image_data: Raw image bytes. If not provided, downloads from S3.
-        detect_version: Current face-detect service version. Used to skip
-            re-detection and record which version was used.
+        db: データベースセッション。
+        drive_file: フォーカルポイントを検出するドライブファイル。
+        image_data: 生の画像バイト。未指定の場合はS3からダウンロードする。
+        detect_version: 現在のface-detectサービスバージョン。再検出のスキップと
+            使用バージョンの記録に使用される。
     """
     if not settings.face_detect_enabled:
         return
@@ -320,9 +320,9 @@ async def auto_detect_focal_point(
         logger.warning("Invalid face_detect_url scheme: %s", parsed.scheme)
         return
     if drive_file.focal_detect_version == "manual":
-        return  # User-set focal point — never override
+        return  # ユーザー手動設定のフォーカルポイント — 上書きしない
     if detect_version and drive_file.focal_detect_version == detect_version:
-        return  # Already checked with this version (face or no face)
+        return  # このバージョンで検出済み (顔の有無を問わず)
     if not drive_file.mime_type.startswith("image/"):
         return
 
@@ -362,7 +362,7 @@ async def auto_detect_focal_point(
         else:
             logger.info("No face detected for %s", drive_file.id)
 
-        # Record version regardless of result (face found or not)
+        # 結果に関わらずバージョンを記録 (顔が検出されたかどうかを問わず)
         if detect_version:
             drive_file.focal_detect_version = detect_version
         await db.commit()
@@ -373,7 +373,7 @@ async def auto_detect_focal_point(
 
 
 async def _read_file_data(drive_file: DriveFile) -> bytes | None:
-    """Read file data from S3 for face detection."""
+    """顔検出用にS3からファイルデータを読み取る。"""
     try:
         from app.storage import download_file
 

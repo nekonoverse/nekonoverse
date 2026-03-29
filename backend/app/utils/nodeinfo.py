@@ -1,4 +1,4 @@
-"""Remote nodeinfo fetching and software detection."""
+"""リモート nodeinfo の取得とソフトウェア検出。"""
 
 import logging
 
@@ -6,10 +6,10 @@ import httpx
 
 logger = logging.getLogger(__name__)
 
-# Software names that support EmojiReact activity type
+# EmojiReact activity タイプをサポートするソフトウェア名
 _EMOJI_REACT_SOFTWARE = {"pleroma", "akkoma", "fedibird", "nekonoverse"}
 
-# Software names that support emoji reactions (EmojiReact or Like+_misskey_reaction)
+# 絵文字リアクションをサポートするソフトウェア名 (EmojiReact または Like+_misskey_reaction)
 _EMOJI_REACTION_SOFTWARE = _EMOJI_REACT_SOFTWARE | {"misskey", "calckey", "firefish", "sharkey"}
 
 _CACHE_TTL = 86400  # 24 hours
@@ -17,10 +17,10 @@ _CACHE_TTL_FAIL = 3600  # 1 hour for failed fetches
 
 
 async def get_domain_software(domain: str) -> str | None:
-    """Get the software name of a remote instance via nodeinfo.
+    """nodeinfo 経由でリモートインスタンスのソフトウェア名を取得する。
 
-    Results are cached in Valkey for 24 hours.  Returns lowercase
-    software name (e.g. "pleroma", "misskey") or None on failure.
+    結果は Valkey に 24 時間キャッシュされる。小文字のソフトウェア名
+    (例: "pleroma", "misskey") を返すか、失敗時は None を返す。
     """
     name, _version, _instance_name = await get_domain_software_info(domain)
     return name
@@ -29,10 +29,10 @@ async def get_domain_software(domain: str) -> str | None:
 async def get_domain_software_info(
     domain: str,
 ) -> tuple[str | None, str | None, str | None]:
-    """Get software name, version, and instance name of a remote instance.
+    """リモートインスタンスのソフトウェア名、バージョン、インスタンス名を取得する。
 
-    Results are cached in Valkey for 24 hours.
-    Returns (lowercase_name, version, instance_name) or (None, None, None).
+    結果は Valkey に 24 時間キャッシュされる。
+    (lowercase_name, version, instance_name) または (None, None, None) を返す。
     """
     from app.valkey_client import valkey
 
@@ -62,7 +62,7 @@ async def get_domain_software_info(
 
     name, version, instance_name = await _fetch_software(domain)
 
-    # Use shorter TTL for failed fetches so we retry sooner
+    # 失敗した取得は早めにリトライするため短い TTL を使用
     ttl = _CACHE_TTL if (name or instance_name) else _CACHE_TTL_FAIL
     await valkey.set(name_key, name or "", ex=ttl)
     await valkey.set(ver_key, version or "", ex=ttl)
@@ -73,7 +73,7 @@ async def get_domain_software_info(
 async def _fetch_software(
     domain: str,
 ) -> tuple[str | None, str | None, str | None]:
-    """Fetch software name, version, and instance name from remote nodeinfo."""
+    """リモート nodeinfo からソフトウェア名、バージョン、インスタンス名を取得する。"""
     try:
         from app.utils.http_client import USER_AGENT
         from app.utils.network import is_safe_url
@@ -81,7 +81,7 @@ async def _fetch_software(
             timeout=5, follow_redirects=False, verify=False,
             headers={"User-Agent": USER_AGENT},
         ) as client:
-            # Step 1: Discover nodeinfo URL
+            # ステップ 1: nodeinfo URL をディスカバリ
             wellknown_url = f"https://{domain}/.well-known/nodeinfo"
             if not is_safe_url(wellknown_url):
                 return None, None, None
@@ -101,11 +101,11 @@ async def _fetch_software(
             if not nodeinfo_url:
                 return None, None, None
 
-            # Validate nodeinfo URL before fetching
+            # フェッチ前に nodeinfo URL を検証
             if not is_safe_url(nodeinfo_url):
                 return None, None, None
 
-            # Step 2: Fetch nodeinfo
+            # ステップ 2: nodeinfo を取得
             resp = await client.get(nodeinfo_url)
             if resp.status_code != 200:
                 return None, None, None
@@ -120,7 +120,7 @@ async def _fetch_software(
                 or ""
             )
 
-            # Fallback: fetch instance name from Mastodon-compatible API
+            # フォールバック: Mastodon 互換 API からインスタンス名を取得
             if not instance_name:
                 instance_name = await _fetch_instance_name(client, domain)
 
@@ -137,7 +137,7 @@ async def _fetch_software(
 async def _fetch_instance_name(
     client: httpx.AsyncClient, domain: str
 ) -> str | None:
-    """Fallback: fetch instance title from Mastodon-compatible instance API."""
+    """フォールバック: Mastodon 互換インスタンス API からインスタンスタイトルを取得する。"""
     for path in ("/api/v2/instance", "/api/v1/instance"):
         try:
             resp = await client.get(f"https://{domain}{path}")
@@ -153,30 +153,30 @@ async def _fetch_instance_name(
 
 
 async def uses_emoji_react(domain: str) -> bool:
-    """Check if a remote domain supports EmojiReact activity type."""
+    """リモートドメインが EmojiReact activity タイプをサポートするかチェックする。"""
     software = await get_domain_software(domain)
     return software in _EMOJI_REACT_SOFTWARE
 
 
 async def supports_emoji_reactions(domain: str) -> bool:
-    """Check if a remote domain supports any form of emoji reactions.
+    """リモートドメインが何らかの形式の絵文字リアクションをサポートするかチェックする。
 
-    Returns True for servers that understand EmojiReact or Like+_misskey_reaction.
-    Returns False for Mastodon/GoToSocial/unknown (emoji reactions are meaningless there).
+    EmojiReact または Like+_misskey_reaction を理解するサーバーには True を返す。
+    Mastodon/GoToSocial/不明なサーバーには False を返す (絵文字リアクションが無意味なため)。
     """
     software = await get_domain_software(domain)
     return software in _EMOJI_REACTION_SOFTWARE
 
 
-# Software known to ignore emoji reaction content (shows as plain ❤ like)
+# 絵文字リアクションの内容を無視することが知られているソフトウェア (素の ❤ いいねとして表示)
 _EMOJI_REACTION_BLOCKLIST = {"mastodon"}
 
 
 async def ignores_emoji_reactions(domain: str) -> bool:
-    """Check if a remote domain is known to ignore emoji reaction content.
+    """リモートドメインが絵文字リアクションの内容を無視することが知られているかチェックする。
 
-    Returns True for Mastodon (drops content, always shows ❤).
-    Returns False for unknown servers (give them the benefit of the doubt).
+    Mastodon には True を返す (content を破棄し常に ❤ を表示)。
+    不明なサーバーには False を返す (疑わしきは罰せず)。
     """
     software = await get_domain_software(domain)
     return software in _EMOJI_REACTION_BLOCKLIST

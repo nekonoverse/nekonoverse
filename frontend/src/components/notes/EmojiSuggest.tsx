@@ -17,7 +17,7 @@ interface Props {
   query: string;
   onSelect: (text: string) => void;
   onClose: () => void;
-  /** Parent calls this to bind the keyboard handler */
+  /** 親コンポーネントがキーボードハンドラをバインドするために呼び出す */
   bindKeyHandler?: (handler: (e: KeyboardEvent) => boolean) => void;
 }
 
@@ -35,7 +35,7 @@ export default function EmojiSuggest(props: Props) {
     const q = props.query.toLowerCase();
 
     if (!q) {
-      // Show recent emojis when query is empty (just typed ":")
+      // クエリが空の場合（「:」を入力しただけ）は最近使った絵文字を表示
       return getRecentEmojis()
         .slice(0, MAX_RESULTS)
         .map((e) => ({ type: "recent" as const, entry: e }));
@@ -43,7 +43,7 @@ export default function EmojiSuggest(props: Props) {
 
     const results: SuggestItem[] = [];
 
-    // Custom emojis first (higher priority)
+    // カスタム絵文字を優先（優先度が高い）
     for (const e of customEmojis()) {
       if (results.length >= MAX_RESULTS) break;
       if (
@@ -55,7 +55,7 @@ export default function EmojiSuggest(props: Props) {
       }
     }
 
-    // Unicode emojis
+    // Unicode絵文字
     for (const e of UNICODE_EMOJIS) {
       if (results.length >= MAX_RESULTS) break;
       if (
@@ -70,7 +70,7 @@ export default function EmojiSuggest(props: Props) {
     return results;
   });
 
-  // Reset active index when items change
+  // アイテムが変わったらアクティブインデックスをリセット
   createEffect(() => {
     items();
     setActiveIndex(0);
@@ -104,7 +104,7 @@ export default function EmojiSuggest(props: Props) {
     props.onSelect(text);
   };
 
-  // Keyboard handler called by parent
+  // 親コンポーネントから呼ばれるキーボードハンドラ
   const handleKeyDown = (e: KeyboardEvent): boolean => {
     const list = items();
     if (list.length === 0) return false;
@@ -132,7 +132,7 @@ export default function EmojiSuggest(props: Props) {
     }
   };
 
-  // Bind handler to parent
+  // ハンドラを親にバインド
   onMount(() => {
     props.bindKeyHandler?.(handleKeyDown);
   });
@@ -140,7 +140,7 @@ export default function EmojiSuggest(props: Props) {
     props.bindKeyHandler?.(() => false);
   });
 
-  // Scroll active item into view
+  // アクティブなアイテムをスクロールして表示
   let listRef: HTMLDivElement | undefined;
   createEffect(() => {
     const idx = activeIndex();

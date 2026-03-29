@@ -1,4 +1,4 @@
-"""SSE streaming endpoints for real-time timeline and notification updates."""
+"""リアルタイムタイムライン・通知更新用の SSE ストリーミングエンドポイント。"""
 
 import asyncio
 import collections
@@ -27,7 +27,7 @@ _sse_user_counts: dict[str, int] = collections.defaultdict(int)
 
 
 async def _event_stream(request: Request, channels: list[str]):
-    """Generic SSE event stream using the shared PubSubHub."""
+    """共有 PubSubHub を使用する汎用 SSE イベントストリーム。"""
     queue = await pubsub_hub.subscribe(channels)
     try:
         while True:
@@ -88,7 +88,7 @@ async def stream_user(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """SSE stream for authenticated user: home timeline + notifications + lists."""
+    """認証ユーザー用 SSE ストリーム: ホームタイムライン + 通知 + リスト。"""
     from app.services.list_service import get_user_lists
 
     actor_id = str(user.actor_id)
@@ -97,6 +97,7 @@ async def stream_user(
         f"notifications:{actor_id}",
         "timeline:public",
         "emoji:update",
+        "announcements",
     ]
     user_lists = await get_user_lists(db, user.id)
     for lst in user_lists:
@@ -111,7 +112,7 @@ async def stream_list(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """SSE stream for a specific list timeline."""
+    """特定リストタイムライン用の SSE ストリーム。"""
     import uuid as _uuid
 
     from app.services.list_service import get_list as get_list_
@@ -128,5 +129,5 @@ async def stream_list(
 
 @router.get("/public")
 async def stream_public(request: Request):
-    """SSE stream for public timeline (no auth required)."""
+    """公開タイムライン用の SSE ストリーム（認証不要）。"""
     return _sse_response(request, ["timeline:public", "emoji:update"])

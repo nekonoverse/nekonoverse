@@ -1,6 +1,6 @@
 import { createSignal, createEffect, onCleanup, Show, For } from "solid-js";
 import { useNavigate } from "@solidjs/router";
-import { getAccount, followAccount, unfollowAccount, blockAccount, muteAccount, type Account } from "@nekonoverse/ui/api/accounts";
+import { getAccount, getRelationship, followAccount, unfollowAccount, blockAccount, muteAccount, type Account } from "@nekonoverse/ui/api/accounts";
 import { getLists, addListAccounts, type ListInfo } from "@nekonoverse/ui/api/lists";
 import { isFollowing, addFollowedId, removeFollowedId } from "@nekonoverse/ui/stores/followedUsers";
 import { currentUser } from "@nekonoverse/ui/stores/auth";
@@ -18,7 +18,7 @@ interface Props {
   children: any;
 }
 
-// LRU cache with max size to prevent memory leaks
+// メモリリーク防止のため最大サイズ付きLRUキャッシュ
 const MAX_CACHE_SIZE = 100;
 const cache = new Map<string, Account>();
 function cacheSet(key: string, value: Account) {
@@ -35,6 +35,7 @@ export default function UserHoverCard(props: Props) {
   const navigate = useNavigate();
   const [visible, setVisible] = createSignal(false);
   const [account, setAccount] = createSignal<Account | null>(null);
+  const [isFollowedBy, setIsFollowedBy] = createSignal(false);
   const [followLoading, setFollowLoading] = createSignal(false);
   const [showUnfollowModal, setShowUnfollowModal] = createSignal(false);
   const [moreOpen, setMoreOpen] = createSignal(false);
@@ -53,13 +54,19 @@ export default function UserHoverCard(props: Props) {
     const cached = cache.get(props.actorId);
     if (cached) {
       setAccount(cached);
-      return;
+    } else {
+      try {
+        const acc = await getAccount(props.actorId);
+        cacheSet(props.actorId, acc);
+        setAccount(acc);
+      } catch {}
     }
-    try {
-      const acc = await getAccount(props.actorId);
-      cacheSet(props.actorId, acc);
-      setAccount(acc);
-    } catch {}
+    if (currentUser()) {
+      try {
+        const rel = await getRelationship(props.actorId);
+        setIsFollowedBy(rel.followed_by);
+      } catch {}
+    }
   };
 
   // --- Click handler: desktop only (タッチデバイスはtouchイベントで処理) ---
@@ -85,7 +92,7 @@ export default function UserHoverCard(props: Props) {
     }
   };
 
-  // --- Desktop: mouse hover handlers ---
+  // --- デスクトップ: マウスホバーハンドラ ---
   const handleMouseEnter = () => {
     if (isTouchMode()) return;
     clearTimeout(hideTimer);
@@ -101,14 +108,14 @@ export default function UserHoverCard(props: Props) {
     hideTimer = window.setTimeout(() => setVisible(false), 200);
   };
 
-  // --- Touch: long-press handlers ---
+  // --- タッチ: ロングプレスハンドラ ---
   const handleTouchStart = (e: TouchEvent) => {
     if (!isTouchMode()) return;
     longPressTriggered = false;
     longPressTimer = window.setTimeout(() => {
       longPressTriggered = true;
       activateTouchGuard();
-      // Prevent subsequent click from navigating
+      // 後続のクリックによるナビゲーションを防止
       e.preventDefault();
       setVisible(true);
       if (!account()) fetchAccount();
@@ -119,7 +126,7 @@ export default function UserHoverCard(props: Props) {
     if (!isTouchMode()) return;
     clearTimeout(longPressTimer);
     if (longPressTriggered) {
-      // Prevent the tap from navigating to the profile after long-press
+      // ロングプレス後のタップによるプロフィール遷移を防止
       e.preventDefault();
       longPressTriggered = false;
     } else if (!visible()) {
@@ -131,7 +138,7 @@ export default function UserHoverCard(props: Props) {
   };
 
   const handleTouchMove = () => {
-    // Cancel long-press if finger moves (user is scrolling)
+    // 指が動いたらロングプレスをキャンセル（ユーザーがスクロール中）
     clearTimeout(longPressTimer);
     longPressTriggered = false;
   };
@@ -139,31 +146,31 @@ export default function UserHoverCard(props: Props) {
   // タッチデバイスでのカード外タップはbackdropのonClickで処理するため、
   // documentレベルのtouchstartリスナーは不要
 
-  // --- Positioning for mobile: adjust card so it doesn't overflow viewport ---
+  // --- モバイル用の位置調整: カードがビューポートからはみ出さないように調整 ---
   const adjustCardPosition = (el: HTMLDivElement) => {
     cardEl = el;
     if (typeof window === "undefined") return;
-    // Use requestAnimationFrame to ensure the element is rendered
+    // requestAnimationFrameで要素がレンダリング済みであることを保証
     requestAnimationFrame(() => {
       const rect = el.getBoundingClientRect();
       const vw = window.innerWidth;
 
-      // Reset any previous inline positioning
+      // 以前のインラインポジショニングをリセット
       el.style.left = "";
       el.style.right = "";
 
       if (rect.right > vw - 8) {
-        // Card overflows right edge
+        // カードが右端からはみ出す
         el.style.left = "auto";
         el.style.right = "0";
-        // Re-check after moving
+        // 移動後に再チェック
         const newRect = el.getBoundingClientRect();
         if (newRect.left < 8) {
           el.style.right = "auto";
           el.style.left = `-${rect.left - 8}px`;
         }
       } else if (rect.left < 8) {
-        // Card overflows left edge
+        // カードが左端からはみ出す
         el.style.left = `-${rect.left - 8}px`;
       }
     });
@@ -233,7 +240,7 @@ export default function UserHoverCard(props: Props) {
     setAddToListLoading(false);
   };
 
-  // Close more menu on outside click
+  // 外部クリックでその他メニューを閉じる
   const handleDocClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest(".hover-card-more-menu")) {
@@ -261,7 +268,7 @@ export default function UserHoverCard(props: Props) {
       onTouchMove={handleTouchMove}
     >
       {props.children}
-      {/* Mobile backdrop overlay for tap-outside-to-close (rendered outside wrapper via portal-like fixed positioning) */}
+      {/* モバイル用背景オーバーレイ: 外部タップで閉じる（ポータル風の固定配置でwrapper外にレンダリング） */}
       <Show when={visible() && isTouchMode()}>
         <div
           class="hover-card-backdrop"
@@ -309,6 +316,9 @@ export default function UserHoverCard(props: Props) {
                         }} />
                       </a>
                       <span class="hover-card-handle">@{acc.acct.includes("@") ? acc.acct : `${acc.acct}@${instance()?.uri || ""}`}</span>
+                      <Show when={!isOwnAccount() && currentUser() && isFollowedBy()}>
+                        <span class="follows-you-badge">{t("profile.followsYou")}</span>
+                      </Show>
                     </div>
                   </div>
                   <Show when={acc.note}>
@@ -359,7 +369,7 @@ export default function UserHoverCard(props: Props) {
         </div>
       </Show>
 
-      {/* Unfollow confirmation modal */}
+      {/* フォロー解除確認モーダル */}
       <Show when={showUnfollowModal()}>
         <div class="modal-overlay" onClick={() => setShowUnfollowModal(false)}>
           <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>
@@ -383,7 +393,7 @@ export default function UserHoverCard(props: Props) {
         </div>
       </Show>
 
-      {/* Add to list modal */}
+      {/* リストに追加モーダル */}
       <Show when={showAddToList()}>
         <div class="modal-overlay" onClick={() => setShowAddToList(false)}>
           <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>

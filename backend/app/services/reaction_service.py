@@ -12,7 +12,7 @@ from app.utils.emoji import is_custom_emoji_shortcode, is_single_emoji
 
 
 async def _publish_reaction_event(db: AsyncSession, note: Note) -> None:
-    """Publish a real-time reaction event via Valkey pub/sub."""
+    """Valkey pub/sub経由でリアルタイムリアクションイベントをパブリッシュする。"""
     try:
         import json
 
@@ -39,13 +39,13 @@ async def _publish_reaction_event(db: AsyncSession, note: Note) -> None:
 
 
 async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> Reaction:
-    """Add a reaction to a note."""
+    """ノートにリアクションを追加する。"""
     if not is_single_emoji(emoji) and not is_custom_emoji_shortcode(emoji):
         raise ValueError("Invalid emoji")
 
     actor = user.actor
 
-    # Check for duplicate
+    # 重複チェック
     existing = await db.execute(
         select(Reaction).where(
             Reaction.actor_id == actor.id,
@@ -77,7 +77,7 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
 
     await _publish_reaction_event(db, note)
 
-    # Build activities for federation
+    # 連合用のアクティビティを構築
     from app.activitypub.renderer import (
         render_emoji_react_activity,
         render_like_activity,
@@ -95,7 +95,7 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
             react_id, actor_uri(actor), note.ap_id, emoji
         )
 
-    # Attach emoji tag for custom emoji so remote server can display it
+    # リモートサーバーが表示できるようカスタム絵文字タグを添付
     if is_custom_emoji_shortcode(emoji):
         import re
 
@@ -137,7 +137,7 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
                 if react_activity:
                     react_activity["content"] = bare
 
-    # Collect target inboxes: note author + reactor's followers
+    # 配送先inboxを収集: ノート作者 + リアクターのフォロワー
     inboxes: set[str] = set()
     if not note.actor.is_local:
         inboxes.add(note.actor.shared_inbox_url or note.actor.inbox_url)
@@ -151,20 +151,20 @@ async def add_reaction(db: AsyncSession, user: User, note: Note, emoji: str) -> 
     for inbox_url in inboxes:
         domain = urlparse(inbox_url).hostname
         if is_favourite:
-            # ☆ favourite → Like to all servers
+            # ☆ favourite → 全サーバーにLikeを送信
             await enqueue_delivery(db, actor.id, inbox_url, like_activity)
         elif domain and await ignores_emoji_reactions(domain):
-            # Mastodon → don't send (drops content, always shows ❤)
+            # Mastodon → 送信しない (contentを破棄し、常に❤を表示する)
             pass
         else:
-            # Everyone else → EmojiReact
+            # その他のサーバー → EmojiReact
             await enqueue_delivery(db, actor.id, inbox_url, react_activity)
 
     return reaction
 
 
 async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
-    """Remove a reaction from a note."""
+    """ノートからリアクションを削除する。"""
     actor = user.actor
 
     result = await db.execute(
@@ -186,7 +186,7 @@ async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
 
     await _publish_reaction_event(db, note)
 
-    # Send Undo to observing servers (mirrors add_reaction routing)
+    # 監視サーバーにUndoを送信 (add_reactionのルーティングと同一)
     if reaction_ap_id:
         from app.activitypub.renderer import (
             render_emoji_react_activity,
@@ -227,11 +227,11 @@ async def remove_reaction(db: AsyncSession, user: User, note: Note, emoji: str):
         for inbox_url in inboxes:
             domain = urlparse(inbox_url).hostname
             if is_favourite:
-                # ☆ favourite → Undo(Like) to all servers
+                # ☆ favourite → 全サーバーにUndo(Like)を送信
                 await enqueue_delivery(db, actor.id, inbox_url, undo_like)
             elif domain and await ignores_emoji_reactions(domain):
-                # Mastodon → nothing was sent, nothing to undo
+                # Mastodon → 何も送信していないので、取り消すものもない
                 pass
             else:
-                # Everyone else → Undo(EmojiReact)
+                # その他のサーバー → Undo(EmojiReact)
                 await enqueue_delivery(db, actor.id, inbox_url, undo_react)

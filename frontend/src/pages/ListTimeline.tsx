@@ -28,7 +28,7 @@ export default function ListTimeline() {
   const [notFound, setNotFound] = createSignal(false);
   const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
-  // Members panel
+  // メンバーパネル
   const [showMembers, setShowMembers] = createSignal(false);
   const [members, setMembers] = createSignal<Account[]>([]);
   const [searchQuery, setSearchQuery] = createSignal("");
@@ -52,7 +52,7 @@ export default function ListTimeline() {
     setMembers(data);
   };
 
-  // Initial load when auth is ready
+  // 認証準備完了時の初回読み込み
   createEffect(async () => {
     if (authLoading() || !currentUser()) return;
     try {
@@ -84,7 +84,7 @@ export default function ListTimeline() {
     } catch {}
   };
 
-  // SSE: reactions
+  // SSE: リアクション
   const unsubReaction = onReaction(async (data) => {
     const { id } = data as { id: string };
     if (!id) return;
@@ -94,7 +94,7 @@ export default function ListTimeline() {
   });
   onCleanup(() => unsubReaction());
 
-  // SSE: new notes in list
+  // SSE: リスト内の新しいノート
   const unsubUpdate = onUpdate((data) => {
     const note = data as Note;
     if (note?.id && !notes().some((n) => n.id === note.id)) {
@@ -103,7 +103,7 @@ export default function ListTimeline() {
   });
   onCleanup(() => unsubUpdate());
 
-  // Search accounts for member add
+  // メンバー追加用のアカウント検索
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   const handleSearch = (q: string) => {
     setSearchQuery(q);
@@ -114,7 +114,7 @@ export default function ListTimeline() {
     }
     searchTimer = setTimeout(async () => {
       const results = await searchAccounts(q, true);
-      // Filter out existing members
+      // 既存メンバーを除外
       const memberIds = new Set(members().map((m) => m.id));
       setSearchResults(results.filter((a) => !memberIds.has(a.id)));
     }, 300);
@@ -162,7 +162,7 @@ export default function ListTimeline() {
                   </div>
                 </div>
 
-                {/* Members panel */}
+                {/* メンバーパネル */}
                 <Show when={showMembers()}>
                   <div class="list-members-panel">
                     <div class="list-members-search">
@@ -225,7 +225,7 @@ export default function ListTimeline() {
                   </div>
                 </Show>
 
-                {/* Timeline */}
+                {/* タイムライン */}
                 <Show when={notes().length > 0} fallback={<p class="empty">{t("list.timelineEmpty")}</p>}>
                   <For each={notes()}>
                     {(note) => (

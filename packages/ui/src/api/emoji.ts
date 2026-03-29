@@ -11,7 +11,7 @@ export interface CustomEmoji extends BaseCustomEmoji {
 
 let cachedEmojis: CustomEmoji[] | null = null;
 let lastFetchedAt = 0;
-const EMOJI_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+const EMOJI_CACHE_TTL = 5 * 60 * 1000; // 5分
 
 export async function getCustomEmojis(): Promise<CustomEmoji[]> {
   const now = Date.now();
@@ -29,15 +29,15 @@ export function clearEmojiCache() {
   lastFetchedAt = 0;
 }
 
-// Track shortcodes imported during this session so all ReactionBars
-// can immediately suppress the importable badge without refetching.
+// このセッション中にインポートされたショートコードを追跡し、
+// 全 ReactionBar が再取得なしで importable バッジを即座に抑制できるようにする。
 const [importedShortcodes, setImportedShortcodes] = createSignal<Set<string>>(
   new Set(),
 );
 export { importedShortcodes };
 
 export function markShortcodeImported(shortcode: string) {
-  setImportedShortcodes((prev) => new Set(prev).add(shortcode));
+  setImportedShortcodes((prev: Set<string>) => new Set(prev).add(shortcode));
 }
 
 // SSE経由で絵文字変更を即座に反映
@@ -47,7 +47,7 @@ onEmojiUpdate(() => {
   getCustomEmojis()
     .then((emojis) => {
       const shortcodes = new Set(emojis.map((e) => e.shortcode));
-      setImportedShortcodes((prev) => {
+      setImportedShortcodes((prev: Set<string>) => {
         const merged = new Set(prev);
         for (const sc of shortcodes) merged.add(sc);
         return merged;

@@ -1,4 +1,4 @@
-"""Bookmark service: create, remove, list, check."""
+"""ブックマークサービス: 作成、削除、一覧、確認。"""
 
 import uuid
 

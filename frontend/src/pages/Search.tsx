@@ -17,7 +17,7 @@ export default function Search() {
     return null;
   }
   const [searchParams, setSearchParams] = useSearchParams();
-  const [query, setQuery] = createSignal(searchParams.q ?? "");
+  const [query, setQuery] = createSignal(String(searchParams.q ?? ""));
   const [noteResults, setNoteResults] = createSignal<Note[]>([]);
   const [searched, setSearched] = createSignal(false);
   const [loading, setLoading] = createSignal(false);
@@ -26,7 +26,7 @@ export default function Search() {
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined;
 
-  // Debounced suggest on input
+  // 入力時のデバウンス付きサジェスト
   createEffect(() => {
     const q = query();
     clearTimeout(debounceTimer);
@@ -52,14 +52,14 @@ export default function Search() {
       setNoteResults(data.statuses);
       setSearched(true);
     } catch {
-      // Ignore errors silently
+      // エラーは無視する
     }
     setLoading(false);
   };
 
-  // Auto-search if q param is present on load
+  // ロード時にqパラメータがあれば自動検索
   if (searchParams.q) {
-    performSearch(searchParams.q);
+    performSearch(String(searchParams.q));
   }
 
   const handleSubmit = (e: Event) => {

@@ -12,7 +12,7 @@ export default function Timeline() {
       const data = await getPublicTimeline({ local: true });
       setNotes(data);
     } catch {
-      // ignore for now
+      // 無視
     } finally {
       setLoading(false);
     }

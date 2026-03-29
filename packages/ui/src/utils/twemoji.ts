@@ -1,7 +1,7 @@
 const TWEMOJI_BASE =
   "https://cdn.jsdelivr.net/gh/jdecked/twemoji@latest/assets/svg";
 
-/** Convert an emoji string to its Twemoji SVG URL. */
+/** 絵文字文字列を Twemoji SVG の URL に変換する。 */
 export function emojiToUrl(emoji: string): string {
   const codepoints = [...emoji]
     .map((c) => c.codePointAt(0)!.toString(16))

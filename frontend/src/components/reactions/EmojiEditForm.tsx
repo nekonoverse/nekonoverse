@@ -14,15 +14,15 @@ export interface EmojiEditFields {
 interface Props {
   fields: EmojiEditFields;
   onChange: (fields: EmojiEditFields) => void;
-  /** Show copy_permission & local_only (admin-only fields) */
+  /** copy_permission と local_only を表示する（管理者専用フィールド） */
   showAdminFields?: boolean;
   copyPermission?: string;
   onCopyPermissionChange?: (v: string) => void;
   localOnly?: boolean;
   onLocalOnlyChange?: (v: boolean) => void;
-  /** Disable shortcode editing (e.g. when editing existing emoji) */
+  /** ショートコード編集を無効化する（例: 既存絵文字の編集時） */
   shortcodeReadonly?: boolean;
-  /** Optional preview image */
+  /** プレビュー画像（任意） */
   previewUrl?: string | null;
   previewDomain?: string | null;
 }

@@ -94,6 +94,7 @@ export interface Note {
   in_reply_to_id: string | null;
   in_reply_to_account_id: string | null;
   actor: NoteActor;
+  account: NoteActor;
   reactions: ReactionSummary[];
   media_attachments: MediaAttachment[];
   reblog: Note | null;
@@ -185,9 +186,10 @@ export async function getContext(noteId: string): Promise<NoteContext> {
   return apiRequest<NoteContext>(`/api/v1/statuses/${noteId}/context`);
 }
 
-export async function reblogNote(noteId: string): Promise<Note> {
+export async function reblogNote(noteId: string, visibility?: string): Promise<Note> {
   return apiRequest<Note>(`/api/v1/statuses/${noteId}/reblog`, {
     method: "POST",
+    body: visibility ? { visibility } : undefined,
   });
 }
 

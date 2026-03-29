@@ -1,4 +1,4 @@
-"""Polls API: get poll data, vote on polls."""
+"""投票 API: 投票データの取得と投票の実行。"""
 
 import uuid
 

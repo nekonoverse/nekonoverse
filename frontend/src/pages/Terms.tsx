@@ -28,7 +28,7 @@ export default function Terms() {
           );
         }
       } catch {
-        // ignore
+        // 無視
       }
       setLoaded(true);
     })();

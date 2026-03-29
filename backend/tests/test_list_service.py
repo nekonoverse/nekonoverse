@@ -346,3 +346,38 @@ async def test_get_list_ids_for_actor(db, test_user):
 
     list_ids = await get_list_ids_for_actor(db, actor.id)
     assert set(list_ids) == {lst1.id, lst2.id}
+
+
+# -- get_user_lists_for_actor --
+
+
+async def test_get_user_lists_for_actor(db, test_user):
+    from app.services.list_service import get_user_lists_for_actor
+
+    lst1 = await create_list(db, test_user, "Has Actor")
+    lst2 = await create_list(db, test_user, "Empty")
+    actor = _make_actor(username="target1")
+    db.add(actor)
+    await db.commit()
+    await add_list_member(db, lst1, actor)
+    await db.commit()
+
+    result = await get_user_lists_for_actor(db, test_user.id, actor.id)
+    assert len(result) == 1
+    assert result[0].id == lst1.id
+    assert result[0].title == "Has Actor"
+
+    # actor not in lst2
+    result_ids = {r.id for r in result}
+    assert lst2.id not in result_ids
+
+
+async def test_get_user_lists_for_actor_empty(db, test_user):
+    from app.services.list_service import get_user_lists_for_actor
+
+    actor = _make_actor(username="nobody")
+    db.add(actor)
+    await db.commit()
+
+    result = await get_user_lists_for_actor(db, test_user.id, actor.id)
+    assert result == []

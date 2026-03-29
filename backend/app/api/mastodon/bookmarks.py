@@ -1,4 +1,4 @@
-"""Bookmark API endpoints."""
+"""ブックマーク API エンドポイント。"""
 
 import uuid
 

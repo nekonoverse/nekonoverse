@@ -1,7 +1,7 @@
 /**
- * Nyaize text transformation for is_cat users.
- * Misskey-compatible: replaces な→にゃ, na→nya, etc.
- * Operates on text nodes only to avoid breaking HTML tags/attributes.
+ * is_cat ユーザー用のにゃ化テキスト変換。
+ * Misskey 互換: な→にゃ, na→nya などを置換。
+ * HTML タグ/属性を壊さないようテキストノードのみに適用する。
  */
 
 const NYAIZE_JA: [RegExp, string][] = [
@@ -17,7 +17,7 @@ const NYAIZE_EN: [RegExp, string][] = [
 ] as unknown as [RegExp, string][];
 
 /**
- * Apply nyaize transformation to a plain text string.
+ * プレーンテキスト文字列ににゃ化変換を適用する。
  */
 export function nyaizeText(text: string): string {
   let result = text;
@@ -31,8 +31,8 @@ export function nyaizeText(text: string): string {
 }
 
 /**
- * Apply nyaize to all text nodes in a DOM element.
- * Skips code, pre, a (href), and other non-text elements.
+ * DOM 要素内のすべてのテキストノードににゃ化を適用する。
+ * code, pre, a (href) などの非テキスト要素はスキップする。
  */
 export function nyaizeElement(el: HTMLElement): void {
   const walker = document.createTreeWalker(el, NodeFilter.SHOW_TEXT, {

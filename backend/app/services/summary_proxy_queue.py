@@ -1,9 +1,9 @@
-"""Valkey-based job queue for URL summary/OGP extraction.
+"""URL要約/OGP抽出用のValkeyベースジョブキュー。
 
-Jobs are stored as JSON in a Valkey list. The worker pops jobs, calls the
-summary-proxy external service, and stores PreviewCard records.
+ジョブはJSON形式でValkeyリストに保存される。ワーカーがジョブをポップし、
+summary-proxy外部サービスを呼び出して、PreviewCardレコードを保存する。
 
-Job format: {"note_id": "<uuid>", "url": "<url>", "attempts": 0, "created_at": <ts>}
+ジョブ形式: {"note_id": "<uuid>", "url": "<url>", "attempts": 0, "created_at": <ts>}
 """
 
 import asyncio
@@ -27,7 +27,7 @@ MAX_CONCURRENT = 4
 
 
 async def enqueue(note_id: uuid.UUID, url: str) -> None:
-    """Enqueue URL summary extraction for a note."""
+    """ノートのURL要約抽出をキューに追加する。"""
     if not settings.summary_proxy_url:
         return
     job = {
@@ -41,7 +41,7 @@ async def enqueue(note_id: uuid.UUID, url: str) -> None:
 
 
 async def _process_job(job: dict) -> None:
-    """Fetch summary from external service and store as PreviewCard."""
+    """外部サービスから要約を取得し、PreviewCardとして保存する。"""
     from sqlalchemy import select
 
     from app.database import async_session
@@ -51,7 +51,7 @@ async def _process_job(job: dict) -> None:
     note_id = uuid.UUID(job["note_id"])
     url = job["url"]
 
-    # Check if card already exists (idempotency)
+    # カードが既に存在するか確認 (冪等性)
     async with async_session() as db:
         existing = await db.execute(
             select(PreviewCard).where(PreviewCard.note_id == note_id)
@@ -59,7 +59,7 @@ async def _process_job(job: dict) -> None:
         if existing.scalar_one_or_none():
             return
 
-    # Call summary-proxy service
+    # summary-proxy サービスを呼び出す
     base_url = settings.summary_proxy_url
     async with make_summary_proxy_client() as client:
         resp = await client.get(
@@ -74,12 +74,12 @@ async def _process_job(job: dict) -> None:
     thumbnail = data.get("thumbnail")
     site_name = data.get("siteName")
 
-    # Skip if no useful metadata was extracted
+    # 有用なメタデータが抽出できなかった場合はスキップ
     if not title and not description:
         logger.debug("No useful metadata for %s, skipping card creation", url)
         return
 
-    # Convert thumbnail URL to media proxy URL
+    # サムネイルURLをメディアプロキシURLに変換
     image_url = None
     if thumbnail:
         from app.utils.media_proxy import media_proxy_url
@@ -87,7 +87,7 @@ async def _process_job(job: dict) -> None:
         image_url = media_proxy_url(thumbnail, variant="preview")
 
     async with async_session() as db:
-        # Re-check for idempotency
+        # 冪等性のため再チェック
         existing = await db.execute(
             select(PreviewCard).where(PreviewCard.note_id == note_id)
         )
@@ -108,7 +108,7 @@ async def _process_job(job: dict) -> None:
 
 
 async def _retry_or_dead(job: dict, error: str) -> None:
-    """Re-enqueue with backoff or move to dead-letter."""
+    """バックオフ付きで再キューするか、デッドレターに移動する。"""
     job["attempts"] = job.get("attempts", 0) + 1
     job["last_error"] = error
 
@@ -129,7 +129,7 @@ async def _retry_or_dead(job: dict, error: str) -> None:
 
 
 async def _promote_delayed() -> int:
-    """Move delayed jobs whose run_at has passed back to the main queue."""
+    """run_at が経過した遅延ジョブをメインキューに戻す。"""
     now = time.time()
     ready = await valkey_client.zrangebyscore(DELAYED_KEY, "-inf", str(now), start=0, num=50)
     if not ready:
@@ -141,7 +141,7 @@ async def _promote_delayed() -> int:
 
 
 async def _update_heartbeat() -> None:
-    """Update summary-proxy worker heartbeat."""
+    """summary-proxy ワーカーのハートビートを更新する。"""
     try:
         from datetime import datetime, timezone
 
@@ -152,7 +152,7 @@ async def _update_heartbeat() -> None:
 
 
 async def run_summary_proxy_loop() -> None:
-    """Main summary-proxy worker loop."""
+    """summary-proxy ワーカーのメインループ。"""
     if not settings.summary_proxy_url:
         logger.info("SUMMARY_PROXY_URL not set, summary-proxy worker idle")
         while True:

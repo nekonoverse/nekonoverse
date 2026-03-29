@@ -1,19 +1,19 @@
 /**
- * Client-side EXIF metadata stripping for uploaded images.
+ * アップロード画像のクライアントサイド EXIF メタデータ除去。
  *
- * Re-encodes JPEG/PNG images via the Canvas API, which naturally removes
- * all EXIF metadata (GPS coordinates, camera info, etc.).
+ * Canvas API 経由で JPEG/PNG 画像を再エンコードし、
+ * すべての EXIF メタデータ（GPS座標、カメラ情報など）を自然に除去する。
  *
- * Modern browsers (iOS Safari 13.1+, Chrome 81+, Firefox 26+) automatically
- * apply EXIF Orientation when loading images into <img> elements, so no
- * manual orientation handling is needed — just re-encode via Canvas.
+ * モダンブラウザ（iOS Safari 13.1+、Chrome 81+、Firefox 26+）は
+ * <img> 要素への画像読み込み時に EXIF Orientation を自動適用するため、
+ * 手動での向き処理は不要 — Canvas 経由の再エンコードのみで対応。
  *
- * GIF and WebP files are returned as-is since they may be animated.
+ * GIF と WebP ファイルはアニメーションの可能性があるためそのまま返す。
  */
 
 /**
- * Load a File as an HTMLImageElement.
- * The browser automatically applies EXIF orientation during loading.
+ * File を HTMLImageElement として読み込む。
+ * ブラウザが読み込み時に EXIF orientation を自動適用する。
  */
 function loadImage(file: File): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
@@ -33,30 +33,30 @@ function loadImage(file: File): Promise<HTMLImageElement> {
 }
 
 /**
- * Re-encode an image file through the Canvas API to strip EXIF metadata.
+ * Canvas API 経由で画像ファイルを再エンコードし EXIF メタデータを除去する。
  *
- * The browser auto-applies EXIF orientation when loading the image, so
- * drawing it onto a canvas produces a correctly oriented image without
- * any EXIF data (including GPS, camera info, and orientation tags).
+ * ブラウザが画像読み込み時に EXIF orientation を自動適用するため、
+ * Canvas に描画すると EXIF データ（GPS、カメラ情報、向きタグを含む）なしの
+ * 正しい向きの画像が生成される。
  *
- * Returns a new File with the same name and MIME type but without EXIF data.
+ * 同じ名前と MIME タイプだが EXIF データなしの新しい File を返す。
  *
- * GIF and WebP files are returned unchanged (they may be animated).
+ * GIF と WebP ファイルはそのまま返す（アニメーションの可能性があるため）。
  */
 export async function stripExifFromFile(file: File): Promise<File> {
   const type = file.type.toLowerCase();
 
-  // Skip GIF and WebP — they may be animated and Canvas would flatten them
+  // GIF と WebP をスキップ — アニメーションの可能性があり Canvas ではフラット化される
   if (type === "image/gif" || type === "image/webp") {
     return file;
   }
 
-  // Only process JPEG and PNG
+  // JPEG と PNG のみ処理
   if (type !== "image/jpeg" && type !== "image/png") {
     return file;
   }
 
-  // Load image — browser auto-applies EXIF orientation
+  // 画像を読み込み — ブラウザが EXIF orientation を自動適用
   const img = await loadImage(file);
 
   const canvas = document.createElement("canvas");
@@ -68,10 +68,10 @@ export async function stripExifFromFile(file: File): Promise<File> {
     return file;
   }
 
-  // Draw the already-oriented image — Canvas output has no EXIF metadata
+  // 既に向き補正済みの画像を描画 — Canvas 出力には EXIF メタデータなし
   ctx.drawImage(img, 0, 0);
 
-  // Convert canvas to blob with appropriate format
+  // Canvas を適切なフォーマットで Blob に変換
   const outputType = type === "image/png" ? "image/png" : "image/jpeg";
   const quality = type === "image/jpeg" ? 0.92 : undefined;
 
@@ -90,8 +90,8 @@ export async function stripExifFromFile(file: File): Promise<File> {
 }
 
 /**
- * Process an array of files, stripping EXIF metadata from supported image types.
- * Non-image files and unsupported formats are returned as-is.
+ * ファイル配列を処理し、対応する画像タイプから EXIF メタデータを除去する。
+ * 非画像ファイルと非対応フォーマットはそのまま返す。
  */
 export async function stripExifFromFiles(files: File[]): Promise<File[]> {
   return Promise.all(files.map(stripExifFromFile));

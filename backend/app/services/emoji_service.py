@@ -14,7 +14,7 @@ _SHORTCODE_MAX_LEN = 255
 
 
 def validate_shortcode(shortcode: str) -> str:
-    """Validate and return the shortcode, raising ValueError if invalid."""
+    """ショートコードを検証して返す。無効な場合はValueErrorを送出する。"""
     if not shortcode or len(shortcode) > _SHORTCODE_MAX_LEN:
         raise ValueError(
             f"Shortcode must be 1-{_SHORTCODE_MAX_LEN} characters: {shortcode!r}"
@@ -27,7 +27,7 @@ def validate_shortcode(shortcode: str) -> str:
 
 
 def sanitize_shortcode(shortcode: str) -> str:
-    """Replace invalid characters with underscores."""
+    """無効な文字をアンダースコアに置換する。"""
     return re.sub(r"[^a-zA-Z0-9_]", "_", shortcode).strip("_")
 
 
@@ -48,7 +48,7 @@ async def get_emojis_by_shortcodes(
     shortcodes: set[str],
     domain: str | None = None,
 ) -> list[CustomEmoji]:
-    """Fetch multiple emoji by shortcode for a given domain (or local if None)."""
+    """指定ドメイン (ローカルの場合はNone) のショートコードで複数の絵文字を取得する。"""
     if not shortcodes:
         return []
     result = await db.execute(
@@ -102,7 +102,7 @@ _EMOJI_UPDATABLE_FIELDS = {
 
 
 async def _invalidate_emoji_cache() -> None:
-    """Invalidate the Valkey emoji list cache and notify SSE clients."""
+    """Valkeyの絵文字リストキャッシュを無効化し、SSEクライアントに通知する。"""
     try:
         import json
 
@@ -204,10 +204,10 @@ async def upsert_remote_emoji(
 async def fetch_and_cache_remote_emoji(
     db: AsyncSession, shortcode: str, domain: str
 ) -> CustomEmoji | None:
-    """Fetch a remote custom emoji from the instance API and cache it.
+    """リモートインスタンスAPIからカスタム絵文字を取得してキャッシュする。
 
-    Tries GET https://{domain}/api/v1/custom_emojis to find the emoji.
-    Returns the cached CustomEmoji or None if not found / fetch failed.
+    GET https://{domain}/api/v1/custom_emojis で絵文字を検索する。
+    キャッシュされたCustomEmojiを返す。見つからない場合やフェッチ失敗時はNoneを返す。
     """
     existing = await get_custom_emoji(db, shortcode, domain)
     if existing:
@@ -252,7 +252,7 @@ async def fetch_and_cache_remote_emoji(
 async def list_remote_emoji_sources(
     db: AsyncSession, shortcode: str
 ) -> list[CustomEmoji]:
-    """Return all remote entries matching the given shortcode."""
+    """指定ショートコードに一致するすべてのリモートエントリを返す。"""
     result = await db.execute(
         select(CustomEmoji)
         .where(
@@ -294,7 +294,7 @@ async def list_remote_emojis(
     limit: int = 100,
     offset: int = 0,
 ) -> list[CustomEmoji]:
-    """List remote (cached) emoji, optionally filtered by domain/shortcode."""
+    """リモート (キャッシュ済み) 絵文字を一覧する。ドメイン/ショートコードでフィルタ可能。"""
     query = select(CustomEmoji).where(CustomEmoji.domain.isnot(None))
     if domain:
         query = query.where(CustomEmoji.domain == domain)
@@ -307,7 +307,7 @@ async def list_remote_emojis(
 
 
 async def list_remote_emoji_domains(db: AsyncSession) -> list[str]:
-    """Get distinct domains from cached remote emoji."""
+    """キャッシュ済みリモート絵文字から重複なしのドメイン一覧を取得する。"""
     result = await db.execute(
         select(CustomEmoji.domain)
         .where(CustomEmoji.domain.isnot(None))
@@ -318,7 +318,7 @@ async def list_remote_emoji_domains(db: AsyncSession) -> list[str]:
 
 
 async def import_remote_emoji_to_local(db: AsyncSession, emoji_id: uuid.UUID) -> CustomEmoji:
-    """Download a remote emoji image and create a local copy."""
+    """リモート絵文字の画像をダウンロードしてローカルコピーを作成する。"""
     remote = await get_emoji_by_id(db, emoji_id)
     if not remote or remote.domain is None:
         raise ValueError("Remote emoji not found")
@@ -330,7 +330,7 @@ async def import_remote_emoji_to_local(db: AsyncSession, emoji_id: uuid.UUID) ->
     if existing:
         raise ValueError(f"Local emoji :{remote.shortcode}: already exists")
 
-    # Download image from remote URL
+    # リモートURLから画像をダウンロード
     from app.utils.network import is_safe_url
 
     if not is_safe_url(remote.url):
@@ -340,7 +340,7 @@ async def import_remote_emoji_to_local(db: AsyncSession, emoji_id: uuid.UUID) ->
 
     async with make_async_client(timeout=30.0, follow_redirects=False) as client:
         resp = await client.get(remote.url)
-        # Follow one redirect manually with SSRF re-validation
+        # SSRF再検証付きでリダイレクトを手動で1回追跡
         if resp.is_redirect:
             redirect_url = str(resp.next_request.url) if resp.next_request else None
             if not redirect_url or not is_safe_url(redirect_url):

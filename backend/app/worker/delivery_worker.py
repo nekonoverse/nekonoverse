@@ -1,4 +1,4 @@
-"""Activity delivery worker -- processes the delivery queue."""
+"""Activity 配送ワーカー -- 配送キューを処理する。"""
 
 import asyncio
 import json
@@ -32,7 +32,7 @@ _http_client: httpx.AsyncClient | None = None
 
 
 def _get_http_client(settings) -> httpx.AsyncClient:
-    """Get or create a shared HTTP client for the delivery worker."""
+    """配送ワーカー用の共有 HTTP クライアントを取得または作成する。"""
     global _http_client
     if _http_client is None:
         from app.utils.http_client import make_async_client
@@ -48,7 +48,7 @@ def _get_http_client(settings) -> httpx.AsyncClient:
 async def get_pending_jobs(
     db: AsyncSession, limit: int = MAX_CONCURRENT
 ) -> list[DeliveryJob]:
-    """Get pending deliverable jobs with row-level locking."""
+    """行レベルロック付きで配送待ちジョブを取得する。"""
     now = datetime.now(timezone.utc)
     result = await db.execute(
         select(DeliveryJob)
@@ -79,7 +79,7 @@ async def get_next_jobs(db: AsyncSession, limit: int = 20) -> list[DeliveryJob]:
 
 
 async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Actor | None, str]:
-    """Get actor and its private key for signing. Uses in-memory cache."""
+    """署名用にアクターとその秘密鍵を取得する。インメモリキャッシュを使用。"""
     import time
 
     cached = _signing_key_cache.get(actor_id)
@@ -100,7 +100,7 @@ async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Act
 
 
 async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:
-    """Deliver an activity to a remote inbox."""
+    """activity をリモート Inbox に配送する。"""
     from app.config import settings as app_settings
     from app.utils.network import is_private_host
 
@@ -113,7 +113,7 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
         return False
 
     body = json.dumps(job.payload).encode("utf-8")
-    # Use dynamic URL for local actor to ensure correct scheme
+    # 正しいスキームを保証するためローカルアクターの動的 URL を使用
     if actor.domain is None:
         key_id = f"{app_settings.server_url}/users/{actor.username}#main-key"
     else:
@@ -139,7 +139,7 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
 
 
 async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
-    """Deliver a single job with semaphore-based concurrency control."""
+    """セマフォベースの同時実行制御で単一ジョブを配送する。"""
     async with sem:
         async with async_session() as db:
             job = await db.get(DeliveryJob, job_id)
@@ -180,7 +180,7 @@ async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
 
 
 async def _update_heartbeat():
-    """Update worker heartbeat in Valkey."""
+    """Valkey でワーカーのハートビートを更新する。"""
     try:
         now = datetime.now(timezone.utc).isoformat()
         await valkey_client.set("worker:heartbeat", now, ex=30)
@@ -189,7 +189,7 @@ async def _update_heartbeat():
 
 
 async def run_delivery_loop():
-    """Main delivery worker loop with concurrent job processing."""
+    """並行ジョブ処理を行うメイン配送ワーカーループ。"""
     logger.info("Delivery worker started (max_concurrent=%d)", MAX_CONCURRENT)
 
     sem = asyncio.Semaphore(MAX_CONCURRENT)
@@ -217,9 +217,9 @@ async def run_delivery_loop():
                         task.add_done_callback(tasks.discard)
 
             if not had_work:
-                # Wait for notification from Valkey
+                # Valkey からの通知を待機
                 await valkey_client.brpop("delivery:queue", timeout=5)
-                # result is discarded -- we just use it as a wake-up signal
+                # 結果は破棄 -- ウェイクアップシグナルとして使用するだけ
 
         except Exception:
             logger.exception("Error in delivery worker loop")

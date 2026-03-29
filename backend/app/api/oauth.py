@@ -1,4 +1,4 @@
-"""OAuth 2.0 endpoints (Mastodon compatible)."""
+"""OAuth 2.0 エンドポイント (Mastodon 互換)。"""
 
 import hashlib
 import hmac
@@ -107,7 +107,7 @@ document.addEventListener("DOMContentLoaded", function() {
 
 @router.get("/oauth/oob.js")
 async def oob_js():
-    """Serve OOB copy button script as external JS (CSP compatible)."""
+    """OOB コピーボタンスクリプトを外部 JS として配信する (CSP 互換)。"""
     return Response(
         content=OOB_JS,
         media_type="application/javascript",
@@ -117,7 +117,7 @@ async def oob_js():
 
 @router.get("/oauth/passkey.js")
 async def passkey_js():
-    """Serve passkey authentication script as external JS (CSP compatible)."""
+    """Passkey 認証スクリプトを外部 JS として配信する (CSP 互換)。"""
     return Response(
         content=PASSKEY_JS,
         media_type="application/javascript",
@@ -126,12 +126,12 @@ async def passkey_js():
 
 
 def _hash_token(token: str) -> str:
-    """Hash an OAuth token for secure storage."""
+    """OAuth トークンを安全に保存するためハッシュ化する。"""
     return hashlib.sha256(token.encode()).hexdigest()
 
 
 def _verify_client_secret(stored: str, provided: str) -> bool:
-    """Verify client_secret: supports both hashed (SHA-256) and legacy plain format."""
+    """client_secret を検証する。ハッシュ化 (SHA-256) とレガシー平文の両形式に対応。"""
     hashed = _hash_token(provided)
     if hmac.compare_digest(stored, hashed):
         return True
@@ -140,7 +140,7 @@ def _verify_client_secret(stored: str, provided: str) -> bool:
 
 
 async def _check_oauth_rate_limit(request: Request, endpoint: str) -> None:
-    """Check rate limit for OAuth endpoints."""
+    """OAuth エンドポイントのレート制限を確認する。"""
     from app.valkey_client import valkey
 
     client_ip = request.client.host if request.client else "unknown"
@@ -168,13 +168,13 @@ class AppCreateRequest(BaseModel):
 
 
 async def _parse_app_create(request: Request) -> AppCreateRequest:
-    """Parse POST /api/v1/apps from JSON or form-urlencoded."""
+    """POST /api/v1/apps を JSON または form-urlencoded からパースする。"""
     data = await _parse_form_or_json(request)
     return AppCreateRequest(**data)
 
 
 async def _parse_form_or_json(request: Request) -> dict:
-    """Parse request body from JSON or form-urlencoded."""
+    """リクエストボディを JSON または form-urlencoded からパースする。"""
     content_type = request.headers.get("content-type", "")
     if "application/json" in content_type:
         return await request.json()
@@ -186,7 +186,7 @@ async def _parse_form_or_json(request: Request) -> dict:
 async def create_app(
     request: Request, db: AsyncSession = Depends(get_db),
 ):
-    """Register an OAuth application."""
+    """OAuth アプリケーションを登録する。"""
     await _check_oauth_rate_limit(request, "apps")
     body = await _parse_app_create(request)
     # M-2: client_secretをハッシュ化して保存、プレーンテキストはレスポンスのみ
@@ -240,8 +240,8 @@ async def authorize_form(
     request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
-    """Show authorization form (simplified -- auto-authorize if logged in)."""
-    # Validate application
+    """認可フォームを表示する（簡略化 — ログイン済みなら自動認可）。"""
+    # アプリケーションの検証
     result = await db.execute(
         select(OAuthApplication).where(OAuthApplication.client_id == client_id)
     )
@@ -306,7 +306,7 @@ async def authorize_submit(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Handle login/consent/TOTP/passkey form submission and issue authorization code."""
+    """ログイン/同意/TOTP/Passkey フォームの送信を処理し、認可コードを発行する。"""
     # OAuthフォームログインにもレート制限適用 (M-3)
     await _check_oauth_rate_limit(request, "authorize")
 
@@ -529,7 +529,7 @@ OAUTH_TOTP_TTL = 300  # 5 minutes
 
 async def _redirect_to_totp(valkey, user, app, client_id, redirect_uri, scope,
                              response_type, state, code_challenge, code_challenge_method):
-    """Store OAuth params in Valkey and render TOTP form."""
+    """OAuth パラメータを Valkey に保存し、TOTP フォームを表示する。"""
     totp_token = secrets.token_urlsafe(32)
     await valkey.set(
         f"totp_pending_oauth:{totp_token}",
@@ -551,7 +551,7 @@ async def _redirect_to_totp(valkey, user, app, client_id, redirect_uri, scope,
 
 
 async def _get_session_user_id(request: Request) -> uuid.UUID | None:
-    """Extract user ID from session cookie. Returns None if not logged in."""
+    """セッション Cookie からユーザー ID を取得する。未ログイン時は None を返す。"""
     session_id = request.cookies.get("nekonoverse_session")
     if not session_id:
         return None
@@ -565,7 +565,7 @@ async def _get_session_user_id(request: Request) -> uuid.UUID | None:
 
 
 async def _generate_csrf_token() -> str:
-    """Generate a CSRF token and store it in Valkey."""
+    """CSRF トークンを生成して Valkey に保存する。"""
     from app.valkey_client import valkey
 
     token = secrets.token_urlsafe(32)
@@ -574,7 +574,7 @@ async def _generate_csrf_token() -> str:
 
 
 async def _verify_csrf_token(token: str) -> bool:
-    """Verify and consume a CSRF token."""
+    """CSRF トークンを検証して消費する。"""
     from app.valkey_client import valkey
 
     result = await valkey.get(f"csrf:{token}")
@@ -595,7 +595,7 @@ async def _issue_authorization_code(
     code_challenge: str | None,
     code_challenge_method: str | None,
 ) -> RedirectResponse | HTMLResponse:
-    """Generate an authorization code and redirect to the client."""
+    """認可コードを生成してクライアントにリダイレクトする。"""
     from app.services.user_service import get_user_by_id
 
     user = await get_user_by_id(db, user_id)
@@ -632,7 +632,7 @@ async def _issue_authorization_code(
 
 
 def _render_oob_page(*, code: str) -> HTMLResponse:
-    """Render a page that displays the authorization code for OOB flow."""
+    """OOB フローの認可コードを表示するページをレンダリングする。"""
     esc = html_mod.escape
     return HTMLResponse(f"""<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
@@ -663,7 +663,7 @@ def _render_totp_form(
     csrf_token: str = "",
     error: str | None = None,
 ) -> HTMLResponse:
-    """Render a TOTP verification form for OAuth flow."""
+    """OAuth フロー用の TOTP 検証フォームをレンダリングする。"""
     esc = html_mod.escape
     error_html = f'<p style="color:red">{esc(error)}</p>' if error else ""
 
@@ -719,7 +719,7 @@ def _render_login_form(
     error: str | None = None,
     csrf_token: str = "",
 ) -> HTMLResponse:
-    """Render a self-contained login form that POSTs to /oauth/authorize."""
+    """/oauth/authorize に POST する自己完結型のログインフォームをレンダリングする。"""
     esc = html_mod.escape
     error_html = f'<p style="color:red">{esc(error)}</p>' if error else ""
 
@@ -799,7 +799,7 @@ def _render_consent_form(
     csrf_token: str = "",
     username: str | None = None,
 ) -> HTMLResponse:
-    """Render a consent form for logged-in users to authorize an app."""
+    """ログイン済みユーザーがアプリを認可するための同意フォームをレンダリングする。"""
     esc = html_mod.escape
 
     hidden_fields = [
@@ -824,7 +824,7 @@ def _render_consent_form(
     scope_list = scope.split()
     scope_items = "\n".join(f"<li>{esc(s)}</li>" for s in scope_list)
 
-    # Switch Account リンク
+    # アカウント切り替えリンク
     switch_html = ""
     if username:
         switch_params = urlencode({
@@ -883,7 +883,7 @@ async def token(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Exchange authorization code for access token."""
+    """認可コードをアクセストークンに交換する。"""
     await _check_oauth_rate_limit(request, "token")
     body = await _parse_form_or_json(request)
     grant_type = body.get("grant_type")
@@ -897,7 +897,7 @@ async def token(
     if not grant_type or not client_id or not client_secret:
         raise HTTPException(status_code=400, detail="Missing required parameters")
 
-    # Validate application
+    # アプリケーションの検証
     result = await db.execute(
         select(OAuthApplication).where(OAuthApplication.client_id == client_id)
     )
@@ -943,7 +943,7 @@ async def token(
             if expected != auth_code.code_challenge:
                 raise HTTPException(status_code=400, detail="Invalid code_verifier")
 
-        # Create access token (ハッシュ化して保存、プレーンテキストはレスポンスのみ)
+        # アクセストークンを作成（ハッシュ化して保存、プレーンテキストはレスポンスのみ）
         access_token = secrets.token_urlsafe(64)
         token_obj = OAuthToken(
             access_token=_hash_token(access_token),
@@ -954,7 +954,7 @@ async def token(
         )
         db.add(token_obj)
 
-        # Delete used code
+        # 使用済みコードを削除
         await db.delete(auth_code)
         await db.commit()
 
@@ -993,7 +993,7 @@ async def revoke_token(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Revoke an access token."""
+    """アクセストークンを取り消す。"""
     await _check_oauth_rate_limit(request, "revoke")
     body = await _parse_form_or_json(request)
     token = body.get("token")

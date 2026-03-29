@@ -1,5 +1,6 @@
 import { createSignal, createResource, createEffect, onCleanup, Show, For } from "solid-js";
 import { getNotifications, dismissNotification, clearNotifications, markAllNotificationsAsRead, type Notification } from "@nekonoverse/ui/api/notifications";
+import { getUserAnnouncements, dismissAnnouncement, type MastodonAnnouncement } from "@nekonoverse/ui/api/announcements";
 import NoteCard from "../components/notes/NoteCard";
 import NoteThreadModal from "../components/notes/NoteThreadModal";
 import Emoji from "../components/Emoji";
@@ -7,14 +8,14 @@ import { emojify } from "@nekonoverse/ui/utils/emojify";
 import { twemojify } from "@nekonoverse/ui/utils/twemojify";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
 import { getNote } from "@nekonoverse/ui/api/statuses";
-import { onNotification, onReaction, resetUnread, unreadMentions, unreadOther, resetUnreadMentions, resetUnreadOther } from "@nekonoverse/ui/stores/streaming";
+import { onNotification, onReaction, resetUnread, unreadMentions, unreadOther, unreadAnnouncements, resetUnreadMentions, resetUnreadOther, resetUnreadAnnouncements, onAnnouncement } from "@nekonoverse/ui/stores/streaming";
 import { useI18n } from "@nekonoverse/ui/i18n";
 import { currentUser, authLoading } from "@nekonoverse/ui/stores/auth";
 import { defaultAvatar } from "@nekonoverse/ui/stores/instance";
 import { isPushSupported, getPermissionState, subscribeToPush, unsubscribeFromPush, isSubscribedToPush } from "@nekonoverse/ui/utils/pushNotification";
 import type { Dictionary } from "@nekonoverse/ui/i18n/dictionaries/ja";
 
-type Tab = "mentions" | "other";
+type Tab = "mentions" | "other" | "announcements";
 
 function profileUrl(account: Notification["account"]): string {
   if (!account) return "#";
@@ -34,6 +35,8 @@ export default function Notifications() {
   const [pushSubscribed, setPushSubscribed] = createSignal(false);
   const [pushToggling, setPushToggling] = createSignal(false);
   const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
+  const [announcements, setAnnouncements] = createSignal<MastodonAnnouncement[]>([]);
+  const [announcementsLoaded, setAnnouncementsLoaded] = createSignal(false);
 
   createEffect(async () => {
     if (currentUser() && isPushSupported()) {
@@ -52,7 +55,7 @@ export default function Notifications() {
         const result = await subscribeToPush();
         setPushSubscribed(result !== null);
       }
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
     setPushToggling(false);
   };
 
@@ -97,7 +100,7 @@ export default function Notifications() {
       try {
         await markAllNotificationsAsRead();
         setAllNotifs((prev) => prev.map((n) => ({ ...n, read: true })));
-      } catch { /* ignore */ }
+      } catch { /* 無視 */ }
       return data;
     },
   );
@@ -120,7 +123,7 @@ export default function Notifications() {
         }
         await new Promise((r) => setTimeout(r, 300 * (attempt + 1)));
       }
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
     resetUnread();
   });
 
@@ -132,7 +135,39 @@ export default function Notifications() {
     }
   });
 
-  onCleanup(() => { unsub(); unsubReaction(); });
+  const unsubAnnouncement = onAnnouncement(async () => {
+    try {
+      const fresh = await getUserAnnouncements();
+      setAnnouncements(fresh);
+    } catch { /* 無視 */ }
+  });
+
+  // タブ選択時にお知らせを読み込み、未読を自動的に既読にする
+  createEffect(async () => {
+    if (tab() === "announcements" && !announcementsLoaded()) {
+      try {
+        const data = await getUserAnnouncements();
+        setAnnouncements(data);
+        setAnnouncementsLoaded(true);
+        resetUnreadAnnouncements();
+        // 未読のお知らせを自動既読にして、次回読み込み時に新規として再表示されないようにする
+        const unread = data.filter((a) => !a.read);
+        if (unread.length > 0) {
+          await Promise.all(unread.map((a) => dismissAnnouncement(a.id)));
+          setAnnouncements((prev) => prev.map((a) => ({ ...a, read: true })));
+        }
+      } catch { /* 無視 */ }
+    }
+  });
+
+  const handleDismissAnnouncement = async (id: string) => {
+    try {
+      await dismissAnnouncement(id);
+      setAnnouncements((prev) => prev.map((a) => (a.id === id ? { ...a, read: true } : a)));
+    } catch {}
+  };
+
+  onCleanup(() => { unsub(); unsubReaction(); unsubAnnouncement(); });
 
   const loadMore = async () => {
     const current = allNotifs();
@@ -253,86 +288,144 @@ export default function Notifications() {
             <span class="notif-tab-badge">{unreadOther() > 99 ? "99+" : unreadOther()}</span>
           </Show>
         </button>
+        <button
+          class={`notif-tab${tab() === "announcements" ? " active" : ""}`}
+          onClick={() => { setTab("announcements"); resetUnreadAnnouncements(); }}
+        >
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z" />
+          </svg>
+          {t("announcements.title" as keyof Dictionary)}
+          <Show when={unreadAnnouncements() > 0}>
+            <span class="notif-tab-badge">{unreadAnnouncements() > 99 ? "99+" : unreadAnnouncements()}</span>
+          </Show>
+        </button>
       </div>
 
-      <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
+      <Show when={tab() === "announcements"}>
         <Show when={currentUser()} fallback={<p>{t("notifications.loginRequired")}</p>}>
           <Show
-            when={filtered().length > 0}
-            fallback={<p class="empty">{t("notifications.empty")}</p>}
+            when={announcements().length > 0}
+            fallback={
+              <p class="empty">
+                {announcementsLoaded() ? t("announcements.empty" as keyof Dictionary) : t("common.loading")}
+              </p>
+            }
           >
             <div class="notifications-list">
-              <For each={filtered()}>
-                {(notif) => (
-                  <div class={`notification-item${notif.read ? "" : " unread"}`}>
-                    <div class="notification-icon">{notifIcon(notif.type)}</div>
+              <For each={announcements()}>
+                {(ann) => (
+                  <div class={`notification-item announcement-item${ann.read ? "" : " unread"}`}>
+                    <div class="notification-icon" ref={(el) => { el.textContent = "\u{1F4E2}"; twemojify(el); }} />
                     <div class="notification-body">
                       <div class="notification-meta">
-                        <Show when={notif.account}>
-                          <a href={profileUrl(notif.account)} class="notification-actor">
-                            <img
-                              class="notification-avatar"
-                              src={notif.account!.avatar || defaultAvatar()}
-                              alt=""
-                            />
-                            <strong ref={(el) => {
-                              el.textContent = notif.account!.display_name || notif.account!.username;
-                              emojify(el, notif.account!.emojis || []);
-                              twemojify(el);
-                            }} />
-                          </a>
-                        </Show>
-                        <span class="notification-type-text">
-                          {t(`notifications.type.${notif.type}` as keyof Dictionary)}
-                        </span>
-                        <Show when={notif.type === "reaction" && notif.emoji}>
-                          <span class="notification-emoji">
-                            <Emoji emoji={notif.emoji!} url={notif.emoji_url} />
-                          </span>
-                        </Show>
-                        <Show when={!notif.read}>
+                        <strong class="announcement-server-name">{t("announcements.fromServer" as keyof Dictionary)}</strong>
+                        <Show when={!ann.read}>
                           <button
                             class="notification-dismiss"
-                            onClick={() => handleDismiss(notif.id)}
-                            title={t("notifications.dismiss")}
+                            onClick={() => handleDismissAnnouncement(ann.id)}
+                            title={t("announcements.markAsRead" as keyof Dictionary)}
                           >
                             ✕
                           </button>
                         </Show>
                       </div>
-                      <span class="notification-time">
-                        {(() => { useTimeTick(); return formatTimestamp(notif.created_at, t); })()}
-                      </span>
-                      <Show when={notif.status}>
-                        <div class="notification-note">
-                          <NoteCard
-                            note={notif.status!}
-                            onReactionUpdate={() => refreshNote(notif.status!.id)}
-                            onThreadOpen={(id) => setThreadNoteId(id)}
-                          />
-                        </div>
+                      <Show when={ann.title}>
+                        <strong class="announcement-title">{ann.title}</strong>
                       </Show>
+                      <span class="notification-time">
+                        {(() => { useTimeTick(); return formatTimestamp(ann.published_at, t); })()}
+                      </span>
+                      <div class="announcement-content" innerHTML={ann.content} />
                     </div>
                   </div>
                 )}
               </For>
             </div>
-            <Show when={hasMore()}>
-              <div class="load-more">
-                <button
-                  class="btn btn-small"
-                  onClick={loadMore}
-                  disabled={loadingMore()}
-                >
-                  {loadingMore() ? t("common.loading") : t("notifications.loadMore")}
-                </button>
+          </Show>
+        </Show>
+      </Show>
+
+      <Show when={tab() !== "announcements"}>
+        <Show when={initialData.state === "ready"} fallback={<p>{t("common.loading")}</p>}>
+          <Show when={currentUser()} fallback={<p>{t("notifications.loginRequired")}</p>}>
+            <Show
+              when={filtered().length > 0}
+              fallback={<p class="empty">{t("notifications.empty")}</p>}
+            >
+              <div class="notifications-list">
+                <For each={filtered()}>
+                  {(notif) => (
+                    <div class={`notification-item${notif.read ? "" : " unread"}`}>
+                      <div class="notification-icon" ref={(el) => { el.textContent = notifIcon(notif.type); twemojify(el); }} />
+                      <div class="notification-body">
+                        <div class="notification-meta">
+                          <Show when={notif.account}>
+                            <a href={profileUrl(notif.account)} class="notification-actor">
+                              <img
+                                class="notification-avatar"
+                                src={notif.account!.avatar || defaultAvatar()}
+                                alt=""
+                              />
+                              <strong ref={(el) => {
+                                el.textContent = notif.account!.display_name || notif.account!.username;
+                                emojify(el, notif.account!.emojis || []);
+                                twemojify(el);
+                              }} />
+                            </a>
+                          </Show>
+                          <span class="notification-type-text">
+                            {t(`notifications.type.${notif.type}` as keyof Dictionary)}
+                          </span>
+                          <Show when={notif.type === "reaction" && notif.emoji}>
+                            <span class="notification-emoji">
+                              <Emoji emoji={notif.emoji!} url={notif.emoji_url} />
+                            </span>
+                          </Show>
+                          <Show when={!notif.read}>
+                            <button
+                              class="notification-dismiss"
+                              onClick={() => handleDismiss(notif.id)}
+                              title={t("notifications.dismiss")}
+                            >
+                              ✕
+                            </button>
+                          </Show>
+                        </div>
+                        <span class="notification-time">
+                          {(() => { useTimeTick(); return formatTimestamp(notif.created_at, t); })()}
+                        </span>
+                        <Show when={notif.status}>
+                          <div class="notification-note">
+                            <NoteCard
+                              note={notif.status!}
+                              onReactionUpdate={() => refreshNote(notif.status!.id)}
+                              onThreadOpen={(id) => setThreadNoteId(id)}
+                            />
+                          </div>
+                        </Show>
+                      </div>
+                    </div>
+                  )}
+                </For>
               </div>
+              <Show when={hasMore()}>
+                <div class="load-more">
+                  <button
+                    class="btn btn-small"
+                    onClick={loadMore}
+                    disabled={loadingMore()}
+                  >
+                    {loadingMore() ? t("common.loading") : t("notifications.loadMore")}
+                  </button>
+                </div>
+              </Show>
             </Show>
           </Show>
         </Show>
       </Show>
 
-      {/* Thread modal */}
+      {/* スレッドモーダル */}
       <Show when={threadNoteId()}>
         <NoteThreadModal
           noteId={threadNoteId()!}

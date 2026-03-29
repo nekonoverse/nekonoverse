@@ -14,8 +14,17 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@nekonoverse/ui/*": ["../packages/ui/src/*"]
+      "@nekonoverse/ui/*": ["../packages/ui/src/*"],
+      "solid-js": ["./node_modules/solid-js"],
+      "solid-js/*": ["./node_modules/solid-js/*"],
+      "@solid-primitives/i18n": ["./node_modules/@solid-primitives/i18n"],
+      "dompurify": ["./node_modules/dompurify"],
+      "katex": ["./node_modules/katex"],
+      "katex/*": ["./node_modules/katex/*"],
+      "mfm-js": ["./node_modules/mfm-js"],
+      "vitest": ["./node_modules/vitest"]
     }
   },
-  "include": ["src", "../packages/ui/src"]
+  "include": ["src", "../packages/ui/src"],
+  "exclude": ["../packages/ui/src/**/*.test.ts"]
 }

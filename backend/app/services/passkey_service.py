@@ -17,14 +17,14 @@ from app.config import settings
 from app.models.passkey import PasskeyCredential
 from app.valkey_client import valkey
 
-CHALLENGE_TTL = 300  # 5 minutes
+CHALLENGE_TTL = 300  # 5分
 
 
-# ── Registration flow ──────────────────────────────────────────────────────
+# ── 登録フロー ──────────────────────────────────────────────────────
 
 
 async def generate_registration_options(user, session_id: str) -> dict:
-    """Generate a registration challenge and store it in Valkey."""
+    """登録チャレンジを生成し、Valkey に保存する。"""
     actor = user.actor
 
     existing = [
@@ -61,7 +61,7 @@ async def verify_registration_response(
     credential_json: dict,
     name: str | None = None,
 ) -> PasskeyCredential:
-    """Verify the registration response and save the credential to the DB."""
+    """登録レスポンスを検証し、クレデンシャルをDBに保存する。"""
     stored = await valkey.get(f"webauthn:reg:{session_id}")
     if not stored:
         raise ValueError("Challenge expired or not found")
@@ -94,11 +94,11 @@ async def verify_registration_response(
     return passkey
 
 
-# ── Authentication flow ────────────────────────────────────────────────────
+# ── 認証フロー ────────────────────────────────────────────────────
 
 
 async def generate_authentication_options(challenge_id: str) -> dict:
-    """Generate an authentication challenge and store it in Valkey."""
+    """認証チャレンジを生成し、Valkey に保存する。"""
     options = webauthn.generate_authentication_options(
         rp_id=settings.domain,
         user_verification=UserVerificationRequirement.PREFERRED,
@@ -120,7 +120,7 @@ async def verify_authentication_response(
     challenge_id: str,
     credential_json: dict,
 ):
-    """Verify the authentication response and return the authenticated User."""
+    """認証レスポンスを検証し、認証済みの User を返す。"""
     stored_challenge = await valkey.get(f"webauthn:auth:{challenge_id}")
     if not stored_challenge:
         raise ValueError("Challenge expired or not found")
@@ -167,7 +167,7 @@ async def verify_authentication_response(
     return user
 
 
-# ── Credential management ──────────────────────────────────────────────────
+# ── クレデンシャル管理 ──────────────────────────────────────────────────
 
 
 async def list_passkeys(db: AsyncSession, user) -> list[PasskeyCredential]:

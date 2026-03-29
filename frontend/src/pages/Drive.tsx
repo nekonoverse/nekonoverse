@@ -79,9 +79,9 @@ export default function Drive() {
     } catch {}
   };
 
-  const quotaExceeded = () => {
+  const quotaExceeded = (): boolean => {
     const s = storage();
-    return s && s.quota_bytes > 0 && s.usage_percent >= 100;
+    return !!s && s.quota_bytes > 0 && s.usage_percent >= 100;
   };
 
   return (

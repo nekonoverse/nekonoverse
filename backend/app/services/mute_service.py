@@ -1,4 +1,4 @@
-"""User mute service: mute, unmute, check, list. Local-only, no AP delivery."""
+"""ユーザーミュートサービス: ミュート、ミュート解除、確認、一覧。ローカル専用、AP配送なし。"""
 
 import uuid
 from datetime import datetime
@@ -62,7 +62,7 @@ async def get_muted_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID
     result = await db.execute(
         select(UserMute.target_id).where(
             UserMute.actor_id == actor_id,
-            # Exclude expired mutes
+            # 期限切れミュートを除外
             (UserMute.expires_at.is_(None)) | (UserMute.expires_at > now),
         )
     )

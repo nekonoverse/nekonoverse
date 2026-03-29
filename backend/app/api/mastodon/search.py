@@ -1,3 +1,5 @@
+from urllib.parse import urlparse
+
 from fastapi import APIRouter, Depends, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,8 +16,36 @@ router = APIRouter(prefix="/api/v2", tags=["search"])
 
 
 def _escape_like(value: str) -> str:
-    """Escape special characters for LIKE/ILIKE patterns."""
+    """LIKE/ILIKE パターンの特殊文字をエスケープする。"""
     return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _parse_user_url(url: str) -> tuple[str, str] | None:
+    """ユーザーURLからユーザー名とドメインを抽出する。
+
+    対応形式:
+      - https://domain.com/@username (Mastodon/Misskey)
+      - https://domain.com/users/username (ActivityPub標準)
+    """
+    parsed = urlparse(url.strip())
+    domain = parsed.hostname
+    if not domain:
+        return None
+
+    path = parsed.path.strip("/")
+
+    # /@username 形式
+    if path.startswith("@"):
+        username = path[1:]
+        if "/" not in username and username:
+            return (username, domain)
+
+    # /users/username 形式
+    parts = path.split("/")
+    if len(parts) == 2 and parts[0] in ("users", "actors") and parts[1]:
+        return (parts[1], domain)
+
+    return None
 
 
 @router.get("/search")
@@ -27,7 +57,7 @@ async def search(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Unified search across accounts, statuses, and hashtags (auth required)."""
+    """アカウント、ステータス、ハッシュタグを横断検索する（認証必須）。"""
     accounts = []
     statuses = []
     hashtags = []
@@ -56,11 +86,28 @@ async def search(
 async def _search_accounts(
     db: AsyncSession, q: str, resolve: bool, limit: int
 ) -> list[dict]:
-    """Search for accounts by username or display_name."""
+    """ユーザー名または display_name でアカウントを検索する。"""
     from app.api.mastodon.accounts import _actor_to_account
 
     query_str = q.lstrip("@")
     accounts = []
+
+    # URL形式: https://misskey.io/@nananek
+    if query_str.startswith("https://"):
+        parsed = _parse_user_url(query_str)
+        if parsed and resolve:
+            username, domain = parsed
+            from app.services.actor_service import get_actor_by_username, resolve_webfinger
+
+            actor = await get_actor_by_username(db, username, domain)
+            if not actor:
+                try:
+                    actor = await resolve_webfinger(db, username, domain)
+                except Exception:
+                    pass
+            if actor:
+                accounts.append(await _actor_to_account(actor, db=db))
+        return accounts
 
     # user@domain形式の場合
     if "@" in query_str:
@@ -102,7 +149,7 @@ async def _search_statuses(
     current_actor_id=None,
     resolve: bool = False,
 ) -> list[dict]:
-    """Search public statuses by content or resolve by URL."""
+    """公開ステータスを content で検索、または URL で照会する。"""
     from app.api.mastodon.statuses import notes_to_responses
 
     # URL形式の場合はリモートノート照会を試みる
@@ -118,7 +165,7 @@ async def _search_statuses(
             except Exception:
                 await db.rollback()
         if note:
-            # Re-query with eager loading, visibility and soft-delete filter
+            # eager loading、visibility、論理削除フィルタ付きで再クエリ
             result = await db.execute(
                 select(Note)
                 .options(*_note_load_options())
@@ -138,7 +185,7 @@ async def _search_statuses(
             )
         return []
 
-    # Use neko-search if available
+    # neko-search が利用可能な場合は使用
     if settings.neko_search_enabled:
         neko_results = await _search_via_neko_search(q, limit)
         if neko_results is not None:
@@ -151,7 +198,7 @@ async def _search_statuses(
                 )
             return []
 
-    # Fallback: ILIKE search
+    # フォールバック: ILIKE 検索
     pattern = f"%{_escape_like(q)}%"
     query = (
         select(Note)
@@ -180,7 +227,7 @@ async def _search_statuses(
 
 
 async def _search_via_neko_search(q: str, limit: int) -> list[str] | None:
-    """Call neko-search API. Returns list of note_id strings or None on failure."""
+    """neko-search API を呼び出す。note_id 文字列のリストを返し、失敗時は None を返す。"""
     import logging
 
     from app.utils.http_client import make_neko_search_client
@@ -199,7 +246,7 @@ async def _search_via_neko_search(q: str, limit: int) -> list[str] | None:
 
 
 async def _fetch_notes_by_ids(db: AsyncSession, note_id_strs: list[str]) -> list:
-    """Fetch notes by ID strings, preserving order from search results."""
+    """ID 文字列からノートを取得し、検索結果の順序を維持する。"""
     import uuid
 
     try:
@@ -221,7 +268,7 @@ async def _fetch_notes_by_ids(db: AsyncSession, note_id_strs: list[str]) -> list
         )
     )
     notes_by_id = {n.id: n for n in result.scalars().all()}
-    # Preserve search ranking order
+    # 検索ランキング順を維持
     return [notes_by_id[uid] for uid in uuids if uid in notes_by_id]
 
 
@@ -231,7 +278,7 @@ async def suggest(
     limit: int = Query(default=10, ge=1, le=50),
     _user: User = Depends(get_current_user),
 ):
-    """Proxy suggest requests to neko-search (auth required)."""
+    """neko-search へのサジェストリクエストをプロキシする（認証必須）。"""
     if not settings.neko_search_enabled:
         return {"suggestions": [], "prefix": ""}
 
@@ -242,7 +289,7 @@ async def suggest(
 
 
 async def _suggest_via_neko_search(q: str, limit: int) -> dict | None:
-    """Call neko-search /suggest API. Returns response dict or None on failure."""
+    """neko-search /suggest API を呼び出す。レスポンス辞書を返し、失敗時は None を返す。"""
     import logging
 
     from app.utils.http_client import make_neko_search_client
@@ -260,7 +307,7 @@ async def _suggest_via_neko_search(q: str, limit: int) -> dict | None:
 
 
 async def _search_hashtags(db: AsyncSession, q: str, limit: int) -> list[dict]:
-    """Search hashtags by name."""
+    """名前でハッシュタグを検索する。"""
     pattern = f"%{_escape_like(q.lower())}%"
     result = await db.execute(
         select(Hashtag)

@@ -597,3 +597,83 @@ async def test_statuses_count_excludes_private(app_client, db, test_user, mock_v
     data = resp.json()
     # public + unlistedのみカウント
     assert data["statuses_count"] == 2
+
+
+# -- Batch accounts (GET /api/v1/accounts?id[]=...) --
+
+
+async def test_batch_accounts(app_client, db, test_user, mock_valkey):
+    """Fetch multiple accounts by ID."""
+    actor2 = await make_remote_actor(db, username="batch2", domain="remote.example")
+    await db.commit()
+
+    resp = await app_client.get(
+        "/api/v1/accounts",
+        params=[("id[]", str(test_user.actor_id)), ("id[]", str(actor2.id))],
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 2
+    returned_ids = {d["id"] for d in data}
+    assert str(test_user.actor_id) in returned_ids
+    assert str(actor2.id) in returned_ids
+
+
+async def test_batch_accounts_empty(app_client, mock_valkey):
+    """No id[] params returns empty list."""
+    resp = await app_client.get("/api/v1/accounts")
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_batch_accounts_invalid_ids(app_client, mock_valkey):
+    """Invalid UUIDs are silently skipped."""
+    resp = await app_client.get(
+        "/api/v1/accounts",
+        params=[("id[]", "not-a-uuid"), ("id[]", "also-bad")],
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_batch_accounts_nonexistent(app_client, mock_valkey):
+    """Non-existent UUIDs return empty list."""
+    resp = await app_client.get(
+        "/api/v1/accounts",
+        params=[("id[]", str(uuid.uuid4()))],
+    )
+    assert resp.status_code == 200
+    assert resp.json() == []
+
+
+async def test_batch_accounts_single(app_client, test_user, mock_valkey):
+    """Single id[] returns a list with one account."""
+    resp = await app_client.get(
+        "/api/v1/accounts",
+        params=[("id[]", str(test_user.actor_id))],
+    )
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data) == 1
+    assert data[0]["username"] == "testuser"
+
+
+async def test_lookup_remote_actor_case_insensitive(app_client, db, mock_valkey):
+    """リモートアクターのlookupはケース非依存で一致する。"""
+    # preferredUsernameが大文字始まりのリモートアクターを作成
+    await make_remote_actor(db, username="Alice", domain="remote.example")
+    await db.commit()
+
+    # 小文字で検索しても見つかる
+    resp = await app_client.get(
+        "/api/v1/accounts/lookup", params={"acct": "alice@remote.example"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["username"] == "Alice"
+
+    # 大文字で検索しても見つかる
+    resp = await app_client.get(
+        "/api/v1/accounts/lookup", params={"acct": "Alice@remote.example"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["username"] == "Alice"

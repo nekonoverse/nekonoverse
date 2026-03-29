@@ -1,4 +1,4 @@
-"""Handle incoming Flag (report) activities."""
+"""受信した Flag (通報) activity を処理する。"""
 
 import logging
 
@@ -11,12 +11,12 @@ logger = logging.getLogger(__name__)
 
 
 async def handle_flag(db: AsyncSession, activity: dict):
-    """Handle Flag activity -- creates a report from a remote server."""
+    """Flag activity を処理する -- リモートサーバーからの通報を作成する。"""
     actor_ap_id = activity.get("actor")
     if not actor_ap_id:
         return
 
-    # Resolve reporting actor
+    # 通報者アクターを解決
     reporter = await get_actor_by_ap_id(db, actor_ap_id)
     if not reporter:
         reporter = await fetch_remote_actor(db, actor_ap_id)
@@ -24,7 +24,7 @@ async def handle_flag(db: AsyncSession, activity: dict):
         logger.warning("Could not resolve reporter actor %s", actor_ap_id)
         return
 
-    # Determine target(s)
+    # ターゲットを特定
     obj = activity.get("object")
     target_ap_ids = []
     if isinstance(obj, str):
@@ -35,13 +35,13 @@ async def handle_flag(db: AsyncSession, activity: dict):
     if not target_ap_ids:
         return
 
-    # First target should be the actor being reported
+    # 最初のターゲットは通報対象のアクターであるべき
     target_actor = await get_actor_by_ap_id(db, target_ap_ids[0])
     if not target_actor:
         logger.info("Flag target actor not found: %s", target_ap_ids[0])
         return
 
-    # Check if any remaining targets are notes
+    # 残りのターゲットにノートがあるかチェック
     target_note = None
     for ap_id in target_ap_ids[1:]:
         note = await get_note_by_ap_id(db, ap_id)

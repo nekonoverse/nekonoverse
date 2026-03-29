@@ -1,4 +1,4 @@
-"""Email service: SMTP sending, templates, token management."""
+"""メールサービス: SMTP送信、テンプレート、トークン管理。"""
 
 import logging
 import secrets
@@ -22,7 +22,7 @@ RESEND_COOLDOWN = timedelta(minutes=5)
 
 
 async def send_email(to: str, subject: str, html: str, text: str) -> None:
-    """Send an email via SMTP. Called by the email queue worker."""
+    """SMTP経由でメールを送信する。メールキューワーカーから呼び出される。"""
     if not settings.email_enabled:
         logger.warning("Email not configured, skipping send to %s", to)
         return
@@ -49,7 +49,7 @@ async def send_email(to: str, subject: str, html: str, text: str) -> None:
 
 
 def _base_html(title: str, body: str) -> str:
-    """Wrap email body in a minimal HTML template."""
+    """メール本文を最小限のHTMLテンプレートでラップする。"""
     return f"""\
 <!DOCTYPE html>
 <html>
@@ -69,7 +69,7 @@ def _base_html(title: str, body: str) -> str:
 
 
 def render_verification_email(username: str, verify_url: str) -> tuple[str, str]:
-    """Render email verification email. Returns (html, text)."""
+    """メール確認用メールをレンダリングする。(html, text) を返す。"""
     html_body = f"""\
   <p>Hello <strong>{username}</strong>,</p>
   <p>Please verify your email address by clicking the button below:</p>
@@ -95,7 +95,7 @@ def render_verification_email(username: str, verify_url: str) -> tuple[str, str]
 
 
 def render_password_reset_email(username: str, reset_url: str) -> tuple[str, str]:
-    """Render password reset email. Returns (html, text)."""
+    """パスワードリセット用メールをレンダリングする。(html, text) を返す。"""
     html_body = f"""\
   <p>Hello <strong>{username}</strong>,</p>
   <p>A password reset was requested for your account. Click the button below to set a new password:</p>
@@ -125,7 +125,7 @@ def render_password_reset_email(username: str, reset_url: str) -> tuple[str, str
 
 
 async def send_verification_email(db: AsyncSession, user: User) -> bool:
-    """Generate token and enqueue verification email. Returns False if on cooldown."""
+    """トークンを生成し、確認メールをキューに追加する。クールダウン中はFalseを返す。"""
     if not settings.email_enabled:
         return False
 
@@ -152,7 +152,7 @@ async def send_verification_email(db: AsyncSession, user: User) -> bool:
 
 
 async def send_password_reset_email(db: AsyncSession, user: User) -> bool:
-    """Generate token and enqueue password reset email. Returns False if on cooldown."""
+    """トークンを生成し、パスワードリセットメールをキューに追加する。クールダウン中はFalseを返す。"""
     if not settings.email_enabled:
         return False
 
@@ -176,7 +176,7 @@ async def send_password_reset_email(db: AsyncSession, user: User) -> bool:
 
 
 async def verify_email_token(db: AsyncSession, user_id: UUID, token: str) -> bool:
-    """Verify email token. Returns True on success."""
+    """メールトークンを検証する。成功時にTrueを返す。"""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user or not user.email_verification_token:
@@ -197,7 +197,7 @@ async def verify_email_token(db: AsyncSession, user_id: UUID, token: str) -> boo
 
 
 async def verify_reset_token(db: AsyncSession, user_id: UUID, token: str) -> User | None:
-    """Verify password reset token. Returns User on success, None on failure."""
+    """パスワードリセットトークンを検証する。成功時にUserを返し、失敗時にNoneを返す。"""
     result = await db.execute(select(User).where(User.id == user_id))
     user = result.scalar_one_or_none()
     if not user or not user.password_reset_token:

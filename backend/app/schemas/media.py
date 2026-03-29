@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 
 class MediaAttachment(BaseModel):
-    """Mastodon-compatible MediaAttachment response."""
+    """Mastodon 互換の MediaAttachment レスポンス。"""
 
     id: str
     type: str

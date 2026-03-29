@@ -1,4 +1,4 @@
-"""Admin and moderation API endpoints."""
+"""管理およびモデレーション API エンドポイント。"""
 
 import uuid
 
@@ -14,6 +14,11 @@ from app.models.follow import Follow
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
 from app.models.user import User
+from app.schemas.announcement import (
+    AnnouncementAdminResponse,
+    AnnouncementCreateRequest,
+    AnnouncementUpdateRequest,
+)
 from app.schemas.admin import (
     AdminEmojiResponse,
     AdminEmojiUpdate,
@@ -45,7 +50,7 @@ from app.schemas.admin import (
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
 
-# --- Server Icon (existing) ---
+# --- サーバーアイコン ---
 
 
 @router.post("/server-icon")
@@ -76,7 +81,7 @@ async def upload_server_icon(
     try:
         await generate_all_icons(db, data, set_server_icon=False)
     except Exception:
-        pass  # Icon derivative generation is best-effort
+        pass  # アイコン派生画像の生成はベストエフォート
 
     from app.services.server_settings_service import set_setting
 
@@ -86,7 +91,7 @@ async def upload_server_icon(
     return {"ok": True, "url": url}
 
 
-# --- Server Settings ---
+# --- サーバー設定 ---
 
 
 @router.get("/settings", response_model=ServerSettingsResponse)
@@ -142,7 +147,7 @@ async def update_server_settings(
             await set_setting(db, key, "true" if value else "false")
         elif key == "registration_mode":
             await set_setting(db, key, value)
-            # Sync legacy registration_open for backward compat
+            # 後方互換のためレガシーの registration_open を同期
             await set_setting(db, "registration_open", "true" if value != "closed" else "false")
             # 承認制から別モードへ変更時: pendingユーザーを自動処理
             if value != "approval":
@@ -200,7 +205,7 @@ async def update_server_settings(
     )
 
 
-# --- VAPID Key Management ---
+# --- VAPID 鍵管理 ---
 
 
 @router.post("/push/generate-vapid-key")
@@ -208,7 +213,7 @@ async def generate_vapid_key(
     user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Generate a new VAPID key pair and store the private key in server settings."""
+    """新しい VAPID 鍵ペアを生成し、秘密鍵をサーバー設定に保存する。"""
     import base64
 
     from cryptography.hazmat.primitives.asymmetric import ec
@@ -244,7 +249,7 @@ async def generate_vapid_key(
     }
 
 
-# --- Stats ---
+# --- 統計 ---
 
 
 @router.get("/stats", response_model=AdminStatsResponse)
@@ -292,7 +297,7 @@ async def get_admin_stats(
     )
 
 
-# --- User Management ---
+# --- ユーザー管理 ---
 
 
 @router.get("/users", response_model=list[AdminUserResponse])
@@ -442,7 +447,7 @@ async def unsilence_user(
     return {"ok": True}
 
 
-# --- Federation ---
+# --- 連合 ---
 
 
 @router.get("/federation", response_model=FederatedServerListResponse)
@@ -491,7 +496,7 @@ async def get_federated_server_detail_endpoint(
     return FederatedServerDetailResponse(**detail)
 
 
-# --- Domain Blocks ---
+# --- ドメインブロック ---
 
 
 @router.get("/domain_blocks", response_model=list[DomainBlockResponse])
@@ -542,7 +547,7 @@ async def remove_domain_block(
     return {"ok": True}
 
 
-# --- Reports ---
+# --- 通報 ---
 
 
 @router.get("/reports", response_model=list[ReportResponse])
@@ -615,7 +620,7 @@ async def reject_report(
     return {"ok": True}
 
 
-# --- Post Moderation ---
+# --- 投稿モデレーション ---
 
 
 @router.delete("/notes/{note_id}")
@@ -659,7 +664,7 @@ async def force_note_sensitive(
     return {"ok": True}
 
 
-# --- Moderation Log ---
+# --- モデレーションログ ---
 
 
 @router.get("/log", response_model=list[ModerationLogResponse])
@@ -691,7 +696,7 @@ async def get_moderation_log(
     ]
 
 
-# --- Custom Emoji Management ---
+# --- カスタム絵文字管理 ---
 
 
 @router.get("/emoji/list", response_model=list[AdminEmojiResponse])
@@ -758,7 +763,7 @@ async def import_remote_emoji_by_shortcode(
     if not remote:
         raise HTTPException(status_code=404, detail="Remote emoji not found")
 
-    # Apply metadata overrides to remote emoji before import
+    # インポート前にリモート絵文字にメタデータのオーバーライドを適用
     overrides = {}
     if body.category is not None:
         overrides["category"] = body.category
@@ -780,7 +785,7 @@ async def import_remote_emoji_by_shortcode(
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
 
-    # Apply shortcode override to the new local emoji
+    # 新しいローカル絵文字にショートコードのオーバーライドを適用
     if body.shortcode_override and body.shortcode_override != body.shortcode:
         await update_emoji(db, emoji.id, {"shortcode": body.shortcode_override})
 
@@ -921,7 +926,7 @@ async def export_emojis(
             ext = e.url.rsplit(".", 1)[-1] if "." in e.url else "png"
             filename = f"{e.shortcode}.{ext}"
 
-            # Read image from S3 via drive file s3_key
+            # ドライブファイルの s3_key 経由で S3 から画像を読み取り
             image_data = None
             if e.drive_file_id:
                 from app.services.drive_service import get_drive_file
@@ -1025,7 +1030,7 @@ async def import_emojis(
                 results["errors"].append("Missing name or fileName")
                 continue
 
-            # Sanitize shortcode: replace invalid characters with underscores
+            # ショートコードをサニタイズ: 無効な文字をアンダースコアに置換
             original_shortcode = shortcode
             shortcode = sanitize_shortcode(shortcode)
             try:
@@ -1094,7 +1099,7 @@ async def import_emojis(
     return results
 
 
-# --- Server Files ---
+# --- サーバーファイル ---
 
 
 @router.get("/server-files")
@@ -1173,7 +1178,7 @@ async def delete_server_file_endpoint(
     return {"ok": True}
 
 
-# --- Queue Management ---
+# --- キュー管理 ---
 
 
 @router.get("/queue/stats", response_model=QueueStatsResponse)
@@ -1242,7 +1247,7 @@ async def purge_delivered_jobs(
     return {"ok": True, "purged": count}
 
 
-# --- System Stats ---
+# --- システム統計 ---
 
 
 @router.get("/system/stats", response_model=SystemStatsResponse)
@@ -1254,14 +1259,14 @@ async def get_system_stats(
 
     data: dict = {}
 
-    # DB pool stats
+    # DB コネクションプール統計
     pool = engine.pool
     data["db_pool_size"] = pool.size()
     data["db_pool_checked_in"] = pool.checkedin()
     data["db_pool_checked_out"] = pool.checkedout()
     data["db_pool_overflow"] = pool.overflow()
 
-    # Valkey stats
+    # Valkey 統計
     try:
         info = await valkey.info()
         data["valkey_connected_clients"] = info.get("connected_clients", 0)
@@ -1309,7 +1314,7 @@ async def get_system_stats(
     except Exception:
         pass
 
-    # Worker heartbeat
+    # ワーカーハートビート
     try:
         heartbeat = await valkey.get("worker:heartbeat")
         if heartbeat:
@@ -1323,7 +1328,7 @@ async def get_system_stats(
     return SystemStatsResponse(**data)
 
 
-# --- Pending Registrations ---
+# --- 承認待ち登録 ---
 
 
 @router.get("/registrations", response_model=list[PendingRegistrationResponse])
@@ -1331,7 +1336,7 @@ async def list_pending_registrations(
     user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
-    """List users awaiting approval."""
+    """承認待ちのユーザー一覧を返す。"""
     result = await db.execute(
         select(User)
         .options(selectinload(User.actor))
@@ -1357,7 +1362,7 @@ async def approve_registration(
     user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Approve a pending registration."""
+    """承認待ちの登録を承認する。"""
     from app.services.moderation_service import log_action
 
     target = await _get_user(db, user_id)
@@ -1376,7 +1381,7 @@ async def reject_registration(
     user: User = Depends(get_permitted_staff("registrations")),
     db: AsyncSession = Depends(get_db),
 ):
-    """Reject a pending registration and delete the user."""
+    """承認待ちの登録を却下し、ユーザーを削除する。"""
     from app.services.moderation_service import log_action
 
     target = await _get_user(db, user_id)
@@ -1391,7 +1396,7 @@ async def reject_registration(
     return {"ok": True}
 
 
-# --- Moderator Permissions ---
+# --- モデレーター権限 ---
 
 
 @router.get("/permissions")
@@ -1399,7 +1404,7 @@ async def get_permissions(
     user: User = Depends(get_staff_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return current moderator permission settings (visible to all staff)."""
+    """現在のモデレーター権限設定を返す（全スタッフに表示）。"""
     from app.services.permission_service import get_moderator_permissions
 
     return await get_moderator_permissions(db)
@@ -1411,7 +1416,7 @@ async def update_permissions(
     user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update moderator permission settings (admin only)."""
+    """モデレーター権限設定を更新する（管理者のみ）。"""
     from app.services.permission_service import (
         get_moderator_permissions,
         set_moderator_permissions,
@@ -1422,7 +1427,7 @@ async def update_permissions(
     return await get_moderator_permissions(db)
 
 
-# --- Roles ---
+# --- ロール ---
 
 
 @router.get("/roles")
@@ -1430,7 +1435,7 @@ async def list_roles(
     user: User = Depends(get_admin_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Return all roles ordered by priority (descending)."""
+    """全ロールを優先度の降順で返す。"""
     from app.services.role_service import get_all_roles
 
     roles = await get_all_roles(db)
@@ -1503,13 +1508,13 @@ async def delete_role(
         raise HTTPException(status_code=422, detail=str(e))
 
 
-# --- Helpers ---
+# --- ヘルパー ---
 
 
 async def _resolve_pending_users(db: AsyncSession, admin: User, new_mode: str):
-    """Auto-resolve pending users when leaving approval mode.
+    """承認制モードから離れる際に承認待ちユーザーを自動処理する。
 
-    open -> approve all, closed/invite -> reject (delete) all.
+    open -> 全員承認、closed/invite -> 全員却下（削除）。
     """
     from app.services.moderation_service import log_action
 
@@ -1532,7 +1537,7 @@ async def _resolve_pending_users(db: AsyncSession, admin: User, new_mode: str):
 
 
 def _check_moderation_permission(actor: User, target: User):
-    """Prevent moderators from taking action against staff members."""
+    """モデレーターがスタッフメンバーに対してアクションを取ることを防ぐ。"""
     if actor.is_admin:
         return
     if target.is_staff:
@@ -1550,3 +1555,99 @@ async def _get_user(db: AsyncSession, user_id: uuid.UUID) -> User:
     if not target:
         raise HTTPException(status_code=404, detail="User not found")
     return target
+
+
+# --- お知らせ ---
+
+
+@router.get("/announcements", response_model=list[AnnouncementAdminResponse])
+async def list_announcements_admin(
+    user: User = Depends(get_permitted_staff("announcements")),
+    db: AsyncSession = Depends(get_db),
+):
+    """全お知らせ一覧を返す（お知らせ権限を持つスタッフ）。"""
+    from app.services.announcement_service import list_announcements_admin
+
+    return await list_announcements_admin(db)
+
+
+@router.post(
+    "/announcements", response_model=AnnouncementAdminResponse, status_code=201
+)
+async def create_announcement(
+    body: AnnouncementCreateRequest,
+    user: User = Depends(get_permitted_staff("announcements")),
+    db: AsyncSession = Depends(get_db),
+):
+    """新しいお知らせを作成する。"""
+    from app.services.announcement_service import (
+        create_announcement as _create,
+        publish_announcement_event,
+    )
+
+    announcement = await _create(
+        db,
+        title=body.title,
+        content=body.content,
+        published=body.published,
+        all_day=body.all_day,
+        starts_at=body.starts_at,
+        ends_at=body.ends_at,
+    )
+    await db.commit()
+    if announcement.published:
+        await publish_announcement_event(announcement)
+    return announcement
+
+
+@router.get("/announcements/{announcement_id}", response_model=AnnouncementAdminResponse)
+async def get_announcement(
+    announcement_id: uuid.UUID,
+    user: User = Depends(get_permitted_staff("announcements")),
+    db: AsyncSession = Depends(get_db),
+):
+    """単一のお知らせを取得する。"""
+    from app.services.announcement_service import get_announcement as _get
+
+    announcement = await _get(db, announcement_id)
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    return announcement
+
+
+@router.patch("/announcements/{announcement_id}", response_model=AnnouncementAdminResponse)
+async def update_announcement(
+    announcement_id: uuid.UUID,
+    body: AnnouncementUpdateRequest,
+    user: User = Depends(get_permitted_staff("announcements")),
+    db: AsyncSession = Depends(get_db),
+):
+    """お知らせを更新する。"""
+    from app.services.announcement_service import (
+        update_announcement as _update,
+        publish_announcement_event,
+    )
+
+    updates = body.model_dump(exclude_unset=True)
+    announcement = await _update(db, announcement_id, **updates)
+    if not announcement:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    await db.commit()
+    if announcement.published:
+        await publish_announcement_event(announcement)
+    return announcement
+
+
+@router.delete("/announcements/{announcement_id}", status_code=204)
+async def delete_announcement(
+    announcement_id: uuid.UUID,
+    user: User = Depends(get_permitted_staff("announcements")),
+    db: AsyncSession = Depends(get_db),
+):
+    """お知らせを削除する。"""
+    from app.services.announcement_service import delete_announcement as _delete
+
+    deleted = await _delete(db, announcement_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Announcement not found")
+    await db.commit()

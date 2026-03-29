@@ -30,6 +30,7 @@ import { getBlockedAccounts, unblockAccount, getMutedAccounts, unmuteAccount, mo
 import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type LoginHistoryEntry } from "@nekonoverse/ui/api/sessions";
 import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
 import PasskeyManager from "../components/PasskeyManager";
+import ThemeCustomizer from "../components/settings/ThemeCustomizer";
 import Breadcrumb from "../components/Breadcrumb";
 
 declare const __APP_VERSION__: string;
@@ -178,6 +179,10 @@ function AppearanceTab() {
             </button>
           ))}
         </div>
+
+        <Show when={currentUser()}>
+          <ThemeCustomizer />
+        </Show>
       </div>
 
       <div class="settings-section">
@@ -376,7 +381,7 @@ function PostingTab() {
     setSourceMediaType(value);
     try {
       await updateSourceMediaType(value);
-    } catch { /* ignore */ }
+    } catch { /* 無視 */ }
   };
 
   return (
@@ -459,7 +464,7 @@ function SecurityTab(props: { onLogout: () => void }) {
   const [pwMsg, setPwMsg] = createSignal("");
   const [pwError, setPwError] = createSignal("");
 
-  // TOTP state
+  // TOTP の状態
   const [totpEnabled, setTotpEnabled] = createSignal(false);
   const [totpLoading, setTotpLoading] = createSignal(true);
   const [totpStep, setTotpStep] = createSignal<
@@ -1343,7 +1348,7 @@ function DataExportTab() {
       const status = await getExportStatus();
       setExportStatus(status);
     } catch {
-      // ignore
+      // 無視
     } finally {
       setLoading(false);
     }
@@ -1353,7 +1358,7 @@ function DataExportTab() {
     if (currentUser()) fetchStatus();
   });
 
-  // Poll while pending/processing
+  // pending/processing 中にポーリング
   createEffect(() => {
     const st = exportStatus();
     if (st && (st.status === "pending" || st.status === "processing")) {
@@ -1440,7 +1445,7 @@ function DataExportTab() {
                   <a
                     href={`/api/v1/export/${st.id}/download`}
                     class="btn"
-                    download
+                    download=""
                   >
                     {t("dataExport.download" as any)}
                   </a>

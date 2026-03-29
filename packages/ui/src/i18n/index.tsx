@@ -50,7 +50,7 @@ export const I18nProvider: ParentComponent = (props) => {
     document.documentElement.lang = l;
   };
 
-  // Set initial lang attribute
+  // 初期 lang 属性を設定
   document.documentElement.lang = locale();
 
   return (

@@ -48,6 +48,8 @@ export async function fetchCurrentUser() {
     setCurrentUser(user);
     cacheUser(user);
     fetchFollowedIds();
+    // サーバーからテーマを同期（ノンブロッキング）
+    import("./theme").then((m) => m.syncThemeFromServer()).catch(() => {});
   } catch {
     setCurrentUser(null);
     cacheUser(null);
@@ -93,7 +95,7 @@ export async function loginWithPasskey() {
   await fetchCurrentUser();
 }
 
-/** Check if current user has emoji management permission. */
+/** 現在のユーザーが絵文字管理権限を持っているかチェックする。 */
 export function canManageEmoji(): boolean {
   const u = currentUser();
   if (!u) return false;
@@ -102,7 +104,7 @@ export function canManageEmoji(): boolean {
   return u.nekonoverse_permissions?.includes("emoji") ?? false;
 }
 
-/** Check if current user has content moderation permission. */
+/** 現在のユーザーがコンテンツモデレーション権限を持っているかチェックする。 */
 export function canModerateContent(): boolean {
   const u = currentUser();
   if (!u) return false;

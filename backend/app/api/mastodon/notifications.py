@@ -1,4 +1,4 @@
-"""Notification API endpoints."""
+"""通知 API エンドポイント。"""
 
 import re
 import uuid
@@ -26,7 +26,7 @@ async def _resolve_actor_emojis(
     display_name: str | None,
     domain: str | None,
 ) -> list[CustomEmojiInfo]:
-    """Resolve custom emojis in an actor's display_name."""
+    """アクターの display_name 内のカスタム絵文字を解決する。"""
     if not display_name or not db:
         return []
     shortcodes = set(_SHORTCODE_RE.findall(display_name))
@@ -59,7 +59,7 @@ async def _batch_resolve_emoji_urls(
     db,
     emoji_strings: list[str | None],
 ) -> dict[str, str | None]:
-    """Batch-resolve custom emoji reaction strings to image URLs."""
+    """カスタム絵文字リアクション文字列を画像 URL にバッチ解決する。"""
     # カスタム絵文字のshortcodeを収集
     parsed: dict[str, tuple[str, str | None]] = {}
     for emoji in emoji_strings:
@@ -169,8 +169,8 @@ async def _notification_to_response(
     if emoji_url_map and notif.reaction_emoji:
         emoji_url = emoji_url_map.get(notif.reaction_emoji)
 
-    # ⭐ reaction (from Mastodon favourite API) → "favourite" type for compat
-    # Other emoji reactions → "reaction" type (Fedibird/Misskey extension)
+    # ⭐ リアクション (Mastodon favourite API 由来) → 互換性のため "favourite" タイプに変換
+    # その他の絵文字リアクション → "reaction" タイプ (Fedibird/Misskey 拡張)
     notif_type = notif.type
     if notif.type == "reaction" and notif.reaction_emoji == "\u2b50":
         notif_type = "favourite"

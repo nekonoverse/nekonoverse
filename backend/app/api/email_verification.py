@@ -1,4 +1,4 @@
-"""Email verification and password reset API endpoints."""
+"""メール認証とパスワードリセット API エンドポイント。"""
 
 from uuid import UUID
 
@@ -14,15 +14,15 @@ from app.models.user import User
 
 router = APIRouter(prefix="/api/v1", tags=["email"])
 
-# Rate limit constants
-TOKEN_VERIFY_MAX_ATTEMPTS = 10  # max attempts per IP per window
-TOKEN_VERIFY_WINDOW = 900  # 15 minutes
-EMAIL_SEND_MAX_PER_IP = 5  # max emails per IP per window
-EMAIL_SEND_WINDOW = 900  # 15 minutes
+# レート制限定数
+TOKEN_VERIFY_MAX_ATTEMPTS = 10  # IPあたりのウィンドウ内最大試行回数
+TOKEN_VERIFY_WINDOW = 900  # 15分
+EMAIL_SEND_MAX_PER_IP = 5  # IPあたりのウィンドウ内最大送信数
+EMAIL_SEND_WINDOW = 900  # 15分
 
 
 async def _check_rate_limit(key: str, max_attempts: int, window: int) -> bool:
-    """Check Valkey-based rate limit. Returns True if within limit, False if exceeded."""
+    """Valkey ベースのレート制限を確認する。制限内なら True、超過なら False を返す。"""
     from app.valkey_client import valkey
 
     attempts = await valkey.get(key)
@@ -64,11 +64,11 @@ async def change_email(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Change email address. Requires password confirmation."""
+    """メールアドレスを変更する。パスワードの再確認が必要。"""
     if not bcrypt.checkpw(body.password.encode(), user.password_hash.encode()):
         raise HTTPException(status_code=403, detail="Incorrect password")
 
-    # Check if email is already in use by another user
+    # メールアドレスが他のユーザーに使用されていないか確認
     result = await db.execute(
         select(User).where(User.email == body.email, User.id != user.id)
     )
@@ -100,7 +100,7 @@ async def resend_verification(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Resend verification email. Rate limited to once per 5 minutes."""
+    """確認メールを再送する。5分に1回のレート制限あり。"""
     if not settings.email_enabled:
         raise HTTPException(status_code=422, detail="Email is not configured on this server")
 
@@ -128,7 +128,7 @@ async def confirm_email(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Confirm email with token. No auth required."""
+    """トークンでメールを確認する。認証不要。"""
     ip = _get_client_ip(request)
     if not await _check_rate_limit(
         f"email_confirm:{ip}", TOKEN_VERIFY_MAX_ATTEMPTS, TOKEN_VERIFY_WINDOW
@@ -150,25 +150,25 @@ async def forgot_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Send password reset email. Always returns 200 to not leak email existence."""
+    """パスワードリセットメールを送信する。メールの存在を漏洩させないため常に200を返す。"""
     if not settings.email_enabled:
         raise HTTPException(status_code=422, detail="Email is not configured on this server")
 
-    # Rate limit by IP (endpoint-level)
+    # IPベースのレート制限（エンドポイントレベル）
     ip = _get_client_ip(request)
     if not await _check_rate_limit(f"forgot_password:{ip}", 5, 300):
-        # Still return 200 to not reveal anything
+        # 情報漏洩防止のため200を返す
         return {"message": "If an account with that email exists, a reset link has been sent"}
 
     result = await db.execute(select(User).where(User.email == body.email))
     user = result.scalar_one_or_none()
 
     if user:
-        # Rate limit email sending per IP (cross-endpoint)
+        # IPベースのメール送信レート制限（エンドポイント横断）
         if not await _check_rate_limit(
             f"email_send:{ip}", EMAIL_SEND_MAX_PER_IP, EMAIL_SEND_WINDOW
         ):
-            # Still return 200 to not reveal anything
+            # 情報漏洩防止のため200を返す
             return {
                 "message": "If an account with that email exists, a reset link has been sent"
             }
@@ -187,7 +187,7 @@ async def reset_password(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Reset password with token."""
+    """トークンでパスワードをリセットする。"""
     ip = _get_client_ip(request)
     if not await _check_rate_limit(
         f"reset_password:{ip}", TOKEN_VERIFY_MAX_ATTEMPTS, TOKEN_VERIFY_WINDOW

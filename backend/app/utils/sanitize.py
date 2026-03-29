@@ -14,7 +14,7 @@ EMOJI_IMG_RE = re.compile(
 
 
 def _replace_mention(match: re.Match) -> str:
-    """Replace a mention match with an HTML link."""
+    """メンションのマッチを HTML リンクに置換する。"""
     username = match.group(1)
     domain = match.group(2)
 
@@ -38,18 +38,18 @@ def _replace_mention(match: re.Match) -> str:
 
 
 def text_to_html(text: str) -> str:
-    """Convert plain text to simple HTML with auto-linking, mentions, and line breaks."""
+    """プレーンテキストを自動リンク、メンション、改行付きの簡易 HTML に変換する。"""
     if not text.strip():
         return ""
     escaped = bleach.clean(text)
 
-    # Auto-link URLs first (before mention parsing)
+    # まず URL を自動リンク化 (メンションパースの前に)
     escaped = URL_PATTERN.sub(
         r'<a href="\1" rel="nofollow noopener noreferrer" target="_blank">\1</a>',
         escaped,
     )
 
-    # Parse mentions (skip inside existing <a> tags)
+    # メンションをパース (既存の <a> タグ内はスキップ)
     parts = re.split(r"(<a[^>]*>.*?</a>)", escaped)
     result = []
     for part in parts:
@@ -59,7 +59,7 @@ def text_to_html(text: str) -> str:
             result.append(MENTION_PATTERN.sub(_replace_mention, part))
     escaped = "".join(result)
 
-    # Line breaks
+    # 改行
     escaped = escaped.replace("\n", "<br>")
 
     return f"<p>{escaped}</p>"
@@ -69,7 +69,7 @@ ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
 
 
 def sanitize_html(html: str) -> str:
-    """Sanitize HTML from remote sources."""
+    """リモートソースからの HTML をサニタイズする。"""
     html = EMOJI_IMG_RE.sub(r"\1", html)
     return bleach.clean(
         html,

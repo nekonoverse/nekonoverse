@@ -114,7 +114,7 @@ export default function EmojiPicker(props: Props) {
     }
   });
 
-  // --- Searching ---
+  // --- 検索 ---
 
   const isSearching = () => query().trim().length > 0;
 
@@ -140,7 +140,7 @@ export default function EmojiPicker(props: Props) {
     );
   });
 
-  // Group custom emojis by category (for browse mode)
+  // カスタム絵文字をカテゴリ別にグループ化（ブラウズモード用）
   const groupedCustom = createMemo(() => {
     const emojis = customEmojis();
     const groups = new Map<string, CustomEmoji[]>();
@@ -152,7 +152,7 @@ export default function EmojiPicker(props: Props) {
     return groups;
   });
 
-  // --- Selection handlers ---
+  // --- 選択ハンドラ ---
 
   const selectUnicode = (def: UnicodeEmojiDef) => {
     if (!ready()) return;
@@ -188,7 +188,7 @@ export default function EmojiPicker(props: Props) {
     props.onClose();
   };
 
-  // --- Render helpers ---
+  // --- レンダリングヘルパー ---
 
   const renderUnicodeBtn = (def: UnicodeEmojiDef) => (
     <button
@@ -240,7 +240,7 @@ export default function EmojiPicker(props: Props) {
   return (
     <div class="emoji-picker" ref={ref}>
       <div class="emoji-scroll-area">
-        {/* --- Search results mode --- */}
+        {/* --- 検索結果モード --- */}
         <Show when={isSearching()}>
           <Show
             when={filteredUnicode().length > 0 || filteredCustom().length > 0}
@@ -255,9 +255,9 @@ export default function EmojiPicker(props: Props) {
           </Show>
         </Show>
 
-        {/* --- Browse mode --- */}
+        {/* --- ブラウズモード --- */}
         <Show when={!isSearching()}>
-          {/* Recently used */}
+          {/* 最近使った絵文字 */}
           <Show when={recentEmojis().length > 0}>
             <div class="emoji-category-label">
               {t("reactions.recentlyUsed")}
@@ -269,7 +269,7 @@ export default function EmojiPicker(props: Props) {
             </div>
           </Show>
 
-          {/* Custom emojis by category */}
+          {/* カテゴリ別カスタム絵文字 */}
           <Show when={customEmojis().length > 0}>
             <For each={[...groupedCustom().entries()]}>
               {([category, emojis]) => (
@@ -283,7 +283,7 @@ export default function EmojiPicker(props: Props) {
             </For>
           </Show>
 
-          {/* Unicode emoji categories (lazy-rendered per category) */}
+          {/* Unicode絵文字カテゴリ（カテゴリごとに遅延レンダリング） */}
           <For each={EMOJI_CATEGORIES}>
             {(cat) => {
               const emojis = UNICODE_BY_CATEGORY.get(cat.id) ?? [];
@@ -305,8 +305,8 @@ export default function EmojiPicker(props: Props) {
         </Show>
       </div>
 
-      {/* Search bar — last in DOM, but shown at top on desktop via column-reverse
-           and at bottom on mobile via column (above virtual keyboard) */}
+      {/* 検索バー — DOM上は最後だが、デスクトップではcolumn-reverseで上部に、
+           モバイルではcolumnで下部に表示（仮想キーボードの上） */}
       <input
         ref={searchRef}
         class="emoji-search"

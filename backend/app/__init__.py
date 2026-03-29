@@ -1,13 +1,13 @@
-__version__ = "20260328-1"
+__version__ = "20260329-1"
 
 
 def _resolve_version() -> str:
-    """Append +git-<hash> suffix on non-release (develop) builds.
+    """非リリース (develop) ビルドに +git-<hash> サフィックスを付加する。
 
-    Resolution order:
-    1. GIT_VERSION file (written by Docker build ARG)
-    2. git command (dev environment with .git available)
-    3. Bare version string (fallback)
+    解決順序:
+    1. GIT_VERSION ファイル (Docker ビルド ARG で書き出し)
+    2. git コマンド (.git が利用可能な開発環境)
+    3. バージョン文字列そのまま (フォールバック)
     """
     import pathlib
 

@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js";
+import { apiRequest } from "../api/client";
 
 export type Theme = "dark" | "light" | "novel";
 export type FontSize = "small" | "medium" | "large" | "xlarge" | "xxlarge";
@@ -7,6 +8,75 @@ export type TimeFormat = "absolute" | "relative" | "combined" | "unixtime";
 export type CursorStyle = "default" | "paw";
 export type WideEmojiStyle = "shrink" | "blur" | "overflow";
 export type InputMode = "auto" | "touch" | "pc";
+
+export interface ThemeColors {
+  "bg-primary": string;
+  "bg-secondary": string;
+  "bg-card": string;
+  "text-primary": string;
+  "text-secondary": string;
+  accent: string;
+  "accent-hover": string;
+  "accent-text": string;
+  border: string;
+  reblog: string;
+  favourite: string;
+}
+
+export interface ThemeCustomization {
+  base: Theme;
+  colors: ThemeColors;
+  name?: string;
+}
+
+export const COLOR_KEYS: (keyof ThemeColors)[] = [
+  "bg-primary", "bg-secondary", "bg-card",
+  "text-primary", "text-secondary",
+  "accent", "accent-hover", "accent-text",
+  "border", "reblog", "favourite",
+];
+
+export const PRESET_COLORS: Record<Theme, ThemeColors> = {
+  dark: {
+    "bg-primary": "#1a1a2e",
+    "bg-secondary": "#16213e",
+    "bg-card": "#0f3460",
+    "text-primary": "#e0e0e0",
+    "text-secondary": "#a0a0b0",
+    "accent": "#e94560",
+    "accent-hover": "#ff6b81",
+    "accent-text": "#ffffff",
+    "border": "#2a2a4a",
+    "reblog": "#2ecc71",
+    "favourite": "#f1c40f",
+  },
+  light: {
+    "bg-primary": "#f0f0f0",
+    "bg-secondary": "#ffffff",
+    "bg-card": "#e4e4e4",
+    "text-primary": "#1a1a1a",
+    "text-secondary": "#555555",
+    "accent": "#d63851",
+    "accent-hover": "#b82e44",
+    "accent-text": "#ffffff",
+    "border": "#cccccc",
+    "reblog": "#27ae60",
+    "favourite": "#d4a017",
+  },
+  novel: {
+    "bg-primary": "#eee3cd",
+    "bg-secondary": "#f7f0e3",
+    "bg-card": "#e0d3b8",
+    "text-primary": "#2a2015",
+    "text-secondary": "#5c4e3a",
+    "accent": "#a04828",
+    "accent-hover": "#c45e35",
+    "accent-text": "#f7f0e3",
+    "border": "#c8b898",
+    "reblog": "#6b8e23",
+    "favourite": "#c49b1a",
+  },
+};
 
 const THEMES: Theme[] = ["dark", "light", "novel"];
 const FONT_SIZES: FontSize[] = ["small", "medium", "large", "xlarge", "xxlarge"];
@@ -148,7 +218,21 @@ const [katexRender, setKatexRenderSignal] = createSignal<boolean>(
   localStorage.getItem("nekonoverse:katex-render") !== "false"
 );
 
-export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, inputMode, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion, cropShadow, katexRender };
+function loadCustomColors(): ThemeColors | null {
+  try {
+    const saved = localStorage.getItem("themeCustomization");
+    return saved ? JSON.parse(saved) : null;
+  } catch {
+    return null;
+  }
+}
+
+const [customColors, setCustomColorsSignal] = createSignal<ThemeColors | null>(loadCustomColors());
+const [customThemeName, setCustomThemeNameSignal] = createSignal<string>(
+  localStorage.getItem("themeCustomizationName") || ""
+);
+
+export { theme, fontSize, fontFamily, customFontFamily, timeFormat, cursorStyle, wideEmojiStyle, inputMode, hideNonFollowedReplies, nyaizeEnabled, reduceMfmMotion, cropShadow, katexRender, customColors, customThemeName };
 
 export function isTouchMode(): boolean {
   const mode = inputMode();
@@ -232,6 +316,59 @@ export function setKatexRender(v: boolean) {
   localStorage.setItem("nekonoverse:katex-render", String(v));
 }
 
+function applyCustomColors(colors: ThemeColors | null) {
+  const root = document.documentElement;
+  if (!colors) {
+    for (const key of COLOR_KEYS) {
+      root.style.removeProperty(`--${key}`);
+    }
+    return;
+  }
+  for (const key of COLOR_KEYS) {
+    root.style.setProperty(`--${key}`, colors[key]);
+  }
+}
+
+export function setCustomColors(colors: ThemeColors | null) {
+  setCustomColorsSignal(colors);
+  if (colors) {
+    localStorage.setItem("themeCustomization", JSON.stringify(colors));
+  } else {
+    localStorage.removeItem("themeCustomization");
+  }
+  applyCustomColors(colors);
+}
+
+export function setCustomThemeName(name: string) {
+  setCustomThemeNameSignal(name);
+  if (name) {
+    localStorage.setItem("themeCustomizationName", name);
+  } else {
+    localStorage.removeItem("themeCustomizationName");
+  }
+}
+
+export function clearCustomColors() {
+  setCustomColors(null);
+  setCustomThemeName("");
+}
+
+export async function syncThemeFromServer() {
+  try {
+    const prefs = await apiRequest<{
+      theme_customization?: ThemeCustomization | null;
+    }>("/api/v1/preferences", { method: "GET" });
+    const tc = prefs.theme_customization;
+    if (tc) {
+      setTheme(tc.base);
+      setCustomColors(tc.colors);
+      setCustomThemeName(tc.name || "");
+    }
+  } catch {
+    // 失敗時はローカルの値を使用
+  }
+}
+
 function applyReduceMfmMotion(v: boolean) {
   if (v) {
     document.documentElement.setAttribute("data-reduce-mfm-motion", "");
@@ -256,4 +393,5 @@ export function initTheme() {
   applyWideEmojiStyle(wideEmojiStyle());
   applyReduceMfmMotion(reduceMfmMotion());
   applyCropShadow(cropShadow());
+  applyCustomColors(customColors());
 }

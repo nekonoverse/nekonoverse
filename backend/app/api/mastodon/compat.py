@@ -1,9 +1,11 @@
-"""Mastodon-compatible stub/lightweight endpoints for client compatibility.
+"""Mastodon クライアント互換のスタブ/軽量エンドポイント。
 
-Endpoints here are required by Mastodon clients but either return
-minimal/empty responses or are lightweight wrappers around existing logic.
+ここに定義されたエンドポイントは Mastodon クライアントが必要とするが、
+最小限/空のレスポンスを返すか、既存ロジックの軽量ラッパーとして機能する。
 """
 
+import re
+import uuid
 
 from fastapi import APIRouter, Depends, Query, Request
 from sqlalchemy import select
@@ -15,7 +17,7 @@ from app.models.user import User
 router = APIRouter(tags=["mastodon-compat"])
 
 
-# --- GET /api/v1/apps/verify_credentials ---
+# --- GET /api/v1/apps/verify_credentials --- アプリ認証情報の検証
 
 
 @router.get("/api/v1/apps/verify_credentials")
@@ -23,7 +25,7 @@ async def verify_app_credentials(
     request: Request,
     db: AsyncSession = Depends(get_db),
 ):
-    """Verify the OAuth application token. Returns app info."""
+    """OAuth アプリケーショントークンを検証する。アプリ情報を返す。"""
     from app.models.oauth import OAuthApplication, OAuthToken
 
     auth_header = request.headers.get("Authorization", "")
@@ -68,15 +70,20 @@ async def verify_app_credentials(
     }
 
 
-# --- GET /api/v1/preferences ---
+# --- GET /api/v1/preferences --- ユーザー設定
 
 
-@router.get("/api/v1/preferences")
-async def get_preferences(
-    user: User = Depends(get_current_user),
-):
-    """Return user preferences."""
-    prefs = user.preferences or {}
+_VALID_THEME_COLOR_KEYS = {
+    "bg-primary", "bg-secondary", "bg-card",
+    "text-primary", "text-secondary",
+    "accent", "accent-hover", "accent-text",
+    "border", "reblog", "favourite",
+}
+_VALID_BASE_THEMES = {"dark", "light", "novel"}
+_HEX_COLOR_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+
+def _prefs_response(prefs: dict) -> dict:
     return {
         "posting:default:visibility": "public",
         "posting:default:sensitive": False,
@@ -84,7 +91,16 @@ async def get_preferences(
         "reading:expand:media": "default",
         "reading:expand:spoilers": False,
         "posting:source_media_type": prefs.get("source_media_type", "auto"),
+        "theme_customization": prefs.get("theme_customization", None),
     }
+
+
+@router.get("/api/v1/preferences")
+async def get_preferences(
+    user: User = Depends(get_current_user),
+):
+    """ユーザー設定を返す。"""
+    return _prefs_response(user.preferences or {})
 
 
 @router.patch("/api/v1/preferences")
@@ -93,7 +109,9 @@ async def update_preferences(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Update user preferences."""
+    """ユーザー設定を更新する。"""
+    from fastapi import HTTPException
+
     body = await request.json()
     prefs = dict(user.preferences or {})
 
@@ -101,28 +119,49 @@ async def update_preferences(
     smt = body.get("posting:source_media_type")
     if smt is not None:
         if smt not in _VALID_SOURCE_MEDIA_TYPES:
-            from fastapi import HTTPException
-
             raise HTTPException(
                 status_code=422,
                 detail=f"Invalid source_media_type: must be one of {_VALID_SOURCE_MEDIA_TYPES}",
             )
         prefs["source_media_type"] = smt
 
+    tc = body.get("theme_customization")
+    if tc is not None:
+        if tc is False or tc == {}:
+            prefs.pop("theme_customization", None)
+        elif isinstance(tc, dict):
+            base = tc.get("base")
+            if base not in _VALID_BASE_THEMES:
+                raise HTTPException(422, "Invalid base theme")
+            colors = tc.get("colors")
+            if not isinstance(colors, dict):
+                raise HTTPException(422, "colors must be an object")
+            if set(colors.keys()) != _VALID_THEME_COLOR_KEYS:
+                raise HTTPException(
+                    422,
+                    f"colors must contain exactly: {sorted(_VALID_THEME_COLOR_KEYS)}",
+                )
+            for k, v in colors.items():
+                if not isinstance(v, str) or not _HEX_COLOR_RE.match(v):
+                    raise HTTPException(422, f"Invalid color for {k}: must be #rrggbb hex")
+            name = tc.get("name")
+            if name is not None and (not isinstance(name, str) or len(name) > 50):
+                raise HTTPException(422, "name must be a string of at most 50 chars")
+            prefs["theme_customization"] = {
+                "base": base,
+                "colors": colors,
+                **({"name": name} if name else {}),
+            }
+        else:
+            raise HTTPException(422, "theme_customization must be an object or false")
+
     user.preferences = prefs
     await db.commit()
 
-    return {
-        "posting:default:visibility": "public",
-        "posting:default:sensitive": False,
-        "posting:default:language": None,
-        "reading:expand:media": "default",
-        "reading:expand:spoilers": False,
-        "posting:source_media_type": prefs.get("source_media_type", "auto"),
-    }
+    return _prefs_response(prefs)
 
 
-# --- GET /api/v1/favourites ---
+# --- GET /api/v1/favourites --- お気に入り一覧
 
 
 @router.get("/api/v1/favourites")
@@ -131,7 +170,7 @@ async def list_favourites(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List statuses the current user has favourited (⭐ reacted)."""
+    """現在のユーザーがお気に入り（⭐ リアクション）したステータス一覧を返す。"""
     from app.api.mastodon.statuses import notes_to_responses
     from app.models.note import Note
     from app.models.reaction import Reaction
@@ -160,42 +199,96 @@ async def list_favourites(
     return await notes_to_responses(notes, reactions_map, db, actor_id=user.actor_id)
 
 
-# --- Stub endpoints (return empty arrays for client compatibility) ---
+# --- スタブエンドポイント（クライアント互換のため空配列を返す） ---
 
 
 @router.get("/api/v1/filters")
 async def list_filters_v1(user: User = Depends(get_current_user)):
-    """List content filters (stub - returns empty array)."""
+    """コンテンツフィルタ一覧（スタブ - 空配列を返す）。"""
     return []
 
 
 @router.get("/api/v2/filters")
 async def list_filters_v2(user: User = Depends(get_current_user)):
-    """List content filters v2 (stub - returns empty array)."""
+    """コンテンツフィルタ v2 一覧（スタブ - 空配列を返す）。"""
     return []
 
 
 @router.get("/api/v1/announcements")
-async def list_announcements(user: User | None = Depends(get_optional_user)):
-    """List server announcements (stub - returns empty array)."""
-    return []
+async def list_announcements(
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """有効なサーバーお知らせ一覧を返す（Mastodon 互換）。"""
+    from app.api.mastodon.statuses import _to_mastodon_datetime
+    from app.services.announcement_service import get_dismissed_ids, list_active_announcements
+
+    announcements = await list_active_announcements(db)
+    dismissed: set[uuid.UUID] = set()
+    if user:
+        dismissed = await get_dismissed_ids(db, user.id)
+
+    return [
+        {
+            "id": str(a.id),
+            "title": a.title,
+            "content": a.content_html,
+            "starts_at": _to_mastodon_datetime(a.starts_at) if a.starts_at else None,
+            "ends_at": _to_mastodon_datetime(a.ends_at) if a.ends_at else None,
+            "all_day": a.all_day,
+            "published_at": _to_mastodon_datetime(a.created_at),
+            "updated_at": _to_mastodon_datetime(a.updated_at),
+            "read": a.id in dismissed,
+            "mentions": [],
+            "statuses": [],
+            "tags": [],
+            "emojis": [],
+            "reactions": [],
+        }
+        for a in announcements
+    ]
+
+
+@router.post("/api/v1/announcements/{announcement_id}/dismiss", status_code=204)
+async def dismiss_announcement(
+    announcement_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """お知らせを既読にする（Mastodon 互換）。"""
+    from app.services.announcement_service import dismiss_announcement as _dismiss
+
+    await _dismiss(db, announcement_id, user.id)
+    await db.commit()
+
+
+@router.get("/api/v1/announcements/unread_count")
+async def announcements_unread_count(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """未読お知らせ数を取得する。"""
+    from app.services.announcement_service import get_unread_count
+
+    count = await get_unread_count(db, user.id)
+    return {"count": count}
 
 
 @router.get("/api/v1/followed_tags")
 async def list_followed_tags(user: User = Depends(get_current_user)):
-    """List followed hashtags (stub - returns empty array)."""
+    """フォロー中のハッシュタグ一覧（スタブ - 空配列を返す）。"""
     return []
 
 
 @router.get("/api/v1/conversations")
 async def list_conversations(user: User = Depends(get_current_user)):
-    """List DM conversations (stub - returns empty array)."""
+    """DM 会話一覧（スタブ - 空配列を返す）。"""
     return []
 
 
 @router.get("/api/v1/lists")
 async def list_lists(user: User = Depends(get_current_user)):
-    """List custom lists (stub - returns empty array)."""
+    """カスタムリスト一覧（スタブ - 空配列を返す）。"""
     return []
 
 
@@ -204,7 +297,7 @@ async def get_markers(
     timeline: list[str] = Query(default=[], alias="timeline[]"),
     user: User = Depends(get_current_user),
 ):
-    """Get timeline position markers (stub - returns empty object)."""
+    """タイムライン位置マーカーを取得する（スタブ - 空オブジェクトを返す）。"""
     return {}
 
 
@@ -212,5 +305,5 @@ async def get_markers(
 async def update_markers(
     user: User = Depends(get_current_user),
 ):
-    """Update timeline position markers (stub - returns empty object)."""
+    """タイムライン位置マーカーを更新する（スタブ - 空オブジェクトを返す）。"""
     return {}

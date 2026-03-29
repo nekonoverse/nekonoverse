@@ -36,7 +36,7 @@ export interface CurrentUser {
   email_verified?: boolean;
 }
 
-/** Extract role name string from either string or Mastodon-compatible object. */
+/** 文字列または Mastodon 互換オブジェクトからロール名を抽出する。 */
 export function getRoleName(role: string | RoleObject | undefined): string {
   if (!role) return "";
   if (typeof role === "string") return role;

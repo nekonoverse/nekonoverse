@@ -1,12 +1,12 @@
 /**
- * Global touch guard: blocks all click events (at capture phase) after a
- * long-press opens a modal, until the user lifts their finger.
+ * グローバルタッチガード: ロングプレスでモーダルが開いた後、指を離すまで
+ * すべてのクリックイベントをキャプチャフェーズでブロックする。
  *
- * On mobile, when a long-press triggers a modal that appears under the
- * finger, releasing the finger synthesizes a click on the modal element.
- * This utility prevents that ghost tap.
+ * モバイルでは、ロングプレスでモーダルが指の下に表示された際、
+ * 指を離すとモーダル要素へのクリックが合成される。
+ * このユーティリティはそのゴーストタップを防止する。
  *
- * In PC mode the guard is a no-op because ghost taps do not occur.
+ * PCモードではゴーストタップが発生しないため、ガードは何もしない。
  */
 
 import { isTouchMode } from "@nekonoverse/ui/stores/theme";
@@ -40,7 +40,7 @@ function removeGuard() {
   }
 }
 
-/** Call this when a long-press opens a modal to block ghost taps. */
+/** ロングプレスでモーダルを開いた際にゴーストタップをブロックするために呼び出す。 */
 export function activateTouchGuard() {
   if (!isTouchMode()) return;
   removeGuard();
@@ -52,7 +52,7 @@ export function activateTouchGuard() {
   document.addEventListener("click", guardHandler, { capture: true });
 
   const deactivate = () => {
-    // Small delay to catch synthesized click events that fire after touchend
+    // touchend後に発火する合成クリックイベントをキャッチするための短い遅延
     cleanupTimer = setTimeout(removeGuard, 100);
   };
 
@@ -61,8 +61,8 @@ export function activateTouchGuard() {
   document.addEventListener("touchend", deactivate, { once: true });
   document.addEventListener("touchcancel", deactivate, { once: true });
 
-  // Safety timeout: always remove the guard after 1s in case touchend never
-  // fires (e.g. on PC where long-press is triggered by touch emulation but
-  // the user releases via mouse click instead of touch).
+  // 安全タイムアウト: touchendが発火しない場合に備え、1秒後に必ずガードを解除する
+  // （例: PCでタッチエミュレーションによりロングプレスが発動するが、
+  // タッチではなくマウスクリックで指を離した場合）
   safetyTimer = setTimeout(removeGuard, 1000);
 }

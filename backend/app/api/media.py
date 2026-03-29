@@ -1,4 +1,4 @@
-"""Media upload/download and drive API."""
+"""メディアのアップロード/ダウンロードとドライブ API。"""
 
 import math
 import uuid
@@ -23,7 +23,7 @@ router = APIRouter(tags=["media"])
 
 
 def _parse_focus(focus: str | None) -> tuple[float | None, float | None]:
-    """Parse 'x,y' focus string into (focal_x, focal_y), clamped to [-1, 1]."""
+    """'x,y' 形式のフォーカス文字列を (focal_x, focal_y) にパースし、[-1, 1] にクランプする。"""
     if not focus:
         return None, None
     parts = focus.split(",")
@@ -40,7 +40,7 @@ def _parse_focus(focus: str | None) -> tuple[float | None, float | None]:
 
 
 def _mime_to_media_type(mime: str) -> str:
-    """Convert MIME type to Mastodon-compatible media type string."""
+    """MIME タイプを Mastodon 互換のメディアタイプ文字列に変換する。"""
     if mime.startswith("image/gif"):
         return "gifv"
     if mime.startswith("image/"):

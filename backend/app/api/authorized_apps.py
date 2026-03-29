@@ -1,4 +1,4 @@
-"""Authorized apps management endpoints."""
+"""認可済みアプリケーション管理エンドポイント。"""
 
 import uuid
 from datetime import datetime, timezone
@@ -21,7 +21,7 @@ async def list_authorized_apps(
 ):
     now = datetime.now(timezone.utc)
 
-    # Find apps with active tokens for this user
+    # このユーザーの有効なトークンを持つアプリを検索
     stmt = (
         select(
             OAuthApplication.id,

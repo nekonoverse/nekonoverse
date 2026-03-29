@@ -2,7 +2,7 @@ import { Show, createSignal, createEffect, onCleanup } from "solid-js";
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router";
 import { currentUser, logout } from "@nekonoverse/ui/stores/auth";
 import { getRoleName } from "@nekonoverse/ui/api/types/auth";
-import { connect, disconnect, unreadCount, pendingFollowRequests, fetchFollowRequestCount } from "@nekonoverse/ui/stores/streaming";
+import { connect, disconnect, unreadCount, unreadAnnouncements, pendingFollowRequests, fetchFollowRequestCount } from "@nekonoverse/ui/stores/streaming";
 import { useI18n, locales, type Locale } from "@nekonoverse/ui/i18n";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { getNote, type Note } from "@nekonoverse/ui/api/statuses";
@@ -25,7 +25,7 @@ export default function Navbar() {
   const [tlDropdownOpen, setTlDropdownOpen] = createSignal(false);
 
 
-  // Manage global SSE connection based on auth state
+  // 認証状態に基づいてグローバルSSE接続を管理
   createEffect(() => {
     if (currentUser()) {
       connect();
@@ -35,7 +35,7 @@ export default function Navbar() {
     }
   });
 
-  // Close dropdowns on route change
+  // ルート変更時にドロップダウンを閉じる
   createEffect(() => {
     location.pathname; // track
     setMenuOpen(false);
@@ -48,7 +48,7 @@ export default function Navbar() {
 
   const isActive = (path: string) => location.pathname === path;
 
-  // Close dropdown on outside click
+  // 外部クリックでドロップダウンを閉じる
   const handleDocClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest(".navbar-user-menu")) {
@@ -171,9 +171,9 @@ export default function Navbar() {
                 <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9" />
                 <path d="M13.73 21a2 2 0 0 1-3.46 0" />
               </svg>
-              <Show when={unreadCount() > 0}>
+              <Show when={unreadCount() + unreadAnnouncements() > 0}>
                 <span class="navbar-notif-badge">
-                  {unreadCount() > 99 ? "99+" : unreadCount()}
+                  {unreadCount() + unreadAnnouncements() > 99 ? "99+" : unreadCount() + unreadAnnouncements()}
                 </span>
               </Show>
             </a>

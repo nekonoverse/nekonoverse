@@ -12,7 +12,7 @@ from app.services.delivery_service import enqueue_delivery
 
 
 async def _invalidate_follow_counts(*actor_ids: uuid.UUID) -> None:
-    """Invalidate follow count caches for given actors."""
+    """指定されたアクターのフォロー数キャッシュを無効化する。"""
     from app.valkey_client import valkey
 
     try:
@@ -23,10 +23,10 @@ async def _invalidate_follow_counts(*actor_ids: uuid.UUID) -> None:
 
 
 async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Follow:
-    """Create a follow request from local user to target actor."""
+    """ローカルユーザーからターゲットアクターへのフォローリクエストを作成する。"""
     actor = user.actor
 
-    # Check if already following
+    # 既にフォロー済みか確認
     existing = await db.execute(
         select(Follow).where(
             Follow.follower_id == actor.id,
@@ -54,7 +54,7 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
 
     await _invalidate_follow_counts(actor.id, target_actor.id)
 
-    # Send follow notification to local target
+    # ローカルターゲットにフォロー通知を送信
     if target_actor.is_local:
         from app.services.notification_service import create_notification, publish_notification
 
@@ -64,7 +64,7 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
         if notif:
             await publish_notification(notif)
 
-    # Send Follow activity to remote server
+    # リモートサーバーに Follow Activity を送信
     if not target_actor.is_local:
         from app.activitypub.renderer import render_follow_activity
 
@@ -75,7 +75,7 @@ async def follow_actor(db: AsyncSession, user: User, target_actor: Actor) -> Fol
 
 
 async def unfollow_actor(db: AsyncSession, user: User, target_actor: Actor):
-    """Unfollow a target actor."""
+    """ターゲットアクターのフォローを解除する。"""
     actor = user.actor
 
     result = await db.execute(
@@ -93,7 +93,7 @@ async def unfollow_actor(db: AsyncSession, user: User, target_actor: Actor):
 
     await _invalidate_follow_counts(actor.id, target_actor.id)
 
-    # Send Undo(Follow) to remote server
+    # リモートサーバーに Undo(Follow) を送信
     if not target_actor.is_local:
         from app.activitypub.renderer import render_follow_activity, render_undo_activity
 
@@ -108,7 +108,7 @@ async def unfollow_actor(db: AsyncSession, user: User, target_actor: Actor):
 
 
 async def get_follower_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
-    """Get IDs of actors following the given actor (accepted follows only)."""
+    """指定アクターをフォローしているアクターのIDを取得する (承認済みフォローのみ)。"""
     result = await db.execute(
         select(Follow.follower_id).where(
             Follow.following_id == actor_id,
@@ -119,7 +119,7 @@ async def get_follower_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.U
 
 
 async def get_following_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
-    """Get IDs of actors the given actor is following (accepted follows only)."""
+    """指定アクターがフォローしているアクターのIDを取得する (承認済みフォローのみ)。"""
     result = await db.execute(
         select(Follow.following_id).where(
             Follow.follower_id == actor_id,
@@ -130,7 +130,7 @@ async def get_following_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.
 
 
 async def get_followers(db: AsyncSession, actor_id: uuid.UUID, limit: int = 40) -> list[Actor]:
-    """Get actors following the given actor (accepted follows only)."""
+    """指定アクターをフォローしているアクターを取得する (承認済みフォローのみ)。"""
     result = await db.execute(
         select(Actor)
         .join(Follow, Follow.follower_id == Actor.id)
@@ -142,7 +142,7 @@ async def get_followers(db: AsyncSession, actor_id: uuid.UUID, limit: int = 40) 
 
 
 async def get_following(db: AsyncSession, actor_id: uuid.UUID, limit: int = 40) -> list[Actor]:
-    """Get actors the given actor is following (accepted follows only)."""
+    """指定アクターがフォローしているアクターを取得する (承認済みフォローのみ)。"""
     result = await db.execute(
         select(Actor)
         .join(Follow, Follow.following_id == Actor.id)
@@ -154,9 +154,9 @@ async def get_following(db: AsyncSession, actor_id: uuid.UUID, limit: int = 40) 
 
 
 async def get_follow_counts(db: AsyncSession, actor_id: uuid.UUID) -> tuple[int, int]:
-    """Return (followers_count, following_count) for the given actor.
+    """指定アクターの (followers_count, following_count) を返す。
 
-    Cached in Valkey for 5 minutes.
+    Valkey で5分間キャッシュされる。
     """
     import json
 
@@ -195,7 +195,7 @@ async def get_follow_counts(db: AsyncSession, actor_id: uuid.UUID) -> tuple[int,
 
 
 async def get_follower_inboxes(db: AsyncSession, actor_id: uuid.UUID) -> list[str]:
-    """Get unique inbox URLs for all followers of an actor (for delivery)."""
+    """アクターの全フォロワーの一意な inbox URL を取得する (配送用)。"""
     result = await db.execute(
         select(Actor.shared_inbox_url, Actor.inbox_url)
         .join(Follow, Follow.follower_id == Actor.id)
@@ -204,6 +204,6 @@ async def get_follower_inboxes(db: AsyncSession, actor_id: uuid.UUID) -> list[st
 
     inboxes = set()
     for shared_inbox, inbox in result.all():
-        # Prefer shared inbox for efficiency
+        # 効率のため shared inbox を優先
         inboxes.add(shared_inbox or inbox)
     return list(inboxes)

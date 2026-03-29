@@ -27,18 +27,18 @@ export default function ComposeModal(props: Props) {
   const [resetKey, setResetKey] = createSignal(0);
   const [draftContent, setDraftContent] = createSignal<string | undefined>(undefined);
   const [draftVisibility, setDraftVisibility] = createSignal<Visibility | undefined>(undefined);
-  // Track current content for draft save on close
+  // クローズ時の下書き保存用に現在のコンテンツを追跡
   let currentContent = "";
   let currentVisibility = getInitialVisibility();
   const [isUploading, setIsUploading] = createSignal(false);
   const [modalDragging, setModalDragging] = createSignal(false);
   const [droppedFiles, setDroppedFiles] = createSignal<FileList | null>(null);
 
-  // Whether to show draft picker (new compose with no reply/quote context)
+  // 下書き選択UIを表示するかどうか（返信・引用のない新規作成時のみ）
   const showDrafts = () =>
     props.open && !currentContent.trim() && !props.replyTo && !props.quoteNote && drafts().length > 0 && !draftContent();
 
-  // Reset composer when modal opens
+  // モーダルが開いたらコンポーザをリセット
   createEffect(() => {
     if (props.open) {
       setResetKey((k) => k + 1);
@@ -47,7 +47,7 @@ export default function ComposeModal(props: Props) {
       setDraftContent(undefined);
       setDraftVisibility(undefined);
       setDroppedFiles(null);
-      // Auto-focus textarea after render
+      // レンダリング後にテキストエリアを自動フォーカス
       requestAnimationFrame(() => {
         const textarea = document.querySelector<HTMLTextAreaElement>(
           ".compose-modal-content textarea"

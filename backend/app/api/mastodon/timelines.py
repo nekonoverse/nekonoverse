@@ -16,12 +16,12 @@ from .statuses import notes_to_responses
 
 router = APIRouter(prefix="/api/v1/timelines", tags=["timelines"])
 
-# Absolute upper bound (prevent abuse regardless of admin config)
+# 絶対上限（管理者設定に関わらず不正利用を防止）
 _HARD_MAX_LIMIT = 1000
 
 
 async def _resolve_limit(db: AsyncSession, requested: int | None) -> int:
-    """Clamp requested limit to admin-configured bounds."""
+    """リクエストされたリミットを管理者設定の範囲内にクランプする。"""
     from app.services.server_settings_service import get_setting
 
     try:
@@ -38,7 +38,7 @@ async def _resolve_limit(db: AsyncSession, requested: int | None) -> int:
 
 
 def _deduplicate_timeline(responses: list[NoteResponse]) -> list[NoteResponse]:
-    """Remove standalone notes that already appear as a reblog in the same timeline."""
+    """同一タイムライン内でリブログとして既に表示されている単体ノートを除去する。"""
     reblogged_ids: set[uuid.UUID] = set()
     for r in responses:
         if r.reblog:
@@ -53,8 +53,8 @@ async def _public_tl_deduped(
     local: bool,
     actor_id: uuid.UUID | None,
 ) -> list[NoteResponse]:
-    """Fetch public timeline with dedup, over-fetching to guarantee limit items."""
-    # Over-fetch to compensate for items removed by dedup
+    """重複排除付きの公開タイムラインを取得する。リミット数を保証するため多めに取得。"""
+    # 重複排除で除外される分を補うため多めに取得
     fetch_limit = limit + 10
     notes = await get_public_timeline(
         db, limit=fetch_limit, max_id=max_id, local_only=local,
@@ -73,7 +73,7 @@ async def _home_tl_deduped(
     limit: int,
     max_id: uuid.UUID | None,
 ) -> list[NoteResponse]:
-    """Fetch home timeline with dedup, over-fetching to guarantee limit items."""
+    """重複排除付きのホームタイムラインを取得する。リミット数を保証するため多めに取得。"""
     fetch_limit = limit + 10
     notes = await get_home_timeline(db, user=user, limit=fetch_limit, max_id=max_id)
     note_ids = [n.id for n in notes]

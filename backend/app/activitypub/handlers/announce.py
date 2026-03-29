@@ -1,4 +1,4 @@
-"""Handle Announce activities (boost/renote)."""
+"""Announce activity を処理する (ブースト/リノート)。"""
 
 import logging
 from datetime import datetime
@@ -24,7 +24,7 @@ async def handle_announce(db: AsyncSession, activity: dict):
         logger.warning("Could not resolve actor %s for Announce", actor_ap_id)
         return
 
-    # Get the boosted note's AP ID
+    # ブーストされたノートの AP ID を取得
     obj = activity.get("object")
     if isinstance(obj, dict):
         note_ap_id = obj.get("id")
@@ -36,7 +36,7 @@ async def handle_announce(db: AsyncSession, activity: dict):
     if not note_ap_id:
         return
 
-    # Check for duplicate
+    # 重複をチェック
     activity_id = activity.get("id")
     if activity_id:
         existing = await get_note_by_ap_id(db, activity_id)
@@ -48,7 +48,7 @@ async def handle_announce(db: AsyncSession, activity: dict):
     if not original:
         original = await fetch_remote_note(db, note_ap_id)
 
-    # Determine visibility from to/cc
+    # to/cc から公開範囲を決定
     to_list = activity.get("to", [])
     cc_list = activity.get("cc", [])
     public = "https://www.w3.org/ns/activitystreams#Public"
@@ -81,14 +81,14 @@ async def handle_announce(db: AsyncSession, activity: dict):
 
     db.add(note)
 
-    # Increment renotes_count on original
+    # 元ノートの renotes_count をインクリメント
     if original:
         original.renotes_count = original.renotes_count + 1
 
     await db.commit()
     logger.info("Saved remote Announce %s from %s", activity_id, actor_ap_id)
 
-    # Enqueue focal detection for original note if needed
+    # 必要に応じて元ノートのフォーカルポイント検出をキューに追加
     if original:
         try:
             from app.config import settings
@@ -116,7 +116,7 @@ async def handle_announce(db: AsyncSession, activity: dict):
         except Exception:
             logger.debug("Failed to enqueue focal detection for Announce", exc_info=True)
 
-    # Notify the original note's author (if local)
+    # 元ノートの作成者に通知 (ローカルの場合)
     if original:
         try:
             from sqlalchemy import select
@@ -146,7 +146,7 @@ async def handle_announce(db: AsyncSession, activity: dict):
         except Exception:
             logger.debug("Failed to create renote notification", exc_info=True)
 
-    # Publish streaming events so the renote appears in real-time
+    # リノートがリアルタイムに表示されるようストリーミングイベントを publish
     try:
         import json
 

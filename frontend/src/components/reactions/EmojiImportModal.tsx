@@ -48,14 +48,14 @@ export default function EmojiImportModal(props: Props) {
   const meta = () => sources()[sourceIndex()] ?? null;
   const isDenied = () => meta()?.copy_permission === "deny";
 
-  // Find domains that deny copying
+  // コピーを拒否しているドメインを検索
   const denyDomains = () =>
     sources()
       .filter((s) => s.copy_permission === "deny")
       .map((s) => s.domain)
       .filter(Boolean) as string[];
 
-  // Show warning when another source has deny but current source is not the deny one
+  // 他のソースが拒否設定だが現在のソースは拒否ではない場合に警告を表示
   const denyWarning = () => {
     const deny = denyDomains();
     if (deny.length === 0) return null;
@@ -77,7 +77,7 @@ export default function EmojiImportModal(props: Props) {
     });
   };
 
-  // Fetch all sources on mount
+  // マウント時に全ソースを取得
   createEffect(() => {
     const p = parsed();
     if (!p) {
@@ -94,7 +94,7 @@ export default function EmojiImportModal(props: Props) {
           return;
         }
         setSources(list);
-        // Start with the domain from props if available
+        // propsのドメインが利用可能ならそこから開始
         const idx = list.findIndex((s) => s.domain === p.domain);
         const startIdx = idx >= 0 ? idx : 0;
         setSourceIndex(startIdx);
@@ -128,7 +128,7 @@ export default function EmojiImportModal(props: Props) {
         : undefined;
       const localShortcode = f.shortcode !== current.shortcode ? f.shortcode : current.shortcode;
 
-      // Import via admin API
+      // 管理APIでインポート
       await importRemoteEmojiByShortcode({
         shortcode: current.shortcode,
         domain: current.domain!,
@@ -141,11 +141,11 @@ export default function EmojiImportModal(props: Props) {
         aliases: parsedAliases,
       });
 
-      // Mark shortcode as imported so all ReactionBars suppress importable
+      // ショートコードをインポート済みとしてマークし、全ReactionBarでimportableを抑制
       markShortcodeImported(localShortcode);
       clearEmojiCache();
 
-      // React with the local emoji if requested
+      // リクエストされた場合はローカル絵文字でリアクション
       if (react) {
         await reactToNote(props.noteId, `:${localShortcode}:`);
       }
@@ -181,7 +181,7 @@ export default function EmojiImportModal(props: Props) {
 
         <Show when={!loading() && meta()}>
           <div class="emoji-import-form">
-            {/* Source navigation */}
+            {/* ソースナビゲーション */}
             <Show when={sources().length > 1}>
               <div class="emoji-source-nav">
                 <button class="btn" onClick={goToPrev}>◀</button>

@@ -20,7 +20,7 @@ import { externalLinksNewTab } from "@nekonoverse/ui/utils/linkify";
 import { mentionify } from "@nekonoverse/ui/utils/mentionify";
 import { defaultAvatar, instance } from "@nekonoverse/ui/stores/instance";
 import { formatTimestamp, useTimeTick } from "@nekonoverse/ui/utils/formatTime";
-import { getLists, addListAccounts, type ListInfo } from "@nekonoverse/ui/api/lists";
+import { getLists, getAccountLists, addListAccounts, removeListAccounts, createList, type ListInfo } from "@nekonoverse/ui/api/lists";
 
 export default function Profile() {
   const { t } = useI18n();
@@ -33,7 +33,7 @@ export default function Profile() {
     localStorage.getItem("pinnedPostsExpanded") !== "false"
   );
 
-  // Infinite scroll state
+  // 無限スクロール状態
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
   let sentinelRef: HTMLDivElement | undefined;
@@ -46,12 +46,12 @@ export default function Profile() {
     }
   };
 
-  // Follow state
+  // フォロー状態
   const [isFollowing, setIsFollowing] = createSignal(false);
   const [isRequested, setIsRequested] = createSignal(false);
   const [followLoading, setFollowLoading] = createSignal(false);
 
-  // Block/mute state
+  // ブロック/ミュート状態
   const [isBlocking, setIsBlocking] = createSignal(false);
   const [isMuting, setIsMuting] = createSignal(false);
   const [isFollowedBy, setIsFollowedBy] = createSignal(false);
@@ -61,15 +61,17 @@ export default function Profile() {
   const [showUnlockModal, setShowUnlockModal] = createSignal(false);
   const [showAddToList, setShowAddToList] = createSignal(false);
   const [userLists, setUserLists] = createSignal<ListInfo[]>([]);
-  const [selectedListId, setSelectedListId] = createSignal("");
-  const [addToListLoading, setAddToListLoading] = createSignal(false);
+  const [memberListIds, setMemberListIds] = createSignal<Set<string>>(new Set());
+  const [togglingListId, setTogglingListId] = createSignal<string | null>(null);
+  const [showNewListInput, setShowNewListInput] = createSignal(false);
+  const [newListTitle, setNewListTitle] = createSignal("");
 
-  // Compose modal state
+  // 投稿モーダル状態
   const [replyTarget, setReplyTarget] = createSignal<Note | null>(null);
   const [quoteTarget, setQuoteTarget] = createSignal<Note | null>(null);
   const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
 
-  // Inline edit state
+  // インライン編集状態
   const [editing, setEditing] = createSignal(false);
   const [editName, setEditName] = createSignal("");
   const [editBio, setEditBio] = createSignal("");
@@ -95,7 +97,7 @@ export default function Profile() {
       // statuses取得とrelationship取得を並列実行
       const own = currentUser()?.username === acc.username && !acc.acct.includes("@");
       const promises: Promise<void>[] = [
-        getAccountStatuses(acc.id).then((statuses) => setNotes(statuses)),
+        getAccountStatuses(acc.id).then((statuses) => { setNotes(statuses); }),
       ];
       if (currentUser() && !own) {
         promises.push(
@@ -368,23 +370,53 @@ export default function Profile() {
 
   const handleAddToList = async () => {
     setShowAddToList(true);
-    try { const data = await getLists(); setUserLists(data); } catch {}
-  };
-
-  const handleAddToListConfirm = async () => {
+    setShowNewListInput(false);
+    setNewListTitle("");
     const acc = account();
-    const listId = selectedListId();
-    if (!acc || !listId) return;
-    setAddToListLoading(true);
+    if (!acc) return;
     try {
-      await addListAccounts(listId, [acc.id]);
-      setShowAddToList(false);
-      setSelectedListId("");
+      const [lists, accountLists] = await Promise.all([
+        getLists(),
+        getAccountLists(acc.id),
+      ]);
+      setUserLists(lists);
+      setMemberListIds(new Set(accountLists.map((l) => l.id)));
     } catch {}
-    setAddToListLoading(false);
   };
 
-  // Close dropdown on outside click
+  const handleToggleList = async (listId: string) => {
+    const acc = account();
+    if (!acc || togglingListId()) return;
+    setTogglingListId(listId);
+    try {
+      if (memberListIds().has(listId)) {
+        await removeListAccounts(listId, [acc.id]);
+        setMemberListIds((prev) => { const s = new Set(prev); s.delete(listId); return s; });
+      } else {
+        await addListAccounts(listId, [acc.id]);
+        setMemberListIds((prev) => new Set(prev).add(listId));
+      }
+    } catch {}
+    setTogglingListId(null);
+  };
+
+  const handleCreateListInModal = async () => {
+    const title = newListTitle().trim();
+    const acc = account();
+    if (!title || !acc) return;
+    setTogglingListId("__creating__");
+    try {
+      const created = await createList(title);
+      await addListAccounts(created.id, [acc.id]);
+      setUserLists((prev) => [...prev, created]);
+      setMemberListIds((prev) => new Set(prev).add(created.id));
+      setNewListTitle("");
+      setShowNewListInput(false);
+    } catch {}
+    setTogglingListId(null);
+  };
+
+  // 外部クリックでドロップダウンを閉じる
   const handleDocClick = (e: MouseEvent) => {
     const target = e.target as HTMLElement;
     if (!target.closest(".profile-more-menu")) {
@@ -785,7 +817,7 @@ export default function Profile() {
                   </Show>
                   <Show when={acc.created_at}>
                     <span class="profile-joined">
-                      {acc.domain ? t("profile.firstSeen") : t("profile.joined")} {(() => { useTimeTick(); return formatTimestamp(acc.created_at!, t, true); })()}
+                      {acc.acct.includes("@") ? t("profile.firstSeen") : t("profile.joined")} {(() => { useTimeTick(); return formatTimestamp(acc.created_at!, t, true); })()}
                     </span>
                   </Show>
                 </div>
@@ -854,7 +886,7 @@ export default function Profile() {
         </Show>
       </Show>
 
-      {/* Unfollow confirmation modal */}
+      {/* フォロー解除確認モーダル */}
       <Show when={showUnfollowModal()}>
         <div class="modal-overlay" onClick={() => setShowUnfollowModal(false)}>
           <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>
@@ -888,7 +920,7 @@ export default function Profile() {
         </div>
       </Show>
 
-      {/* Compose modal (reply / quote) */}
+      {/* 投稿モーダル（返信/引用） */}
       <ComposeModal
         open={!!replyTarget() || !!quoteTarget()}
         onClose={() => { setReplyTarget(null); setQuoteTarget(null); }}
@@ -896,7 +928,7 @@ export default function Profile() {
         quoteNote={quoteTarget()}
       />
 
-      {/* Unlock confirmation modal */}
+      {/* 承認制解除確認モーダル */}
       <Show when={showUnlockModal()}>
         <div class="modal-overlay" onClick={() => setShowUnlockModal(false)}>
           <div class="modal-content" style="max-width: 400px" onClick={(e) => e.stopPropagation()}>
@@ -926,7 +958,7 @@ export default function Profile() {
         </div>
       </Show>
 
-      {/* Thread modal */}
+      {/* スレッドモーダル */}
       <Show when={threadNoteId()}>
         <NoteThreadModal
           noteId={threadNoteId()!}
@@ -942,7 +974,7 @@ export default function Profile() {
         />
       </Show>
 
-      {/* Header crop picker */}
+      {/* ヘッダー切り抜きピッカー */}
       <Show when={showHeaderFocal() && account()?.header}>
         <HeaderCropPicker
           imageUrl={account()!.header!}
@@ -953,7 +985,7 @@ export default function Profile() {
         />
       </Show>
 
-      {/* Add to list modal */}
+      {/* リストに追加モーダル */}
       <Show when={showAddToList()}>
         <div class="modal-overlay" onClick={() => setShowAddToList(false)}>
           <div class="modal-content" style="max-width: 360px" onClick={(e) => e.stopPropagation()}>
@@ -961,16 +993,52 @@ export default function Profile() {
               <h3>{t("list.addToList" as any)}</h3>
               <button class="modal-close" onClick={() => setShowAddToList(false)}>✕</button>
             </div>
-            <div style="padding: 16px">
-              <Show when={userLists().length > 0} fallback={<p>{t("list.noLists" as any)}</p>}>
-                <select class="modal-select" value={selectedListId()} onChange={(e) => setSelectedListId(e.target.value)}>
-                  <option value="">{t("list.selectList" as any)}</option>
-                  <For each={userLists()}>{(l) => <option value={l.id}>{l.title}</option>}</For>
-                </select>
-                <div style="margin-top: 12px; display: flex; gap: 8px; justify-content: flex-end">
-                  <button class="btn btn-small" onClick={() => setShowAddToList(false)}>{t("common.cancel")}</button>
-                  <button class="btn btn-small btn-primary" disabled={!selectedListId() || addToListLoading()} onClick={handleAddToListConfirm}>
-                    {t("common.add" as any)}
+            <div class="list-toggle-list">
+              <Show when={userLists().length > 0 || showNewListInput()}>
+                <For each={userLists()}>
+                  {(l) => (
+                    <button
+                      class={`list-toggle-item${memberListIds().has(l.id) ? " active" : ""}`}
+                      disabled={togglingListId() !== null}
+                      onClick={() => handleToggleList(l.id)}
+                    >
+                      <span class="list-toggle-check">{memberListIds().has(l.id) ? "✓" : ""}</span>
+                      <span class="list-toggle-title">{l.title}</span>
+                      <Show when={togglingListId() === l.id}>
+                        <span class="list-toggle-spinner" />
+                      </Show>
+                    </button>
+                  )}
+                </For>
+              </Show>
+              <Show when={userLists().length === 0 && !showNewListInput()}>
+                <p class="list-toggle-empty">{t("list.noLists" as any)}</p>
+              </Show>
+              <div class="list-toggle-divider" />
+              <Show
+                when={showNewListInput()}
+                fallback={
+                  <button class="list-toggle-item list-create-row" onClick={() => setShowNewListInput(true)}>
+                    <span class="list-toggle-check">+</span>
+                    <span class="list-toggle-title">{t("list.createNew" as any)}</span>
+                  </button>
+                }
+              >
+                <div class="list-create-inline">
+                  <input
+                    type="text"
+                    value={newListTitle()}
+                    onInput={(e) => setNewListTitle(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") handleCreateListInModal(); }}
+                    placeholder={t("list.newListPlaceholder" as any)}
+                    autofocus
+                  />
+                  <button
+                    class="btn btn-small btn-primary"
+                    disabled={!newListTitle().trim() || togglingListId() !== null}
+                    onClick={handleCreateListInModal}
+                  >
+                    {t("list.createButton" as any)}
                   </button>
                 </div>
               </Show>

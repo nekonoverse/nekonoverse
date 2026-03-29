@@ -3,8 +3,8 @@ import unicodedata
 
 CUSTOM_EMOJI_PATTERN = re.compile(r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$")
 
-# Match a single emoji character (including compound emoji with ZWJ)
-# This covers most Unicode emoji: Emoji_Presentation, skin tone modifiers, ZWJ sequences
+# 単一の絵文字文字にマッチする (ZWJ を含む合成絵文字を含む)
+# 大半の Unicode 絵文字をカバー: Emoji_Presentation, 肌色修飾子, ZWJ シーケンス
 _EMOJI_PATTERN = re.compile(
     r"^["
     r"\U0001F600-\U0001F64F"  # Emoticons
@@ -41,28 +41,28 @@ _EMOJI_PATTERN = re.compile(
 
 
 def _is_single_emoji_sequence(text: str) -> bool:
-    """Check if text is a single emoji sequence (handles ZWJ, flags, skin tones)."""
+    """テキストが単一の絵文字シーケンスかチェックする (ZWJ, 国旗, 肌色対応)。"""
     if not text:
         return False
 
-    # Check if it contains ZWJ — if so, it's a compound emoji (e.g. family)
+    # ZWJ を含む場合は合成絵文字 (例: 家族)
     if "\u200d" in text:
-        # All non-ZWJ, non-modifier chars should be emoji
+        # ZWJ・修飾子以外の文字はすべて絵文字であるべき
         return True
 
-    # Count base emoji characters (excluding modifiers and variation selectors)
+    # ベースの絵文字文字数をカウント (修飾子とバリエーションセレクタを除く)
     count = 0
     i = 0
     while i < len(text):
         cp = ord(text[i])
-        # Skip variation selectors and other modifiers
+        # バリエーションセレクタとその他の修飾子をスキップ
         if cp in (0xFE0F, 0xFE0E, 0x20E3) or 0x200B <= cp <= 0x200F:
             i += 1
             continue
-        if 0x1F3FB <= cp <= 0x1F3FF:  # Skin tone modifiers
+        if 0x1F3FB <= cp <= 0x1F3FF:  # 肌色修飾子
             i += 1
             continue
-        # Regional indicators come in pairs for flags
+        # 地域指標子は国旗のためペアで出現する
         if 0x1F1E0 <= cp <= 0x1F1FF:
             if i + 1 < len(text) and 0x1F1E0 <= ord(text[i + 1]) <= 0x1F1FF:
                 count += 1
@@ -74,7 +74,7 @@ def _is_single_emoji_sequence(text: str) -> bool:
 
 
 def is_single_emoji(text: str) -> bool:
-    """Check if a string is a single emoji (possibly a compound one with ZWJ)."""
+    """文字列が単一の絵文字 (ZWJ による合成を含む) かチェックする。"""
     if not text or len(text) > 20:
         return False
 
@@ -82,11 +82,11 @@ def is_single_emoji(text: str) -> bool:
     if not text:
         return False
 
-    # Use the pattern for common emoji
+    # 一般的な絵文字にはパターンを使用
     if _EMOJI_PATTERN.match(text):
         return _is_single_emoji_sequence(text)
 
-    # Fallback: check if all characters have emoji category
+    # フォールバック: すべての文字が絵文字カテゴリかチェック
     for char in text:
         cat = unicodedata.category(char)
         if cat not in ("So", "Sk", "Mn", "Mc", "Cf", "Cn"):
@@ -96,5 +96,5 @@ def is_single_emoji(text: str) -> bool:
 
 
 def is_custom_emoji_shortcode(text: str) -> bool:
-    """Check if text is a custom emoji shortcode like :blobcat: or :emoji@domain:"""
+    """テキストが :blobcat: や :emoji@domain: のようなカスタム絵文字ショートコードかチェックする"""
     return bool(CUSTOM_EMOJI_PATTERN.match(text.strip()))

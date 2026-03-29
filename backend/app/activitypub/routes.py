@@ -1,4 +1,4 @@
-"""ActivityPub core routes: Actor endpoint, Inbox, Outbox."""
+"""ActivityPub コアルート: Actor エンドポイント、Inbox、Outbox。"""
 
 import base64
 import hashlib
@@ -43,12 +43,12 @@ async def get_actor(username: str, request: Request, db: AsyncSession = Depends(
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
-    # Suspended actors return 410 Gone
+    # 凍結済みアクターは 410 Gone を返す
     if actor.is_suspended:
         raise HTTPException(status_code=410, detail="Gone")
 
     if not is_ap_request(request):
-        # Redirect to profile page for browsers
+        # ブラウザにはプロフィールページへリダイレクト
         return Response(status_code=302, headers={"Location": f"/@{username}"})
 
     return Response(
@@ -242,11 +242,11 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
     if not is_ap_request(request):
         raise HTTPException(status_code=404, detail="Not found")
 
-    # Load hashtags for AP rendering
+    # AP レンダリング用にハッシュタグを読み込む
     hashtags_map = await get_hashtags_for_notes(db, [note.id])
     note._hashtag_names = hashtags_map.get(note.id, [])
 
-    # Load custom emoji tags for AP rendering
+    # AP レンダリング用にカスタム絵文字タグを読み込む
     shortcodes = set(re.findall(r":([a-zA-Z0-9_]+):", note.content or ""))
     if shortcodes:
         emoji_tags = []
@@ -278,7 +278,7 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
 
 
 async def verify_inbox_signature(request: Request, db: AsyncSession) -> tuple[bool, str]:
-    """Verify HTTP Signature on an inbox request. Returns (valid, key_id)."""
+    """Inbox リクエストの HTTP Signature を検証する。(valid, key_id) を返す。"""
     sig_header = request.headers.get("signature")
     if not sig_header:
         return False, ""
@@ -308,7 +308,7 @@ async def verify_inbox_signature(request: Request, db: AsyncSession) -> tuple[bo
 
 
 def _verify_digest(body: bytes, digest_header: str | None) -> bool:
-    """Verify that the Digest header matches the actual request body hash."""
+    """Digest ヘッダーが実際のリクエストボディのハッシュと一致するか検証する。"""
     import hmac as _hmac
 
     if not digest_header:
@@ -377,7 +377,7 @@ async def user_inbox(username: str, request: Request, db: AsyncSession = Depends
         logger.warning("Invalid or missing Digest header")
         raise HTTPException(status_code=400, detail="Invalid Digest header")
 
-    # Verify HTTP Signature
+    # HTTP Signature を検証
     valid, key_id = await verify_inbox_signature(request, db)
     if not valid:
         logger.warning("Invalid HTTP Signature from key_id=%s", key_id)
@@ -436,10 +436,10 @@ async def shared_inbox(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 def _verify_key_actor_match(key_id: str, activity: dict):
-    """Verify that the HTTP Signature key owner matches the activity actor.
+    """HTTP Signature の鍵所有者と activity の actor が一致するか検証する。
 
-    key_id is typically like "https://example.com/users/alice#main-key".
-    The actor portion is the URL before the fragment.
+    key_id は通常 "https://example.com/users/alice#main-key" のような形式。
+    アクター部分はフラグメントより前の URL。
     """
     activity_actor = activity.get("actor", "")
     if not activity_actor or not key_id:
@@ -458,11 +458,11 @@ def _verify_key_actor_match(key_id: str, activity: dict):
 
 
 async def process_inbox_activity(db: AsyncSession, activity: dict):
-    """Route an incoming activity to the appropriate handler."""
+    """受信した activity を適切なハンドラーにルーティングする。"""
     activity_type = activity.get("type", "")
     logger.info("Processing inbox activity: type=%s id=%s", activity_type, activity.get("id"))
 
-    # Domain block check
+    # ドメインブロックチェック
     actor_id_str = activity.get("actor", "")
     if actor_id_str:
         from urllib.parse import urlparse
@@ -493,7 +493,7 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
                 logger.info("Rejected activity from user-blocked actor: %s", actor_id_str)
                 return
 
-    # Idempotency check via Valkey
+    # Valkey による冪等性チェック
     activity_id = activity.get("id")
     if activity_id:
         from app.valkey_client import valkey

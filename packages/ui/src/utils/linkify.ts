@@ -1,6 +1,6 @@
 /**
- * Ensure all external links inside the given element open in a new tab.
- * Skips internal links (mentions, hashtags, same-origin relative paths).
+ * 指定要素内のすべての外部リンクを新しいタブで開くようにする。
+ * 内部リンク（メンション、ハッシュタグ、同一オリジンの相対パス）はスキップする。
  */
 export function externalLinksNewTab(el: HTMLElement): void {
   const links = el.querySelectorAll<HTMLAnchorElement>("a[href]");

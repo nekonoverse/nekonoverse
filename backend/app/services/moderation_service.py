@@ -1,4 +1,4 @@
-"""Moderation actions: suspend, silence, delete, force-sensitive."""
+"""モデレーション操作: 停止、サイレンス、削除、強制センシティブ。"""
 
 import uuid
 from datetime import datetime, timezone
@@ -33,11 +33,11 @@ async def log_action(
 
 
 async def invalidate_user_sessions(user_id: uuid.UUID, exclude_session: str | None = None) -> int:
-    """Delete all Valkey sessions belonging to a specific user.
+    """指定ユーザーに属するすべてのValkeyセッションを削除する。
 
-    Scans all ``session:*`` keys and removes those whose value matches
-    *user_id*.  Optionally keeps the session identified by *exclude_session*.
-    Returns the number of sessions deleted.
+    ``session:*`` キーをスキャンし、値が *user_id* に一致するものを削除する。
+    *exclude_session* で指定されたセッションは保持する。
+    削除したセッション数を返す。
     """
     from app.services.session_service import cleanup_session_metadata
     from app.valkey_client import valkey
@@ -60,9 +60,9 @@ async def invalidate_user_sessions(user_id: uuid.UUID, exclude_session: str | No
                     deleted += 1
         if cursor == 0:
             break
-    # Clean up the user sessions set
+    # ユーザーセッションセットのクリーンアップ
     if exclude_session:
-        # Keep only the excluded session in the set
+        # 除外セッションのみをセットに残す
         await valkey.delete(f"user_sessions:{user_id}")
         await valkey.sadd(f"user_sessions:{user_id}", exclude_session)
     else:
@@ -76,7 +76,7 @@ async def suspend_actor(
     actor.suspended_at = datetime.now(timezone.utc)
     await db.flush()
 
-    # Soft-delete all public notes from this actor
+    # このアクターの全公開ノートを論理削除
     await db.execute(
         update(Note)
         .where(Note.actor_id == actor.id, Note.deleted_at.is_(None))
@@ -86,11 +86,11 @@ async def suspend_actor(
 
     await log_action(db, moderator, "suspend", "actor", str(actor.id), reason)
 
-    # Invalidate all active sessions for the suspended user
+    # 停止されたユーザーの全アクティブセッションを無効化
     if actor.is_local and actor.local_user:
         await invalidate_user_sessions(actor.local_user.id)
 
-    # Deliver Delete(Person) to followers
+    # フォロワーにDelete(Person)を配送
     if actor.is_local:
         from app.activitypub.renderer import render_delete_activity
         from app.services.actor_service import actor_uri
@@ -136,7 +136,7 @@ async def admin_delete_note(
 
     await log_action(db, moderator, "delete_note", "note", str(note.id), reason)
 
-    # Deliver Delete(Tombstone) to followers
+    # フォロワーにDelete(Tombstone)を配送
     if note.local:
         from app.activitypub.renderer import render_delete_activity
         from app.services.actor_service import actor_uri

@@ -21,7 +21,7 @@ _CUSTOM_EMOJI_REACTION_RE = re.compile(r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?
 
 
 def extract_mentions(text: str) -> list[tuple[str, str | None]]:
-    """Extract (username, domain) tuples from text. domain is None for local."""
+    """テキストから (username, domain) タプルを抽出する。ローカルの場合domainはNone。"""
     return [(m.group(1), m.group(2)) for m in MENTION_PATTERN.finditer(text)]
 
 
@@ -47,7 +47,7 @@ async def create_note(
     note_id = uuid.uuid4()
     ap_id = f"{settings.server_url}/notes/{note_id}"
 
-    # Build to/cc based on visibility
+    # 可視性に基づいてto/ccを構築
     public = "https://www.w3.org/ns/activitystreams#Public"
     to_list: list[str] = []
     cc_list: list[str] = []
@@ -60,9 +60,9 @@ async def create_note(
         cc_list = [public]
     elif visibility == "followers":
         to_list = [actor.followers_url or ""]
-    # direct: to/cc set to mentioned actors only (handled later)
+    # direct: to/ccはメンション先アクターのみ (後で処理)
 
-    # Extract mentions and add to cc/to
+    # メンションを抽出してcc/toに追加
     mentions = extract_mentions(content)
     mention_data = []
     for username, domain in mentions:
@@ -113,7 +113,7 @@ async def create_note(
 
     html_content = text_to_html(content)
 
-    # Resolve quote
+    # 引用ノートの解決
     quote_ap_id = None
     if quote_id:
         quoted = await get_note_by_id(db, quote_id)
@@ -141,7 +141,7 @@ async def create_note(
         quote_ap_id=quote_ap_id,
     )
 
-    # Poll support
+    # 投票サポート
     if poll_options:
         from datetime import datetime, timedelta, timezone
 
@@ -152,13 +152,13 @@ async def create_note(
             note.poll_expires_at = datetime.now(timezone.utc) + timedelta(seconds=poll_expires_in)
     db.add(note)
 
-    # Increment parent's replies_count
+    # 親ノートの返信数をインクリメント
     if in_reply_to_id:
         parent = await get_note_by_id(db, in_reply_to_id)
         if parent:
             parent.replies_count = parent.replies_count + 1
 
-    # Attach media files
+    # メディアファイルを添付
     if media_ids:
         from app.models.note_attachment import NoteAttachment
         from app.services.drive_service import get_drive_file
@@ -175,10 +175,10 @@ async def create_note(
 
     await db.commit()
 
-    # Reload note with all relationships for rendering and response
+    # レンダリングとレスポンス用に全リレーションを含めてノートを再読み込み
     note = await get_note_by_id(db, note_id)
 
-    # Extract and upsert hashtags
+    # ハッシュタグの抽出とupsert
     from app.services.hashtag_service import extract_hashtags
     from app.services.hashtag_service import upsert_hashtags as upsert_ht
 
@@ -187,7 +187,7 @@ async def create_note(
         await upsert_ht(db, note_id, hashtag_names)
         note._hashtag_names = hashtag_names
 
-    # Extract custom emoji shortcodes for AP federation tags
+    # AP連合タグ用にカスタム絵文字ショートコードを抽出
     shortcodes = set(_EMOJI_SHORTCODE_RE.findall(content))
     if shortcodes:
         from app.services.emoji_service import get_custom_emoji
@@ -214,7 +214,7 @@ async def create_note(
         if emoji_tags:
             note._emoji_tags = emoji_tags
 
-    # Deliver to followers and mentioned remote users
+    # フォロワーとメンション先のリモートユーザーに配送
     if visibility in ("public", "unlisted", "followers", "direct"):
         from app.activitypub.renderer import render_create_activity
         from app.services.delivery_service import enqueue_delivery
@@ -249,12 +249,12 @@ async def create_note(
         for inbox_url in inboxes:
             await enqueue_delivery(db, actor.id, inbox_url, activity)
 
-    # Send notifications
+    # 通知を送信
     from app.services.notification_service import create_notification, publish_notification
 
     pending_notifs = []
 
-    # Determine reply parent actor to avoid duplicate mention+reply notifications
+    # リプライ先アクターを特定し、メンション+リプライの重複通知を防止
     reply_recipient_id = None
     if in_reply_to_id:
         parent = await get_note_by_id(db, in_reply_to_id)
@@ -270,7 +270,7 @@ async def create_note(
             if notif:
                 pending_notifs.append(notif)
 
-    # Mention notifications (local actors only, skip reply recipient)
+    # メンション通知 (ローカルアクターのみ、リプライ先はスキップ)
     for m in mention_data:
         if not m.get("domain"):  # local actor
             from app.services.actor_service import get_actor_by_username
@@ -289,11 +289,11 @@ async def create_note(
 
     await db.commit()
 
-    # Publish notification events after commit
+    # コミット後に通知イベントをパブリッシュ
     for notif in pending_notifs:
         await publish_notification(notif)
 
-    # Publish real-time events via Valkey pub/sub
+    # Valkey pub/sub経由でリアルタイムイベントをパブリッシュ
     try:
         import json
 
@@ -329,9 +329,9 @@ async def create_note(
 
         await pipe.execute()
     except Exception:
-        pass  # Don't fail note creation if pub/sub fails
+        pass  # pub/sub失敗でノート作成を失敗させない
 
-    # Enqueue URL summary extraction (if summary proxy configured)
+    # URL要約抽出をエンキュー (summary proxyが設定されている場合)
     if content:
         from app.services.summary_proxy_queue import enqueue as enqueue_summary
 
@@ -339,7 +339,7 @@ async def create_note(
         if first_url:
             await enqueue_summary(note_id, first_url)
 
-    # Enqueue search indexing (if neko-search configured)
+    # 検索インデックスをエンキュー (neko-searchが設定されている場合)
     if settings.neko_search_enabled and visibility == "public":
         from app.services.search_queue import enqueue_index
 
@@ -351,7 +351,7 @@ async def create_note(
     except Exception:
         pass
 
-    # Re-query after delivery commits to get fresh state
+    # 配送コミット後に最新の状態を取得するため再クエリ
     return await get_note_by_id(db, note_id)
 
 
@@ -359,18 +359,18 @@ _URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
 
 
 def _extract_first_url(text: str) -> str | None:
-    """Extract the first HTTP(S) URL from plain text."""
+    """プレーンテキストから最初のHTTP(S) URLを抽出する。"""
     m = _URL_RE.search(text)
     if m:
         url = m.group(0)
-        # Strip trailing punctuation
+        # 末尾の句読点を除去
         url = url.rstrip(".,;:!?")
         return url
     return None
 
 
 def _note_load_options():
-    """Standard eager-loading options for Note queries."""
+    """Noteクエリ用の標準eager-loadingオプション。"""
     return [
         selectinload(Note.actor),
         selectinload(Note.attachments),
@@ -400,20 +400,20 @@ async def check_note_visible(
     note: Note,
     current_actor_id: uuid.UUID | None = None,
 ) -> bool:
-    """Check whether the current user is allowed to see this note."""
-    # Author can always see their own notes
+    """現在のユーザーがこのノートを閲覧可能かどうかを確認する。"""
+    # 作者は自分のノートを常に閲覧可能
     if current_actor_id and note.actor_id == current_actor_id:
         return True
 
     actor = note.actor
 
-    # Misskey: make_notes_hidden_before — hide notes before this timestamp from everyone
+    # Misskey: make_notes_hidden_before — このタイムスタンプより前のノートを全員から非表示
     if getattr(actor, "make_notes_hidden_before", None) and note.published:
         threshold = datetime.fromtimestamp(actor.make_notes_hidden_before / 1000.0, tz=timezone.utc)
         if note.published < threshold:
             return False
 
-    # Misskey: make_notes_followers_only_before — treat old notes as followers-only
+    # Misskey: make_notes_followers_only_before — 古いノートをフォロワー限定として扱う
     if getattr(actor, "make_notes_followers_only_before", None) and note.published:
         threshold = datetime.fromtimestamp(
             actor.make_notes_followers_only_before / 1000.0,
@@ -474,7 +474,7 @@ async def get_note_by_ap_id(db: AsyncSession, ap_id: str) -> Note | None:
 
 
 async def _get_excluded_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
-    """Get IDs of actors blocked or muted by the given actor."""
+    """指定アクターがブロックまたはミュートしているアクターのIDを取得する。"""
     from app.services.block_service import get_blocked_ids
     from app.services.mute_service import get_muted_ids
 
@@ -507,10 +507,10 @@ async def get_public_timeline(
         if excluded:
             query = query.where(Note.actor_id.not_in(excluded))
     else:
-        # Unauthenticated: exclude actors with require_signin_to_view
+        # 未認証: require_signin_to_viewが有効なアクターを除外
         query = query.where(Actor.require_signin_to_view.is_(False))
 
-    # Exclude notes hidden before threshold (all users)
+    # しきい値より前の非表示ノートを除外 (全ユーザー対象)
     query = query.where(
         or_(
             Actor.make_notes_hidden_before.is_(None),
@@ -518,7 +518,7 @@ async def get_public_timeline(
         )
     )
 
-    # Unauthenticated: also exclude notes before followers-only threshold
+    # 未認証: フォロワー限定しきい値より前のノートも除外
     if not current_actor_id:
         query = query.where(
             or_(
@@ -528,7 +528,7 @@ async def get_public_timeline(
         )
 
     if max_id:
-        # Get the published time of max_id note for cursor pagination
+        # カーソルページネーション用にmax_idノートの投稿日時を取得
         sub = select(Note.published).where(Note.id == max_id).scalar_subquery()
         query = query.where(Note.published < sub)
     query = query.order_by(Note.published.desc()).limit(limit)
@@ -546,7 +546,7 @@ async def get_home_timeline(
 
     actor_id = user.actor_id
 
-    # Get IDs of actors this user follows
+    # このユーザーがフォローしているアクターのIDを取得
     following_result = await db.execute(
         select(Follow.following_id).where(
             Follow.follower_id == actor_id,
@@ -554,14 +554,14 @@ async def get_home_timeline(
         )
     )
     following_ids = [row[0] for row in following_result.all()]
-    # Include self
+    # 自分自身を含める
     following_ids.append(actor_id)
 
-    # Exclude blocked/muted actors
+    # ブロック/ミュート済みアクターを除外
     excluded = await _get_excluded_ids(db, actor_id)
     visible_ids = [fid for fid in following_ids if fid not in excluded]
 
-    # Exclude actors in exclusive lists (they appear in list TL instead)
+    # exclusiveリストに含まれるアクターを除外 (リストTLに表示されるため)
     from app.services.list_service import get_exclusive_list_actor_ids
 
     exclusive_ids = await get_exclusive_list_actor_ids(db, user.id)
@@ -588,7 +588,7 @@ async def get_home_timeline(
 async def get_reaction_summary(
     db: AsyncSession, note_id: uuid.UUID, current_actor_id: uuid.UUID | None = None
 ) -> list[dict]:
-    """Get aggregated reactions for a note."""
+    """ノートの集計済みリアクションを取得する。"""
     result = await db.execute(
         select(Reaction.emoji, func.count(Reaction.id).label("count"))
         .where(Reaction.note_id == note_id)
@@ -608,7 +608,7 @@ async def get_reaction_summary(
             )
             me = me_result.scalar_one_or_none() is not None
 
-        # Resolve custom emoji URL (prefer local version)
+        # カスタム絵文字のURLを解決 (ローカル版を優先)
         emoji_url = None
         m = _CUSTOM_EMOJI_REACTION_RE.match(emoji)
         if m:
@@ -624,8 +624,8 @@ async def get_reaction_summary(
                 if remote:
                     emoji_url = remote.url
             else:
-                # No domain in reaction string (e.g. Misskey sends ":blobcat:"
-                # without domain) — search any remote emoji with this shortcode
+                # リアクション文字列にドメインなし (例: Misskeyは ":blobcat:" を
+                # ドメインなしで送信) — このショートコードのリモート絵文字を検索
                 result2 = await db.execute(
                     select(CustomEmoji)
                     .where(
@@ -643,14 +643,14 @@ async def get_reaction_summary(
         is_importable = False
         import_domain: str | None = None
         if m and not local:
-            # Custom emoji without a local copy → importable
+            # ローカルコピーのないカスタム絵文字 → インポート可能
             shortcode_val = m.group(1)
             domain_val = m.group(2)
             if domain_val:
                 is_importable = True
                 import_domain = domain_val
             elif emoji_url:
-                # No domain in reaction string but found a remote emoji
+                # リアクション文字列にドメインなしだがリモート絵文字が見つかった
                 remote_q = await db.execute(
                     select(CustomEmoji.domain)
                     .where(
@@ -683,10 +683,10 @@ async def get_reaction_summaries(
     current_actor_id: uuid.UUID | None = None,
     include_account_ids: bool = False,
 ) -> dict[uuid.UUID, list[dict]]:
-    """Get aggregated reactions for multiple notes in batch.
+    """複数ノートの集計済みリアクションをバッチ取得する。
 
-    Returns a dict mapping note_id -> list of reaction summary dicts.
-    This avoids N+1 queries by fetching all reaction data in bulk.
+    note_id -> リアクションサマリーdictのリストを返す。
+    全リアクションデータを一括取得することでN+1クエリを回避する。
     """
     from app.models.custom_emoji import CustomEmoji
     from app.utils.media_proxy import media_proxy_url
@@ -694,7 +694,7 @@ async def get_reaction_summaries(
     if not note_ids:
         return {}
 
-    # 1) Fetch all reaction counts grouped by (note_id, emoji) in one query
+    # 1) (note_id, emoji) でグループ化した全リアクション数を1クエリで取得
     result = await db.execute(
         select(
             Reaction.note_id,
@@ -707,7 +707,7 @@ async def get_reaction_summaries(
     )
     rows = result.all()
 
-    # 2) Fetch "me" reactions in one query (which emojis did the current user react to)
+    # 2) 「自分」のリアクションを1クエリで取得 (現在のユーザーがどの絵文字でリアクションしたか)
     me_set: set[tuple[uuid.UUID, str]] = set()
     if current_actor_id:
         me_result = await db.execute(
@@ -719,23 +719,23 @@ async def get_reaction_summaries(
         for note_id_val, emoji_val in me_result.all():
             me_set.add((note_id_val, emoji_val))
 
-    # 3) Collect all custom emoji shortcodes that need URL resolution
+    # 3) URL解決が必要な全カスタム絵文字ショートコードを収集
     custom_emojis_needed: dict[str, str | None] = {}  # shortcode -> domain
     for _, emoji_str, _ in rows:
         m = _CUSTOM_EMOJI_REACTION_RE.match(emoji_str)
         if m:
             shortcode, domain = m.group(1), m.group(2)
-            # Always try local first, so track shortcode with None domain
+            # 常にローカルを先に試すため、ショートコードをdomainなしで追跡
             if shortcode not in custom_emojis_needed:
                 custom_emojis_needed[shortcode] = domain
 
-    # 4) Batch-fetch all needed custom emojis in at most 2 queries
+    # 4) 必要な全カスタム絵文字を最大2クエリでバッチ取得
     emoji_url_map: dict[str, str | None] = {}  # emoji string -> url
     importable_emojis: dict[str, str] = {}  # emoji_str -> remote domain
     if custom_emojis_needed:
         all_shortcodes = set(custom_emojis_needed.keys())
 
-        # Fetch local emojis
+        # ローカル絵文字を取得
         local_result = await db.execute(
             select(CustomEmoji).where(
                 CustomEmoji.shortcode.in_(all_shortcodes),
@@ -744,7 +744,7 @@ async def get_reaction_summaries(
         )
         local_emojis = {e.shortcode: e for e in local_result.scalars().all()}
 
-        # Collect shortcodes that need remote lookup
+        # リモート検索が必要なショートコードを収集
         remote_shortcodes = all_shortcodes - set(local_emojis.keys())
         remote_emojis: dict[str, CustomEmoji] = {}
         if remote_shortcodes:
@@ -755,11 +755,11 @@ async def get_reaction_summaries(
                 )
             )
             for e in remote_result.scalars().all():
-                # Keep first match per shortcode (or match domain if specified)
+                # ショートコードごとに最初の一致を保持 (指定があればドメインも一致)
                 if e.shortcode not in remote_emojis:
                     remote_emojis[e.shortcode] = e
 
-        # Build the emoji string -> URL map
+        # 絵文字文字列 -> URLのマップを構築
         for _, emoji_str, _ in rows:
             m = _CUSTOM_EMOJI_REACTION_RE.match(emoji_str)
             if m:
@@ -770,7 +770,7 @@ async def get_reaction_summaries(
                     emoji_url_map[emoji_str] = remote_emojis[shortcode].url
                     importable_emojis[emoji_str] = remote_emojis[shortcode].domain
 
-    # 5) Optionally fetch account_ids per (note_id, emoji) for Fedibird compat
+    # 5) Fedibird互換用に (note_id, emoji) ごとのaccount_idsをオプションで取得
     account_ids_map: dict[tuple[uuid.UUID, str], list[str]] = {}
     if include_account_ids:
         from app.models.actor import Actor
@@ -784,7 +784,7 @@ async def get_reaction_summaries(
             key = (nid, emoji_str)
             account_ids_map.setdefault(key, []).append(str(actor_id_val))
 
-    # 6) Build the result dict
+    # 6) 結果dictを構築
     summaries: dict[uuid.UUID, list[dict]] = {nid: [] for nid in note_ids}
     for note_id_val, emoji_str, count in rows:
         me = (note_id_val, emoji_str) in me_set
@@ -808,9 +808,9 @@ async def get_reaction_summaries(
 
 
 async def get_statuses_count(db: AsyncSession, actor_id: uuid.UUID) -> int:
-    """Return the number of public/unlisted statuses for the given actor.
+    """指定アクターのpublic/unlistedステータス数を返す。
 
-    Cached in Valkey for 5 minutes.
+    Valkeyに5分間キャッシュされる。
     """
     import json
 
@@ -852,10 +852,10 @@ async def fetch_remote_note(
     *,
     _depth: int = 0,
 ) -> Note | None:
-    """Fetch a remote note by AP ID and store it locally.
+    """AP IDでリモートノートを取得しローカルに保存する。
 
-    Used by announce/create handlers when the referenced note
-    (boost target or quote target) is not in the local database.
+    参照先ノート (ブースト対象や引用対象) がローカルDBにない場合に
+    announce/createハンドラから使用される。
     """
     import logging
 
@@ -946,7 +946,7 @@ async def fetch_remote_note(
         return None
 
     raw_content = data.get("content", "")
-    # contentMap (multilingual) fallback: prefer default language or first value
+    # contentMap (多言語) フォールバック: デフォルト言語または最初の値を優先
     if not isinstance(raw_content, str):
         content_map = data.get("contentMap", {})
         if isinstance(content_map, dict) and content_map:
@@ -1112,7 +1112,7 @@ async def fetch_remote_note(
             )
         if not att_url or not isinstance(att_url, str):
             continue
-        # Parse focalPoint [x, y]
+        # focalPoint [x, y] をパース
         focal_x, focal_y = None, None
         fp = att_data.get("focalPoint")
         if isinstance(fp, list) and len(fp) >= 2:
@@ -1139,7 +1139,7 @@ async def fetch_remote_note(
         )
         db.add(attachment)
 
-    # Background focal point detection for remote image attachments
+    # リモート画像添付ファイルのバックグラウンドフォーカルポイント検出
     if settings.face_detect_enabled:
         await db.flush()
         from sqlalchemy import select as sel
@@ -1162,13 +1162,13 @@ async def fetch_remote_note(
 
             await enqueue_remote(note.id, att_ids)
 
-    # Increment parent's replies_count for remote replies
+    # リモートリプライの親ノートの返信数をインクリメント
     if in_reply_to_id:
         parent = await get_note_by_id(db, in_reply_to_id)
         if parent:
             parent.replies_count = parent.replies_count + 1
 
-    # Extract and upsert hashtags from AP tags
+    # APタグからハッシュタグを抽出してupsert
     from app.services.hashtag_service import (
         extract_hashtags_from_ap_tags,
     )

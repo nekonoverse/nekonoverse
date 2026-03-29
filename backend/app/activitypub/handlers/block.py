@@ -1,4 +1,4 @@
-"""Handle incoming Block activities."""
+"""受信した Block activity を処理する。"""
 
 import logging
 
@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 
 async def handle_block(db: AsyncSession, activity: dict):
-    """Handle Block activity -- remote actor blocks local actor."""
+    """Block activity を処理する -- リモートアクターがローカルアクターをブロックする。"""
     actor_ap_id = activity.get("actor")
     target_ap_id = activity.get("object")
 
@@ -26,7 +26,7 @@ async def handle_block(db: AsyncSession, activity: dict):
     if not blocker or not target:
         return
 
-    # Check if already blocking
+    # 既にブロック済みかチェック
     existing = await db.execute(
         select(UserBlock).where(
             UserBlock.actor_id == blocker.id,
@@ -39,7 +39,7 @@ async def handle_block(db: AsyncSession, activity: dict):
     block = UserBlock(actor_id=blocker.id, target_id=target.id)
     db.add(block)
 
-    # Remove follows in both directions
+    # 双方向のフォローを削除
     for follower_id, following_id in [
         (blocker.id, target.id),
         (target.id, blocker.id),

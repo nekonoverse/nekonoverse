@@ -1,7 +1,7 @@
-"""Role management service.
+"""ロール管理サービス。
 
-Provides CRUD operations for roles and permission checks that replace
-the older permission_service module.
+ロールのCRUD操作と権限チェックを提供する。
+旧permission_serviceモジュールを置き換えるもの。
 """
 
 import logging
@@ -22,6 +22,7 @@ MODERATOR_PERMISSIONS = [
     "federation",
     "emoji",
     "registrations",
+    "announcements",
 ]
 
 
@@ -92,7 +93,7 @@ async def delete_role(db: AsyncSession, role_name: str) -> None:
     if role.is_system:
         raise ValueError("Cannot delete a built-in role")
 
-    # Check if any users are assigned to this role
+    # このロールに割り当てられているユーザーがいるか確認
     user_count = await db.scalar(
         select(func.count()).select_from(User).where(User.role == role_name)
     )
@@ -104,7 +105,7 @@ async def delete_role(db: AsyncSession, role_name: str) -> None:
 
 
 async def has_permission(db: AsyncSession, user: User, permission: str) -> bool:
-    """Check whether user holds the given permission via their role."""
+    """ロール経由でユーザーが指定権限を持っているか確認する。"""
     role = await get_role(db, user.role)
     if not role:
         return user.is_admin
@@ -117,7 +118,7 @@ async def has_permission(db: AsyncSession, user: User, permission: str) -> bool:
 
 
 async def get_quota_for_user(db: AsyncSession, user: User) -> int:
-    """Return quota_bytes for the user's role. 0 = unlimited."""
+    """ユーザーのロールに応じたquota_bytesを返す。0 = 無制限。"""
     role = await get_role(db, user.role)
     if not role:
         return 1073741824  # 1 GB fallback

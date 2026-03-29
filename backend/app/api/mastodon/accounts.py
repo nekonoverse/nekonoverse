@@ -67,12 +67,48 @@ async def unfollow(
     return {"ok": True}
 
 
+@router.get("")
+async def get_accounts_batch(
+    ids: list[str] = Query(alias="id[]", default=[]),
+    user: User | None = Depends(get_optional_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """複数アカウントを ID で一括取得する（Mastodon API v4.3.0）。"""
+    if not ids:
+        return []
+    # 有効な UUID をパースして重複排除
+    valid_ids: list[uuid.UUID] = []
+    for raw in ids[:40]:  # 悪用防止のため40件に制限
+        try:
+            valid_ids.append(uuid.UUID(raw))
+        except ValueError:
+            continue
+    if not valid_ids:
+        return []
+    result = await db.execute(select(Actor).where(Actor.id.in_(valid_ids)))
+    actors = list(result.scalars().all())
+    accounts = []
+    for actor in actors:
+        if actor.require_signin_to_view and not user:
+            accounts.append(_actor_to_limited_account(actor))
+        else:
+            fc, fic = await get_follow_counts(db, actor.id)
+            sc = await get_statuses_count(db, actor.id)
+            accounts.append(
+                await _actor_to_account(
+                    actor, followers_count=fc, following_count=fic,
+                    statuses_count=sc, db=db,
+                )
+            )
+    return accounts
+
+
 @router.get("/lookup")
 async def lookup_account(
     acct: str,
     db: AsyncSession = Depends(get_db),
 ):
-    """Lookup an account by acct URI (user@domain). Resolves remote actors via WebFinger."""
+    """acct URI（user@domain）でアカウントを検索する。リモートアクターは WebFinger で解決する。"""
     if "@" in acct:
         username, domain = acct.split("@", 1)
     else:
@@ -83,7 +119,7 @@ async def lookup_account(
 
     actor = await get_actor_by_username(db, username, domain)
 
-    # If not found locally and it's a remote acct, resolve via WebFinger
+    # ローカルに見つからずリモート acct の場合、WebFinger で解決
     if not actor and domain:
         from app.services.actor_service import resolve_webfinger
 
@@ -105,7 +141,7 @@ async def search_accounts(
     resolve: bool = False,
     db: AsyncSession = Depends(get_db),
 ):
-    """Search for accounts. If resolve=true and q looks like user@domain, resolve via WebFinger."""
+    """アカウントを検索する。resolve=true かつ user@domain 形式の場合、WebFinger で解決する。"""
     acct = q.lstrip("@")
 
     if "@" in acct:
@@ -172,7 +208,7 @@ async def _actor_to_account(
         "last_status_at": None,
     }
 
-    # Resolve custom emoji from display_name, summary, and fields
+    # display_name、summary、fields からカスタム絵文字を解決
     if db:
         shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
         texts = [data["display_name"] or "", data["note"]]
@@ -207,7 +243,7 @@ async def _actor_to_account(
 
 
 def _actor_to_limited_account(actor: Actor) -> dict:
-    """Return minimal account info for actors with require_signin_to_view."""
+    """require_signin_to_view が設定されたアクターの最小限のアカウント情報を返す。"""
     return {
         "id": str(actor.id),
         "username": actor.username,
@@ -339,7 +375,7 @@ async def get_account_statuses(
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
-    # Respect Misskey require_signin_to_view
+    # Misskey の require_signin_to_view を尊重
     if actor.require_signin_to_view and not user:
         return []
 
@@ -351,14 +387,14 @@ async def get_account_statuses(
         get_reaction_summaries,
     )
 
-    # Determine which visibility levels to show based on relationship
+    # リレーションに基づいて表示する公開範囲を決定
     visible = ["public", "unlisted"]
     if user:
         if user.actor_id == actor_id:
-            # Own profile: show everything
+            # 自分のプロフィール: すべて表示
             visible = ["public", "unlisted", "followers", "direct"]
         else:
-            # Check if current user follows this actor
+            # 現在のユーザーがこのアクターをフォローしているか確認
             follow_check = await db.execute(
                 select(Follow.id)
                 .where(
@@ -381,7 +417,7 @@ async def get_account_statuses(
         )
     )
 
-    # Filter notes hidden before threshold
+    # しきい値より前の非表示ノートをフィルタ
     if actor.make_notes_hidden_before:
         threshold = datetime.fromtimestamp(
             actor.make_notes_hidden_before / 1000.0,
@@ -389,14 +425,14 @@ async def get_account_statuses(
         )
         query = query.where(Note.published > threshold)
 
-    # Filter notes followers-only before threshold (unauthenticated only)
+    # しきい値より前のフォロワー限定ノートをフィルタ（未認証時のみ）
     if actor.make_notes_followers_only_before and not user:
         threshold = datetime.fromtimestamp(
             actor.make_notes_followers_only_before / 1000.0, tz=timezone.utc
         )
         query = query.where(Note.published > threshold)
 
-    # Batch-fetch pinned note IDs for this actor
+    # このアクターのピン留めノート ID をバッチ取得
     from app.models.pinned_note import PinnedNote
 
     pinned_result = await db.execute(
@@ -421,7 +457,7 @@ async def get_account_statuses(
         pinned_notes = list(pinned_result2.scalars().all())
 
     if max_id:
-        # Cursor-based pagination: get the published timestamp of max_id note
+        # カーソルベースのページネーション: max_id ノートの published タイムスタンプを取得
         cursor_result = await db.execute(select(Note.published).where(Note.id == max_id))
         cursor_ts = cursor_result.scalar_one_or_none()
         if cursor_ts:
@@ -451,7 +487,7 @@ async def _batch_resolve_actor_emojis(
     db: AsyncSession,
     actors: list[Actor],
 ) -> dict[uuid.UUID, list[dict]]:
-    """Batch-resolve custom emoji for multiple actors in 2 queries max."""
+    """複数アクターのカスタム絵文字を最大2クエリでバッチ解決する。"""
     import re
 
     shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
@@ -526,7 +562,7 @@ async def list_followers(
     limit: int = 40,
     db: AsyncSession = Depends(get_db),
 ):
-    """List accounts that follow the given account."""
+    """指定アカウントをフォローしているアカウント一覧を返す。"""
     from app.services.follow_service import get_followers
 
     result = await db.execute(select(Actor).where(Actor.id == actor_id))
@@ -550,7 +586,7 @@ async def list_following(
     limit: int = 40,
     db: AsyncSession = Depends(get_db),
 ):
-    """List accounts the given account is following."""
+    """指定アカウントがフォローしているアカウント一覧を返す。"""
     from app.services.follow_service import get_following
 
     result = await db.execute(select(Actor).where(Actor.id == actor_id))
@@ -566,6 +602,31 @@ async def list_following(
             account["emojis"] = emoji_map[a.id]
         results.append(account)
     return results
+
+
+@router.get("/{actor_id}/lists")
+async def get_account_lists(
+    actor_id: uuid.UUID,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """指定アカウントを含む、現在のユーザーが所有するリスト一覧を返す。"""
+    result = await db.execute(select(Actor).where(Actor.id == actor_id))
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Actor not found")
+
+    from app.services.list_service import get_user_lists_for_actor
+
+    lists = await get_user_lists_for_actor(db, user.id, actor_id)
+    return [
+        {
+            "id": str(lst.id),
+            "title": lst.title,
+            "replies_policy": lst.replies_policy,
+            "exclusive": lst.exclusive,
+        }
+        for lst in lists
+    ]
 
 
 @router.get("/{actor_id}")
@@ -595,7 +656,7 @@ async def get_relationship(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Check follow/block/mute status with another actor."""
+    """他のアクターとのフォロー/ブロック/ミュート状態を確認する。"""
     from app.services.block_service import is_blocking
     from app.services.mute_service import is_muting
 
@@ -654,7 +715,7 @@ async def get_relationships_batch(
     db: AsyncSession = Depends(get_db),
     ids: list[str] = Query(default=[], alias="id[]"),
 ):
-    """Batch-check follow/block/mute status with multiple accounts."""
+    """複数アカウントとのフォロー/ブロック/ミュート状態を一括チェックする。"""
     if not ids:
         return []
 
@@ -730,7 +791,7 @@ async def move_account(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """Initiate account migration to a target actor."""
+    """ターゲットアクターへのアカウント引っ越しを開始する。"""
     from app.services.move_service import initiate_move
 
     try:
@@ -741,7 +802,7 @@ async def move_account(
     return {"ok": True}
 
 
-# --- Following IDs (lightweight) ---
+# --- フォロー中 ID（軽量） ---
 
 
 @relationships_router.get("/following_ids")
@@ -755,7 +816,7 @@ async def list_following_ids(
     return [str(i) for i in ids]
 
 
-# --- Block/Mute lists (different prefix) ---
+# --- ブロック/ミュート一覧（別プレフィックス） ---
 
 
 @relationships_router.get("/blocks")

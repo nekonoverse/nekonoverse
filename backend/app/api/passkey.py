@@ -15,7 +15,7 @@ from app.services import passkey_service
 router = APIRouter(prefix="/api/v1/passkey", tags=["passkey"])
 
 
-# ── Schemas ────────────────────────────────────────────────────────────────
+# ── スキーマ ────────────────────────────────────────────────────────────────
 
 
 class PasskeyRegisterVerifyRequest(BaseModel):
@@ -52,7 +52,7 @@ class PasskeyCredentialResponse(BaseModel):
     last_used_at: str | None
 
 
-# ── Registration flow ──────────────────────────────────────────────────────
+# ── 登録フロー ──────────────────────────────────────────────────────
 
 
 @router.post("/register/options")
@@ -103,7 +103,7 @@ async def register_verify(
     )
 
 
-# ── Authentication flow ────────────────────────────────────────────────────
+# ── 認証フロー ────────────────────────────────────────────────────
 
 
 PASSKEY_MAX_ATTEMPTS = 10
@@ -177,7 +177,7 @@ async def authenticate_verify(
     return {"ok": True}
 
 
-# ── Credential management ──────────────────────────────────────────────────
+# ── クレデンシャル管理 ──────────────────────────────────────────────────
 
 
 @router.get("/credentials", response_model=list[PasskeyCredentialResponse])

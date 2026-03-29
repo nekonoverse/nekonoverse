@@ -1,7 +1,10 @@
 import { createSignal } from "solid-js";
 import { timeFormat } from "../stores/theme";
 
-type TranslatorFn = (key: string) => string;
+// 任意の翻訳関数を受け入れる — i18n の t() は (key: keyof Dictionary) => string だが、
+// キーを動的に構築するため、最も広い互換シグネチャを受け入れる。
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type TranslatorFn = (key: any) => string;
 
 function formatAbsolute(iso: string): string {
   const d = new Date(iso);
@@ -24,7 +27,7 @@ export function formatRelative(iso: string, t: TranslatorFn, countdown = false):
   const then = new Date(iso).getTime();
   const diffSec = Math.floor((now - then) / 1000);
 
-  // Future dates
+  // 未来の日付
   if (diffSec < 0) {
     const prefix = countdown ? "time.remaining" : "time.future";
     const futureSec = -diffSec;
@@ -59,10 +62,10 @@ export function formatRelative(iso: string, t: TranslatorFn, countdown = false):
 }
 
 /**
- * Format a timestamp according to the user's chosen time format.
- * @param iso      ISO 8601 date string
- * @param t        i18n translation function
- * @param dateOnly If true, use date-only for absolute part (for profile joined dates)
+ * ユーザーが選択した時刻フォーマットに従ってタイムスタンプをフォーマットする。
+ * @param iso      ISO 8601 日付文字列
+ * @param t        i18n 翻訳関数
+ * @param dateOnly true の場合、絶対表示で日付のみを使用（プロフィールの登録日など）
  */
 export function formatTimestamp(iso: string, t: TranslatorFn, dateOnly = false, countdown = false): string {
   const fmt = timeFormat();
@@ -77,19 +80,21 @@ export function formatTimestamp(iso: string, t: TranslatorFn, dateOnly = false, 
       return `${abs} (${formatRelative(iso, t, countdown)})`;
     case "unixtime":
       return formatUnixtime(iso);
+    default:
+      return abs;
   }
 }
 
-// Global tick signal for auto-updating relative times (every 60 seconds)
+// 相対時刻の自動更新用グローバルティックシグナル（60秒ごと）
 const [timeTick, setTimeTick] = createSignal(0);
 
 if (typeof window !== "undefined") {
-  setInterval(() => setTimeTick((n) => n + 1), 60_000);
+  setInterval(() => setTimeTick((n: number) => n + 1), 60_000);
 }
 
 /**
- * Call inside a reactive context to subscribe to the 60-second tick.
- * Triggers re-render so relative times stay up-to-date.
+ * リアクティブコンテキスト内で呼び出して60秒ごとのティックを購読する。
+ * 相対時刻を最新に保つために再レンダリングをトリガーする。
  */
 export function useTimeTick(): number {
   return timeTick();
