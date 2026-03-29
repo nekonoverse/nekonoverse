@@ -54,13 +54,13 @@ export default function UserHoverCard(props: Props) {
     const cached = cache.get(props.actorId);
     if (cached) {
       setAccount(cached);
-      return;
+    } else {
+      try {
+        const acc = await getAccount(props.actorId);
+        cacheSet(props.actorId, acc);
+        setAccount(acc);
+      } catch {}
     }
-    try {
-      const acc = await getAccount(props.actorId);
-      cacheSet(props.actorId, acc);
-      setAccount(acc);
-    } catch {}
     if (currentUser()) {
       try {
         const rel = await getRelationship(props.actorId);
