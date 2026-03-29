@@ -123,6 +123,7 @@ services:
       MEDIA_PROXY_TRANSFORM_UDS: ${MEDIA_PROXY_TRANSFORM_UDS:-}
       # neko-vision (optional — set in .env)
       NEKO_VISION_URL: ${NEKO_VISION_URL:-}
+      NEKO_VISION_UDS: ${NEKO_VISION_UDS:-}
       # Cloudflare Turnstile CAPTCHA (optional — set in .env)
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
@@ -145,6 +146,8 @@ services:
       # - face_detect_sock:/var/run/nekonoverse-face-detect:ro
       # media-proxy-rs UDS 使用時はコメント解除
       # - media_proxy_rs_sock:/var/run/media-proxy-rs:ro
+      # neko-vision UDS 使用時はコメント解除
+      # - neko_vision_sock:/var/run/neko-vision:ro
     depends_on:
       postgresql:
         condition: service_healthy
@@ -180,6 +183,7 @@ services:
       MEDIA_PROXY_TRANSFORM_UDS: ${MEDIA_PROXY_TRANSFORM_UDS:-}
       # neko-vision (optional — set in .env)
       NEKO_VISION_URL: ${NEKO_VISION_URL:-}
+      NEKO_VISION_UDS: ${NEKO_VISION_UDS:-}
       # SMTP (optional — set in .env)
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -194,6 +198,8 @@ services:
     volumes:
       - pg_sock:/var/run/postgresql
       - valkey_sock:/var/run/valkey
+      # neko-vision UDS 使用時はコメント解除
+      # - neko_vision_sock:/var/run/neko-vision:ro
     depends_on:
       postgresql:
         condition: service_healthy
@@ -283,16 +289,26 @@ services:
 
   # Optional: Ollama vision tagging/captioning service (uncomment to use)
   # Requires NVIDIA GPU + nvidia-container-toolkit.
-  # Set NEKO_VISION_URL=http://neko-vision:8004/tag in app/worker environment.
+  # Also uncomment neko_vision_sock volume in app/worker service and NEKO_VISION_URL/UDS env vars.
   # After first start: docker compose exec ollama ollama pull gemma3:4b
+  # neko-vision は Ollama に TCP 接続するため network_mode: "none" は不可。
+  # バックエンドとは UDS で通信し、外部ポートは公開しない。
   # neko-vision:
   #   build: ./neko-vision
   #   restart: unless-stopped
+  #   user: "0:0"
+  #   command:
+  #     - sh
+  #     - -c
+  #     - |
+  #       chown 101:101 /var/run/neko-vision &&
+  #       exec setpriv --reuid=101 --regid=101 --clear-groups \
+  #         uvicorn main:app --uds /var/run/neko-vision/uvicorn.sock
   #   environment:
   #     OLLAMA_URL: http://ollama:11434
   #     OLLAMA_MODEL: gemma3:4b
-  #   expose:
-  #     - "8004"
+  #   volumes:
+  #     - neko_vision_sock:/var/run/neko-vision
   #   depends_on:
   #     - ollama
   # ollama:
@@ -357,6 +373,8 @@ volumes:
   # face_detect_sock:
   # media-proxy-rs UDS 使用時はコメント解除
   # media_proxy_rs_sock:
+  # neko-vision UDS 使用時はコメント解除
+  # neko_vision_sock:
   # ollama-data:
 
 # Optional: Cloudflare Tunnel / Tailscale 使用時はコメント解除
