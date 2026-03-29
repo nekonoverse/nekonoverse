@@ -175,3 +175,55 @@ async def test_upload_transform_disabled(db, mock_valkey, test_user):
         df = await upload_drive_file(db, test_user, png_data, "test.png", "image/png")
         mock_strip.assert_called_once_with(png_data, "image/png")
         assert df.mime_type == "image/png"
+
+
+async def test_upload_transform_bad_mime_fallback(db, mock_valkey, test_user):
+    """transform が許可外の MIME タイプを返した場合、strip_exif にフォールバックする。"""
+    png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16 + b"\x00\x01" * 4
+
+    with (
+        patch("app.services.drive_service.upload_file", new_callable=AsyncMock),
+        patch(
+            "app.services.drive_service._reencode_via_transform",
+            new_callable=AsyncMock,
+            return_value=(b"bad", "text/html"),
+        ),
+        patch(
+            "app.services.drive_service.strip_exif", return_value=png_data
+        ) as mock_strip,
+        patch("app.services.drive_service.settings") as mock_settings,
+    ):
+        mock_settings.media_proxy_transform_enabled = True
+        mock_settings.max_image_size_mb = 10
+        mock_settings.max_video_size_mb = 50
+        mock_settings.max_audio_size_mb = 20
+        df = await upload_drive_file(db, test_user, png_data, "test.png", "image/png")
+        mock_strip.assert_called_once_with(png_data, "image/png")
+        assert df.mime_type == "image/png"
+
+
+async def test_upload_transform_oversized_fallback(db, mock_valkey, test_user):
+    """transform の結果がサイズ上限を超えた場合、strip_exif にフォールバックする。"""
+    png_data = b"\x89PNG\r\n\x1a\n" + b"\x00" * 16 + b"\x00\x01" * 4
+    # max_image_size_mb=1 → 1MB超のレスポンスで検証失敗
+    oversized = b"\x00" * (2 * 1024 * 1024)
+
+    with (
+        patch("app.services.drive_service.upload_file", new_callable=AsyncMock),
+        patch(
+            "app.services.drive_service._reencode_via_transform",
+            new_callable=AsyncMock,
+            return_value=(oversized, "image/webp"),
+        ),
+        patch(
+            "app.services.drive_service.strip_exif", return_value=png_data
+        ) as mock_strip,
+        patch("app.services.drive_service.settings") as mock_settings,
+    ):
+        mock_settings.media_proxy_transform_enabled = True
+        mock_settings.max_image_size_mb = 1
+        mock_settings.max_video_size_mb = 50
+        mock_settings.max_audio_size_mb = 20
+        df = await upload_drive_file(db, test_user, png_data, "test.png", "image/png")
+        mock_strip.assert_called_once_with(png_data, "image/png")
+        assert df.mime_type == "image/png"

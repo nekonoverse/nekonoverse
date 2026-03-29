@@ -244,6 +244,16 @@ async def upload_drive_file(
         if settings.media_proxy_transform_enabled:
             try:
                 new_data, new_mime = await _reencode_via_transform(data)
+                # レスポンス検証: MIMEタイプが許可リストに含まれるか
+                if new_mime not in ALLOWED_IMAGE_TYPES:
+                    raise ValueError(
+                        f"Transform returned unexpected MIME type: {new_mime}"
+                    )
+                # レスポンス検証: サイズ上限を超えていないか
+                if len(new_data) > max_size:
+                    raise ValueError(
+                        f"Transform result too large: {len(new_data)} bytes"
+                    )
                 data = new_data
                 mime_type = new_mime
                 transformed = True
