@@ -1257,13 +1257,13 @@ async def reacted_by(
     result = await db.execute(query)
     reactions = result.scalars().all()
 
-    return [
-        {
-            "actor": await _actor_to_account(r.actor, db=db),
-            "emoji": r.emoji,
-        }
-        for r in reactions
-    ]
+    results = []
+    for r in reactions:
+        account = await _actor_to_account(r.actor, db=db)
+        account["domain"] = r.actor.domain
+        account["is_cat"] = getattr(r.actor, "is_cat", False)
+        results.append({"actor": account, "emoji": r.emoji})
+    return results
 
 
 @router.post(
