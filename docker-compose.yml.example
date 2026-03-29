@@ -134,6 +134,8 @@ services:
       MEDIA_PROXY_TRANSFORM_URL: ${MEDIA_PROXY_TRANSFORM_URL:-}
       # summary-proxy (optional — set in .env)
       SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
+      # neko-vision (optional — set in .env)
+      NEKO_VISION_URL: ${NEKO_VISION_URL:-}
       # SMTP (optional — set in .env)
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -222,6 +224,33 @@ services:
   #   expose:
   #     - "8003"
 
+  # Optional: Ollama vision tagging/captioning service (uncomment to use)
+  # Requires NVIDIA GPU + nvidia-container-toolkit.
+  # Set NEKO_VISION_URL=http://neko-vision:8004/tag in app/worker environment.
+  # After first start: docker compose exec ollama ollama pull gemma3:4b
+  # neko-vision:
+  #   build: ./neko-vision
+  #   restart: unless-stopped
+  #   environment:
+  #     OLLAMA_URL: http://ollama:11434
+  #     OLLAMA_MODEL: gemma3:4b
+  #   expose:
+  #     - "8004"
+  #   depends_on:
+  #     - ollama
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   restart: unless-stopped
+  #   volumes:
+  #     - ollama-data:/root/.ollama
+  #   deploy:
+  #     resources:
+  #       reservations:
+  #         devices:
+  #           - driver: nvidia
+  #             count: 1
+  #             capabilities: [gpu]
+
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cloudflared:
   #   image: cloudflare/cloudflared:latest
@@ -233,3 +262,4 @@ services:
 volumes:
   s3proxy_sock:
   # neko-search-data:
+  # ollama-data:
