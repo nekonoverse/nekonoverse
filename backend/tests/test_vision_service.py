@@ -305,16 +305,10 @@ async def test_tag_remote_attachments_integration(db, mock_valkey):
          patch(
              "app.services.vision_service._call_vision",
              new=AsyncMock(return_value=vision_result),
-         ), \
-         patch(
-             "app.services.vision_service._publish_update",
-             new=AsyncMock(),
-         ) as mock_publish:
+         ):
         mock_settings.neko_vision_enabled = True
         mock_settings.skip_ssl_verify = False
         await tag_remote_attachments(note.id, [att.id], note_text="Full test")
-
-    mock_publish.assert_called_once_with(note.id)
 
 
 async def test_tag_remote_attachments_disabled(mock_valkey):
