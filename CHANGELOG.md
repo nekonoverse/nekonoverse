@@ -1,21 +1,3 @@
-## [20260329-3](https://github.com/nekonoverse/nekonoverse/releases/tag/20260329-3) — 2026-03-29
-
-### セキュリティ
-
-- **アップロード画像の全フォーマットメタデータ除去** — media-proxy-rs `/transform` でデコード→再エンコードし、EXIF・XMP・LSBステガノグラフィ等を除去。JPEG/PNG 以外 (GIF, WebP, AVIF) にも対応。失敗時は従来の `strip_exif` にフォールバック (#544, #935)
-- **transform レスポンス検証** — `/transform` 結果の MIME タイプ・サイズ上限を検証し、不正な応答時はフォールバック (#544, #936)
-
-### 追加
-
-- **メディアタイムラインの IDOR テスト** — 他ユーザーの followers-only/direct ノートが漏洩しないことを検証するテストを追加 (#934)
-
-### 修正
-
-- **メディアタイムラインのパス変更** — `/media` → `/media-timeline` に変更し、Mastodon API の `/api/v1/media` との競合を解消 (#933)
-- **vision タグ付け完了時の SSE 不要イベント削除** — update イベントの誤送信を修正 (#932)
-
----
-
 ## [20260329-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260329-2) — 2026-03-29
 
 ### 追加
