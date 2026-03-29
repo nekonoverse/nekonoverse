@@ -182,6 +182,27 @@ def strip_exif(data: bytes, mime_type: str) -> bytes:
     return data
 
 
+async def _reencode_via_transform(data: bytes) -> tuple[bytes, str]:
+    """media-proxy-rs の /transform にPOSTしてデコード→再エンコードする。
+
+    元の解像度を維持するため no_resize=1 を指定する。
+    再エンコードによりEXIF等メタデータ・LSBステガノグラフィが除去される。
+    """
+    from app.utils.http_client import make_media_transform_client
+
+    async with make_media_transform_client() as client:
+        base = settings.media_proxy_transform_base_url
+        url = f"{base}/transform" if not base.endswith("/transform") else base
+        resp = await client.post(
+            url,
+            files={"file": ("image", data)},
+            data={"no_resize": "1"},
+        )
+        resp.raise_for_status()
+        new_mime = resp.headers.get("content-type", "image/webp").split(";")[0].strip()
+        return resp.content, new_mime
+
+
 async def upload_drive_file(
     db: AsyncSession,
     owner: User | None,
@@ -215,16 +236,38 @@ async def upload_drive_file(
     # マジックバイト検証: 申告されたMIMEタイプと実際のファイル内容が一致するか確認
     _validate_magic_bytes(data, mime_type)
 
-    # 保存前にEXIFメタデータを除去 (プライバシー保護の多層防御、画像のみ)
+    # 保存前にメタデータを除去 (プライバシー保護の多層防御、画像のみ)
+    # media-proxy-rs が有効な場合はデコード→再エンコードで全フォーマットのメタデータ + LSBステガノを除去
+    # 無効 or 失敗時は従来の strip_exif にフォールバック (JPEG/PNGのみ)
     if mime_type.startswith("image/"):
-        data = strip_exif(data, mime_type)
+        transformed = False
+        if settings.media_proxy_transform_enabled:
+            try:
+                new_data, new_mime = await _reencode_via_transform(data)
+                # レスポンス検証: MIMEタイプが許可リストに含まれるか
+                if new_mime not in ALLOWED_IMAGE_TYPES:
+                    raise ValueError(
+                        f"Transform returned unexpected MIME type: {new_mime}"
+                    )
+                # レスポンス検証: サイズ上限を超えていないか
+                if len(new_data) > max_size:
+                    raise ValueError(
+                        f"Transform result too large: {len(new_data)} bytes"
+                    )
+                data = new_data
+                mime_type = new_mime
+                transformed = True
+            except Exception:
+                logger.warning("Transform re-encode failed, falling back to strip_exif")
+        if not transformed:
+            data = strip_exif(data, mime_type)
 
     file_id = uuid.uuid4()
     ext = _extension_for_mime(mime_type)
     prefix = "server" if server_file else f"u/{owner.id}" if owner else "server"
     s3_key = f"{prefix}/{file_id}{ext}"
 
-    # 画像のみ寸法を抽出（動画・音声はNone）
+    # 画像のみ寸法を抽出（動画・音声はNone）— 再エンコード後のバイトで計測
     width, height = (
         _get_image_dimensions(data, mime_type) if mime_type.startswith("image/") else (None, None)
     )

@@ -294,7 +294,7 @@ services:
   # neko-vision は Ollama に TCP 接続するため network_mode: "none" は不可。
   # バックエンドとは UDS で通信し、外部ポートは公開しない。
   # neko-vision:
-  #   build: ./neko-vision
+  #   image: ghcr.io/nekonoverse/neko-vision:latest
   #   restart: unless-stopped
   #   user: "0:0"
   #   command:

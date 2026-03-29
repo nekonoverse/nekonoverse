@@ -13,6 +13,7 @@
   "load_system_fonts": true,
   "webp_quality": 80.0,
   "encode_avif": false,
+  "enable_transform": true,
   "variant_sizes": {
     "avatar":  { "width": null, "height": 144 },
     "emoji":   { "width": null, "height": 96  },
