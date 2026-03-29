@@ -345,6 +345,15 @@ async def create_note(
 
         await enqueue_index(note_id, content, note.published)
 
+    # 画像タグ付けをエンキュー (neko-visionが設定されている場合)
+    if settings.neko_vision_enabled and media_ids:
+        from app.services.vision_queue import enqueue_local as enqueue_vision
+        from app.services.vision_service import collect_reply_context
+
+        reply_ctx = await collect_reply_context(db, note)
+        for file_id in media_ids:
+            await enqueue_vision(file_id, note_id, note_text=content, context=reply_ctx)
+
     # M-12: statuses_countキャッシュを無効化
     try:
         await valkey_client.delete(f"perf:statuses_count:{actor.id}")
@@ -896,6 +905,27 @@ async def fetch_remote_note(
                 from app.services.face_detect_queue import enqueue_remote
 
                 await enqueue_remote(existing.id, att_ids)
+
+        # 画像タグ付け (neko-vision)
+        if settings.neko_vision_enabled:
+            att_rows_v = await db.execute(
+                select(NA.id).where(
+                    NA.note_id == existing.id,
+                    NA.remote_url.isnot(None),
+                    NA.vision_at.is_(None),
+                    NA.remote_mime_type.in_(
+                        ["image/jpeg", "image/png", "image/webp", "image/gif",
+                         "image/avif", "image/apng"]
+                    ),
+                )
+            )
+            att_ids_v = [row[0] for row in att_rows_v.all()]
+            if att_ids_v:
+                from app.services.vision_queue import enqueue_remote as enqueue_vision_remote
+
+                await enqueue_vision_remote(
+                    existing.id, att_ids_v, note_text=existing.content
+                )
         return existing
 
     try:
@@ -1161,6 +1191,31 @@ async def fetch_remote_note(
             from app.services.face_detect_queue import enqueue_remote
 
             await enqueue_remote(note.id, att_ids)
+
+    # リモート画像添付ファイルのバックグラウンドタグ付け
+    if settings.neko_vision_enabled:
+        await db.flush()
+        from sqlalchemy import select as sel_v
+
+        from app.models.note_attachment import NoteAttachment as NAV
+
+        att_rows_v = await db.execute(
+            sel_v(NAV.id).where(
+                NAV.note_id == note.id,
+                NAV.remote_url.isnot(None),
+                NAV.vision_at.is_(None),
+                NAV.remote_mime_type.in_(
+                    ["image/jpeg", "image/png", "image/webp", "image/gif",
+                     "image/avif", "image/apng"]
+                ),
+            )
+        )
+        att_ids_v = [row[0] for row in att_rows_v.all()]
+        if att_ids_v:
+            from app.services.vision_queue import enqueue_remote as enqueue_vision_remote
+
+            note_text = source or content
+            await enqueue_vision_remote(note.id, att_ids_v, note_text=note_text)
 
     # リモートリプライの親ノートの返信数をインクリメント
     if in_reply_to_id:

@@ -426,6 +426,38 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
 
             await enqueue_remote(note.id, att_ids)
 
+    # リモート画像添付のバックグラウンドタグ付け
+    if settings.neko_vision_enabled:
+        from sqlalchemy import select as sel_v
+
+        from app.models.note_attachment import NoteAttachment as NAV
+
+        att_rows_v = await db.execute(
+            sel_v(NAV.id).where(
+                NAV.note_id == note.id,
+                NAV.remote_url.isnot(None),
+                NAV.vision_at.is_(None),
+                NAV.remote_mime_type.in_(
+                    [
+                        "image/jpeg",
+                        "image/png",
+                        "image/webp",
+                        "image/gif",
+                        "image/avif",
+                        "image/apng",
+                    ]
+                ),
+            )
+        )
+        att_ids_v = [row[0] for row in att_rows_v.all()]
+        if att_ids_v:
+            from app.services.vision_queue import enqueue_remote as enqueue_vision_remote
+
+            note_text = source or content
+            await enqueue_vision_remote(
+                note.id, att_ids_v, note_text=note_text
+            )
+
 
 async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
     """受信した投票への投票を処理する (name + inReplyTo 付き Create Note)。"""
