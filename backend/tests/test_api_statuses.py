@@ -315,8 +315,8 @@ async def test_reblog_other_users_followers_note_rejected(
     app_client.cookies.set("nekonoverse_session", "session-b")
 
     resp = await app_client.post(f"/api/v1/statuses/{note_id}/reblog")
-    assert resp.status_code == 422
-    assert "private" in resp.json()["detail"].lower()
+    # check_note_visible により他人のfollowersノートは404（見えない）
+    assert resp.status_code == 404
 
 
 async def test_reblog_with_visibility_private_alias(authed_client, mock_valkey):
@@ -429,12 +429,12 @@ async def test_reblog_other_users_followers_with_visibility_rejected(
     mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
     app_client.cookies.set("nekonoverse_session", "session-b")
 
-    # followers指定でも拒否される
+    # followers指定でも拒否される（check_note_visibleにより404）
     resp = await app_client.post(
         f"/api/v1/statuses/{note_id}/reblog",
         json={"visibility": "followers"},
     )
-    assert resp.status_code == 422
+    assert resp.status_code == 404
 
 
 # --- Delete tests ---
