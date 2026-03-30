@@ -11,6 +11,11 @@ logger = logging.getLogger(__name__)
 
 _SHORTCODE_PATTERN = re.compile(r"^[a-zA-Z0-9_]+$")
 _SHORTCODE_MAX_LEN = 255
+# ドメイン名バリデーション: RFC 952/1123 準拠 (SSRF 防止)
+_DOMAIN_PATTERN = re.compile(
+    r"^[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?"
+    r"(\.[a-zA-Z0-9]([a-zA-Z0-9\-]*[a-zA-Z0-9])?)*$"
+)
 
 
 def validate_shortcode(shortcode: str) -> str:
@@ -212,6 +217,9 @@ async def fetch_and_cache_remote_emoji(
     existing = await get_custom_emoji(db, shortcode, domain)
     if existing:
         return existing
+
+    if not _DOMAIN_PATTERN.match(domain):
+        return None
 
     try:
         from app.utils.http_client import make_async_client
