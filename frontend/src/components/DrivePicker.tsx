@@ -72,7 +72,7 @@ export default function DrivePicker(props: Props) {
                     class={`drive-picker-item${selected().has(file.id) ? " selected" : ""}`}
                     onClick={() => toggleSelect(file.id)}
                   >
-                    <img src={file.url} alt={file.description || file.filename} loading="lazy" />
+                    <img src={file.thumbnail_url || file.url} alt={file.description || file.filename} loading="lazy" />
                     <Show when={selected().has(file.id)}>
                       <div class="drive-picker-check">✓</div>
                     </Show>

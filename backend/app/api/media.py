@@ -86,6 +86,11 @@ def _to_media_attachment(f: DriveFile) -> MediaAttachment:
 
 
 def _to_drive_response(f: DriveFile) -> DriveFileResponse:
+    thumbnail_url = None
+    if f.thumbnail_s3_key:
+        from app.storage import get_public_url
+
+        thumbnail_url = get_public_url(f.thumbnail_s3_key)
     return DriveFileResponse(
         id=f.id,
         filename=f.filename,
@@ -98,6 +103,7 @@ def _to_drive_response(f: DriveFile) -> DriveFileResponse:
         blurhash=f.blurhash,
         focal_x=f.focal_x,
         focal_y=f.focal_y,
+        thumbnail_url=thumbnail_url,
         server_file=f.server_file,
         created_at=f.created_at,
     )
