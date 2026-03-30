@@ -239,6 +239,18 @@ async def _actor_to_account(
                 for e in emoji_list
             ]
 
+    # 移行先アカウント (Mastodon API 互換)
+    if getattr(actor, "moved_to_ap_id", None) and db:
+        from sqlalchemy import select as _sel
+
+        result = await db.execute(
+            _sel(Actor).where(Actor.ap_id == actor.moved_to_ap_id)
+        )
+        moved_actor = result.scalar_one_or_none()
+        if moved_actor:
+            # db=None で再帰防止 (moved 先の moved は展開しない)
+            data["moved"] = await _actor_to_account(moved_actor)
+
     return data
 
 

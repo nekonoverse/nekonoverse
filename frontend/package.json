@@ -1,6 +1,6 @@
 {
   "name": "nekonoverse-frontend",
-  "version": "20260329-3",
+  "version": "20260330-1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -29,7 +29,8 @@
     "vitest": "^4.0.18"
   },
   "overrides": {
-    "serialize-javascript": "^7.0.3",
+    "serialize-javascript": "^7.0.5",
+    "picomatch": "^4.0.4",
     "undici": "^7.24.0"
   }
 }

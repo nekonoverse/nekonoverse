@@ -43,6 +43,21 @@ async def get_actor(username: str, request: Request, db: AsyncSession = Depends(
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
+    # 削除済みアクターは 410 Gone + Tombstone を返す
+    if actor.is_deleted:
+        if is_ap_request(request):
+            tombstone = {
+                "@context": "https://www.w3.org/ns/activitystreams",
+                "id": actor.ap_id,
+                "type": "Tombstone",
+            }
+            return Response(
+                content=json.dumps(tombstone),
+                status_code=410,
+                media_type=AP_CONTENT_TYPE,
+            )
+        raise HTTPException(status_code=410, detail="Gone")
+
     # 凍結済みアクターは 410 Gone を返す
     if actor.is_suspended:
         raise HTTPException(status_code=410, detail="Gone")
