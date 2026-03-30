@@ -299,6 +299,11 @@ async def get_drive_file(db: AsyncSession, file_id: uuid.UUID) -> DriveFile | No
 
 async def delete_drive_file(db: AsyncSession, drive_file: DriveFile) -> None:
     await delete_file(drive_file.s3_key)
+    if drive_file.thumbnail_s3_key:
+        try:
+            await delete_file(drive_file.thumbnail_s3_key)
+        except Exception:
+            logger.warning("Failed to delete thumbnail %s", drive_file.thumbnail_s3_key)
     await db.delete(drive_file)
     await db.commit()
 

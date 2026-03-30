@@ -18,6 +18,24 @@ from app.utils.sanitize import MENTION_PATTERN, text_to_html
 
 _EMOJI_SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
 _CUSTOM_EMOJI_REACTION_RE = re.compile(r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$")
+_ISO_DURATION_RE = re.compile(
+    r"^PT(?:(?P<hours>\d+)H)?(?:(?P<minutes>\d+)M)?(?:(?P<seconds>[\d.]+)S)?$"
+)
+
+
+def _parse_iso_duration(s: str) -> float | None:
+    """ISO 8601 duration 文字列 (PT...S) を秒数に変換する。"""
+    m = _ISO_DURATION_RE.match(s)
+    if not m:
+        return None
+    try:
+        hours = float(m.group("hours") or 0)
+        minutes = float(m.group("minutes") or 0)
+        seconds = float(m.group("seconds") or 0)
+    except ValueError:
+        return None
+    total = hours * 3600 + minutes * 60 + seconds
+    return total if math.isfinite(total) else None
 
 
 def extract_mentions(text: str) -> list[tuple[str, str | None]]:
@@ -1270,6 +1288,31 @@ async def fetch_remote_note(
             except (ValueError, TypeError):
                 pass
 
+        # 動画サムネイル URL 抽出 (AP Document の icon/preview)
+        thumb_url = None
+        thumb_mime = None
+        att_mime = att_data.get("mediaType", "")
+        if isinstance(att_mime, str) and att_mime.startswith("video/"):
+            icon = att_data.get("icon")
+            if isinstance(icon, dict):
+                thumb_url = icon.get("url")
+                thumb_mime = icon.get("mediaType")
+            elif isinstance(icon, str):
+                thumb_url = icon
+            if not thumb_url:
+                preview = att_data.get("preview")
+                if isinstance(preview, dict):
+                    thumb_url = preview.get("url")
+                    thumb_mime = preview.get("mediaType")
+                elif isinstance(preview, str):
+                    thumb_url = preview
+
+        # 動画の再生時間を抽出 (ISO 8601 duration)
+        remote_duration = None
+        dur_str = att_data.get("duration")
+        if isinstance(dur_str, str):
+            remote_duration = _parse_iso_duration(dur_str)
+
         attachment = NoteAttachment(
             note_id=note.id,
             position=position,
@@ -1282,6 +1325,9 @@ async def fetch_remote_note(
             remote_description=att_data.get("name"),
             remote_focal_x=focal_x,
             remote_focal_y=focal_y,
+            remote_thumbnail_url=thumb_url,
+            remote_thumbnail_mime_type=thumb_mime,
+            remote_duration=remote_duration,
         )
         db.add(attachment)
 

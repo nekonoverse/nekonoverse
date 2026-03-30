@@ -101,11 +101,23 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
                 meta["vision"]["tags"] = att.drive_file.vision_tags
             if att.drive_file.vision_caption:
                 meta["vision"]["caption"] = att.drive_file.vision_caption
+        if att.drive_file.duration is not None:
+            if meta is None:
+                meta = {"original": {}}
+            elif "original" not in meta:
+                meta["original"] = {}
+            meta["original"]["duration"] = att.drive_file.duration
+        # 動画サムネイルが存在する場合は preview_url に使用
+        preview = url
+        if att.drive_file.thumbnail_s3_key:
+            from app.storage import get_public_url
+
+            preview = get_public_url(att.drive_file.thumbnail_s3_key)
         return NoteMediaAttachment(
             id=str(att.id),
             type=_mime_to_media_type(mime),
             url=url,
-            preview_url=url,
+            preview_url=preview,
             description=att.drive_file.description,
             blurhash=att.drive_file.blurhash,
             meta=meta,
@@ -127,8 +139,18 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
             meta["vision"]["tags"] = att.remote_vision_tags
         if att.remote_vision_caption:
             meta["vision"]["caption"] = att.remote_vision_caption
+    if att.remote_duration is not None:
+        if meta is None:
+            meta = {"original": {}}
+        elif "original" not in meta:
+            meta["original"] = {}
+        meta["original"]["duration"] = att.remote_duration
     proxied = media_proxy_url(att.remote_url)
-    preview = media_proxy_url(att.remote_url, variant="preview")
+    # リモート動画のサムネイルが存在する場合は preview_url に使用
+    if att.remote_thumbnail_url and mime.startswith("video/"):
+        preview = media_proxy_url(att.remote_thumbnail_url, variant="preview")
+    else:
+        preview = media_proxy_url(att.remote_url, variant="preview")
     return NoteMediaAttachment(
         id=str(att.id),
         type=_mime_to_media_type(mime),

@@ -182,6 +182,18 @@ def render_note(note: Note) -> dict:
                     doc["blurhash"] = att.drive_file.blurhash
                 if att.drive_file.focal_x is not None and att.drive_file.focal_y is not None:
                     doc["focalPoint"] = [att.drive_file.focal_x, att.drive_file.focal_y]
+                # 動画サムネイル
+                if att.drive_file.thumbnail_s3_key:
+                    from app.storage import get_public_url as _pub_url
+
+                    doc["icon"] = {
+                        "type": "Image",
+                        "mediaType": att.drive_file.thumbnail_mime_type or "image/webp",
+                        "url": _pub_url(att.drive_file.thumbnail_s3_key),
+                    }
+                # 動画の再生時間 (ISO 8601)
+                if att.drive_file.duration is not None:
+                    doc["duration"] = f"PT{att.drive_file.duration:.1f}S"
                 attachment_list.append(doc)
             elif att.remote_url:
                 attachment_list.append(
