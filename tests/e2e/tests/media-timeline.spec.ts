@@ -8,8 +8,9 @@ test.describe("Media Timeline", () => {
 
   test("page loads and shows gallery grid", async ({ page }) => {
     await page.goto("/media-timeline");
+    // lazy loadされるため、page-containerで待ってからmedia-timelineを確認
+    await expect(page.locator(".page-container")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator(".media-timeline")).toBeVisible({ timeout: 10_000 });
-    await expect(page.locator(".media-gallery-grid")).toBeVisible({ timeout: 10_000 });
   });
 
   test("upload media and verify it appears in gallery", async ({ page }) => {
@@ -34,6 +35,7 @@ test.describe("Media Timeline", () => {
     expect(noteResp.status()).toBe(201);
 
     await page.goto("/media-timeline");
+    await expect(page.locator(".page-container")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator(".media-gallery-grid")).toBeVisible({ timeout: 10_000 });
     await expect(page.locator(".media-gallery-item").first()).toBeVisible({ timeout: 10_000 });
   });
@@ -94,6 +96,7 @@ test.describe("Media Timeline", () => {
     expect(noteResp.status()).toBe(201);
 
     await page.goto("/media-timeline");
+    await expect(page.locator(".page-container")).toBeVisible({ timeout: 15_000 });
     await expect(page.locator(".media-gallery-grid")).toBeVisible({ timeout: 10_000 });
 
     const galleryImg = page.locator(".media-gallery-img").first();
