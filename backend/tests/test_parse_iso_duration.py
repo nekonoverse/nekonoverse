@@ -33,3 +33,13 @@ def test_parse_empty_returns_none():
 
 def test_parse_zero():
     assert _parse_iso_duration("PT0S") == 0.0
+
+
+def test_parse_malformed_seconds_multiple_dots():
+    """float("1.2.3") は ValueError — None を返すこと。"""
+    assert _parse_iso_duration("PT1.2.3S") is None
+
+
+def test_parse_dot_only_seconds():
+    """float(".") は ValueError — None を返すこと。"""
+    assert _parse_iso_duration("PT.S") is None

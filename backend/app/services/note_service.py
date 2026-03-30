@@ -28,9 +28,12 @@ def _parse_iso_duration(s: str) -> float | None:
     m = _ISO_DURATION_RE.match(s)
     if not m:
         return None
-    hours = float(m.group("hours") or 0)
-    minutes = float(m.group("minutes") or 0)
-    seconds = float(m.group("seconds") or 0)
+    try:
+        hours = float(m.group("hours") or 0)
+        minutes = float(m.group("minutes") or 0)
+        seconds = float(m.group("seconds") or 0)
+    except ValueError:
+        return None
     total = hours * 3600 + minutes * 60 + seconds
     return total if math.isfinite(total) else None
 

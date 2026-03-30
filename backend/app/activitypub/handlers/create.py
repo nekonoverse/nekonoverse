@@ -281,6 +281,33 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             except (ValueError, TypeError):
                 pass
 
+        # 動画サムネイル URL 抽出 (AP Document の icon/preview)
+        thumb_url = None
+        thumb_mime = None
+        att_mime = att_data.get("mediaType", "")
+        if isinstance(att_mime, str) and att_mime.startswith("video/"):
+            icon = att_data.get("icon")
+            if isinstance(icon, dict):
+                thumb_url = icon.get("url")
+                thumb_mime = icon.get("mediaType")
+            elif isinstance(icon, str):
+                thumb_url = icon
+            if not thumb_url:
+                preview = att_data.get("preview")
+                if isinstance(preview, dict):
+                    thumb_url = preview.get("url")
+                    thumb_mime = preview.get("mediaType")
+                elif isinstance(preview, str):
+                    thumb_url = preview
+
+        # 動画の再生時間を抽出 (ISO 8601 duration)
+        remote_duration = None
+        dur_str = att_data.get("duration")
+        if isinstance(dur_str, str):
+            from app.services.note_service import _parse_iso_duration
+
+            remote_duration = _parse_iso_duration(dur_str)
+
         attachment = NoteAttachment(
             note_id=note.id,
             position=position,
@@ -293,6 +320,9 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             remote_description=att_data.get("name"),
             remote_focal_x=focal_x,
             remote_focal_y=focal_y,
+            remote_thumbnail_url=thumb_url,
+            remote_thumbnail_mime_type=thumb_mime,
+            remote_duration=remote_duration,
         )
         db.add(attachment)
 
