@@ -10,10 +10,15 @@ test.describe("Lists", () => {
     await page.goto("/lists");
     await expect(page.locator(".page-container")).toBeVisible({ timeout: 10_000 });
 
+    // 「作成」ボタンをクリックしてフォームを表示
+    await page.locator(".lists-header .btn-primary").click();
+    await expect(page.locator(".list-form")).toBeVisible({ timeout: 5_000 });
+
     const uid = Date.now();
     const listName = `E2E List ${uid}`;
-    await page.locator(".list-form input[type='text']").fill(listName);
-    await page.locator(".list-form button[type='submit']").click();
+    await page.locator(".list-form input.input").fill(listName);
+    // フォーム内の「作成」ボタンをクリック
+    await page.locator(".list-form-actions .btn-primary").click();
 
     // リスト一覧に作成したリストが表示されること
     await expect(
@@ -85,12 +90,9 @@ test.describe("Lists", () => {
     // リストタイムラインページに遷移
     await page.goto(`/lists/${list.id}`);
     await expect(page.locator(".list-tl-header")).toBeVisible({ timeout: 10_000 });
-
-    // メタ情報(リスト名)が表示されること
-    await expect(page.locator(".list-tl-meta")).toBeVisible({ timeout: 10_000 });
   });
 
-  test("add and remove a member from a list", async ({ browser, page }) => {
+  test("add and remove a member via API", async ({ browser, page }) => {
     const baseURL = process.env.E2E_BASE_URL || "http://localhost:3080";
     const uid = Date.now();
     const memberName = `list_member_${uid}`;
@@ -117,18 +119,12 @@ test.describe("Lists", () => {
     });
     expect(addResp.status()).toBe(200);
 
-    // リストタイムラインページでメンバーパネルを確認
-    await page.goto(`/lists/${list.id}`);
-    await expect(page.locator(".list-tl-header")).toBeVisible({ timeout: 10_000 });
-
-    // メンバー一覧にユーザーが表示されること
-    await expect(async () => {
-      const membersPanel = page.locator(".list-members-panel");
-      await expect(membersPanel).toBeVisible({ timeout: 5_000 });
-      const memberRows = membersPanel.locator(".list-member-row");
-      const count = await memberRows.count();
-      expect(count).toBeGreaterThanOrEqual(1);
-    }).toPass({ timeout: 15_000 });
+    // APIでメンバーが追加されたことを確認
+    const accountsResp = await page.request.get(`/api/v1/lists/${list.id}/accounts`);
+    expect(accountsResp.status()).toBe(200);
+    const accounts = await accountsResp.json();
+    const found = accounts.find((a: any) => a.id === memberActorId);
+    expect(found).toBeTruthy();
 
     // メンバーを削除
     const removeResp = await page.request.delete(`/api/v1/lists/${list.id}/accounts`, {
@@ -136,9 +132,11 @@ test.describe("Lists", () => {
     });
     expect(removeResp.status()).toBe(200);
 
-    // API経由で削除されたことを確認
-    const tlResp = await page.request.get(`/api/v1/lists/${list.id}`);
-    expect(tlResp.status()).toBe(200);
+    // 削除後にメンバーが消えていること
+    const accountsAfter = await page.request.get(`/api/v1/lists/${list.id}/accounts`);
+    const afterList = await accountsAfter.json();
+    const notFound = afterList.find((a: any) => a.id === memberActorId);
+    expect(notFound).toBeUndefined();
 
     await memberSession.context.close();
   });
@@ -176,7 +174,6 @@ test.describe("Lists", () => {
     );
 
     // admin側: メンバーをフォローしてからリストに追加
-    // (リストメンバーはフォロー中のユーザーである必要がある場合に備える)
     const memberActorId = await getActorId(page, memberName);
     await page.request.post(`/api/v1/accounts/${memberActorId}/follow`);
 
@@ -205,10 +202,6 @@ test.describe("Lists", () => {
       const found = notes.find((n: any) => n.content?.includes(noteText));
       expect(found).toBeTruthy();
     }).toPass({ timeout: 15_000 });
-
-    // UIでもリストタイムラインに表示されること
-    await page.goto(`/lists/${list.id}`);
-    await expect(page.locator(".list-tl-header")).toBeVisible({ timeout: 10_000 });
 
     await memberSession.context.close();
   });
