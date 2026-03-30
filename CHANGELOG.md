@@ -1,3 +1,21 @@
+## [20260330-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260330-1) — 2026-03-30
+
+### セキュリティ
+
+- **依存関係のセキュリティアップデート** — cryptography, serialize-javascript, picomatch, brace-expansion の脆弱性対応 (#942)
+- **emoji_service 入力バリデーション強化** — リモート絵文字取得時のドメインパラメータにホスト名バリデーションを追加 (#942)
+
+### 追加
+
+- **アカウント移行（引っ越し）機能** — リモートアカウントからの引っ越し受け入れに対応。Move Activity 受信時にフォロワーを自動的に移行 (#729, #939)
+- **アカウント削除機能** — ユーザーによる自己削除（30日猶予期間付き）と管理者による即時強制削除に対応。全データのクリーンアップ、Delete(Person) ActivityPub 配信、リモートからの Delete(Person) 受信処理を含む (#723, #940)
+
+### 修正
+
+- **ブーストされたノートの画像に face-detect/vision タグ付け実行** — Announce ハンドラーに vision enqueue を追加、reblog_status に face-detect と vision の両方を追加 (#941)
+
+---
+
 ## [20260329-3](https://github.com/nekonoverse/nekonoverse/releases/tag/20260329-3) — 2026-03-29
 
 ### セキュリティ
