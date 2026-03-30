@@ -273,6 +273,11 @@ async def _cleanup_media(db: AsyncSession, actor: Actor, user: User | None) -> N
             await delete_file(f.s3_key)
         except Exception:
             logger.warning("Failed to delete S3 object %s", f.s3_key)
+        if f.thumbnail_s3_key:
+            try:
+                await delete_file(f.thumbnail_s3_key)
+            except Exception:
+                logger.warning("Failed to delete thumbnail S3 object %s", f.thumbnail_s3_key)
         await db.delete(f)
     await db.flush()
 

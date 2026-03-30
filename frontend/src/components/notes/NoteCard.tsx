@@ -1086,14 +1086,22 @@ export default function NoteCard(props: Props) {
                             }}
                           />
                         }>
-                          <video
-                            src={media.url}
-                            preload="metadata"
-                            muted
-                            playsinline
-                            onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
-                            onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
-                          />
+                          <Show when={media.preview_url && media.preview_url !== media.url} fallback={
+                            <video
+                              src={media.url}
+                              preload="metadata"
+                              muted
+                              playsinline
+                              onMouseEnter={(e) => e.currentTarget.play().catch(() => {})}
+                              onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
+                            />
+                          }>
+                            <img
+                              src={media.preview_url!}
+                              alt={media.description || ""}
+                              loading="lazy"
+                            />
+                          </Show>
                           <div class="note-media-play-icon">
                             <svg width="48" height="48" viewBox="0 0 24 24" fill="white">
                               <path d="M8 5v14l11-7z" />

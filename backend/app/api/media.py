@@ -54,9 +54,22 @@ def _mime_to_media_type(mime: str) -> str:
 
 def _to_media_attachment(f: DriveFile) -> MediaAttachment:
     url = file_to_url(f)
+    # 動画サムネイルが存在する場合は preview_url に使用
+    if f.thumbnail_s3_key:
+        from app.storage import get_public_url
+
+        preview = get_public_url(f.thumbnail_s3_key)
+    else:
+        preview = url
     meta = None
     if f.width and f.height:
         meta = {"original": {"width": f.width, "height": f.height}}
+    if f.duration is not None:
+        if meta is None:
+            meta = {"original": {}}
+        elif "original" not in meta:
+            meta["original"] = {}
+        meta["original"]["duration"] = f.duration
     if f.focal_x is not None and f.focal_y is not None:
         if meta is None:
             meta = {}
@@ -65,7 +78,7 @@ def _to_media_attachment(f: DriveFile) -> MediaAttachment:
         id=str(f.id),
         type=_mime_to_media_type(f.mime_type),
         url=url,
-        preview_url=url,
+        preview_url=preview,
         description=f.description,
         blurhash=f.blurhash,
         meta=meta,
@@ -118,6 +131,12 @@ async def upload_media_v1(
         from app.services.face_detect_queue import enqueue_local
 
         await enqueue_local(drive_file.id)
+
+    # 動画サムネイル生成をエンキュー
+    if drive_file.mime_type.startswith("video/"):
+        from app.services.video_thumb_queue import enqueue_local as enqueue_thumb
+
+        await enqueue_thumb(drive_file.id)
 
     return _to_media_attachment(drive_file)
 
