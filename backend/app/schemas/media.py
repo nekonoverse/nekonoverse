@@ -30,6 +30,7 @@ class DriveFileResponse(BaseModel):
     blurhash: str | None
     focal_x: float | None = None
     focal_y: float | None = None
+    thumbnail_url: str | None = None
     server_file: bool
     created_at: datetime
 

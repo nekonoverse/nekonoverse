@@ -12,6 +12,7 @@ export interface DriveFile {
   blurhash: string | null;
   focal_x: number | null;
   focal_y: number | null;
+  thumbnail_url: string | null;
   server_file: boolean;
   created_at: string;
 }
