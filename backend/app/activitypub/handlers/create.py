@@ -299,6 +299,12 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                     thumb_mime = preview.get("mediaType")
                 elif isinstance(preview, str):
                     thumb_url = preview
+            # http/https 以外のスキームを拒否 (javascript: 等の防止)
+            if thumb_url and isinstance(thumb_url, str):
+                from urllib.parse import urlparse
+
+                if urlparse(thumb_url).scheme not in ("http", "https"):
+                    thumb_url = None
 
         # 動画の再生時間を抽出 (ISO 8601 duration)
         remote_duration = None

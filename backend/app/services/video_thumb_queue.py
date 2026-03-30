@@ -100,6 +100,9 @@ async def _process_local(job: dict) -> None:
 
         thumb_data = resp.content
         thumb_mime = resp.headers.get("content-type", "image/webp").split(";")[0].strip()
+        _ALLOWED_THUMB_MIMES = {"image/webp", "image/jpeg", "image/png"}
+        if thumb_mime not in _ALLOWED_THUMB_MIMES:
+            thumb_mime = "image/webp"
         duration = resp.headers.get("x-video-duration")
         width = resp.headers.get("x-video-width")
         height = resp.headers.get("x-video-height")
