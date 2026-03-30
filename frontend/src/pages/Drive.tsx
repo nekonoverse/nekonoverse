@@ -163,7 +163,7 @@ export default function Drive() {
                 {(file) => (
                   <div class="drive-item">
                     <a href={file.url} target="_blank" rel="noopener" class="drive-thumb">
-                      <img src={file.url} alt={file.description || file.filename} loading="lazy" />
+                      <img src={file.thumbnail_url || file.url} alt={file.description || file.filename} loading="lazy" />
                     </a>
                     <div class="drive-item-info">
                       <span class="drive-filename" title={file.filename}>{file.filename}</span>

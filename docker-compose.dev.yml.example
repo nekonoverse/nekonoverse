@@ -80,7 +80,7 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,neko-search,face-detect,media-proxy-transform,summary-proxy,neko-vision,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,neko-search,face-detect,media-proxy-transform,summary-proxy,neko-vision,video-thumb,localhost}
       # neko-search (optional — set in .env, URL or UDS)
       NEKO_SEARCH_URL: ${NEKO_SEARCH_URL:-}
       NEKO_SEARCH_UDS: ${NEKO_SEARCH_UDS:-}
@@ -92,6 +92,8 @@ services:
       SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
       # neko-vision (optional — set in .env)
       NEKO_VISION_URL: ${NEKO_VISION_URL:-}
+      # video-thumb (optional — set in .env)
+      VIDEO_THUMB_URL: ${VIDEO_THUMB_URL:-}
       # Cloudflare Turnstile CAPTCHA (optional — set in .env)
       TURNSTILE_SITE_KEY: ${TURNSTILE_SITE_KEY:-}
       TURNSTILE_SECRET_KEY: ${TURNSTILE_SECRET_KEY:-}
@@ -143,6 +145,8 @@ services:
       SUMMARY_PROXY_URL: ${SUMMARY_PROXY_URL:-}
       # neko-vision (optional — set in .env)
       NEKO_VISION_URL: ${NEKO_VISION_URL:-}
+      # video-thumb (optional — set in .env)
+      VIDEO_THUMB_URL: ${VIDEO_THUMB_URL:-}
       # SMTP (optional — set in .env)
       SMTP_HOST: ${SMTP_HOST:-}
       SMTP_PORT: ${SMTP_PORT:-587}
@@ -153,7 +157,7 @@ services:
       # Forward proxy for outbound federation requests (origin IP concealment)
       HTTP_PROXY: ${HTTP_PROXY:-}
       HTTPS_PROXY: ${HTTPS_PROXY:-}
-      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,neko-search,face-detect,media-proxy-transform,summary-proxy,neko-vision,localhost}
+      NO_PROXY: ${NO_PROXY:-nekono3s,valkey,postgresql,neko-search,face-detect,media-proxy-transform,summary-proxy,neko-vision,video-thumb,localhost}
     volumes:
       - ./backend:/app
     depends_on:

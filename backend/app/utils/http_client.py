@@ -89,6 +89,18 @@ def make_neko_vision_client(**kwargs) -> httpx.AsyncClient:
     return httpx.AsyncClient(**kwargs)
 
 
+def make_video_thumb_client(**kwargs) -> httpx.AsyncClient:
+    """video-thumb サービス用に設定された httpx.AsyncClient を作成する。"""
+    _inject_user_agent(kwargs)
+    if settings.video_thumb_uds:
+        kwargs.setdefault(
+            "transport", httpx.AsyncHTTPTransport(uds=settings.video_thumb_uds)
+        )
+    kwargs.setdefault("timeout", 60.0)
+    kwargs.setdefault("proxy", None)
+    return httpx.AsyncClient(**kwargs)
+
+
 def make_async_client(*, use_proxy: bool = True, **kwargs) -> httpx.AsyncClient:
     """プロキシ設定を注入した httpx.AsyncClient を作成する。
 

@@ -33,6 +33,9 @@ class NoteAttachment(Base):
     remote_vision_tags: Mapped[list | None] = mapped_column(JSONB, nullable=True)
     remote_vision_caption: Mapped[str | None] = mapped_column(String(1500), nullable=True)
     vision_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    remote_thumbnail_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    remote_thumbnail_mime_type: Mapped[str | None] = mapped_column(String(127), nullable=True)
+    remote_duration: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     note = relationship("Note", back_populates="attachments")
     drive_file = relationship("DriveFile", lazy="selectin")
