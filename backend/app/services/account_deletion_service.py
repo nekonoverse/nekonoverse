@@ -88,26 +88,30 @@ async def execute_deletion(db: AsyncSession, actor: Actor) -> None:
         .values(deleted_at=now)
     )
 
-    # 2. フォロー関係のクリア + リモートへ Undo Follow 送信
+    # 2. フォロワーに Delete(Person) を配送 (Follow レコード削除前に実行)
+    if actor.is_local:
+        await _deliver_delete_person(db, actor)
+
+    # 3. フォロー関係のクリア + リモートへ Undo Follow 送信
     await _cleanup_follows(db, actor)
 
-    # 3. リアクション削除
+    # 4. リアクション削除
     await db.execute(delete(Reaction).where(Reaction.actor_id == actor_id))
 
-    # 4. ブックマーク削除
+    # 5. ブックマーク削除
     await db.execute(delete(Bookmark).where(Bookmark.actor_id == actor_id))
 
-    # 5. 通知削除 (送信元・受信先)
+    # 6. 通知削除 (送信元・受信先)
     await db.execute(
         delete(Notification).where(
             (Notification.recipient_id == actor_id) | (Notification.sender_id == actor_id)
         )
     )
 
-    # 6. ピン留め削除
+    # 7. ピン留め削除
     await db.execute(delete(PinnedNote).where(PinnedNote.actor_id == actor_id))
 
-    # 7. ブロック/ミュート削除
+    # 8. ブロック/ミュート削除
     await db.execute(
         delete(UserBlock).where(
             (UserBlock.actor_id == actor_id) | (UserBlock.target_id == actor_id)
@@ -119,19 +123,15 @@ async def execute_deletion(db: AsyncSession, actor: Actor) -> None:
         )
     )
 
-    # 8. プッシュ購読削除
+    # 9. プッシュ購読削除
     await db.execute(delete(PushSubscription).where(PushSubscription.actor_id == actor_id))
 
-    # 9. OAuth トークン削除
+    # 10. OAuth トークン削除
     if user:
         await db.execute(delete(OAuthToken).where(OAuthToken.user_id == user.id))
 
-    # 10. メディアファイル削除
+    # 11. メディアファイル削除
     await _cleanup_media(db, actor, user)
-
-    # 11. フォロワーに Delete(Person) を配送
-    if actor.is_local:
-        await _deliver_delete_person(db, actor)
 
     # 12. Actor プロフィールクリア + deleted_at 設定
     actor.display_name = None
@@ -148,7 +148,7 @@ async def execute_deletion(db: AsyncSession, actor: Actor) -> None:
     actor.suspended_at = now
     actor.deletion_scheduled_at = None
 
-    # 13. User のセンシティブ情報を無効化
+    # 13. User の機密情報を無効化
     if user:
         user.email = f"deleted-{uuid.uuid4()}@deleted.invalid"
         user.password_hash = "!deleted"
