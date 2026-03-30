@@ -1,3 +1,19 @@
+## [20260331-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260331-1) — 2026-03-31
+
+### セキュリティ
+
+- **リモート動画サムネイル URL のスキーム検証** — ActivityPub 経由で受信する動画サムネイル URL を http/https のみに制限 (javascript: 等を拒否)
+- **video-thumb レスポンスの content-type 検証** — サムネイル生成サービスからの応答が想定外の MIME タイプの場合 image/webp にフォールバック
+
+### 追加
+
+- **動画サムネイル生成マイクロサービス統合** — 外部 video-thumb サービス (FFmpeg + Pillow) と連携し、アップロード動画のサムネイルを自動生成。リモート動画のサムネイル URL・再生時間も ActivityPub から取得 (#945)
+- **ドライブ画面の動画サムネイル表示** — DriveFile API に `thumbnail_url` を追加し、ドライブ画面・ドライブピッカーで動画サムネイルを表示 (#948)
+- **Docker Compose に video-thumb サービス追加** — prod (UDS) / TCP 両対応のオプショナルサービスとして全 compose ファイルに追加 (#947)
+- **テストカバレッジ拡充** — バックエンドテスト 161 件 + E2E テスト 12 件を追加 (#946)
+
+---
+
 ## [20260330-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260330-1) — 2026-03-30
 
 ### セキュリティ
