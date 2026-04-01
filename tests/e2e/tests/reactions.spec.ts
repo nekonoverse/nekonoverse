@@ -47,6 +47,54 @@ test.describe("Reactions", () => {
     });
   });
 
+  test("can reopen emoji picker after closing", async ({ page }) => {
+    test.setTimeout(60_000);
+    await loginAsAdmin(page);
+    const uid = Date.now();
+    await createNote(page, `reopen-picker-${uid}`);
+
+    await page.goto("/");
+    await page.waitForSelector(".note-card", { timeout: 10_000 });
+
+    const noteCard = page
+      .locator(`.note-card`)
+      .filter({ hasText: `reopen-picker-${uid}` })
+      .first();
+
+    const addBtn = noteCard.locator(".reaction-add-btn");
+    await addBtn.waitFor({ state: "visible", timeout: 10_000 });
+    await addBtn.scrollIntoViewIfNeeded();
+
+    // 1回目: ピッカーを開く
+    await addBtn.evaluate((el) => (el as HTMLElement).click());
+    await page.waitForSelector(".emoji-picker", { timeout: 10_000 });
+
+    // Escapeで閉じる
+    await page.keyboard.press("Escape");
+    await expect(page.locator(".emoji-picker")).not.toBeVisible({ timeout: 5_000 });
+
+    // 2回目: 再度開けることを確認
+    await addBtn.evaluate((el) => (el as HTMLElement).click());
+    await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 10_000 });
+
+    // 絵文字ボタンが表示されることも確認
+    await page.waitForFunction(
+      () => {
+        const btns = document.querySelectorAll(".emoji-picker .emoji-btn");
+        return btns.length > 0;
+      },
+      { timeout: 10_000 },
+    );
+
+    // backdropクリックで閉じる
+    await page.locator(".reaction-emoji-backdrop").click({ force: true });
+    await expect(page.locator(".emoji-picker")).not.toBeVisible({ timeout: 5_000 });
+
+    // 3回目: もう一度開けることを確認
+    await addBtn.evaluate((el) => (el as HTMLElement).click());
+    await expect(page.locator(".emoji-picker")).toBeVisible({ timeout: 10_000 });
+  });
+
   test("clicking own reaction removes it", async ({ page }) => {
     await loginAsAdmin(page);
     const uid = Date.now();
