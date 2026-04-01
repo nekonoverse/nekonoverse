@@ -2869,6 +2869,14 @@ a:hover {
   flex-direction: column-reverse;
 }
 
+/* Backdrop: desktop=transparent, mobile=semi-transparent */
+.reaction-emoji-backdrop,
+.composer-emoji-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 199;
+}
+
 /* Emoji picker: mobile bottom sheet (reaction bar & composer) */
 @media (max-width: 600px) {
   .reaction-bar .emoji-picker,
@@ -2896,10 +2904,7 @@ a:hover {
 
   .reaction-emoji-backdrop,
   .composer-emoji-backdrop {
-    position: fixed;
-    inset: 0;
     background: rgba(0, 0, 0, 0.4);
-    z-index: 199;
   }
 
   .emoji-scroll-area {
