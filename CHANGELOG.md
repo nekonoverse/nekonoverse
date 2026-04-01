@@ -1,3 +1,11 @@
+## [20260401-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260401-2) — 2026-04-01
+
+### 改善
+
+- **絵文字ピッカーのモバイルパフォーマンス改善** — 検索デバウンス、結果件数上限、遅延レンダリング、`content-visibility` による描画最適化 (#953)
+
+---
+
 ## [20260401-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260401-1) — 2026-04-01
 
 ### セキュリティ
