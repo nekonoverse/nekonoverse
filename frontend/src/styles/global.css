@@ -74,7 +74,9 @@ a:hover {
   height: 3px;
   background: var(--accent);
   z-index: 201;
-  transition: width 0.15s ease-out, opacity 0.2s ease;
+  transition:
+    width 0.15s ease-out,
+    opacity 0.2s ease;
 }
 
 /* Navbar */
@@ -530,7 +532,9 @@ a:hover {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   margin-bottom: 24px;
-  transition: border-color 0.15s, background 0.15s;
+  transition:
+    border-color 0.15s,
+    background 0.15s;
 }
 
 .note-composer.drag-over,
@@ -1517,7 +1521,9 @@ a:hover {
   cursor: pointer;
   margin-top: 10px;
   margin-bottom: 2px;
-  transition: background 0.15s, color 0.15s;
+  transition:
+    background 0.15s,
+    color 0.15s;
 }
 
 .sensitive-hide-btn:hover {
@@ -1576,15 +1582,23 @@ a:hover {
 }
 
 .note-media-item[data-crop="vertical"]::after {
-  background: linear-gradient(to bottom,
-    rgba(0, 0, 0, 0.06) 0%, transparent 12%,
-    transparent 88%, rgba(0, 0, 0, 0.06) 100%);
+  background: linear-gradient(
+    to bottom,
+    rgba(0, 0, 0, 0.06) 0%,
+    transparent 12%,
+    transparent 88%,
+    rgba(0, 0, 0, 0.06) 100%
+  );
 }
 
 .note-media-item[data-crop="horizontal"]::after {
-  background: linear-gradient(to right,
-    rgba(0, 0, 0, 0.06) 0%, transparent 12%,
-    transparent 88%, rgba(0, 0, 0, 0.06) 100%);
+  background: linear-gradient(
+    to right,
+    rgba(0, 0, 0, 0.06) 0%,
+    transparent 12%,
+    transparent 88%,
+    rgba(0, 0, 0, 0.06) 100%
+  );
 }
 
 [data-crop-shadow="off"] .note-media-item[data-crop]::after {
@@ -2939,6 +2953,12 @@ a:hover {
 
 .emoji-category-label:first-child {
   margin-top: 0;
+}
+
+/* LazyCategory内のレイアウト/ペイントをビューポート外ではスキップ */
+.emoji-scroll-area > div {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none;
 }
 
 .emoji-grid {
@@ -4354,7 +4374,9 @@ a:hover {
   cursor: pointer;
   font-size: 0.95rem;
   font-weight: 500;
-  transition: color 0.15s, border-color 0.15s;
+  transition:
+    color 0.15s,
+    border-color 0.15s;
 }
 
 .notif-tab:hover {
@@ -4827,7 +4849,9 @@ a:hover {
   animation: spin 0.8s linear infinite;
 }
 @keyframes spin {
-  to { transform: rotate(360deg); }
+  to {
+    transform: rotate(360deg);
+  }
 }
 .emoji-import-title {
   margin: 0 0 4px;
@@ -7775,7 +7799,6 @@ a:hover {
   gap: 0;
 }
 
-
 @media (max-width: 480px) {
   .entrance-hero-title {
     font-size: 1.5em;
@@ -7914,7 +7937,9 @@ a:hover {
 /* Dark theme (default — data-theme 属性なし) */
 html[data-cursor="paw"],
 html[data-cursor="paw"] * {
-  cursor: url('/cursors/dark/paw-default.svg') 8 2, auto;
+  cursor:
+    url("/cursors/dark/paw-default.svg") 8 2,
+    auto;
 }
 html[data-cursor="paw"] a,
 html[data-cursor="paw"] button,
@@ -7923,17 +7948,23 @@ html[data-cursor="paw"] input[type="submit"],
 html[data-cursor="paw"] select,
 html[data-cursor="paw"] label[for],
 html[data-cursor="paw"] summary {
-  cursor: url('/cursors/dark/paw-pointer.svg') 10 4, pointer;
+  cursor:
+    url("/cursors/dark/paw-pointer.svg") 10 4,
+    pointer;
 }
 html[data-cursor="paw"] :active,
 html[data-cursor="paw"] *:active {
-  cursor: url('/cursors/dark/paw-active.svg') 10 4, auto;
+  cursor:
+    url("/cursors/dark/paw-active.svg") 10 4,
+    auto;
 }
 
 /* Light theme */
 html[data-cursor="paw"][data-theme="light"],
 html[data-cursor="paw"][data-theme="light"] * {
-  cursor: url('/cursors/light/paw-default.svg') 8 2, auto;
+  cursor:
+    url("/cursors/light/paw-default.svg") 8 2,
+    auto;
 }
 html[data-cursor="paw"][data-theme="light"] a,
 html[data-cursor="paw"][data-theme="light"] button,
@@ -7942,17 +7973,23 @@ html[data-cursor="paw"][data-theme="light"] input[type="submit"],
 html[data-cursor="paw"][data-theme="light"] select,
 html[data-cursor="paw"][data-theme="light"] label[for],
 html[data-cursor="paw"][data-theme="light"] summary {
-  cursor: url('/cursors/light/paw-pointer.svg') 10 4, pointer;
+  cursor:
+    url("/cursors/light/paw-pointer.svg") 10 4,
+    pointer;
 }
 html[data-cursor="paw"][data-theme="light"] :active,
 html[data-cursor="paw"][data-theme="light"] *:active {
-  cursor: url('/cursors/light/paw-active.svg') 10 4, auto;
+  cursor:
+    url("/cursors/light/paw-active.svg") 10 4,
+    auto;
 }
 
 /* Novel theme */
 html[data-cursor="paw"][data-theme="novel"],
 html[data-cursor="paw"][data-theme="novel"] * {
-  cursor: url('/cursors/novel/paw-default.svg') 8 2, auto;
+  cursor:
+    url("/cursors/novel/paw-default.svg") 8 2,
+    auto;
 }
 html[data-cursor="paw"][data-theme="novel"] a,
 html[data-cursor="paw"][data-theme="novel"] button,
@@ -7961,11 +7998,15 @@ html[data-cursor="paw"][data-theme="novel"] input[type="submit"],
 html[data-cursor="paw"][data-theme="novel"] select,
 html[data-cursor="paw"][data-theme="novel"] label[for],
 html[data-cursor="paw"][data-theme="novel"] summary {
-  cursor: url('/cursors/novel/paw-pointer.svg') 10 4, pointer;
+  cursor:
+    url("/cursors/novel/paw-pointer.svg") 10 4,
+    pointer;
 }
 html[data-cursor="paw"][data-theme="novel"] :active,
 html[data-cursor="paw"][data-theme="novel"] *:active {
-  cursor: url('/cursors/novel/paw-active.svg') 10 4, auto;
+  cursor:
+    url("/cursors/novel/paw-active.svg") 10 4,
+    auto;
 }
 
 /* Text cursor override (all themes) */
