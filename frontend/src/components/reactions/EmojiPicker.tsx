@@ -92,22 +92,18 @@ export default function EmojiPicker(props: Props) {
   const usedSet = createMemo(() => new Set(props.usedEmojis ?? []));
   const isUsed = (emoji: string) => usedSet().has(emoji);
 
+  // 段階的レンダリング: 外枠を即時表示し、絵文字コンテンツは1フレーム後に描画
+  const [contentReady, setContentReady] = createSignal(false);
+
   onMount(() => {
-    const handleClick = (e: MouseEvent | TouchEvent) => {
-      const target = e.target as Node;
-      if (ref && !ref.contains(target)) {
-        props.onClose();
-      }
-    };
+    requestAnimationFrame(() => setContentReady(true));
+    // Escapeキーでピッカーを閉じる
+    // クリック外検出は親コンポーネントのbackdropが担当
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") props.onClose();
     };
-    document.addEventListener("mousedown", handleClick);
-    document.addEventListener("touchstart", handleClick, { passive: true });
     document.addEventListener("keydown", handleKeyDown);
     onCleanup(() => {
-      document.removeEventListener("mousedown", handleClick);
-      document.removeEventListener("touchstart", handleClick);
       document.removeEventListener("keydown", handleKeyDown);
     });
 
@@ -263,74 +259,78 @@ export default function EmojiPicker(props: Props) {
   return (
     <div class="emoji-picker" ref={ref}>
       <div class="emoji-scroll-area">
-        {/* --- 検索結果モード --- */}
-        <Show when={isSearching()}>
-          <Show
-            when={filteredUnicode().length > 0 || filteredCustom().length > 0}
-            fallback={
-              <div class="emoji-custom-empty">{t("reactions.noResults")}</div>
-            }
-          >
-            <div class="emoji-grid">
-              <For each={filteredCustom()}>{(e) => renderCustomBtn(e)}</For>
-              <For each={filteredUnicode()}>{(e) => renderUnicodeBtn(e)}</For>
-            </div>
+        <Show when={contentReady()}>
+          {/* --- 検索結果モード --- */}
+          <Show when={isSearching()}>
+            <Show
+              when={filteredUnicode().length > 0 || filteredCustom().length > 0}
+              fallback={
+                <div class="emoji-custom-empty">{t("reactions.noResults")}</div>
+              }
+            >
+              <div class="emoji-grid">
+                <For each={filteredCustom()}>{(e) => renderCustomBtn(e)}</For>
+                <For each={filteredUnicode()}>{(e) => renderUnicodeBtn(e)}</For>
+              </div>
+            </Show>
           </Show>
-        </Show>
 
-        {/* --- ブラウズモード --- */}
-        <Show when={!isSearching()}>
-          {/* 最近使った絵文字 */}
-          <Show when={recentEmojis().length > 0}>
-            <div class="emoji-category-label">
-              {t("reactions.recentlyUsed")}
-            </div>
-            <div class="emoji-grid">
-              <For each={recentEmojis()}>
-                {(recent) => renderRecentBtn(recent)}
+          {/* --- ブラウズモード --- */}
+          <Show when={!isSearching()}>
+            {/* 最近使った絵文字 */}
+            <Show when={recentEmojis().length > 0}>
+              <div class="emoji-category-label">
+                {t("reactions.recentlyUsed")}
+              </div>
+              <div class="emoji-grid">
+                <For each={recentEmojis()}>
+                  {(recent) => renderRecentBtn(recent)}
+                </For>
+              </div>
+            </Show>
+
+            {/* カテゴリ別カスタム絵文字（遅延レンダリング） */}
+            <Show when={customEmojis().length > 0}>
+              <For each={[...groupedCustom().entries()]}>
+                {([category, emojis]) => {
+                  const rows = Math.ceil(emojis.length / 8);
+                  const estimatedHeight = rows * 40 + 24;
+                  return (
+                    <LazyCategory estimatedHeight={estimatedHeight}>
+                      <div class="emoji-category-label">{category}</div>
+                      <div class="emoji-grid">
+                        <For each={emojis}>
+                          {(emoji) => renderCustomBtn(emoji)}
+                        </For>
+                      </div>
+                    </LazyCategory>
+                  );
+                }}
               </For>
-            </div>
-          </Show>
+            </Show>
 
-          {/* カテゴリ別カスタム絵文字（遅延レンダリング） */}
-          <Show when={customEmojis().length > 0}>
-            <For each={[...groupedCustom().entries()]}>
-              {([category, emojis]) => {
+            {/* Unicode絵文字カテゴリ（カテゴリごとに遅延レンダリング） */}
+            <For each={EMOJI_CATEGORIES}>
+              {(cat) => {
+                const emojis = UNICODE_BY_CATEGORY.get(cat.id) ?? [];
+                // 各ボタン36px + gap 4px、8列グリッド + カテゴリラベル24px
                 const rows = Math.ceil(emojis.length / 8);
                 const estimatedHeight = rows * 40 + 24;
                 return (
-                  <LazyCategory estimatedHeight={estimatedHeight}>
-                    <div class="emoji-category-label">{category}</div>
-                    <div class="emoji-grid">
-                      <For each={emojis}>
-                        {(emoji) => renderCustomBtn(emoji)}
-                      </For>
-                    </div>
-                  </LazyCategory>
+                  <Show when={emojis.length > 0}>
+                    <LazyCategory estimatedHeight={estimatedHeight}>
+                      <div class="emoji-category-label">{cat.label}</div>
+                      <div class="emoji-grid">
+                        <For each={emojis}>
+                          {(def) => renderUnicodeBtn(def)}
+                        </For>
+                      </div>
+                    </LazyCategory>
+                  </Show>
                 );
               }}
             </For>
           </Show>
-
-          {/* Unicode絵文字カテゴリ（カテゴリごとに遅延レンダリング） */}
-          <For each={EMOJI_CATEGORIES}>
-            {(cat) => {
-              const emojis = UNICODE_BY_CATEGORY.get(cat.id) ?? [];
-              // 各ボタン36px + gap 4px、8列グリッド + カテゴリラベル24px
-              const rows = Math.ceil(emojis.length / 8);
-              const estimatedHeight = rows * 40 + 24;
-              return (
-                <Show when={emojis.length > 0}>
-                  <LazyCategory estimatedHeight={estimatedHeight}>
-                    <div class="emoji-category-label">{cat.label}</div>
-                    <div class="emoji-grid">
-                      <For each={emojis}>{(def) => renderUnicodeBtn(def)}</For>
-                    </div>
-                  </LazyCategory>
-                </Show>
-              );
-            }}
-          </For>
         </Show>
       </div>
 
