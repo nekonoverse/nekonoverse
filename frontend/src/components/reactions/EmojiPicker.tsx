@@ -67,7 +67,15 @@ export default function EmojiPicker(props: Props) {
   const { t } = useI18n();
   let ref: HTMLDivElement | undefined;
   let searchRef: HTMLInputElement | undefined;
+  const [rawQuery, setRawQuery] = createSignal("");
   const [query, setQuery] = createSignal("");
+  let debounceTimer: ReturnType<typeof setTimeout> | undefined;
+  const updateQuery = (value: string) => {
+    setRawQuery(value);
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(() => setQuery(value), 150);
+  };
+  onCleanup(() => clearTimeout(debounceTimer));
   const [customEmojis, setCustomEmojis] = createSignal<CustomEmoji[]>([]);
   const [recentEmojis, setRecentEmojis] =
     createSignal<RecentEmoji[]>(getRecentEmojis());
@@ -75,15 +83,14 @@ export default function EmojiPicker(props: Props) {
   // iOSのゴーストタップ防止: タッチモードでのみ300ms間クリックをブロック
   const touch = isTouchMode();
   const [ready, setReady] = createSignal(!touch);
-  const readyTimer = touch
-    ? setTimeout(() => setReady(true), 300)
-    : undefined;
+  const readyTimer = touch ? setTimeout(() => setReady(true), 300) : undefined;
   onCleanup(() => {
     if (readyTimer !== undefined) clearTimeout(readyTimer);
   });
 
-
-  const isUsed = (emoji: string) => props.usedEmojis?.includes(emoji) ?? false;
+  // O(1)ルックアップのためSetに変換
+  const usedSet = createMemo(() => new Set(props.usedEmojis ?? []));
+  const isUsed = (emoji: string) => usedSet().has(emoji);
 
   onMount(() => {
     const handleClick = (e: MouseEvent | TouchEvent) => {
@@ -118,26 +125,40 @@ export default function EmojiPicker(props: Props) {
 
   const isSearching = () => query().trim().length > 0;
 
+  const MAX_SEARCH_RESULTS = 50;
+
   const filteredUnicode = createMemo(() => {
     const q = query().toLowerCase().trim();
     if (!q) return [];
-    return UNICODE_EMOJIS.filter(
-      (e) =>
+    const results: UnicodeEmojiDef[] = [];
+    for (const e of UNICODE_EMOJIS) {
+      if (
         e.shortcode.includes(q) ||
         e.keywords.some((k) => k.includes(q)) ||
-        e.emoji === q,
-    );
+        e.emoji === q
+      ) {
+        results.push(e);
+        if (results.length >= MAX_SEARCH_RESULTS) break;
+      }
+    }
+    return results;
   });
 
   const filteredCustom = createMemo(() => {
     const q = query().toLowerCase().trim();
     if (!q) return [];
-    return customEmojis().filter(
-      (e) =>
+    const results: CustomEmoji[] = [];
+    for (const e of customEmojis()) {
+      if (
         e.shortcode.toLowerCase().includes(q) ||
         e.aliases?.some((a) => a.toLowerCase().includes(q)) ||
-        e.category?.toLowerCase().includes(q),
-    );
+        e.category?.toLowerCase().includes(q)
+      ) {
+        results.push(e);
+        if (results.length >= MAX_SEARCH_RESULTS) break;
+      }
+    }
+    return results;
   });
 
   // カスタム絵文字をカテゴリ別にグループ化（ブラウズモード用）
@@ -212,6 +233,7 @@ export default function EmojiPicker(props: Props) {
         class="custom-emoji"
         src={emoji.url}
         alt={`:${emoji.shortcode}:`}
+        loading="lazy"
         draggable={false}
       />
     </button>
@@ -229,6 +251,7 @@ export default function EmojiPicker(props: Props) {
           class="custom-emoji"
           src={recent.url}
           alt={recent.emoji}
+          loading="lazy"
           draggable={false}
         />
       ) : (
@@ -269,17 +292,23 @@ export default function EmojiPicker(props: Props) {
             </div>
           </Show>
 
-          {/* カテゴリ別カスタム絵文字 */}
+          {/* カテゴリ別カスタム絵文字（遅延レンダリング） */}
           <Show when={customEmojis().length > 0}>
             <For each={[...groupedCustom().entries()]}>
-              {([category, emojis]) => (
-                <>
-                  <div class="emoji-category-label">{category}</div>
-                  <div class="emoji-grid">
-                    <For each={emojis}>{(emoji) => renderCustomBtn(emoji)}</For>
-                  </div>
-                </>
-              )}
+              {([category, emojis]) => {
+                const rows = Math.ceil(emojis.length / 8);
+                const estimatedHeight = rows * 40 + 24;
+                return (
+                  <LazyCategory estimatedHeight={estimatedHeight}>
+                    <div class="emoji-category-label">{category}</div>
+                    <div class="emoji-grid">
+                      <For each={emojis}>
+                        {(emoji) => renderCustomBtn(emoji)}
+                      </For>
+                    </div>
+                  </LazyCategory>
+                );
+              }}
             </For>
           </Show>
 
@@ -312,11 +341,13 @@ export default function EmojiPicker(props: Props) {
         class="emoji-search"
         type="text"
         placeholder={t("reactions.searchEmoji")}
-        value={query()}
-        onInput={(e) => setQuery(e.currentTarget.value)}
+        value={rawQuery()}
+        onInput={(e) => updateQuery(e.currentTarget.value)}
         onKeyDown={(e) => {
           if (e.key === "Tab" && !e.shiftKey) {
-            const btn = ref?.querySelector<HTMLButtonElement>(".emoji-btn:not(:disabled)");
+            const btn = ref?.querySelector<HTMLButtonElement>(
+              ".emoji-btn:not(:disabled)",
+            );
             if (btn) {
               e.preventDefault();
               btn.focus();
