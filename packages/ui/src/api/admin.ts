@@ -22,6 +22,8 @@ export interface ServerSettings {
   timeline_default_limit: number;
   timeline_max_limit: number;
   katex_enabled: boolean;
+  server_listing_enabled: boolean;
+  server_listing_url: string | null;
 }
 
 export interface AdminUser {
@@ -76,7 +78,9 @@ export async function getServerSettings(): Promise<ServerSettings> {
   return apiRequest<ServerSettings>("/api/v1/admin/settings");
 }
 
-export async function updateServerSettings(data: Partial<ServerSettings>): Promise<ServerSettings> {
+export async function updateServerSettings(
+  data: Partial<ServerSettings>,
+): Promise<ServerSettings> {
   return apiRequest<ServerSettings>("/api/v1/admin/settings", {
     method: "PATCH",
     body: data,
@@ -84,18 +88,29 @@ export async function updateServerSettings(data: Partial<ServerSettings>): Promi
 }
 
 // ユーザー管理
-export async function getAdminUsers(limit = 50, offset = 0): Promise<AdminUser[]> {
-  return apiRequest<AdminUser[]>(`/api/v1/admin/users?limit=${limit}&offset=${offset}`);
+export async function getAdminUsers(
+  limit = 50,
+  offset = 0,
+): Promise<AdminUser[]> {
+  return apiRequest<AdminUser[]>(
+    `/api/v1/admin/users?limit=${limit}&offset=${offset}`,
+  );
 }
 
-export async function changeUserRole(userId: string, role: string): Promise<void> {
+export async function changeUserRole(
+  userId: string,
+  role: string,
+): Promise<void> {
   await apiRequest(`/api/v1/admin/users/${userId}/role`, {
     method: "PATCH",
     body: { role },
   });
 }
 
-export async function suspendUser(userId: string, reason?: string): Promise<void> {
+export async function suspendUser(
+  userId: string,
+  reason?: string,
+): Promise<void> {
   await apiRequest(`/api/v1/admin/users/${userId}/suspend`, {
     method: "POST",
     body: { reason: reason || null },
@@ -103,10 +118,15 @@ export async function suspendUser(userId: string, reason?: string): Promise<void
 }
 
 export async function unsuspendUser(userId: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/users/${userId}/unsuspend`, { method: "POST" });
+  await apiRequest(`/api/v1/admin/users/${userId}/unsuspend`, {
+    method: "POST",
+  });
 }
 
-export async function silenceUser(userId: string, reason?: string): Promise<void> {
+export async function silenceUser(
+  userId: string,
+  reason?: string,
+): Promise<void> {
   await apiRequest(`/api/v1/admin/users/${userId}/silence`, {
     method: "POST",
     body: { reason: reason || null },
@@ -114,7 +134,9 @@ export async function silenceUser(userId: string, reason?: string): Promise<void
 }
 
 export async function unsilenceUser(userId: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/users/${userId}/unsilence`, { method: "POST" });
+  await apiRequest(`/api/v1/admin/users/${userId}/unsilence`, {
+    method: "POST",
+  });
 }
 
 // ドメインブロック
@@ -122,7 +144,11 @@ export async function getDomainBlocks(): Promise<DomainBlock[]> {
   return apiRequest<DomainBlock[]>("/api/v1/admin/domain_blocks");
 }
 
-export async function createDomainBlock(domain: string, severity: string, reason?: string): Promise<DomainBlock> {
+export async function createDomainBlock(
+  domain: string,
+  severity: string,
+  reason?: string,
+): Promise<DomainBlock> {
   return apiRequest<DomainBlock>("/api/v1/admin/domain_blocks", {
     method: "POST",
     body: { domain, severity, reason: reason || null },
@@ -130,9 +156,12 @@ export async function createDomainBlock(domain: string, severity: string, reason
 }
 
 export async function removeDomainBlock(domain: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/domain_blocks/${encodeURIComponent(domain)}`, {
-    method: "DELETE",
-  });
+  await apiRequest(
+    `/api/v1/admin/domain_blocks/${encodeURIComponent(domain)}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 // レポート
@@ -142,20 +171,28 @@ export async function getReports(status?: string): Promise<Report[]> {
 }
 
 export async function resolveReport(reportId: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/reports/${reportId}/resolve`, { method: "POST" });
+  await apiRequest(`/api/v1/admin/reports/${reportId}/resolve`, {
+    method: "POST",
+  });
 }
 
 export async function rejectReport(reportId: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/reports/${reportId}/reject`, { method: "POST" });
+  await apiRequest(`/api/v1/admin/reports/${reportId}/reject`, {
+    method: "POST",
+  });
 }
 
 // モデレーションログ
-export async function getModerationLog(limit = 50): Promise<ModerationLogEntry[]> {
+export async function getModerationLog(
+  limit = 50,
+): Promise<ModerationLogEntry[]> {
   return apiRequest<ModerationLogEntry[]>(`/api/v1/admin/log?limit=${limit}`);
 }
 
 // サーバーアイコン
-export async function uploadServerIcon(file: File): Promise<{ ok: boolean; url: string }> {
+export async function uploadServerIcon(
+  file: File,
+): Promise<{ ok: boolean; url: string }> {
   const formData = new FormData();
   formData.append("file", file);
   return apiRequest<{ ok: boolean; url: string }>("/api/v1/admin/server-icon", {
@@ -166,7 +203,9 @@ export async function uploadServerIcon(file: File): Promise<{ ok: boolean; url: 
 
 // センシティブマーキング
 export async function markNoteSensitive(noteId: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/notes/${noteId}/sensitive`, { method: "POST" });
+  await apiRequest(`/api/v1/admin/notes/${noteId}/sensitive`, {
+    method: "POST",
+  });
 }
 
 // モデレーターによるノート削除
@@ -210,7 +249,9 @@ export async function deleteEmoji(emojiId: string): Promise<void> {
   await apiRequest(`/api/v1/admin/emoji/${emojiId}`, { method: "DELETE" });
 }
 
-export async function importEmojis(file: File): Promise<{ imported: number; skipped: number; errors: string[] }> {
+export async function importEmojis(
+  file: File,
+): Promise<{ imported: number; skipped: number; errors: string[] }> {
   const formData = new FormData();
   formData.append("file", file);
   return apiRequest("/api/v1/admin/emoji/import", {
@@ -240,7 +281,10 @@ export interface RemoteEmoji {
   created_at: string;
 }
 
-export async function getRemoteEmojis(domain?: string, search?: string): Promise<RemoteEmoji[]> {
+export async function getRemoteEmojis(
+  domain?: string,
+  search?: string,
+): Promise<RemoteEmoji[]> {
   const params = new URLSearchParams();
   if (domain) params.set("domain", domain);
   if (search) params.set("search", search);
@@ -253,7 +297,10 @@ export async function getRemoteEmojiDomains(): Promise<string[]> {
 }
 
 export async function importRemoteEmoji(emojiId: string): Promise<AdminEmoji> {
-  return apiRequest<AdminEmoji>(`/api/v1/admin/emoji/import-remote/${emojiId}`, { method: "POST" });
+  return apiRequest<AdminEmoji>(
+    `/api/v1/admin/emoji/import-remote/${emojiId}`,
+    { method: "POST" },
+  );
 }
 
 export interface ImportByShortcodeBody {
@@ -268,7 +315,9 @@ export interface ImportByShortcodeBody {
   aliases?: string[];
 }
 
-export async function importRemoteEmojiByShortcode(body: ImportByShortcodeBody): Promise<AdminEmoji> {
+export async function importRemoteEmojiByShortcode(
+  body: ImportByShortcodeBody,
+): Promise<AdminEmoji> {
   return apiRequest<AdminEmoji>("/api/v1/admin/emoji/import-by-shortcode", {
     method: "POST",
     body,
@@ -290,7 +339,10 @@ export interface AdminEmojiUpdate {
   is_based_on?: string;
 }
 
-export async function updateEmoji(emojiId: string, body: AdminEmojiUpdate): Promise<AdminEmoji> {
+export async function updateEmoji(
+  emojiId: string,
+  body: AdminEmojiUpdate,
+): Promise<AdminEmoji> {
   return apiRequest<AdminEmoji>(`/api/v1/admin/emoji/${emojiId}`, {
     method: "PATCH",
     body,
@@ -321,7 +373,9 @@ export async function uploadServerFile(file: File): Promise<ServerFile> {
 }
 
 export async function deleteServerFile(fileId: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/server-files/${fileId}`, { method: "DELETE" });
+  await apiRequest(`/api/v1/admin/server-files/${fileId}`, {
+    method: "DELETE",
+  });
 }
 
 // 招待コード
@@ -367,16 +421,22 @@ export interface PendingRegistration {
   created_at: string;
 }
 
-export async function getPendingRegistrations(): Promise<PendingRegistration[]> {
+export async function getPendingRegistrations(): Promise<
+  PendingRegistration[]
+> {
   return apiRequest<PendingRegistration[]>("/api/v1/admin/registrations");
 }
 
 export async function approveRegistration(userId: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/registrations/${userId}/approve`, { method: "POST" });
+  await apiRequest(`/api/v1/admin/registrations/${userId}/approve`, {
+    method: "POST",
+  });
 }
 
 export async function rejectRegistration(userId: string): Promise<void> {
-  await apiRequest(`/api/v1/admin/registrations/${userId}/reject`, { method: "POST" });
+  await apiRequest(`/api/v1/admin/registrations/${userId}/reject`, {
+    method: "POST",
+  });
 }
 
 // 連合
@@ -415,14 +475,16 @@ export interface FederatedServerDetail extends FederatedServer {
   recent_actors: ActorSummary[];
 }
 
-export async function getFederatedServers(params: {
-  limit?: number;
-  offset?: number;
-  sort?: string;
-  order?: string;
-  search?: string;
-  status?: string;
-} = {}): Promise<FederatedServerList> {
+export async function getFederatedServers(
+  params: {
+    limit?: number;
+    offset?: number;
+    sort?: string;
+    order?: string;
+    search?: string;
+    status?: string;
+  } = {},
+): Promise<FederatedServerList> {
   const qs = new URLSearchParams();
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.offset) qs.set("offset", String(params.offset));
@@ -433,9 +495,11 @@ export async function getFederatedServers(params: {
   return apiRequest<FederatedServerList>(`/api/v1/admin/federation?${qs}`);
 }
 
-export async function getFederatedServerDetail(domain: string): Promise<FederatedServerDetail> {
+export async function getFederatedServerDetail(
+  domain: string,
+): Promise<FederatedServerDetail> {
   return apiRequest<FederatedServerDetail>(
-    `/api/v1/admin/federation/${encodeURIComponent(domain)}`
+    `/api/v1/admin/federation/${encodeURIComponent(domain)}`,
   );
 }
 
@@ -471,12 +535,14 @@ export async function getQueueStats(): Promise<QueueStats> {
   return apiRequest<QueueStats>("/api/v1/admin/queue/stats");
 }
 
-export async function getQueueJobs(params: {
-  status?: string;
-  domain?: string;
-  limit?: number;
-  offset?: number;
-} = {}): Promise<QueueJobList> {
+export async function getQueueJobs(
+  params: {
+    status?: string;
+    domain?: string;
+    limit?: number;
+    offset?: number;
+  } = {},
+): Promise<QueueJobList> {
   const qs = new URLSearchParams();
   if (params.status) qs.set("status", params.status);
   if (params.domain) qs.set("domain", params.domain);
@@ -489,17 +555,22 @@ export async function retryQueueJob(jobId: string): Promise<void> {
   await apiRequest(`/api/v1/admin/queue/retry/${jobId}`, { method: "POST" });
 }
 
-export async function retryAllDeadJobs(domain?: string): Promise<{ retried: number }> {
+export async function retryAllDeadJobs(
+  domain?: string,
+): Promise<{ retried: number }> {
   const qs = domain ? `?domain=${encodeURIComponent(domain)}` : "";
   return apiRequest(`/api/v1/admin/queue/retry-all${qs}`, { method: "POST" });
 }
 
 export async function purgeDeliveredJobs(
-  olderThanHours: number = 24
+  olderThanHours: number = 24,
 ): Promise<{ purged: number }> {
-  return apiRequest(`/api/v1/admin/queue/purge?older_than_hours=${olderThanHours}`, {
-    method: "DELETE",
-  });
+  return apiRequest(
+    `/api/v1/admin/queue/purge?older_than_hours=${olderThanHours}`,
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 // システム統計
@@ -527,14 +598,21 @@ export async function getSystemStats(): Promise<SystemStats> {
 }
 
 // プッシュ通知 / VAPID キー管理
-export async function generateVapidKey(): Promise<{ vapid_public_key: string }> {
-  return apiRequest<{ vapid_public_key: string }>("/api/v1/admin/push/generate-vapid-key", {
-    method: "POST",
-  });
+export async function generateVapidKey(): Promise<{
+  vapid_public_key: string;
+}> {
+  return apiRequest<{ vapid_public_key: string }>(
+    "/api/v1/admin/push/generate-vapid-key",
+    {
+      method: "POST",
+    },
+  );
 }
 
 // モデレーター権限
-export async function getModeratorPermissions(): Promise<Record<string, boolean>> {
+export async function getModeratorPermissions(): Promise<
+  Record<string, boolean>
+> {
   return apiRequest<Record<string, boolean>>("/api/v1/admin/permissions");
 }
 
@@ -642,7 +720,12 @@ export async function createAnnouncement(data: {
 
 export async function updateAnnouncement(
   id: string,
-  data: Partial<Pick<Announcement, "title" | "content" | "published" | "all_day" | "starts_at" | "ends_at">>,
+  data: Partial<
+    Pick<
+      Announcement,
+      "title" | "content" | "published" | "all_day" | "starts_at" | "ends_at"
+    >
+  >,
 ): Promise<Announcement> {
   return apiRequest<Announcement>(`/api/v1/admin/announcements/${id}`, {
     method: "PATCH",
