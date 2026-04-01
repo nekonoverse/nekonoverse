@@ -1,3 +1,15 @@
+## [20260402-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260402-1) — 2026-04-02
+
+### セキュリティ
+
+- **依存関係のセキュリティアップデート** — aiohttp 3.13.5 (CVE-2026-22815)
+
+### 修正
+
+- **絵文字ピッカーの再オープンバグ修正** — ピッカーを閉じた後に再度開けない問題を修正。外クリック検出を backdrop 要素に変更し、段階的レンダリングを導入 (#956)
+
+---
+
 ## [20260401-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260401-2) — 2026-04-01
 
 ### 改善
