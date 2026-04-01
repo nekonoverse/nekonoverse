@@ -807,7 +807,6 @@ export const ja = {
   "admin.serverListingDescription":
     "サーバーディレクトリへの掲載を設定します。有効にすると、指定したURLへサーバー情報を定期的に通知します。",
   "admin.serverListingEnabled": "サーバーリストへの掲載を有効にする",
-  "admin.serverListingUrl": "通知先URL",
   "admin.timelineSettings": "タイムライン設定",
   "admin.timelineDefaultLimit": "デフォルト取得件数",
   "admin.timelineMaxLimit": "最大取得件数",

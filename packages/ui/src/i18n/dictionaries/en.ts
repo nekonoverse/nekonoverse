@@ -811,7 +811,6 @@ export const en: Dictionary = {
   "admin.serverListingDescription":
     "Configure server directory listing. When enabled, server information will be periodically sent to the specified URL.",
   "admin.serverListingEnabled": "Enable server directory listing",
-  "admin.serverListingUrl": "Notification URL",
   "admin.timelineSettings": "Timeline Settings",
   "admin.timelineDefaultLimit": "Default fetch count",
   "admin.timelineMaxLimit": "Maximum fetch count",

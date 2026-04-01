@@ -813,7 +813,6 @@ export const neko: Dictionary = {
     "サーバーディレクトリへのけいさいをせっていするにゃ。ゆうこうにすると、していしたURLへサーバーじょうほうをていきてきにつうちするにゃ。",
   "admin.serverListingEnabled":
     "サーバーリストへのけいさいをゆうこうにするにゃ",
-  "admin.serverListingUrl": "つうちさきURL",
   "admin.timelineSettings": "タイムラインせっていにゃ",
   "admin.timelineDefaultLimit": "デフォルトしゅとくけんすうにゃ",
   "admin.timelineMaxLimit": "さいだいしゅとくけんすうにゃ",

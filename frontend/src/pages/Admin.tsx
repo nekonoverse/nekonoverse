@@ -423,7 +423,6 @@ function ServerSettingsTab() {
   const [tlMax, setTlMax] = createSignal(40);
   const [katexEnabled, setKatexEnabled] = createSignal(false);
   const [listingEnabled, setListingEnabled] = createSignal(false);
-  const [listingUrl, setListingUrl] = createSignal("");
   let iconInput!: HTMLInputElement;
 
   // Switch/Match 内での確実な初期化のため createEffect を使用
@@ -450,7 +449,6 @@ function ServerSettingsTab() {
           setTlMax(s.timeline_max_limit ?? 40);
           setKatexEnabled(s.katex_enabled ?? false);
           setListingEnabled(s.server_listing_enabled ?? false);
-          setListingUrl(s.server_listing_url || "");
         } catch (e) {
           console.error("Failed to load server settings:", e);
         }
@@ -476,7 +474,6 @@ function ServerSettingsTab() {
         timeline_max_limit: tlMax(),
         katex_enabled: katexEnabled(),
         server_listing_enabled: listingEnabled(),
-        server_listing_url: listingUrl() || null,
       } as Partial<ServerSettings>);
       setSettings(updated);
       setSaved(true);
@@ -753,15 +750,6 @@ function ServerSettingsTab() {
             />
             {t("admin.serverListingEnabled")}
           </label>
-        </div>
-        <div class="settings-form-group">
-          <label>{t("admin.serverListingUrl")}</label>
-          <input
-            type="url"
-            value={listingUrl()}
-            onInput={(e) => setListingUrl(e.currentTarget.value)}
-            placeholder="https://example.com/api/v1/servers"
-          />
         </div>
         <button class="btn btn-small" onClick={handleSave} disabled={saving()}>
           {saving() ? t("profile.saving") : t("settings.save")}
