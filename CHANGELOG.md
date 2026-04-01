@@ -1,3 +1,11 @@
+## [20260401-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260401-1) — 2026-04-01
+
+### セキュリティ
+
+- **依存関係のセキュリティアップデート** — cryptography 46.0.6 (CVE-2026-34073), requests 2.33.1 (CVE-2026-25645), Pygments 2.20.0 (CVE-2026-4539)
+
+---
+
 ## [20260331-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260331-1) — 2026-03-31
 
 ### セキュリティ
