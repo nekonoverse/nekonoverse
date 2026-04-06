@@ -1,4 +1,64 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
+import {
+  moreRestrictiveVisibility,
+  normalizeVisibility,
+  VISIBILITY_RANK,
+  type Visibility,
+} from "./composer";
+
+describe("VISIBILITY_RANK", () => {
+  it("public < unlisted < followers < direct の順に制限が強い", () => {
+    expect(VISIBILITY_RANK.public).toBeLessThan(VISIBILITY_RANK.unlisted);
+    expect(VISIBILITY_RANK.unlisted).toBeLessThan(VISIBILITY_RANK.followers);
+    expect(VISIBILITY_RANK.followers).toBeLessThan(VISIBILITY_RANK.direct);
+  });
+});
+
+describe("normalizeVisibility", () => {
+  it('"private" を "followers" に正規化する', () => {
+    expect(normalizeVisibility("private")).toBe("followers");
+  });
+
+  it.each(["public", "unlisted", "followers", "direct"] as const)(
+    '"%s" はそのまま返す',
+    (v) => {
+      expect(normalizeVisibility(v)).toBe(v);
+    },
+  );
+});
+
+describe("moreRestrictiveVisibility", () => {
+  const cases: [Visibility, Visibility, Visibility][] = [
+    // 同じ同士
+    ["public", "public", "public"],
+    ["unlisted", "unlisted", "unlisted"],
+    ["followers", "followers", "followers"],
+    ["direct", "direct", "direct"],
+    // public と他
+    ["public", "unlisted", "unlisted"],
+    ["public", "followers", "followers"],
+    ["public", "direct", "direct"],
+    // unlisted と他
+    ["unlisted", "public", "unlisted"],
+    ["unlisted", "followers", "followers"],
+    ["unlisted", "direct", "direct"],
+    // followers と他
+    ["followers", "public", "followers"],
+    ["followers", "unlisted", "followers"],
+    ["followers", "direct", "direct"],
+    // direct と他
+    ["direct", "public", "direct"],
+    ["direct", "unlisted", "direct"],
+    ["direct", "followers", "direct"],
+  ];
+
+  it.each(cases)(
+    "moreRestrictiveVisibility(%s, %s) === %s",
+    (a, b, expected) => {
+      expect(moreRestrictiveVisibility(a, b)).toBe(expected);
+    },
+  );
+});
 
 describe("composer store", () => {
   beforeEach(() => {

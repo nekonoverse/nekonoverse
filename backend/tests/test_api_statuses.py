@@ -887,6 +887,56 @@ async def test_reply_visibility_enforcement(authed_client, mock_valkey):
         )
 
 
+async def test_reply_visibility_cross_user(
+    authed_client, test_user_b, app_client, mock_valkey,
+):
+    """他ユーザーの非公開投稿へのリプライも公開範囲がクランプされる。"""
+    # User A が unlisted ノートを作成
+    parent = await authed_client.post("/api/v1/statuses", json={
+        "content": "Unlisted parent", "visibility": "unlisted",
+    })
+    parent_id = parent.json()["id"]
+
+    # User B に切り替え
+    from unittest.mock import AsyncMock
+    mock_valkey.get = AsyncMock(return_value=str(test_user_b.id))
+    app_client.cookies.set("nekonoverse_session", "session-b")
+
+    # User B が public でリプライ → unlisted にクランプ
+    reply = await app_client.post("/api/v1/statuses", json={
+        "content": "Cross-user reply", "visibility": "public",
+        "in_reply_to_id": parent_id,
+    })
+    assert reply.status_code == 201
+    assert reply.json()["visibility"] == "unlisted"
+
+
+async def test_reply_visibility_private_alias(authed_client, mock_valkey):
+    """API入力で "private" を使ったリプライも正しくクランプされる。"""
+    # "private" エイリアスで followers-only 親ノートを作成
+    parent = await authed_client.post("/api/v1/statuses", json={
+        "content": "Private alias parent", "visibility": "private",
+    })
+    assert parent.status_code == 201
+    assert parent.json()["visibility"] == "private"  # API応答は "private"
+
+    # "private" エイリアスで同等のリプライ → そのまま通る
+    reply = await authed_client.post("/api/v1/statuses", json={
+        "content": "Private alias reply", "visibility": "private",
+        "in_reply_to_id": parent.json()["id"],
+    })
+    assert reply.status_code == 201
+    assert reply.json()["visibility"] == "private"
+
+    # public でリプライ → followers (private) にクランプ
+    wider = await authed_client.post("/api/v1/statuses", json={
+        "content": "Public reply to private parent", "visibility": "public",
+        "in_reply_to_id": parent.json()["id"],
+    })
+    assert wider.status_code == 201
+    assert wider.json()["visibility"] == "private"
+
+
 async def test_pin_status(authed_client, mock_valkey):
     create_resp = await authed_client.post("/api/v1/statuses", json={
         "content": "Pin me", "visibility": "public"
