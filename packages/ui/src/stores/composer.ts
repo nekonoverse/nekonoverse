@@ -63,6 +63,12 @@ export function moreRestrictiveVisibility(a: Visibility, b: Visibility): Visibil
   return (VISIBILITY_RANK[a] ?? 0) >= (VISIBILITY_RANK[b] ?? 0) ? a : b;
 }
 
+/** APIレスポンスの "private" を内部表現 "followers" に正規化する。 */
+export function normalizeVisibility(v: string): Visibility {
+  if (v === "private") return "followers";
+  return v as Visibility;
+}
+
 // --- 下書きストレージ ---
 
 export interface Draft {

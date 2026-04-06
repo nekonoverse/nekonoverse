@@ -17,15 +17,10 @@ import {
   defaultVisibility,
   setLastVisibility,
   moreRestrictiveVisibility,
+  normalizeVisibility,
   VISIBILITY_RANK,
   type Visibility,
 } from "@nekonoverse/ui/stores/composer";
-
-/** APIレスポンスの "private" を内部表現 "followers" に正規化する */
-function normalizeVisibility(v: string): Visibility {
-  if (v === "private") return "followers";
-  return v as Visibility;
-}
 
 const VISIBILITY_OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] = [
   { key: "public", emoji: "\u{1F310}", i18nKey: "visibility.public" },
