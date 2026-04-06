@@ -21,6 +21,12 @@ import {
   type Visibility,
 } from "@nekonoverse/ui/stores/composer";
 
+/** APIレスポンスの "private" を内部表現 "followers" に正規化する */
+function normalizeVisibility(v: string): Visibility {
+  if (v === "private") return "followers";
+  return v as Visibility;
+}
+
 const VISIBILITY_OPTIONS: { key: Visibility; emoji: string; i18nKey: string }[] = [
   { key: "public", emoji: "\u{1F310}", i18nKey: "visibility.public" },
   { key: "unlisted", emoji: "\u{1F513}", i18nKey: "visibility.unlisted" },
@@ -95,7 +101,7 @@ export default function NoteComposer(props: Props) {
   createEffect(() => {
     const targetNote = props.replyTo || props.quoteNote;
     if (targetNote) {
-      const parentVis = targetNote.visibility as Visibility;
+      const parentVis = normalizeVisibility(targetNote.visibility);
       if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
         setParentVisibility(parentVis);
         const userVis = getInitialVisibility();
@@ -130,7 +136,7 @@ export default function NoteComposer(props: Props) {
       } else {
         const targetNote = props.replyTo || props.quoteNote;
         if (targetNote) {
-          const parentVis = targetNote.visibility as Visibility;
+          const parentVis = normalizeVisibility(targetNote.visibility);
           if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
             setParentVisibility(parentVis);
             setVisibility(moreRestrictiveVisibility(getInitialVisibility(), parentVis));
