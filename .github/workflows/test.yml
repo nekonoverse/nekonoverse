@@ -81,9 +81,7 @@ jobs:
 
       - name: Install dependencies
         working-directory: frontend
-        run: |
-          rm -rf node_modules package-lock.json
-          npm install
+        run: npm ci
 
       - name: Run unit tests
         working-directory: frontend
