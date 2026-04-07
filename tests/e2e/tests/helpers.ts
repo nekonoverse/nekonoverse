@@ -133,9 +133,9 @@ function crc32(buf: Buffer): number {
  * Create a note via the API. Requires an authenticated page (call loginAsAdmin first).
  * Returns the created note's JSON response.
  */
-export async function createNote(page: Page, text: string) {
+export async function createNote(page: Page, text: string, visibility = "public") {
   const resp = await page.request.post("/api/v1/statuses", {
-    data: { content: text, visibility: "public" },
+    data: { content: text, visibility },
   });
   expect(resp.status()).toBe(201);
   return resp.json();

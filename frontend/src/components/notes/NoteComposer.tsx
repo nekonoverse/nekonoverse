@@ -17,6 +17,7 @@ import {
   defaultVisibility,
   setLastVisibility,
   moreRestrictiveVisibility,
+  normalizeVisibility,
   VISIBILITY_RANK,
   type Visibility,
 } from "@nekonoverse/ui/stores/composer";
@@ -95,7 +96,7 @@ export default function NoteComposer(props: Props) {
   createEffect(() => {
     const targetNote = props.replyTo || props.quoteNote;
     if (targetNote) {
-      const parentVis = targetNote.visibility as Visibility;
+      const parentVis = normalizeVisibility(targetNote.visibility);
       if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
         setParentVisibility(parentVis);
         const userVis = getInitialVisibility();
@@ -130,7 +131,7 @@ export default function NoteComposer(props: Props) {
       } else {
         const targetNote = props.replyTo || props.quoteNote;
         if (targetNote) {
-          const parentVis = targetNote.visibility as Visibility;
+          const parentVis = normalizeVisibility(targetNote.visibility);
           if (VISIBILITY_OPTIONS.some((o) => o.key === parentVis)) {
             setParentVisibility(parentVis);
             setVisibility(moreRestrictiveVisibility(getInitialVisibility(), parentVis));

@@ -1,3 +1,20 @@
+## [20260407-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260407-1) — 2026-04-07
+
+### セキュリティ
+
+- **依存関係のセキュリティアップデート** — vite 6.4.2 (CVE-2026-39363, Dev Server WebSocket経由の任意ファイル読み取り)
+
+### 修正
+
+- **リプライ公開範囲の自動制限バグ修正** — 非公開(followers-only)投稿にリプライする際、公開範囲が自動制限されず警告も表示されない問題を修正。APIの "private" を内部表現 "followers" に正規化 (#961)
+- **CI frontend-build 修正** — npm ci を使用しlockfileを尊重するよう変更
+
+### テスト
+
+- **リプライ公開範囲のテストカバレッジ強化** — E2E 6ケース、フロントエンドユニットテスト(normalizeVisibility, moreRestrictiveVisibility全16組合せ)、バックエンドテスト追加 (#962)
+
+---
+
 ## [20260402-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260402-1) — 2026-04-02
 
 ### セキュリティ
