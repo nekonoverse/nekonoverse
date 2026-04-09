@@ -1,3 +1,11 @@
+## [20260409-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260409-1) — 2026-04-09
+
+### セキュリティ
+
+- **依存関係のセキュリティアップデート** — cryptography 46.0.7 (CVE-2026-39892, バッファオーバーフロー)
+
+---
+
 ## [20260407-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260407-1) — 2026-04-07
 
 ### セキュリティ
