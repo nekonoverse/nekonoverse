@@ -1,3 +1,11 @@
+## [20260414-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260414-1) — 2026-04-14
+
+### セキュリティ
+
+- **依存関係のセキュリティアップデート** — Pillow 12.2.0 (CVE-2026-40192, FITS GZIP展開爆弾), pytest 9.0.3 (CVE-2025-71176, tmpdir処理の脆弱性)
+
+---
+
 ## [20260409-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260409-1) — 2026-04-09
 
 ### セキュリティ
