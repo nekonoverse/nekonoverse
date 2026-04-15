@@ -301,7 +301,14 @@ async def create_note(
     await db.commit()
 
     # 2回目のcommit後にノートを再読み込み（後続処理 + 戻り値で使用）
+    # ad-hoc属性を退避してから再取得し、再セットする
+    saved_emoji_tags = getattr(note, "_emoji_tags", None)
+    saved_hashtag_names = getattr(note, "_hashtag_names", None)
     note = await get_note_by_id(db, note_id)
+    if saved_emoji_tags is not None:
+        note._emoji_tags = saved_emoji_tags
+    if saved_hashtag_names is not None:
+        note._hashtag_names = saved_hashtag_names
 
     # コミット後に通知イベントをパブリッシュ
     for notif in pending_notifs:
