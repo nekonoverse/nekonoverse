@@ -55,6 +55,79 @@ async def _resolve_actor_emojis(
     return result
 
 
+async def _batch_resolve_actor_emojis(
+    db,
+    notifications: list,
+) -> dict:
+    """全通知の sender の display_name 内カスタム絵文字をバッチ解決する。
+
+    Returns:
+        actor_id -> list[CustomEmojiInfo] のマッピング。
+    """
+    from app.services.emoji_service import get_emojis_by_shortcodes
+
+    # ユニークな sender を収集（display_name と domain 付き）
+    senders: dict = {}  # actor_id -> (display_name, domain)
+    for n in notifications:
+        if n.sender and n.sender.id not in senders:
+            senders[n.sender.id] = (n.sender.display_name, n.sender.domain)
+
+    if not senders:
+        return {}
+
+    # 全 sender の display_name からショートコードを収集
+    # ドメインごとにグルーピング（ローカル=None、各リモートドメイン）
+    domain_shortcodes: dict[str | None, set[str]] = {}
+    actor_shortcodes: dict = {}  # actor_id -> set[str]
+    for actor_id, (display_name, domain) in senders.items():
+        if not display_name:
+            continue
+        codes = set(_SHORTCODE_RE.findall(display_name))
+        if not codes:
+            continue
+        actor_shortcodes[actor_id] = codes
+        domain_shortcodes.setdefault(domain, set()).update(codes)
+        # リモートドメインの場合、ローカルにもフォールバックする
+        if domain is not None:
+            domain_shortcodes.setdefault(None, set()).update(codes)
+
+    if not actor_shortcodes:
+        return {}
+
+    # ドメインごとに1クエリでバッチ取得
+    emoji_map: dict[tuple[str, str | None], object] = {}  # (shortcode, domain) -> emoji
+    for domain, codes in domain_shortcodes.items():
+        emojis = await get_emojis_by_shortcodes(db, codes, domain)
+        for e in emojis:
+            emoji_map[(e.shortcode, domain)] = e
+
+    # アクターごとに結果を組み立て
+    result: dict = {}
+    for actor_id, (display_name, domain) in senders.items():
+        codes = actor_shortcodes.get(actor_id)
+        if not codes:
+            result[actor_id] = []
+            continue
+
+        emojis_list: list[CustomEmojiInfo] = []
+        for sc in codes:
+            # リモートドメインの絵文字を優先、なければローカルにフォールバック
+            emoji = emoji_map.get((sc, domain)) or emoji_map.get((sc, None))
+            if emoji:
+                url = media_proxy_url(emoji.url, variant="emoji")
+                static = (
+                    media_proxy_url(emoji.static_url, variant="emoji", static=True)
+                    if emoji.static_url
+                    else media_proxy_url(emoji.url, variant="emoji", static=True)
+                )
+                emojis_list.append(
+                    CustomEmojiInfo(shortcode=emoji.shortcode, url=url, static_url=static)
+                )
+        result[actor_id] = emojis_list
+
+    return result
+
+
 async def _batch_resolve_emoji_urls(
     db,
     emoji_strings: list[str | None],
@@ -113,12 +186,17 @@ async def _notification_to_response(
     emoji_cache: dict | None = None,
     actor_id=None,
     reactions_map: dict | None = None,
+    actor_emojis_cache: dict | None = None,
 ) -> NotificationResponse:
     account = None
     if notif.sender:
-        actor_emojis = await _resolve_actor_emojis(
-            db, notif.sender.display_name, notif.sender.domain
-        )
+        # バッチキャッシュがあれば使用、なければ個別解決
+        if actor_emojis_cache is not None:
+            actor_emojis = actor_emojis_cache.get(notif.sender.id, [])
+        else:
+            actor_emojis = await _resolve_actor_emojis(
+                db, notif.sender.display_name, notif.sender.domain
+            )
         sender = notif.sender
         from app.config import settings as app_settings
         default_avatar = f"{app_settings.server_url}/default-avatar.svg"
@@ -212,6 +290,9 @@ async def get_notifications(
     emoji_strings = [n.reaction_emoji for n in notifications]
     emoji_url_map = await _batch_resolve_emoji_urls(db, emoji_strings)
 
+    # 全通知の sender 絵文字をバッチ解決（N+1 回避）
+    actor_emojis_cache = await _batch_resolve_actor_emojis(db, notifications)
+
     # Note用の絵文字キャッシュ + リアクションをバッチ構築
     notes_with_content = [n.note for n in notifications if n.note]
     emoji_cache: dict | None = None
@@ -236,6 +317,7 @@ async def get_notifications(
                 emoji_cache=emoji_cache,
                 actor_id=user.actor_id,
                 reactions_map=reactions_map,
+                actor_emojis_cache=actor_emojis_cache,
             )
         )
     return result
