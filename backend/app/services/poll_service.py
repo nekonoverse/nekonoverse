@@ -192,3 +192,84 @@ async def get_poll_data(
         "voted": voted,
         "own_votes": own_votes,
     }
+
+
+async def batch_get_poll_data(
+    db: AsyncSession,
+    notes: list[Note],
+    current_actor_id: uuid.UUID | None = None,
+) -> dict[uuid.UUID, dict]:
+    """複数の投票ノートの投票データを3クエリで一括取得する。"""
+    poll_notes = [n for n in notes if n.is_poll and n.poll_options]
+    if not poll_notes:
+        return {}
+
+    note_ids = [n.id for n in poll_notes]
+    now = datetime.now(timezone.utc)
+
+    # 1) ローカル投票ノートの choice_index ごとの投票数を1クエリで取得
+    local_ids = [n.id for n in poll_notes if n.local]
+    vote_counts_map: dict[uuid.UUID, dict[int, int]] = {}
+    if local_ids:
+        vc_result = await db.execute(
+            select(PollVote.note_id, PollVote.choice_index, func.count(PollVote.id))
+            .where(PollVote.note_id.in_(local_ids))
+            .group_by(PollVote.note_id, PollVote.choice_index)
+        )
+        for nid, choice_idx, cnt in vc_result.all():
+            vote_counts_map.setdefault(nid, {})[choice_idx] = cnt
+
+    # 2) ユニーク投票者数を1クエリで取得
+    voters_result = await db.execute(
+        select(PollVote.note_id, func.count(func.distinct(PollVote.actor_id)))
+        .where(PollVote.note_id.in_(note_ids))
+        .group_by(PollVote.note_id)
+    )
+    voters_map = dict(voters_result.all())
+
+    # 3) 現在ユーザーの投票を1クエリで取得
+    own_votes_map: dict[uuid.UUID, list[int]] = {}
+    if current_actor_id:
+        own_result = await db.execute(
+            select(PollVote.note_id, PollVote.choice_index).where(
+                PollVote.note_id.in_(note_ids),
+                PollVote.actor_id == current_actor_id,
+            )
+        )
+        for nid, choice_idx in own_result.all():
+            own_votes_map.setdefault(nid, []).append(choice_idx)
+
+    # 結果を組み立て
+    result: dict[uuid.UUID, dict] = {}
+    for note in poll_notes:
+        options = note.poll_options or []
+        if note.local:
+            vc = vote_counts_map.get(note.id, {})
+            response_options = [
+                {"title": opt.get("title", ""), "votes_count": vc.get(i, 0)}
+                for i, opt in enumerate(options)
+            ]
+            votes_count = sum(vc.values())
+        else:
+            response_options = [
+                {"title": opt.get("title", ""), "votes_count": opt.get("votes_count", 0)}
+                for opt in options
+            ]
+            votes_count = sum(opt.get("votes_count", 0) for opt in options)
+
+        voters_count = voters_map.get(note.id, 0)
+        expired = bool(note.poll_expires_at and note.poll_expires_at < now)
+        own_votes = own_votes_map.get(note.id, [])
+
+        result[note.id] = {
+            "id": str(note.id),
+            "expires_at": note.poll_expires_at.isoformat() if note.poll_expires_at else None,
+            "expired": expired,
+            "multiple": note.poll_multiple,
+            "votes_count": votes_count,
+            "voters_count": voters_count,
+            "options": response_options,
+            "voted": len(own_votes) > 0,
+            "own_votes": own_votes,
+        }
+    return result
