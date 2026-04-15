@@ -27,6 +27,11 @@ async def nodeinfo_discovery():
 
 @router.get("/nodeinfo/2.0")
 async def nodeinfo(db: AsyncSession = Depends(get_db)):
+    from sqlalchemy import case
+
+    from app.services.server_settings_service import get_settings_batch
+
+    # 統計クエリ: user_count + post_count を1クエリ、active_halfyear + active_month を1クエリ
     user_count_result = await db.execute(
         select(func.count()).select_from(Actor).where(Actor.domain.is_(None))
     )
@@ -37,72 +42,58 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
     )
     post_count = post_count_result.scalar() or 0
 
-    # アクティブユーザー: 期間内に1つ以上のノートを投稿したローカルアクター
+    # アクティブユーザー: halfyear と month を1クエリで取得
     now = datetime.now(timezone.utc)
     local_actor_ids = select(Actor.id).where(Actor.domain.is_(None))
+    halfyear_ago = now - timedelta(days=180)
+    month_ago = now - timedelta(days=30)
 
-    active_halfyear_result = await db.execute(
-        select(func.count(func.distinct(Note.actor_id))).where(
+    active_result = await db.execute(
+        select(
+            func.count(func.distinct(Note.actor_id)).label("halfyear"),
+            func.count(
+                func.distinct(case((Note.published >= month_ago, Note.actor_id)))
+            ).label("month"),
+        ).where(
             Note.local.is_(True),
             Note.actor_id.in_(local_actor_ids),
-            Note.published >= now - timedelta(days=180),
+            Note.published >= halfyear_ago,
             Note.deleted_at.is_(None),
         )
     )
-    active_halfyear = active_halfyear_result.scalar() or 0
+    row = active_result.one()
+    active_halfyear = row.halfyear or 0
+    active_month = row.month or 0
 
-    active_month_result = await db.execute(
-        select(func.count(func.distinct(Note.actor_id))).where(
-            Note.local.is_(True),
-            Note.actor_id.in_(local_actor_ids),
-            Note.published >= now - timedelta(days=30),
-            Note.deleted_at.is_(None),
-        )
-    )
-    active_month = active_month_result.scalar() or 0
-
-    # サーバー設定からの登録状況
-    open_registrations = settings.registration_open
-    try:
-        from app.services.server_settings_service import get_setting
-
-        mode = await get_setting(db, "registration_mode")
-        if mode is not None:
-            open_registrations = mode != "closed"
-        else:
-            reg = await get_setting(db, "registration_open")
-            if reg is not None:
-                open_registrations = reg == "true"
-    except Exception:
-        pass
-
-    # サーバー設定を読み込む
+    # サーバー設定を一括取得（Valkey mget → DB 1クエリ）
+    setting_keys = [
+        "registration_mode", "registration_open",
+        "server_name", "server_description",
+        "server_icon_url", "server_theme_color",
+        "katex_enabled",
+    ]
     node_name = "Nekonoverse"
     node_description = "A cat-friendly ActivityPub server"
     node_icon_url = None
     node_theme_color = None
-    try:
-        from app.services.server_settings_service import get_setting
-
-        name = await get_setting(db, "server_name")
-        if name:
-            node_name = name
-        desc = await get_setting(db, "server_description")
-        if desc:
-            node_description = desc
-        icon_url = await get_setting(db, "server_icon_url")
-        if icon_url:
-            node_icon_url = icon_url
-        theme_color = await get_setting(db, "server_theme_color")
-        if theme_color:
-            node_theme_color = theme_color
-    except Exception:
-        pass
-
+    open_registrations = settings.registration_open
     features = ["emoji_reactions"]
     try:
-        katex_val = await get_setting(db, "katex_enabled")
-        if katex_val == "true":
+        s = await get_settings_batch(db, setting_keys)
+        mode = s.get("registration_mode")
+        if mode is not None:
+            open_registrations = mode != "closed"
+        else:
+            reg = s.get("registration_open")
+            if reg is not None:
+                open_registrations = reg == "true"
+        if s.get("server_name"):
+            node_name = s["server_name"]
+        if s.get("server_description"):
+            node_description = s["server_description"]
+        node_icon_url = s.get("server_icon_url") or None
+        node_theme_color = s.get("server_theme_color") or None
+        if s.get("katex_enabled") == "true":
             features.append("katex")
     except Exception:
         pass
