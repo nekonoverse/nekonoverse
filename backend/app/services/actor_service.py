@@ -62,6 +62,44 @@ async def get_actor_by_ap_id(db: AsyncSession, ap_id: str) -> Actor | None:
     return None
 
 
+async def get_actors_by_ap_ids(db: AsyncSession, ap_ids: list[str]) -> dict[str, Actor]:
+    """複数の AP ID からアクターを一括取得する。
+
+    Returns:
+        ap_id -> Actor のマッピング。見つからないAPIDは含まれない。
+    """
+    if not ap_ids:
+        return {}
+
+    result = await db.execute(select(Actor).where(Actor.ap_id.in_(ap_ids)))
+    actors_map = {a.ap_id: a for a in result.scalars().all()}
+
+    # フォールバック: 見つからないap_idがローカルアクターURLの形式なら、ユーザー名で検索
+    from urllib.parse import urlparse
+
+    missing_local: dict[str, str] = {}  # ap_id -> username
+    for ap_id in ap_ids:
+        if ap_id in actors_map:
+            continue
+        parsed = urlparse(ap_id)
+        if parsed.hostname == settings.domain and parsed.path.startswith("/users/"):
+            username = parsed.path.split("/users/", 1)[1].rstrip("/")
+            if username:
+                missing_local[ap_id] = username
+
+    if missing_local:
+        usernames = [u.lower() for u in missing_local.values()]
+        local_result = await db.execute(
+            select(Actor).where(Actor.username.in_(usernames), Actor.domain.is_(None))
+        )
+        local_by_username = {a.username: a for a in local_result.scalars().all()}
+        for ap_id, username in missing_local.items():
+            if username.lower() in local_by_username:
+                actors_map[ap_id] = local_by_username[username.lower()]
+
+    return actors_map
+
+
 async def get_actor_by_username(
     db: AsyncSession,
     username: str,
