@@ -4,6 +4,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.mastodon.statuses import _to_mastodon_datetime
@@ -458,7 +459,9 @@ async def _credential_account_response(user: User, db: AsyncSession) -> dict:
         "note": actor.summary or "",
         "uri": actor.ap_id,
         "avatar": media_proxy_url(actor.avatar_url, variant="avatar") or DEFAULT_AVATAR_URL,
-        "avatar_static": media_proxy_url(actor.avatar_url, variant="avatar", static=True) or DEFAULT_AVATAR_URL,
+        "avatar_static": media_proxy_url(
+            actor.avatar_url, variant="avatar", static=True,
+        ) or DEFAULT_AVATAR_URL,
         "header": media_proxy_url(actor.header_url) or "",
         "header_static": media_proxy_url(actor.header_url) or "",
         "url": f"{settings.server_url}/@{actor.username}",

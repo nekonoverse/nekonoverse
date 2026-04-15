@@ -24,7 +24,10 @@ class NoteCreateRequest(BaseModel):
     model_config = ConfigDict(populate_by_name=True)
 
     content: str = Field(default="", max_length=5000, alias="status")
-    visibility: str = Field(default="public", pattern=r"^(public|unlisted|followers|private|direct)$")
+    visibility: str = Field(
+        default="public",
+        pattern=r"^(public|unlisted|followers|private|direct)$",
+    )
     sensitive: bool = False
     spoiler_text: str | None = Field(default=None, max_length=500)
     in_reply_to_id: uuid.UUID | None = None

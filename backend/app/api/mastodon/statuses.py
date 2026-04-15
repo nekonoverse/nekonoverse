@@ -8,18 +8,6 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-logger = logging.getLogger(__name__)
-
-
-def _to_mastodon_datetime(dt: datetime | None) -> str:
-    """datetime を Mastodon 互換の ISO 8601 文字列（Z サフィックス付き）にフォーマットする。"""
-    if not dt:
-        return ""
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
-
-
 from app.dependencies import get_current_user, get_db, get_optional_user, require_oauth_scope
 from app.models.note import Note
 from app.models.user import User
@@ -48,6 +36,17 @@ from app.services.note_service import (
     get_reaction_summary,
 )
 from app.utils.media_proxy import media_proxy_url
+
+logger = logging.getLogger(__name__)
+
+
+def _to_mastodon_datetime(dt: datetime | None) -> str:
+    """datetime を Mastodon 互換の ISO 8601 文字列（Z サフィックス付き）にフォーマットする。"""
+    if not dt:
+        return ""
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.strftime("%Y-%m-%dT%H:%M:%S.") + f"{dt.microsecond // 1000:03d}Z"
 
 _SHORTCODE_RE = re.compile(r":([a-zA-Z0-9_]+):")
 
@@ -697,16 +696,17 @@ async def create_status(
 ):
     # in_reply_to_id の存在を検証
     visibility = "followers" if body.visibility == "private" else body.visibility
+    parent_note = None
     if body.in_reply_to_id:
-        parent = await get_note_by_id(db, body.in_reply_to_id)
-        if not parent:
+        parent_note = await get_note_by_id(db, body.in_reply_to_id)
+        if not parent_note:
             raise HTTPException(status_code=404, detail="Reply target not found")
         # リプライの公開範囲は親ノートより広くできない
         vis_rank = {"public": 0, "unlisted": 1, "followers": 2, "direct": 3}
-        parent_rank = vis_rank.get(parent.visibility, 0)
+        parent_rank = vis_rank.get(parent_note.visibility, 0)
         reply_rank = vis_rank.get(visibility, 0)
         if reply_rank < parent_rank:
-            visibility = parent.visibility
+            visibility = parent_note.visibility
 
     poll_options = None
     poll_expires_in = None
@@ -730,11 +730,28 @@ async def create_status(
             poll_options=poll_options,
             poll_expires_in=poll_expires_in,
             poll_multiple=poll_multiple,
+            parent_note=parent_note,
         )
     except Exception as e:
         logger.exception("Failed to create note")
         raise HTTPException(status_code=422, detail=str(e))
-    return await note_to_response(note, db=db)
+    # 新規ノートの情報からキャッシュを構築し、note_to_response での追加クエリを回避
+    from types import SimpleNamespace
+
+    emoji_cache: dict = {}
+    if hasattr(note, "_emoji_tags") and note._emoji_tags:
+        for et in note._emoji_tags:
+            emoji_cache[(et["shortcode"], None)] = SimpleNamespace(
+                shortcode=et["shortcode"], url=et["url"], static_url=None
+            )
+    hashtags_cache = {note.id: getattr(note, "_hashtag_names", None) or []}
+    return await note_to_response(
+        note,
+        db=db,
+        emoji_cache=emoji_cache,
+        hashtags_cache=hashtags_cache,
+        cards_cache={},  # 新規ノートにはプレビューカードがない
+    )
 
 
 @router.get("/{note_id}", response_model=NoteResponse)

@@ -1,5 +1,5 @@
-from app.models.announcement import Announcement, AnnouncementDismissal
 from app.models.actor import Actor
+from app.models.announcement import Announcement, AnnouncementDismissal
 from app.models.bookmark import Bookmark
 from app.models.custom_emoji import CustomEmoji
 from app.models.data_export import DataExport
@@ -19,12 +19,12 @@ from app.models.notification import Notification
 from app.models.oauth import OAuthApplication, OAuthAuthorizationCode, OAuthToken
 from app.models.passkey import PasskeyCredential
 from app.models.pinned_note import PinnedNote
+from app.models.poll_vote import PollVote
 from app.models.preview_card import PreviewCard
 from app.models.push_subscription import PushSubscription
-from app.models.poll_vote import PollVote
 from app.models.reaction import Reaction
-from app.models.role import Role
 from app.models.report import Report
+from app.models.role import Role
 from app.models.server_setting import ServerSetting
 from app.models.user import User
 from app.models.user_block import UserBlock

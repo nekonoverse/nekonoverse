@@ -9,7 +9,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from urllib.parse import urlencode, urlparse
 
-from fastapi import APIRouter, Depends, Form, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -635,7 +635,8 @@ def _render_oob_page(*, code: str) -> HTMLResponse:
     """OOB フローの認可コードを表示するページをレンダリングする。"""
     esc = html_mod.escape
     return HTMLResponse(f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Authorization Code</title>
 <style>
 body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0 16px; }}
@@ -669,7 +670,8 @@ def _render_totp_form(
 
     return HTMLResponse(
         f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Two-Factor Authentication</title>
 <style>
 body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0 16px; }}
@@ -744,7 +746,8 @@ def _render_login_form(
 
     return HTMLResponse(
         f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Authorize {esc(app_name)}</title>
 <style>
 body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0 16px; }}
@@ -849,7 +852,8 @@ def _render_consent_form(
 
     return HTMLResponse(
         f"""<!DOCTYPE html>
-<html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Authorize {esc(app_name)}</title>
 <style>
 body {{ font-family: sans-serif; max-width: 400px; margin: 40px auto; padding: 0 16px; }}
