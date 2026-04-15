@@ -517,7 +517,8 @@ async def _get_excluded_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.
             (UserMute.expires_at.is_(None)) | (UserMute.expires_at > now),
         ),
     )
-    result = await db.execute(select(stmt.c.target_id))
+    subq = stmt.subquery()
+    result = await db.execute(select(subq.c.target_id))
     return list({row[0] for row in result.all()})
 
 
@@ -733,8 +734,8 @@ async def get_home_timeline(
         select(Note)
         .options(*_note_load_options())
         .where(
-            Note.actor_id.in_(select(following_sq.c.id)),
-            Note.actor_id.notin_(select(excluded_sq.c.id)),
+            Note.actor_id.in_(select(following_sq.subquery().c.id)),
+            Note.actor_id.notin_(select(excluded_sq.subquery().c.id)),
             Note.actor_id.notin_(exclusive_sq),
             Note.deleted_at.is_(None),
             Note.visibility.in_(["public", "unlisted", "followers"]),
