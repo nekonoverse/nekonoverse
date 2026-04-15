@@ -679,6 +679,8 @@ async def notes_to_responses(
     for n in notes:
         if hasattr(n, "renote_of") and n.renote_of:
             all_poll_notes.append(n.renote_of)
+            if hasattr(n.renote_of, "quoted_note") and n.renote_of.quoted_note:
+                all_poll_notes.append(n.renote_of.quoted_note)
         if hasattr(n, "quoted_note") and n.quoted_note:
             all_poll_notes.append(n.quoted_note)
     poll_cache = await batch_get_poll_data(db, all_poll_notes, actor_id)
