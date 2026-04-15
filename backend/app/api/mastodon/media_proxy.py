@@ -2,7 +2,7 @@ from urllib.parse import urljoin, urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import Response
 
 from app.utils.media_proxy import verify_proxy_hmac
 from app.utils.network import is_private_host as _is_private_host
@@ -102,7 +102,10 @@ async def proxy_media(
                     # 相対URLを絶対URLに解決
                     resolved = urljoin(current_url, location)
                     redirect_parsed = urlparse(resolved)
-                    if redirect_parsed.scheme not in ("http", "https") or not redirect_parsed.hostname:
+                    if (
+                        redirect_parsed.scheme not in ("http", "https")
+                        or not redirect_parsed.hostname
+                    ):
                         raise HTTPException(status_code=403, detail="Invalid redirect URL")
                     if _is_private_host(redirect_parsed.hostname):
                         raise HTTPException(status_code=403, detail="Forbidden redirect host")
@@ -134,7 +137,11 @@ async def proxy_media(
     from app.config import settings
 
     needs_transform = any([avatar, emoji, preview, static, badge])
-    if needs_transform and content_type.startswith("image/") and settings.media_proxy_transform_enabled:
+    if (
+        needs_transform
+        and content_type.startswith("image/")
+        and settings.media_proxy_transform_enabled
+    ):
         body, content_type = await _transform_image(
             body, avatar=avatar, emoji=emoji, preview=preview,
             static=static, badge=badge,

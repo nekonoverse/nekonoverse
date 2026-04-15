@@ -14,11 +14,6 @@ from app.models.follow import Follow
 from app.models.moderation_log import ModerationLog
 from app.models.note import Note
 from app.models.user import User
-from app.schemas.announcement import (
-    AnnouncementAdminResponse,
-    AnnouncementCreateRequest,
-    AnnouncementUpdateRequest,
-)
 from app.schemas.admin import (
     AdminEmojiResponse,
     AdminEmojiUpdate,
@@ -45,6 +40,11 @@ from app.schemas.admin import (
     ServerSettingsResponse,
     ServerSettingsUpdate,
     SystemStatsResponse,
+)
+from app.schemas.announcement import (
+    AnnouncementAdminResponse,
+    AnnouncementCreateRequest,
+    AnnouncementUpdateRequest,
 )
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
@@ -780,7 +780,11 @@ async def import_remote_emoji_by_shortcode(
     user: User = Depends(get_permitted_staff("emoji")),
     db: AsyncSession = Depends(get_db),
 ):
-    from app.services.emoji_service import get_custom_emoji, import_remote_emoji_to_local, update_emoji
+    from app.services.emoji_service import (
+        get_custom_emoji,
+        import_remote_emoji_to_local,
+        update_emoji,
+    )
 
     remote = await get_custom_emoji(db, body.shortcode, body.domain)
     if not remote:
@@ -1605,6 +1609,8 @@ async def create_announcement(
     """新しいお知らせを作成する。"""
     from app.services.announcement_service import (
         create_announcement as _create,
+    )
+    from app.services.announcement_service import (
         publish_announcement_event,
     )
 
@@ -1647,8 +1653,10 @@ async def update_announcement(
 ):
     """お知らせを更新する。"""
     from app.services.announcement_service import (
-        update_announcement as _update,
         publish_announcement_event,
+    )
+    from app.services.announcement_service import (
+        update_announcement as _update,
     )
 
     updates = body.model_dump(exclude_unset=True)

@@ -20,7 +20,8 @@ class Settings(BaseSettings):
     skip_ssl_verify: bool = False
     allow_private_networks: bool = False  # SSRF 保護を無効化 (連合テスト用)
     face_detect_url: str | None = None
-    face_detect_uds: str | None = None  # face-detect の UDS パス (例: /var/run/nekonoverse-face-detect/uvicorn.sock)
+    # face-detect の UDS パス (例: /var/run/nekonoverse-face-detect/uvicorn.sock)
+    face_detect_uds: str | None = None
     media_proxy_transform_url: str | None = None
     media_proxy_transform_uds: str | None = None
     summary_proxy_url: str | None = None
@@ -139,7 +140,9 @@ if not settings.debug and settings.secret_key in _INSECURE_KEYS:
 
     print(
         "FATAL: SECRET_KEY is not configured. "
-        "Set a strong random value in .env (e.g. python -c \"import secrets; print(secrets.token_hex(32))\")",
+        "Set a strong random value in .env "
+        "(e.g. python -c \"import secrets;"
+        " print(secrets.token_hex(32))\")",
         file=sys.stderr,
     )
     sys.exit(1)

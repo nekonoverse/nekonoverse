@@ -98,7 +98,8 @@ def render_password_reset_email(username: str, reset_url: str) -> tuple[str, str
     """パスワードリセット用メールをレンダリングする。(html, text) を返す。"""
     html_body = f"""\
   <p>Hello <strong>{username}</strong>,</p>
-  <p>A password reset was requested for your account. Click the button below to set a new password:</p>
+  <p>A password reset was requested for your account. \
+Click the button below to set a new password:</p>
   <p style="text-align: center; margin: 30px 0;">
     <a href="{reset_url}"
        style="background: #6364ff; color: white; padding: 12px 30px;

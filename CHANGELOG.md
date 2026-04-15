@@ -1,3 +1,15 @@
+## [20260415-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260415-1) — 2026-04-15
+
+### パフォーマンス
+
+- **投稿作成APIのクエリ最適化** — `create_note()` の重複・N+1クエリを削減。親ノート重複クエリ除去（4回→1回）、メディアファイル・カスタム絵文字のバッチ取得、メンションアクターの再利用、`note_to_response` キャッシュ活用により推定クエリ数を約半減 (#968)
+
+### 改善
+
+- **CI に ruff lint チェック追加** — バックエンドの全コードに対する ruff lint ステップを CI に追加。既存の lint エラー（E402/E501/I001/F401/F811/F841）も全修正 (#969)
+
+---
+
 ## [20260414-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260414-1) — 2026-04-14
 
 ### セキュリティ

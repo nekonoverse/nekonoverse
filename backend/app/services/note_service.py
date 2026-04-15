@@ -56,6 +56,7 @@ async def create_note(
     poll_options: list[str] | None = None,
     poll_expires_in: int | None = None,
     poll_multiple: bool = False,
+    parent_note: "Note | None" = None,
 ) -> Note:
     # CW付きノートは自動的にsensitiveにする (Mastodon互換)
     if spoiler_text and not sensitive:
@@ -81,8 +82,10 @@ async def create_note(
     # direct: to/ccはメンション先アクターのみ (後で処理)
 
     # メンションを抽出してcc/toに追加
+    # mention_actors: 解決済みアクターを保持し、AP配送・通知で再利用する
     mentions = extract_mentions(content)
     mention_data = []
+    mention_actors: list = []
     for username, domain in mentions:
         from app.services.actor_service import actor_uri, get_actor_by_username
 
@@ -105,6 +108,7 @@ async def create_note(
                     "domain": mentioned_actor.domain,
                 }
             )
+            mention_actors.append(mentioned_actor)
             if visibility == "direct":
                 if mentioned_uri not in to_list:
                     to_list.append(mentioned_uri)
@@ -113,21 +117,23 @@ async def create_note(
                     cc_list.append(mentioned_uri)
 
     # リプライ先の解決: AP ID取得 + 作者をcc/toに追加 (AP配送に必要)
+    # parent は後続の返信数インクリメント、AP配送、通知でも再利用する
     in_reply_to_ap_id = None
-    if in_reply_to_id:
+    parent: Note | None = parent_note
+    if in_reply_to_id and not parent:
         parent = await get_note_by_id(db, in_reply_to_id)
-        if parent:
-            in_reply_to_ap_id = parent.ap_id
-            if parent.actor:
-                from app.services.actor_service import actor_uri
+    if parent:
+        in_reply_to_ap_id = parent.ap_id
+        if parent.actor:
+            from app.services.actor_service import actor_uri
 
-                parent_uri = actor_uri(parent.actor)
-                if visibility == "direct":
-                    if parent_uri not in to_list:
-                        to_list.append(parent_uri)
-                else:
-                    if parent_uri not in cc_list:
-                        cc_list.append(parent_uri)
+            parent_uri = actor_uri(parent.actor)
+            if visibility == "direct":
+                if parent_uri not in to_list:
+                    to_list.append(parent_uri)
+            else:
+                if parent_uri not in cc_list:
+                    cc_list.append(parent_uri)
 
     html_content = text_to_html(content)
 
@@ -170,20 +176,18 @@ async def create_note(
             note.poll_expires_at = datetime.now(timezone.utc) + timedelta(seconds=poll_expires_in)
     db.add(note)
 
-    # 親ノートの返信数をインクリメント
-    if in_reply_to_id:
-        parent = await get_note_by_id(db, in_reply_to_id)
-        if parent:
-            parent.replies_count = parent.replies_count + 1
+    # 親ノートの返信数をインクリメント (L118 で取得済みの parent を再利用)
+    if parent:
+        parent.replies_count = parent.replies_count + 1
 
-    # メディアファイルを添付
+    # メディアファイルを添付 (バッチ取得で1クエリに統合)
     if media_ids:
         from app.models.note_attachment import NoteAttachment
-        from app.services.drive_service import get_drive_file
+        from app.services.drive_service import get_drive_files_by_ids
 
-        for position, file_id in enumerate(media_ids[:4]):
-            drive_file = await get_drive_file(db, file_id)
-            if drive_file and drive_file.owner_id == user.id:
+        drive_files = await get_drive_files_by_ids(db, media_ids[:4])
+        for position, drive_file in enumerate(drive_files):
+            if drive_file.owner_id == user.id:
                 attachment = NoteAttachment(
                     note_id=note_id,
                     drive_file_id=drive_file.id,
@@ -205,30 +209,29 @@ async def create_note(
         await upsert_ht(db, note_id, hashtag_names)
         note._hashtag_names = hashtag_names
 
-    # AP連合タグ用にカスタム絵文字ショートコードを抽出
+    # AP連合タグ用にカスタム絵文字ショートコードを抽出 (バッチ取得で1クエリに統合)
     shortcodes = set(_EMOJI_SHORTCODE_RE.findall(content))
     if shortcodes:
-        from app.services.emoji_service import get_custom_emoji
+        from app.services.emoji_service import get_emojis_by_shortcodes
 
-        emoji_tags = []
-        for sc in shortcodes:
-            emoji = await get_custom_emoji(db, sc, None)
-            if emoji and not emoji.local_only:
-                emoji_tags.append(
-                    {
-                        "shortcode": emoji.shortcode,
-                        "url": emoji.url,
-                        "aliases": emoji.aliases,
-                        "license": emoji.license,
-                        "is_sensitive": emoji.is_sensitive,
-                        "author": emoji.author,
-                        "description": emoji.description,
-                        "copy_permission": emoji.copy_permission,
-                        "usage_info": emoji.usage_info,
-                        "is_based_on": emoji.is_based_on,
-                        "category": emoji.category,
-                    }
-                )
+        emojis = await get_emojis_by_shortcodes(db, shortcodes, None)
+        emoji_tags = [
+            {
+                "shortcode": emoji.shortcode,
+                "url": emoji.url,
+                "aliases": emoji.aliases,
+                "license": emoji.license,
+                "is_sensitive": emoji.is_sensitive,
+                "author": emoji.author,
+                "description": emoji.description,
+                "copy_permission": emoji.copy_permission,
+                "usage_info": emoji.usage_info,
+                "is_based_on": emoji.is_based_on,
+                "category": emoji.category,
+            }
+            for emoji in emojis
+            if not emoji.local_only
+        ]
         if emoji_tags:
             note._emoji_tags = emoji_tags
 
@@ -246,23 +249,17 @@ async def create_note(
             follower_inboxes = await get_follower_inboxes(db, actor.id)
             inboxes.update(follower_inboxes)
 
-        # メンション先リモートユーザーへの配送
-        for m in mention_data:
-            if m.get("domain"):
-                from app.services.actor_service import get_actor_by_username
+        # メンション先リモートユーザーへの配送 (解決済みアクターを再利用)
+        for mentioned in mention_actors:
+            if mentioned.domain and mentioned.inbox_url:
+                inbox = mentioned.shared_inbox_url or mentioned.inbox_url
+                inboxes.add(inbox)
 
-                mentioned = await get_actor_by_username(db, m["username"], m["domain"])
-                if mentioned and mentioned.inbox_url:
-                    inbox = mentioned.shared_inbox_url or mentioned.inbox_url
-                    inboxes.add(inbox)
-
-        # リプライ先のリモートユーザーへの配送
-        if in_reply_to_id:
-            parent = await get_note_by_id(db, in_reply_to_id)
-            if parent and parent.actor and parent.actor.domain:
-                inbox = parent.actor.shared_inbox_url or parent.actor.inbox_url
-                if inbox:
-                    inboxes.add(inbox)
+        # リプライ先のリモートユーザーへの配送 (parent は既に取得済み)
+        if parent and parent.actor and parent.actor.domain:
+            inbox = parent.actor.shared_inbox_url or parent.actor.inbox_url
+            if inbox:
+                inboxes.add(inbox)
 
         for inbox_url in inboxes:
             await enqueue_delivery(db, actor.id, inbox_url, activity)
@@ -273,28 +270,24 @@ async def create_note(
     pending_notifs = []
 
     # リプライ先アクターを特定し、メンション+リプライの重複通知を防止
+    # parent は既に取得済み
     reply_recipient_id = None
-    if in_reply_to_id:
-        parent = await get_note_by_id(db, in_reply_to_id)
-        if parent and parent.actor.is_local:
-            reply_recipient_id = parent.actor_id
-            notif = await create_notification(
-                db,
-                "reply",
-                parent.actor_id,
-                actor.id,
-                note_id,
-            )
-            if notif:
-                pending_notifs.append(notif)
+    if parent and parent.actor.is_local:
+        reply_recipient_id = parent.actor_id
+        notif = await create_notification(
+            db,
+            "reply",
+            parent.actor_id,
+            actor.id,
+            note_id,
+        )
+        if notif:
+            pending_notifs.append(notif)
 
-    # メンション通知 (ローカルアクターのみ、リプライ先はスキップ)
-    for m in mention_data:
-        if not m.get("domain"):  # local actor
-            from app.services.actor_service import get_actor_by_username
-
-            mentioned = await get_actor_by_username(db, m["username"], None)
-            if mentioned and mentioned.id != reply_recipient_id:
+    # メンション通知 (ローカルアクターのみ、リプライ先はスキップ、解決済みアクターを再利用)
+    for mentioned in mention_actors:
+        if not mentioned.domain:  # local actor
+            if mentioned.id != reply_recipient_id:
                 notif = await create_notification(
                     db,
                     "mention",
@@ -306,6 +299,16 @@ async def create_note(
                     pending_notifs.append(notif)
 
     await db.commit()
+
+    # 2回目のcommit後にノートを再読み込み（後続処理 + 戻り値で使用）
+    # ad-hoc属性を退避してから再取得し、再セットする
+    saved_emoji_tags = getattr(note, "_emoji_tags", None)
+    saved_hashtag_names = getattr(note, "_hashtag_names", None)
+    note = await get_note_by_id(db, note_id)
+    if saved_emoji_tags is not None:
+        note._emoji_tags = saved_emoji_tags
+    if saved_hashtag_names is not None:
+        note._hashtag_names = saved_hashtag_names
 
     # コミット後に通知イベントをパブリッシュ
     for notif in pending_notifs:
@@ -378,8 +381,7 @@ async def create_note(
     except Exception:
         pass
 
-    # 配送コミット後に最新の状態を取得するため再クエリ
-    return await get_note_by_id(db, note_id)
+    return note
 
 
 _URL_RE = re.compile(r"https?://[^\s<>\"')\]]+")
@@ -1027,9 +1029,10 @@ async def fetch_remote_note(
                     NA.note_id == existing.id,
                     NA.remote_url.isnot(None),
                     NA.remote_focal_x.is_(None),
-                    NA.remote_mime_type.in_(
-                        ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
-                    ),
+                    NA.remote_mime_type.in_([
+                        "image/jpeg", "image/png", "image/webp",
+                        "image/gif", "image/avif", "image/apng",
+                    ]),
                 )
             )
             att_ids = [row[0] for row in att_rows.all()]
@@ -1349,9 +1352,10 @@ async def fetch_remote_note(
                 NA.note_id == note.id,
                 NA.remote_url.isnot(None),
                 NA.remote_focal_x.is_(None),
-                NA.remote_mime_type.in_(
-                    ["image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"]
-                ),
+                NA.remote_mime_type.in_([
+                    "image/jpeg", "image/png", "image/webp",
+                    "image/gif", "image/avif", "image/apng",
+                ]),
             )
         )
         att_ids = [row[0] for row in att_rows.all()]

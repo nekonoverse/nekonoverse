@@ -237,7 +237,8 @@ async def upload_drive_file(
     _validate_magic_bytes(data, mime_type)
 
     # 保存前にメタデータを除去 (プライバシー保護の多層防御、画像のみ)
-    # media-proxy-rs が有効な場合はデコード→再エンコードで全フォーマットのメタデータ + LSBステガノを除去
+    # media-proxy-rs が有効な場合はデコード→再エンコードで
+    # 全フォーマットのメタデータ + LSBステガノを除去
     # 無効 or 失敗時は従来の strip_exif にフォールバック (JPEG/PNGのみ)
     if mime_type.startswith("image/"):
         transformed = False
@@ -295,6 +296,19 @@ async def upload_drive_file(
 async def get_drive_file(db: AsyncSession, file_id: uuid.UUID) -> DriveFile | None:
     result = await db.execute(select(DriveFile).where(DriveFile.id == file_id))
     return result.scalar_one_or_none()
+
+
+async def get_drive_files_by_ids(
+    db: AsyncSession, file_ids: list[uuid.UUID]
+) -> list[DriveFile]:
+    """複数のドライブファイルを1クエリで取得する。"""
+    if not file_ids:
+        return []
+    result = await db.execute(select(DriveFile).where(DriveFile.id.in_(file_ids)))
+    files = list(result.scalars().all())
+    # 入力順序を保持するためにIDでインデックス化
+    file_map = {f.id: f for f in files}
+    return [file_map[fid] for fid in file_ids if fid in file_map]
 
 
 async def delete_drive_file(db: AsyncSession, drive_file: DriveFile) -> None:

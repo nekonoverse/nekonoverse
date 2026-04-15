@@ -7,10 +7,10 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.dependencies import get_current_user, get_db
 from app.models.custom_emoji import CustomEmoji
 from app.models.user import User
-from app.api.mastodon.statuses import _to_mastodon_datetime
 from app.schemas.note import CustomEmojiInfo, NoteActorResponse
 from app.schemas.notification import NotificationResponse
 from app.utils.media_proxy import media_proxy_url
@@ -121,7 +121,11 @@ async def _notification_to_response(
         )
         sender = notif.sender
         from app.config import settings as app_settings
-        avatar = media_proxy_url(sender.avatar_url, variant="avatar") or f"{app_settings.server_url}/default-avatar.svg"
+        default_avatar = f"{app_settings.server_url}/default-avatar.svg"
+        avatar = (
+            media_proxy_url(sender.avatar_url, variant="avatar")
+            or default_avatar
+        )
         header = media_proxy_url(sender.header_url) or ""
         acct = (
             f"{sender.username}@{sender.domain}" if sender.domain else sender.username

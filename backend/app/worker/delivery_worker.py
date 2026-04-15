@@ -101,11 +101,11 @@ async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Act
 
 async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:
     """activity をリモート Inbox に配送する。"""
-    from app.config import settings as app_settings
-    from app.utils.network import is_private_host
-
     # SSRF防止: 内部ネットワークへの配送をブロック
     from urllib.parse import urlparse
+
+    from app.config import settings as app_settings
+    from app.utils.network import is_private_host
 
     parsed = urlparse(job.target_inbox_url)
     if not app_settings.allow_private_networks and is_private_host(parsed.hostname or ""):

@@ -2,27 +2,38 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query
 
-_DEFAULT_FAVICON_SVG = b"""\
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 180 180" fill="none">
-  <rect width="180" height="180" rx="36" fill="#f5e6f0"/>
-  <path d="M45 73 L62 28 L79 67Z" fill="#f9a8d4"/>
-  <path d="M135 73 L118 28 L101 67Z" fill="#f9a8d4"/>
-  <path d="M50 70 L62 37 L73 67Z" fill="#fce4ec"/>
-  <path d="M130 70 L118 37 L107 67Z" fill="#fce4ec"/>
-  <circle cx="90" cy="101" r="42" fill="#fff5f5"/>
-  <circle cx="62" cy="112" r="8" fill="#fbb4c8" opacity="0.5"/>
-  <circle cx="118" cy="112" r="8" fill="#fbb4c8" opacity="0.5"/>
-  <ellipse cx="73" cy="95" rx="6" ry="7" fill="#5b4a6a"/>
-  <ellipse cx="107" cy="95" rx="6" ry="7" fill="#5b4a6a"/>
-  <circle cx="75" cy="93" r="2" fill="#fff"/>
-  <circle cx="109" cy="93" r="2" fill="#fff"/>
-  <path d="M87 107 L90 111 L93 107Z" fill="#f9a8d4"/>
-  <path d="M82 114 Q90 121 98 114" stroke="#c48b9f" stroke-width="2" fill="none" stroke-linecap="round"/>
-  <line x1="42" y1="104" x2="65" y2="107" stroke="#d4a0b9" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="42" y1="112" x2="65" y2="112" stroke="#d4a0b9" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="115" y1="107" x2="138" y2="104" stroke="#d4a0b9" stroke-width="1.5" stroke-linecap="round"/>
-  <line x1="115" y1="112" x2="138" y2="112" stroke="#d4a0b9" stroke-width="1.5" stroke-linecap="round"/>
-</svg>"""
+_DEFAULT_FAVICON_SVG = (
+    b'<svg xmlns="http://www.w3.org/2000/svg"'
+    b' viewBox="0 0 180 180" fill="none">\n'
+    b'  <rect width="180" height="180" rx="36" fill="#f5e6f0"/>\n'
+    b'  <path d="M45 73 L62 28 L79 67Z" fill="#f9a8d4"/>\n'
+    b'  <path d="M135 73 L118 28 L101 67Z" fill="#f9a8d4"/>\n'
+    b'  <path d="M50 70 L62 37 L73 67Z" fill="#fce4ec"/>\n'
+    b'  <path d="M130 70 L118 37 L107 67Z" fill="#fce4ec"/>\n'
+    b'  <circle cx="90" cy="101" r="42" fill="#fff5f5"/>\n'
+    b'  <circle cx="62" cy="112" r="8" fill="#fbb4c8" opacity="0.5"/>\n'
+    b'  <circle cx="118" cy="112" r="8" fill="#fbb4c8" opacity="0.5"/>\n'
+    b'  <ellipse cx="73" cy="95" rx="6" ry="7" fill="#5b4a6a"/>\n'
+    b'  <ellipse cx="107" cy="95" rx="6" ry="7" fill="#5b4a6a"/>\n'
+    b'  <circle cx="75" cy="93" r="2" fill="#fff"/>\n'
+    b'  <circle cx="109" cy="93" r="2" fill="#fff"/>\n'
+    b'  <path d="M87 107 L90 111 L93 107Z" fill="#f9a8d4"/>\n'
+    b'  <path d="M82 114 Q90 121 98 114" stroke="#c48b9f"'
+    b' stroke-width="2" fill="none" stroke-linecap="round"/>\n'
+    b"  <line x1=\"42\" y1=\"104\" x2=\"65\" y2=\"107\""
+    b' stroke="#d4a0b9" stroke-width="1.5"'
+    b' stroke-linecap="round"/>\n'
+    b"  <line x1=\"42\" y1=\"112\" x2=\"65\" y2=\"112\""
+    b' stroke="#d4a0b9" stroke-width="1.5"'
+    b' stroke-linecap="round"/>\n'
+    b"  <line x1=\"115\" y1=\"107\" x2=\"138\" y2=\"104\""
+    b' stroke="#d4a0b9" stroke-width="1.5"'
+    b' stroke-linecap="round"/>\n'
+    b"  <line x1=\"115\" y1=\"112\" x2=\"138\" y2=\"112\""
+    b' stroke="#d4a0b9" stroke-width="1.5"'
+    b' stroke-linecap="round"/>\n'
+    b"</svg>"
+)
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,16 +43,16 @@ from app.activitypub.routes import router as ap_router
 from app.activitypub.webfinger import router as webfinger_router
 from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
+from app.api.authorized_apps import router as authorized_apps_router
 from app.api.data_export import router as data_export_router
 from app.api.email_verification import router as email_router
-from app.api.authorized_apps import router as authorized_apps_router
 from app.api.invites import router as invites_router
 from app.api.mastodon.accounts import relationships_router
 from app.api.mastodon.accounts import router as accounts_router
 from app.api.mastodon.bookmarks import router as bookmarks_router
-from app.api.mastodon.lists import router as lists_router
 from app.api.mastodon.compat import router as compat_router
 from app.api.mastodon.follow_requests import router as follow_requests_router
+from app.api.mastodon.lists import router as lists_router
 from app.api.mastodon.media_proxy import router as media_proxy_router
 from app.api.mastodon.notifications import router as notifications_router
 from app.api.mastodon.polls import router as polls_router
@@ -169,7 +180,11 @@ async def _build_contact(db) -> dict:
         actor = result2.scalar_one_or_none()
         if not actor:
             return fallback
-        avatar = media_proxy_url(actor.avatar_url, variant="avatar") or f"{settings.server_url}/default-avatar.svg"
+        default_avatar = f"{settings.server_url}/default-avatar.svg"
+        avatar = (
+            media_proxy_url(actor.avatar_url, variant="avatar")
+            or default_avatar
+        )
         header = media_proxy_url(actor.header_url) or ""
         return {
             "email": admin_user.email or "",
@@ -405,7 +420,6 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
     from sqlalchemy import func, select
 
     from app.models.actor import Actor
-    from app.models.note import Note
     from app.models.user import User
     from app.services.server_settings_service import get_setting
 
@@ -445,8 +459,6 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         pass
 
     user_count = 0
-    status_count = 0
-    domain_count = 0
     try:
         user_result = await db.execute(
             select(func.count())
@@ -455,16 +467,6 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
             .where(Actor.domain.is_(None), User.is_system.is_(False))
         )
         user_count = user_result.scalar() or 0
-
-        status_result = await db.execute(
-            select(func.count()).select_from(Note).where(Note.local.is_(True))
-        )
-        status_count = status_result.scalar() or 0
-
-        domain_result = await db.execute(
-            select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
-        )
-        domain_count = domain_result.scalar() or 0
     except Exception:
         pass
 
