@@ -88,14 +88,14 @@ async def get_actors_by_ap_ids(db: AsyncSession, ap_ids: list[str]) -> dict[str,
                 missing_local[ap_id] = username
 
     if missing_local:
-        usernames = list(missing_local.values())
+        usernames = [u.lower() for u in missing_local.values()]
         local_result = await db.execute(
             select(Actor).where(Actor.username.in_(usernames), Actor.domain.is_(None))
         )
         local_by_username = {a.username: a for a in local_result.scalars().all()}
         for ap_id, username in missing_local.items():
-            if username in local_by_username:
-                actors_map[ap_id] = local_by_username[username]
+            if username.lower() in local_by_username:
+                actors_map[ap_id] = local_by_username[username.lower()]
 
     return actors_map
 
