@@ -130,6 +130,10 @@ async def get_notifications(
             .selectinload(Note.actor),
             selectinload(Notification.note).selectinload(Note.renote_of)
             .selectinload(Note.attachments),
+            selectinload(Notification.note).selectinload(Note.renote_of)
+            .selectinload(Note.quoted_note).selectinload(Note.actor),
+            selectinload(Notification.note).selectinload(Note.renote_of)
+            .selectinload(Note.quoted_note).selectinload(Note.attachments),
             selectinload(Notification.note).selectinload(Note.in_reply_to)
             .selectinload(Note.actor),
         )
