@@ -87,13 +87,22 @@ async def get_accounts_batch(
         return []
     result = await db.execute(select(Actor).where(Actor.id.in_(valid_ids)))
     actors = list(result.scalars().all())
+
+    # カウントをバッチ取得（3N→3クエリ）
+    from app.services.follow_service import get_follow_counts_batch
+    from app.services.note_service import get_statuses_count_batch
+
+    visible_ids = [a.id for a in actors if not (a.require_signin_to_view and not user)]
+    follow_counts = await get_follow_counts_batch(db, visible_ids)
+    statuses_counts = await get_statuses_count_batch(db, visible_ids)
+
     accounts = []
     for actor in actors:
         if actor.require_signin_to_view and not user:
             accounts.append(_actor_to_limited_account(actor))
         else:
-            fc, fic = await get_follow_counts(db, actor.id)
-            sc = await get_statuses_count(db, actor.id)
+            fc, fic = follow_counts.get(actor.id, (0, 0))
+            sc = statuses_counts.get(actor.id, 0)
             accounts.append(
                 await _actor_to_account(
                     actor, followers_count=fc, following_count=fic,
@@ -669,40 +678,55 @@ async def get_relationship(
     db: AsyncSession = Depends(get_db),
 ):
     """他のアクターとのフォロー/ブロック/ミュート状態を確認する。"""
-    from app.services.block_service import is_blocking
-    from app.services.mute_service import is_muting
+    from datetime import datetime, timezone
+
+    from sqlalchemy import literal, union_all
+
+    from app.models.user_block import UserBlock
+    from app.models.user_mute import UserMute
 
     following = False
     followed_by = False
     blocking = False
     muting = False
-
-    # フォロー状態の確認 (accepted / pending)
     requested = False
+
+    # フォロー状態の確認（双方向を1クエリで取得）
     result = await db.execute(
-        select(Follow).where(
-            Follow.follower_id == user.actor_id,
-            Follow.following_id == actor_id,
+        select(Follow.follower_id, Follow.following_id, Follow.accepted).where(
+            ((Follow.follower_id == user.actor_id) & (Follow.following_id == actor_id))
+            | ((Follow.follower_id == actor_id) & (Follow.following_id == user.actor_id))
         )
     )
-    outgoing_follow = result.scalar_one_or_none()
-    if outgoing_follow:
-        following = outgoing_follow.accepted
-        requested = not outgoing_follow.accepted
-    else:
-        following = False
+    for row in result.all():
+        if row.follower_id == user.actor_id:
+            following = row.accepted
+            requested = not row.accepted
+        else:
+            if row.accepted:
+                followed_by = True
 
-    result2 = await db.execute(
-        select(Follow).where(
-            Follow.follower_id == actor_id,
-            Follow.following_id == user.actor_id,
-            Follow.accepted.is_(True),
-        )
+    # ブロック/ミュートを1クエリで確認
+    now = datetime.now(timezone.utc)
+    block_mute_q = union_all(
+        select(literal("block").label("type")).where(
+            select(UserBlock.id).where(
+                UserBlock.actor_id == user.actor_id, UserBlock.target_id == actor_id,
+            ).exists()
+        ),
+        select(literal("mute").label("type")).where(
+            select(UserMute.id).where(
+                UserMute.actor_id == user.actor_id, UserMute.target_id == actor_id,
+                (UserMute.expires_at.is_(None)) | (UserMute.expires_at > now),
+            ).exists()
+        ),
     )
-    followed_by = result2.scalar_one_or_none() is not None
-
-    blocking = await is_blocking(db, user.actor_id, actor_id)
-    muting = await is_muting(db, user.actor_id, actor_id)
+    bm_result = await db.execute(select(block_mute_q.c.type))
+    for row in bm_result.all():
+        if row[0] == "block":
+            blocking = True
+        elif row[0] == "mute":
+            muting = True
 
     return {
         "id": str(actor_id),

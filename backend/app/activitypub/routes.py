@@ -246,7 +246,7 @@ async def get_featured(username: str, db: AsyncSession = Depends(get_db)):
 async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = Depends(get_db)):
     import re
 
-    from app.services.emoji_service import get_custom_emoji
+    from app.services.emoji_service import get_emojis_by_shortcodes
     from app.services.hashtag_service import get_hashtags_for_notes
     from app.services.note_service import get_note_by_id
 
@@ -261,28 +261,27 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
     hashtags_map = await get_hashtags_for_notes(db, [note.id])
     note._hashtag_names = hashtags_map.get(note.id, [])
 
-    # AP レンダリング用にカスタム絵文字タグを読み込む
+    # AP レンダリング用にカスタム絵文字タグを読み込む（1クエリでバッチ取得）
     shortcodes = set(re.findall(r":([a-zA-Z0-9_]+):", note.content or ""))
     if shortcodes:
-        emoji_tags = []
-        for sc in shortcodes:
-            emoji = await get_custom_emoji(db, sc, None)
-            if emoji and not emoji.local_only:
-                emoji_tags.append(
-                    {
-                        "shortcode": emoji.shortcode,
-                        "url": emoji.url,
-                        "aliases": emoji.aliases,
-                        "license": emoji.license,
-                        "is_sensitive": emoji.is_sensitive,
-                        "author": emoji.author,
-                        "description": emoji.description,
-                        "copy_permission": emoji.copy_permission,
-                        "usage_info": emoji.usage_info,
-                        "is_based_on": emoji.is_based_on,
-                        "category": emoji.category,
-                    }
-                )
+        emojis = await get_emojis_by_shortcodes(db, shortcodes, None)
+        emoji_tags = [
+            {
+                "shortcode": emoji.shortcode,
+                "url": emoji.url,
+                "aliases": emoji.aliases,
+                "license": emoji.license,
+                "is_sensitive": emoji.is_sensitive,
+                "author": emoji.author,
+                "description": emoji.description,
+                "copy_permission": emoji.copy_permission,
+                "usage_info": emoji.usage_info,
+                "is_based_on": emoji.is_based_on,
+                "category": emoji.category,
+            }
+            for emoji in emojis
+            if not emoji.local_only
+        ]
         if emoji_tags:
             note._emoji_tags = emoji_tags
 

@@ -194,6 +194,83 @@ async def get_follow_counts(db: AsyncSession, actor_id: uuid.UUID) -> tuple[int,
     return fc, fic
 
 
+async def get_follow_counts_batch(
+    db: AsyncSession, actor_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, tuple[int, int]]:
+    """複数アクターの (followers_count, following_count) を一括取得する。
+
+    Valkeyキャッシュを優先し、ミス分のみ2クエリでDBから取得。
+    """
+    import json
+
+    from app.valkey_client import valkey
+
+    if not actor_ids:
+        return {}
+
+    result: dict[uuid.UUID, tuple[int, int]] = {}
+
+    # キャッシュから一括取得
+    cache_keys = [f"perf:follow_counts:{aid}" for aid in actor_ids]
+    try:
+        cached_values = await valkey.mget(cache_keys)
+    except Exception:
+        cached_values = [None] * len(actor_ids)
+
+    missing_ids: list[uuid.UUID] = []
+    for aid, cached in zip(actor_ids, cached_values):
+        if cached is not None:
+            try:
+                data = json.loads(cached)
+                result[aid] = (data[0], data[1])
+                continue
+            except Exception:
+                pass
+        missing_ids.append(aid)
+
+    if not missing_ids:
+        return result
+
+    # DBからバッチ取得
+    from sqlalchemy import func
+
+    rows = await db.execute(
+        select(
+            Follow.following_id.label("actor_id"),
+            func.count().label("followers_count"),
+        )
+        .where(Follow.following_id.in_(missing_ids), Follow.accepted.is_(True))
+        .group_by(Follow.following_id)
+    )
+    followers_map = {row.actor_id: row.followers_count for row in rows.all()}
+
+    rows2 = await db.execute(
+        select(
+            Follow.follower_id.label("actor_id"),
+            func.count().label("following_count"),
+        )
+        .where(Follow.follower_id.in_(missing_ids), Follow.accepted.is_(True))
+        .group_by(Follow.follower_id)
+    )
+    following_map = {row.actor_id: row.following_count for row in rows2.all()}
+
+    # 結果を組み立てしキャッシュ
+    try:
+        pipe = valkey.pipeline()
+        for aid in missing_ids:
+            fc = followers_map.get(aid, 0)
+            fic = following_map.get(aid, 0)
+            result[aid] = (fc, fic)
+            pipe.set(f"perf:follow_counts:{aid}", json.dumps([fc, fic]), ex=300)
+        await pipe.execute()
+    except Exception:
+        for aid in missing_ids:
+            if aid not in result:
+                result[aid] = (followers_map.get(aid, 0), following_map.get(aid, 0))
+
+    return result
+
+
 async def get_follower_inboxes(db: AsyncSession, actor_id: uuid.UUID) -> list[str]:
     """アクターの全フォロワーの一意な inbox URL を取得する (配送用)。"""
     result = await db.execute(

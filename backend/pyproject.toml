@@ -1,6 +1,6 @@
 [project]
 name = "nekonoverse"
-version = "20260415-1"
+version = "20260416-1"
 description = "ActivityPub server with Misskey-compatible emoji reactions"
 requires-python = ">=3.12"
 dependencies = [
@@ -16,7 +16,7 @@ dependencies = [
     "httpx>=0.28.0",
     "valkey>=6.0.0",
     "bleach>=6.2.0",
-    "python-multipart>=0.0.18",
+    "python-multipart>=0.0.26",
     "Pillow>=12.2.0",
     "email-validator>=2.0.0",
     "webauthn>=2.0.0",

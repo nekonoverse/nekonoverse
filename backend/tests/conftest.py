@@ -1,7 +1,7 @@
 import os
 import uuid
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 import sqlalchemy as sa
@@ -157,6 +157,16 @@ def mock_valkey():
     mock.incr = AsyncMock(return_value=1)
     mock.expire = AsyncMock(return_value=True)
     mock.scan = AsyncMock(return_value=(0, []))
+    mock.mget = AsyncMock(side_effect=lambda keys: [None] * len(keys))
+
+    # pipeline mock: set/execute をサポート
+    def _make_pipeline():
+        pipe = AsyncMock()
+        pipe.set = MagicMock(return_value=pipe)
+        pipe.execute = AsyncMock(return_value=[])
+        return pipe
+
+    mock.pipeline = _make_pipeline
     with patch("app.valkey_client.valkey", mock):
         yield mock
 

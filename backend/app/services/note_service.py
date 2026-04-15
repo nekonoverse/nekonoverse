@@ -503,13 +503,23 @@ async def get_note_by_ap_id(db: AsyncSession, ap_id: str) -> Note | None:
 
 
 async def _get_excluded_ids(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
-    """指定アクターがブロックまたはミュートしているアクターのIDを取得する。"""
-    from app.services.block_service import get_blocked_ids
-    from app.services.mute_service import get_muted_ids
+    """指定アクターがブロックまたはミュートしているアクターIDを1クエリで取得する。"""
+    from sqlalchemy import union_all
 
-    blocked = await get_blocked_ids(db, actor_id)
-    muted = await get_muted_ids(db, actor_id)
-    return list(set(blocked + muted))
+    from app.models.user_block import UserBlock
+    from app.models.user_mute import UserMute
+
+    now = datetime.now(timezone.utc)
+    stmt = union_all(
+        select(UserBlock.target_id).where(UserBlock.actor_id == actor_id),
+        select(UserMute.target_id).where(
+            UserMute.actor_id == actor_id,
+            (UserMute.expires_at.is_(None)) | (UserMute.expires_at > now),
+        ),
+    )
+    subq = stmt.subquery()
+    result = await db.execute(select(subq.c.target_id))
+    return list({row[0] for row in result.all()})
 
 
 async def get_public_timeline(
@@ -685,37 +695,48 @@ async def get_home_timeline(
     limit: int = 20,
     max_id: uuid.UUID | None = None,
 ) -> list[Note]:
+    from sqlalchemy import literal, union_all
+
     from app.models.follow import Follow
+    from app.models.list import List, ListMember
+    from app.models.user_block import UserBlock
+    from app.models.user_mute import UserMute
 
     actor_id = user.actor_id
+    now = datetime.now(timezone.utc)
 
-    # このユーザーがフォローしているアクターのIDを取得
-    following_result = await db.execute(
-        select(Follow.following_id).where(
+    # フォロー中 + 自分自身をサブクエリで構築（大量IN句を回避）
+    following_sq = union_all(
+        select(Follow.following_id.label("id")).where(
             Follow.follower_id == actor_id,
             Follow.accepted.is_(True),
-        )
+        ),
+        select(literal(actor_id).label("id")),
     )
-    following_ids = [row[0] for row in following_result.all()]
-    # 自分自身を含める
-    following_ids.append(actor_id)
 
-    # ブロック/ミュート済みアクターを除外
-    excluded = await _get_excluded_ids(db, actor_id)
-    visible_ids = [fid for fid in following_ids if fid not in excluded]
+    # ブロック/ミュート除外サブクエリ
+    excluded_sq = union_all(
+        select(UserBlock.target_id.label("id")).where(UserBlock.actor_id == actor_id),
+        select(UserMute.target_id.label("id")).where(
+            UserMute.actor_id == actor_id,
+            (UserMute.expires_at.is_(None)) | (UserMute.expires_at > now),
+        ),
+    )
 
-    # exclusiveリストに含まれるアクターを除外 (リストTLに表示されるため)
-    from app.services.list_service import get_exclusive_list_actor_ids
-
-    exclusive_ids = await get_exclusive_list_actor_ids(db, user.id)
-    if exclusive_ids:
-        visible_ids = [vid for vid in visible_ids if vid not in exclusive_ids]
+    # exclusiveリスト除外サブクエリ
+    exclusive_sq = (
+        select(ListMember.actor_id)
+        .join(List, ListMember.list_id == List.id)
+        .where(List.user_id == user.id, List.exclusive.is_(True))
+    )
 
     query = (
         select(Note)
         .options(*_note_load_options())
         .where(
-            Note.actor_id.in_(visible_ids),
+            Note.actor_id.in_(select(following_sq.subquery().c.id)),
+            Note.actor_id.notin_(select(excluded_sq.subquery().c.id)),
+            Note.actor_id.notin_(exclusive_sq),
             Note.deleted_at.is_(None),
             Note.visibility.in_(["public", "unlisted", "followers"]),
         )
@@ -738,18 +759,22 @@ async def get_reaction_summary(
         .group_by(Reaction.emoji)
         .order_by(func.count(Reaction.id).desc())
     )
-    summaries = []
-    for emoji, count in result.all():
-        me = False
-        if current_actor_id:
-            me_result = await db.execute(
-                select(Reaction.id).where(
-                    Reaction.note_id == note_id,
-                    Reaction.actor_id == current_actor_id,
-                    Reaction.emoji == emoji,
-                )
+    rows = result.all()
+
+    # 自分のリアクションを1クエリで事前取得（N+1回避）
+    my_emojis: set[str] = set()
+    if current_actor_id and rows:
+        me_result = await db.execute(
+            select(Reaction.emoji).where(
+                Reaction.note_id == note_id,
+                Reaction.actor_id == current_actor_id,
             )
-            me = me_result.scalar_one_or_none() is not None
+        )
+        my_emojis = {row[0] for row in me_result.all()}
+
+    summaries = []
+    for emoji, count in rows:
+        me = emoji in my_emojis
 
         # カスタム絵文字のURLを解決 (ローカル版を優先)
         emoji_url = None
@@ -984,6 +1009,70 @@ async def get_statuses_count(db: AsyncSession, actor_id: uuid.UUID) -> int:
         pass
 
     return count
+
+
+async def get_statuses_count_batch(
+    db: AsyncSession, actor_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, int]:
+    """複数アクターのステータス数を一括取得する。
+
+    Valkeyキャッシュを優先し、ミス分のみ1クエリでDBから取得。
+    """
+    import json
+
+    from app.valkey_client import valkey
+
+    if not actor_ids:
+        return {}
+
+    result: dict[uuid.UUID, int] = {}
+
+    # キャッシュから一括取得
+    cache_keys = [f"perf:statuses_count:{aid}" for aid in actor_ids]
+    try:
+        cached_values = await valkey.mget(cache_keys)
+    except Exception:
+        cached_values = [None] * len(actor_ids)
+
+    missing_ids: list[uuid.UUID] = []
+    for aid, cached in zip(actor_ids, cached_values):
+        if cached is not None:
+            try:
+                result[aid] = json.loads(cached)
+                continue
+            except Exception:
+                pass
+        missing_ids.append(aid)
+
+    if not missing_ids:
+        return result
+
+    # DBからバッチ取得
+    rows = await db.execute(
+        select(Note.actor_id, func.count().label("cnt"))
+        .where(
+            Note.actor_id.in_(missing_ids),
+            Note.visibility.in_(["public", "unlisted"]),
+            Note.deleted_at.is_(None),
+        )
+        .group_by(Note.actor_id)
+    )
+    counts_map = {row.actor_id: row.cnt for row in rows.all()}
+
+    # 結果を組み立てしキャッシュ
+    try:
+        pipe = valkey.pipeline()
+        for aid in missing_ids:
+            count = counts_map.get(aid, 0)
+            result[aid] = count
+            pipe.set(f"perf:statuses_count:{aid}", json.dumps(count), ex=300)
+        await pipe.execute()
+    except Exception:
+        for aid in missing_ids:
+            if aid not in result:
+                result[aid] = counts_map.get(aid, 0)
+
+    return result
 
 
 _FETCH_MAX_DEPTH = 3

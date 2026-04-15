@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.activitypub import extract_mfm_source
 from app.config import settings
 from app.models.note import Note
-from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id
+from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id, get_actors_by_ap_ids
 from app.services.note_service import fetch_remote_note, get_note_by_ap_id
 from app.utils.sanitize import sanitize_html
 
@@ -368,8 +368,11 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                 if notif:
                     pending_notifs.append(notif)
 
+    # メンションアクターをバッチ取得（N+1回避）
+    mention_ap_ids = [m["ap_id"] for m in mentions_list if m.get("ap_id")]
+    mentioned_actors = await get_actors_by_ap_ids(db, mention_ap_ids) if mention_ap_ids else {}
     for mention in mentions_list:
-        mentioned_actor = await get_actor_by_ap_id(db, mention["ap_id"])
+        mentioned_actor = mentioned_actors.get(mention["ap_id"])
         if (
             mentioned_actor
             and mentioned_actor.is_local
