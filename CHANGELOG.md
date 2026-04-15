@@ -1,3 +1,19 @@
+## [20260416-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260416-1) — 2026-04-16
+
+### セキュリティ
+
+- **python-multipart 0.0.26** — CVE-2026-40347 (multipart preamble/epilogue DoS)
+
+### パフォーマンス
+
+- **インスタンス情報/nodeinfo クエリ最適化** — 設定の一括取得 (`get_settings_batch`)、統計クエリ統合、AP絵文字バッチ化 (#976)
+- **タイムラインAPI クエリ最適化** — block/mute UNION ALL統合、投票データバッチ取得 (`batch_get_poll_data`)、reaction me判定N+1修正、ホームTLサブクエリ化 (#977)
+- **通知API クエリ最適化** — アクター絵文字バッチ解決、ノート関連eager loading完全化 (#978)
+- **アカウントAPI クエリ最適化** — フォロー数/ステータス数バッチ取得、relationship 4→2クエリ統合 (#979)
+- **AP受信処理クエリ最適化** — メンション解決バッチ化 (`get_actors_by_ap_ids`)、SQLAlchemy deprecation修正 (#980)
+
+---
+
 ## [20260415-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260415-1) — 2026-04-15
 
 ### パフォーマンス
