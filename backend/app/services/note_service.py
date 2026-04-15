@@ -986,6 +986,70 @@ async def get_statuses_count(db: AsyncSession, actor_id: uuid.UUID) -> int:
     return count
 
 
+async def get_statuses_count_batch(
+    db: AsyncSession, actor_ids: list[uuid.UUID],
+) -> dict[uuid.UUID, int]:
+    """複数アクターのステータス数を一括取得する。
+
+    Valkeyキャッシュを優先し、ミス分のみ1クエリでDBから取得。
+    """
+    import json
+
+    from app.valkey_client import valkey
+
+    if not actor_ids:
+        return {}
+
+    result: dict[uuid.UUID, int] = {}
+
+    # キャッシュから一括取得
+    cache_keys = [f"perf:statuses_count:{aid}" for aid in actor_ids]
+    try:
+        cached_values = await valkey.mget(cache_keys)
+    except Exception:
+        cached_values = [None] * len(actor_ids)
+
+    missing_ids: list[uuid.UUID] = []
+    for aid, cached in zip(actor_ids, cached_values):
+        if cached is not None:
+            try:
+                result[aid] = json.loads(cached)
+                continue
+            except Exception:
+                pass
+        missing_ids.append(aid)
+
+    if not missing_ids:
+        return result
+
+    # DBからバッチ取得
+    rows = await db.execute(
+        select(Note.actor_id, func.count().label("cnt"))
+        .where(
+            Note.actor_id.in_(missing_ids),
+            Note.visibility.in_(["public", "unlisted"]),
+            Note.deleted_at.is_(None),
+        )
+        .group_by(Note.actor_id)
+    )
+    counts_map = {row.actor_id: row.cnt for row in rows.all()}
+
+    # 結果を組み立てしキャッシュ
+    try:
+        pipe = valkey.pipeline()
+        for aid in missing_ids:
+            count = counts_map.get(aid, 0)
+            result[aid] = count
+            pipe.set(f"perf:statuses_count:{aid}", json.dumps(count), ex=300)
+        await pipe.execute()
+    except Exception:
+        for aid in missing_ids:
+            if aid not in result:
+                result[aid] = counts_map.get(aid, 0)
+
+    return result
+
+
 _FETCH_MAX_DEPTH = 3
 
 
