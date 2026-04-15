@@ -233,75 +233,88 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
-    from sqlalchemy import func, select
+    from sqlalchemy import func, literal_column, select
 
     from app.models.actor import Actor
     from app.models.note import Note
     from app.models.user import User
-    from app.services.server_settings_service import get_setting
+    from app.services.server_settings_service import get_settings_batch
 
+    # サーバー設定を一括取得（Valkey mget → DB 1クエリ）
+    setting_keys = [
+        "server_icon_url", "server_name", "server_description",
+        "registration_mode", "registration_open",
+        "server_theme_color", "katex_enabled",
+        "terms_of_service", "tos_url", "privacy_policy",
+    ]
     thumbnail_url = None
     title = "Nekonoverse"
     description = "A cat-friendly ActivityPub server"
     registration_open = settings.registration_open
     registration_mode = "open"
     theme_color = None
+    katex_enabled = False
     try:
-        icon_url = await get_setting(db, "server_icon_url")
-        if icon_url:
-            thumbnail_url = icon_url
-        name = await get_setting(db, "server_name")
-        if name:
-            title = name
-        desc = await get_setting(db, "server_description")
-        if desc:
-            description = desc
-        mode = await get_setting(db, "registration_mode")
+        s = await get_settings_batch(db, setting_keys)
+        if s.get("server_icon_url"):
+            thumbnail_url = s["server_icon_url"]
+        if s.get("server_name"):
+            title = s["server_name"]
+        if s.get("server_description"):
+            description = s["server_description"]
+        mode = s.get("registration_mode")
         if mode is not None:
             registration_mode = mode
             registration_open = mode != "closed"
         else:
-            reg = await get_setting(db, "registration_open")
+            reg = s.get("registration_open")
             if reg is not None:
                 registration_open = reg == "true"
             registration_mode = "open" if registration_open else "closed"
-        tc = await get_setting(db, "server_theme_color")
-        if tc:
-            theme_color = tc
-    except Exception:
-        pass
-
-    katex_enabled = False
-    try:
-        katex_val = await get_setting(db, "katex_enabled")
-        if katex_val == "true":
+        if s.get("server_theme_color"):
+            theme_color = s["server_theme_color"]
+        if s.get("katex_enabled") == "true":
             katex_enabled = True
     except Exception:
         pass
 
-    # サーバー統計を実際のデータベースから取得
+    # サーバー統計を1クエリで取得（スカラーサブクエリ）
     user_count = 0
     status_count = 0
     domain_count = 0
     try:
-        # システムアカウントをユーザー数から除外
-        user_result = await db.execute(
+        user_sq = (
             select(func.count())
             .select_from(Actor)
             .join(User, User.actor_id == Actor.id)
             .where(Actor.domain.is_(None), User.is_system.is_(False))
+            .correlate(None)
+            .scalar_subquery()
         )
-        user_count = user_result.scalar() or 0
-
-        status_result = await db.execute(
-            select(func.count()).select_from(Note).where(Note.local.is_(True))
+        status_sq = (
+            select(func.count())
+            .select_from(Note)
+            .where(Note.local.is_(True))
+            .correlate(None)
+            .scalar_subquery()
         )
-        status_count = status_result.scalar() or 0
-
-        domain_result = await db.execute(
-            select(func.count(func.distinct(Actor.domain))).where(Actor.domain.isnot(None))
+        domain_sq = (
+            select(func.count(func.distinct(Actor.domain)))
+            .where(Actor.domain.isnot(None))
+            .correlate(None)
+            .scalar_subquery()
         )
-        domain_count = domain_result.scalar() or 0
+        stats_result = await db.execute(
+            select(
+                user_sq.label("users"),
+                status_sq.label("statuses"),
+                domain_sq.label("domains"),
+            ).select_from(literal_column("(SELECT 1) AS _dummy"))
+        )
+        stats_row = stats_result.one()
+        user_count = stats_row.users or 0
+        status_count = stats_row.statuses or 0
+        domain_count = stats_row.domains or 0
     except Exception:
         pass
 
@@ -379,17 +392,13 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         resp["turnstile_site_key"] = settings.turnstile_site_key
     resp["katex_enabled"] = katex_enabled
 
-    # 法的ページの URL
+    # 法的ページの URL（バッチ取得済みの設定を使用）
     try:
-        tos_content = await get_setting(db, "terms_of_service")
-        if tos_content:
+        if s.get("terms_of_service"):
             resp["tos_url"] = f"https://{settings.domain}/terms"
-        else:
-            tos_url = await get_setting(db, "tos_url")
-            if tos_url:
-                resp["tos_url"] = tos_url
-        pp_content = await get_setting(db, "privacy_policy")
-        if pp_content:
+        elif s.get("tos_url"):
+            resp["tos_url"] = s["tos_url"]
+        if s.get("privacy_policy"):
             resp["privacy_policy_url"] = f"https://{settings.domain}/privacy"
     except Exception:
         pass
@@ -421,39 +430,37 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
 
     from app.models.actor import Actor
     from app.models.user import User
-    from app.services.server_settings_service import get_setting
+    from app.services.server_settings_service import get_settings_batch
 
+    # サーバー設定を一括取得
+    setting_keys = [
+        "server_icon_url", "server_name", "server_description",
+        "registration_mode", "registration_open", "katex_enabled",
+    ]
     thumbnail_url = None
     title = "Nekonoverse"
     description = "A cat-friendly ActivityPub server"
     registration_open = settings.registration_open
     registration_mode = "open"
+    katex_enabled = False
     try:
-        icon_url = await get_setting(db, "server_icon_url")
-        if icon_url:
-            thumbnail_url = icon_url
-        name = await get_setting(db, "server_name")
-        if name:
-            title = name
-        desc = await get_setting(db, "server_description")
-        if desc:
-            description = desc
-        mode = await get_setting(db, "registration_mode")
+        s = await get_settings_batch(db, setting_keys)
+        if s.get("server_icon_url"):
+            thumbnail_url = s["server_icon_url"]
+        if s.get("server_name"):
+            title = s["server_name"]
+        if s.get("server_description"):
+            description = s["server_description"]
+        mode = s.get("registration_mode")
         if mode is not None:
             registration_mode = mode
             registration_open = mode != "closed"
         else:
-            reg = await get_setting(db, "registration_open")
+            reg = s.get("registration_open")
             if reg is not None:
                 registration_open = reg == "true"
             registration_mode = "open" if registration_open else "closed"
-    except Exception:
-        pass
-
-    katex_enabled = False
-    try:
-        katex_val = await get_setting(db, "katex_enabled")
-        if katex_val == "true":
+        if s.get("katex_enabled") == "true":
             katex_enabled = True
     except Exception:
         pass
