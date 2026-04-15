@@ -119,7 +119,19 @@ async def get_notifications(
         select(Notification)
         .options(
             selectinload(Notification.sender),
+            # ノートと全サブリレーションをeager load（lazy load N+1 回避）
             selectinload(Notification.note).selectinload(Note.actor),
+            selectinload(Notification.note).selectinload(Note.attachments),
+            selectinload(Notification.note).selectinload(Note.quoted_note)
+            .selectinload(Note.actor),
+            selectinload(Notification.note).selectinload(Note.quoted_note)
+            .selectinload(Note.attachments),
+            selectinload(Notification.note).selectinload(Note.renote_of)
+            .selectinload(Note.actor),
+            selectinload(Notification.note).selectinload(Note.renote_of)
+            .selectinload(Note.attachments),
+            selectinload(Notification.note).selectinload(Note.in_reply_to)
+            .selectinload(Note.actor),
         )
         .where(Notification.recipient_id == actor_id)
     )
