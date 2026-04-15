@@ -174,6 +174,7 @@ async def note_to_response(
     reblogged_set: set | None = None,
     software_cache: dict | None = None,
     cards_cache: dict | None = None,
+    poll_cache: dict | None = None,
     pinned: bool = False,
 ) -> NoteResponse:
     """Note モデルを NoteResponse に変換する。
@@ -220,6 +221,7 @@ async def note_to_response(
             reblogged_set=reblogged_set,
             software_cache=software_cache,
             cards_cache=cards_cache,
+            poll_cache=poll_cache,
         )
 
     # メディア添付を構築
@@ -240,6 +242,7 @@ async def note_to_response(
             reactions_map=reactions_map,
             software_cache=software_cache,
             cards_cache=cards_cache,
+            poll_cache=poll_cache,
         )
     # フォールバック: quoted_note が未ロードだが quote_id が設定されている場合
     if not quote and db and note.quote_id:
@@ -253,6 +256,7 @@ async def note_to_response(
                 reactions_map=reactions_map,
                 software_cache=software_cache,
                 cards_cache=cards_cache,
+                poll_cache=poll_cache,
             )
     # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
     if not quote and db and note.quote_ap_id:
@@ -273,6 +277,7 @@ async def note_to_response(
                     reactions_map=reactions_map,
                     software_cache=software_cache,
                     cards_cache=cards_cache,
+                    poll_cache=poll_cache,
                 )
 
     # content と display_name からカスタム絵文字を解決
@@ -379,12 +384,16 @@ async def note_to_response(
     if note.updated_at:
         edited_at = _to_mastodon_datetime(note.updated_at)
 
-    # 投票レスポンスを構築
+    # 投票レスポンスを構築（バッチキャッシュがあれば使用、なければ個別取得）
     poll_response = None
     if note.is_poll and note.poll_options:
-        from app.services.poll_service import get_poll_data
+        poll_data = None
+        if poll_cache is not None:
+            poll_data = poll_cache.get(note.id)
+        elif db:
+            from app.services.poll_service import get_poll_data
 
-        poll_data = await get_poll_data(db, note.id, actor_id) if db else None
+            poll_data = await get_poll_data(db, note.id, actor_id)
         if poll_data:
             poll_response = PollResponse(**poll_data)
 
@@ -663,6 +672,17 @@ async def notes_to_responses(
     cards_result = await db.execute(select(PreviewCard).where(PreviewCard.note_id.in_(unique_ids)))
     cards_cache: dict = {c.note_id: c for c in cards_result.scalars().all()}
 
+    # 全投票ノートの投票データをバッチ取得（ノートごとの3クエリ→最大3クエリ）
+    from app.services.poll_service import batch_get_poll_data
+
+    all_poll_notes = list(notes)
+    for n in notes:
+        if hasattr(n, "renote_of") and n.renote_of:
+            all_poll_notes.append(n.renote_of)
+        if hasattr(n, "quoted_note") and n.quoted_note:
+            all_poll_notes.append(n.quoted_note)
+    poll_cache = await batch_get_poll_data(db, all_poll_notes, actor_id)
+
     result = []
     for n in notes:
         reactions = reactions_map.get(n.id, [])
@@ -677,6 +697,7 @@ async def notes_to_responses(
             reblogged_set=reblogged_set,
             software_cache=software_cache,
             cards_cache=cards_cache,
+            poll_cache=poll_cache,
             pinned=bool(pinned_ids and n.id in pinned_ids),
         )
         result.append(resp)
