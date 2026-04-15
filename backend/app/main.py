@@ -254,6 +254,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     registration_mode = "open"
     theme_color = None
     katex_enabled = False
+    s: dict[str, str | None] = {}
     try:
         s = await get_settings_batch(db, setting_keys)
         if s.get("server_icon_url"):

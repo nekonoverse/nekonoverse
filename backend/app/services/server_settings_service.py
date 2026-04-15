@@ -18,7 +18,7 @@ async def get_setting(db: AsyncSession, key: str) -> str | None:
     result = await db.execute(select(ServerSetting).where(ServerSetting.key == key))
     setting = result.scalar_one_or_none()
     value = setting.value if setting else None
-    await valkey.set(f"setting:{key}", value or "__NULL__", ex=CACHE_TTL)
+    await valkey.set(f"setting:{key}", value if value is not None else "__NULL__", ex=CACHE_TTL)
     return value
 
 
@@ -62,7 +62,7 @@ async def get_settings_batch(db: AsyncSession, keys: list[str]) -> dict[str, str
         for key in missing_keys:
             value = db_settings.get(key)
             result[key] = value
-            pipe.set(f"setting:{key}", value or "__NULL__", ex=CACHE_TTL)
+            pipe.set(f"setting:{key}", value if value is not None else "__NULL__", ex=CACHE_TTL)
         await pipe.execute()
 
     return result
