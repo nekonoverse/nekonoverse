@@ -84,7 +84,10 @@ async def _process_local(job: dict) -> None:
             logger.debug("DriveFile %s already has thumbnail, skipping", drive_file_id)
             return
         if drive_file.mime_type not in _VIDEO_MIMES:
-            logger.debug("DriveFile %s is not a video (%s), skipping", drive_file_id, drive_file.mime_type)
+            logger.debug(
+                "DriveFile %s is not a video (%s), skipping",
+                drive_file_id, drive_file.mime_type,
+            )
             return
 
         # S3 から動画をダウンロード
@@ -95,7 +98,10 @@ async def _process_local(job: dict) -> None:
         url = f"{base}/thumbnail" if not base.endswith("/thumbnail") else base
 
         async with make_video_thumb_client() as client:
-            resp = await client.post(url, files={"file": ("video", video_data, drive_file.mime_type)})
+            resp = await client.post(
+                url,
+                files={"file": ("video", video_data, drive_file.mime_type)},
+            )
             resp.raise_for_status()
 
         thumb_data = resp.content

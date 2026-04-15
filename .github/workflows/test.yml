@@ -59,6 +59,10 @@ jobs:
         working-directory: backend
         run: pip install -e ".[dev]"
 
+      - name: Lint (ruff)
+        working-directory: backend
+        run: ruff check app/
+
       - name: Run tests (shard ${{ matrix.shard }}/4)
         working-directory: backend
         env:

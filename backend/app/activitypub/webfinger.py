@@ -13,10 +13,14 @@ router = APIRouter()
 @router.get("/.well-known/host-meta")
 async def host_meta():
     """LRDD ディスカバリ用の XRD host-meta (Pleroma/GNU Social で使用)。"""
+    template = (
+        f"{settings.server_url}"
+        "/.well-known/webfinger?resource={uri}"
+    )
     xml = (
         '<?xml version="1.0" encoding="UTF-8"?>'
         '<XRD xmlns="http://docs.oasis-open.org/ns/xri/xrd-1.0">'
-        f'<Link rel="lrdd" template="{settings.server_url}/.well-known/webfinger?resource={{uri}}" />'
+        f'<Link rel="lrdd" template="{template}" />'
         "</XRD>"
     )
     return Response(content=xml, media_type="application/xrd+xml")

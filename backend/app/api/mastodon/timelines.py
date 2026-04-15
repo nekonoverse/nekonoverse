@@ -120,7 +120,8 @@ async def list_timeline(
 ):
     from fastapi import HTTPException
 
-    from app.services.list_service import get_list as get_list_, get_list_timeline
+    from app.services.list_service import get_list as get_list_
+    from app.services.list_service import get_list_timeline
 
     lst = await get_list_(db, list_id)
     if not lst or lst.user_id != user.id:
