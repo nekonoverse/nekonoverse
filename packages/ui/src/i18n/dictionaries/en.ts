@@ -853,6 +853,12 @@ export const en: Dictionary = {
   "mediaTimeline.title": "Media Timeline",
   "mediaTimeline.searchPlaceholder": "Search tags, captions, content...",
   "mediaTimeline.empty": "No posts with media yet.",
+  "mediaTimeline.showSensitive": "Show sensitive",
+  "mediaTimeline.hideSensitive": "Hide sensitive",
+  "mediaTimeline.sensitiveModal.title": "Show sensitive media",
+  "mediaTimeline.sensitiveModal.message": "This will reveal all media marked as sensitive. Are you sure?",
+  "mediaTimeline.sensitiveModal.confirm": "Reveal",
+  "mediaTimeline.sensitiveModal.cancel": "Cancel",
 
   "themeCustomizer.colors": "Customize Colors",
   "themeCustomizer.bgPrimary": "Background",

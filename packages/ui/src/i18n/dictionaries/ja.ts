@@ -849,6 +849,12 @@ export const ja = {
   "mediaTimeline.title": "メディアタイムライン",
   "mediaTimeline.searchPlaceholder": "タグ・キャプション・本文で検索...",
   "mediaTimeline.empty": "メディア付きの投稿がありません。",
+  "mediaTimeline.showSensitive": "センシティブを表示",
+  "mediaTimeline.hideSensitive": "センシティブを隠す",
+  "mediaTimeline.sensitiveModal.title": "センシティブなメディアの表示",
+  "mediaTimeline.sensitiveModal.message": "センシティブとしてマークされたすべてのメディアのぼかしを解除します。よろしいですか？",
+  "mediaTimeline.sensitiveModal.confirm": "解除する",
+  "mediaTimeline.sensitiveModal.cancel": "キャンセル",
 
   "themeCustomizer.colors": "カラーカスタマイズ",
   "themeCustomizer.bgPrimary": "背景",
