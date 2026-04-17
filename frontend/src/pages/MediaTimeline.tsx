@@ -12,6 +12,8 @@ export default function MediaTimeline() {
   const [loadingMore, setLoadingMore] = createSignal(false);
   const [hasMore, setHasMore] = createSignal(true);
   const [threadNoteId, setThreadNoteId] = createSignal<string | null>(null);
+  const [showSensitive, setShowSensitive] = createSignal(false);
+  const [showSensitiveModal, setShowSensitiveModal] = createSignal(false);
 
   let sentinelRef: HTMLDivElement | undefined;
   let observer: IntersectionObserver | undefined;
@@ -99,6 +101,20 @@ export default function MediaTimeline() {
             onInput={(e) => handleSearchInput(e.currentTarget.value)}
             class="media-timeline-search-input"
           />
+          <button
+            class={`media-timeline-sensitive-toggle ${showSensitive() ? "active" : ""}`}
+            onClick={() => {
+              if (showSensitive()) {
+                setShowSensitive(false);
+              } else {
+                setShowSensitiveModal(true);
+              }
+            }}
+          >
+            {showSensitive()
+              ? t("mediaTimeline.hideSensitive")
+              : t("mediaTimeline.showSensitive")}
+          </button>
         </div>
         <Show
           when={initialData.state === "ready" || notes().length > 0}
@@ -121,7 +137,7 @@ export default function MediaTimeline() {
                         onClick={() => setThreadNoteId(note.id)}
                       >
                         <Show
-                          when={!target().sensitive}
+                          when={!target().sensitive || showSensitive()}
                           fallback={
                             <div class="media-gallery-sensitive">
                               <img
@@ -191,6 +207,38 @@ export default function MediaTimeline() {
           noteId={threadNoteId()!}
           onClose={() => setThreadNoteId(null)}
         />
+      </Show>
+      <Show when={showSensitiveModal()}>
+        <div
+          class="modal-overlay confirm-overlay"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setShowSensitiveModal(false);
+          }}
+        >
+          <div class="confirm-dialog">
+            <h3 class="confirm-dialog-title">
+              {t("mediaTimeline.sensitiveModal.title")}
+            </h3>
+            <p>{t("mediaTimeline.sensitiveModal.message")}</p>
+            <div class="confirm-actions">
+              <button
+                class="confirm-btn confirm-discard"
+                onClick={() => setShowSensitiveModal(false)}
+              >
+                {t("mediaTimeline.sensitiveModal.cancel")}
+              </button>
+              <button
+                class="confirm-btn confirm-save"
+                onClick={() => {
+                  setShowSensitive(true);
+                  setShowSensitiveModal(false);
+                }}
+              >
+                {t("mediaTimeline.sensitiveModal.confirm")}
+              </button>
+            </div>
+          </div>
+        </div>
       </Show>
     </div>
   );

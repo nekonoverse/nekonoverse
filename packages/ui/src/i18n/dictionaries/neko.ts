@@ -851,6 +851,12 @@ export const neko: Dictionary = {
   "mediaTimeline.title": "めでぃあたいむらいんにゃ",
   "mediaTimeline.searchPlaceholder": "けんさくにゃ...",
   "mediaTimeline.empty": "めでぃあつきのとうこうがにゃいにゃ。",
+  "mediaTimeline.showSensitive": "せんしてぃぶをみるにゃ",
+  "mediaTimeline.hideSensitive": "せんしてぃぶをかくすにゃ",
+  "mediaTimeline.sensitiveModal.title": "せんしてぃぶなめでぃあのひょうじにゃ",
+  "mediaTimeline.sensitiveModal.message": "せんしてぃぶなめでぃあのぼかしをぜんぶかいじょするにゃ。いいにゃ？",
+  "mediaTimeline.sensitiveModal.confirm": "かいじょするにゃ",
+  "mediaTimeline.sensitiveModal.cancel": "やめるにゃ",
 
   "themeCustomizer.colors": "いろをカスタマイズにゃ",
   "themeCustomizer.bgPrimary": "はいけいにゃ",
