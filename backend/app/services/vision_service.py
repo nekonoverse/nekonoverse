@@ -88,7 +88,9 @@ async def auto_tag_image(
                 return
 
         logger.info("Running vision tagging for %s", drive_file.id)
-        result = await _call_vision(image_data, note_text=note_text, context=context)
+        result = await _call_vision(
+            image_data, note_text=note_text, context=context, file_id=str(drive_file.id),
+        )
         if not result:
             return
 
@@ -174,7 +176,9 @@ async def _tag_single_remote(
     if not image_data:
         return False
 
-    result = await _call_vision(image_data, note_text=note_text, context=context)
+    result = await _call_vision(
+        image_data, note_text=note_text, context=context, file_id=str(att.id),
+    )
     if not result:
         return False
 
@@ -189,6 +193,7 @@ async def _call_vision(
     *,
     note_text: str | None = None,
     context: list[str] | None = None,
+    file_id: str | None = None,
 ) -> dict | None:
     """neko-vision API を呼び出す。{"tags": [...], "caption": "..."} を返す。"""
     from app.utils.http_client import make_neko_vision_client
@@ -199,6 +204,8 @@ async def _call_vision(
         payload["text"] = _strip_html(note_text)[:500]
     if context:
         payload["context"] = context
+    if file_id:
+        payload["file_id"] = str(file_id)
 
     base = settings.neko_vision_base_url.rstrip("/")
     # URL が /tag で終わっていなければ追加
