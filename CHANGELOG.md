@@ -1,3 +1,20 @@
+## [20260417-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260417-1) — 2026-04-17
+
+### 機能追加
+
+- **メディアタイムラインのセンシティブブラー一括解除** — 確認モーダル付きのトグルボタンで、センシティブコンテンツのブラーを一括表示/非表示 (#983)
+
+### セキュリティ
+
+- **Mako 1.3.11** — セキュリティパッチ適用
+- **dompurify 3.4.0** — セキュリティパッチ適用済み確認
+
+### インフラ
+
+- **neko-vision: Ollama → llama.cpp 移行** — 推論バックエンドを llama.cpp server に移行、デフォルトモデルを Gemma 4 E2B に更新
+
+---
+
 ## [20260416-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260416-1) — 2026-04-16
 
 ### セキュリティ
