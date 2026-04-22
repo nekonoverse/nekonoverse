@@ -154,7 +154,7 @@ async def get_list_accounts(
     emoji_map = await _batch_resolve_actor_emojis(db, actors)
     results = []
     for a in actors:
-        account = await _actor_to_account(a)
+        account = await _actor_to_account(a, db=db, resolve_emojis=False)
         if a.id in emoji_map:
             account["emojis"] = emoji_map[a.id]
         results.append(account)
