@@ -1,7 +1,7 @@
 import os
 import uuid
 from collections.abc import AsyncGenerator
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 import sqlalchemy as sa
@@ -159,10 +159,12 @@ def mock_valkey():
     mock.scan = AsyncMock(return_value=(0, []))
     mock.mget = AsyncMock(side_effect=lambda keys: [None] * len(keys))
 
-    # pipeline mock: set/execute をサポート
+    # pipeline mock: 呼び出しは mock.publish / mock.set に集約して call_args_list で
+    # 直接呼び出しと pipeline 経由を同じ視点から観察できるようにする。
     def _make_pipeline():
         pipe = AsyncMock()
-        pipe.set = MagicMock(return_value=pipe)
+        pipe.set = mock.set
+        pipe.publish = mock.publish
         pipe.execute = AsyncMock(return_value=[])
         return pipe
 
