@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 AP_CONTENT_TYPE = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
 
 MAX_CONCURRENT = 16
+
+# 孤児ジョブ回収の閾値。worker がクラッシュ/再起動で status='processing' のまま
+# 残したジョブをこの時間経過後に pending に戻す。配送タイムアウト (30s) と
+# 処理時間を含めても数分あれば十分。
+ORPHAN_RECLAIM_THRESHOLD = timedelta(minutes=10)
+# ループ中に孤児回収を走らせる間隔。
+ORPHAN_RECLAIM_INTERVAL = timedelta(minutes=1)
 
 # L-1: 署名鍵キャッシュ (actor_id -> (Actor, private_key_pem, cached_at))
 _signing_key_cache: dict[uuid.UUID, tuple[Actor, str, float]] = {}
@@ -63,6 +70,37 @@ async def get_pending_jobs(
     return list(result.scalars().all())
 
 
+async def reclaim_orphan_jobs(
+    db: AsyncSession, threshold: timedelta = ORPHAN_RECLAIM_THRESHOLD
+) -> int:
+    """processing のまま放置された孤児ジョブを pending に戻す。
+
+    worker がクラッシュ/再起動したときに status='processing' のまま残されたジョブを
+    回収する。attempts は保持するので、次回実行時のバックオフは引き続き有効。
+
+    Returns:
+        回収したジョブ数
+    """
+    cutoff = datetime.now(timezone.utc) - threshold
+    result = await db.execute(
+        update(DeliveryJob)
+        .where(
+            DeliveryJob.status == "processing",
+            DeliveryJob.last_attempted_at < cutoff,
+        )
+        .values(status="pending")
+    )
+    await db.commit()
+    count = result.rowcount or 0
+    if count > 0:
+        logger.warning(
+            "Reclaimed %d orphan processing jobs (older than %s)",
+            count,
+            threshold,
+        )
+    return count
+
+
 async def get_next_jobs(db: AsyncSession, limit: int = 20) -> list[DeliveryJob]:
     """H-1: Get multiple deliverable jobs for concurrent processing."""
     now = datetime.now(timezone.utc)
@@ -99,8 +137,23 @@ async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Act
     return actor, actor.local_user.private_key_pem
 
 
-async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:
-    """activity をリモート Inbox に配送する。"""
+# 配送失敗時にエラーメッセージへ残すレスポンスボディの最大長。
+# 診断に必要なシグナル（先頭のエラーメッセージ）は確保しつつ、巨大な HTML や PII の流入を防ぐ。
+_ERROR_BODY_PREVIEW_MAX = 300
+
+
+async def deliver_activity(
+    job: DeliveryJob, actor: Actor, private_key_pem: str
+) -> tuple[bool, int, str]:
+    """activity をリモート Inbox に配送する。
+
+    Returns:
+        tuple of ``(success, status_code, error_detail)``.
+        - ``success``: 2xx/204 を受け取れたか
+        - ``status_code``: HTTP ステータスコード。レスポンス未受信時は 0
+        - ``error_detail``: 成功時は空文字。失敗時は ``"HTTP 503: <body>"`` や
+          ``"ConnectError: <detail>"`` のような診断可能な文字列
+    """
     # SSRF防止: 内部ネットワークへの配送をブロック
     from urllib.parse import urlparse
 
@@ -110,7 +163,7 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
     parsed = urlparse(job.target_inbox_url)
     if not app_settings.allow_private_networks and is_private_host(parsed.hostname or ""):
         logger.warning("Blocked delivery to private host: %s", job.target_inbox_url)
-        return False
+        return False, 0, "Blocked: private host"
 
     body = json.dumps(job.payload).encode("utf-8")
     # 正しいスキームを保証するためローカルアクターの動的 URL を使用
@@ -130,12 +183,25 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
 
     from app.config import settings
 
-    resp = await _get_http_client(settings).post(
-        job.target_inbox_url,
-        content=body,
-        headers=headers,
-    )
-    return resp.status_code in (200, 202, 204)
+    try:
+        resp = await _get_http_client(settings).post(
+            job.target_inbox_url,
+            content=body,
+            headers=headers,
+        )
+    except Exception as e:
+        # httpx.ConnectError / TimeoutException / RemoteProtocolError など。
+        # 例外クラス名を残すことで後続の集計 (タイムアウト多発、SSL 失敗 etc.) を可能にする。
+        return False, 0, f"{type(e).__name__}: {str(e)[:_ERROR_BODY_PREVIEW_MAX]}"
+
+    if resp.status_code in (200, 202, 204):
+        return True, resp.status_code, ""
+
+    try:
+        body_preview = (resp.text or "")[:_ERROR_BODY_PREVIEW_MAX]
+    except Exception:
+        body_preview = ""
+    return False, resp.status_code, f"HTTP {resp.status_code}: {body_preview}".rstrip(": ")
 
 
 async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
@@ -154,19 +220,29 @@ async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
                 return
 
             try:
-                success = await deliver_activity(job, actor, private_key_pem)
-                if success:
-                    job.status = "delivered"
-                    logger.info("Delivered to %s", job.target_inbox_url)
-                else:
-                    raise Exception("Non-success status code")
+                success, status_code, error_detail = await deliver_activity(
+                    job, actor, private_key_pem
+                )
             except Exception as e:
+                # deliver_activity は想定される例外を握り潰す設計だが、
+                # sign_request 等の内部で想定外が出た場合のフォールバック。
+                logger.exception(
+                    "Unexpected error during delivery to %s", job.target_inbox_url
+                )
+                success = False
+                status_code = 0
+                error_detail = f"Unexpected {type(e).__name__}: {str(e)[:300]}"
+
+            if success:
+                job.status = "delivered"
+                logger.info("Delivered to %s (HTTP %d)", job.target_inbox_url, status_code)
+            else:
                 logger.warning(
                     "Delivery failed to %s (attempt %d/%d): %s",
                     job.target_inbox_url,
                     job.attempts,
                     job.max_attempts,
-                    str(e),
+                    error_detail,
                 )
                 if job.attempts >= job.max_attempts:
                     job.status = "dead"
@@ -174,7 +250,7 @@ async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
                     job.status = "pending"
                     delay = min(60 * (2**job.attempts), 21600)  # Max 6 hours
                     job.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
-                job.error_message = str(e)
+                job.error_message = error_detail
 
             await db.commit()
 
@@ -192,12 +268,30 @@ async def run_delivery_loop():
     """並行ジョブ処理を行うメイン配送ワーカーループ。"""
     logger.info("Delivery worker started (max_concurrent=%d)", MAX_CONCURRENT)
 
+    # 起動時: 前回の worker がクラッシュ/強制停止した際に processing のまま残したジョブを回収。
+    try:
+        async with async_session() as db:
+            await reclaim_orphan_jobs(db)
+    except Exception:
+        logger.exception("Startup orphan reclamation failed")
+
     sem = asyncio.Semaphore(MAX_CONCURRENT)
     tasks: set[asyncio.Task] = set()
+    last_reclaim_at = datetime.now(timezone.utc)
 
     while True:
         try:
             await _update_heartbeat()
+
+            # 定期的に孤児ジョブを回収 (ループ実行中に他インスタンスがクラッシュした場合の保険)。
+            now = datetime.now(timezone.utc)
+            if now - last_reclaim_at >= ORPHAN_RECLAIM_INTERVAL:
+                try:
+                    async with async_session() as db:
+                        await reclaim_orphan_jobs(db)
+                except Exception:
+                    logger.exception("Periodic orphan reclamation failed")
+                last_reclaim_at = now
 
             had_work = False
             async with async_session() as db:

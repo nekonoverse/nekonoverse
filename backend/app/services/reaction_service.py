@@ -26,14 +26,15 @@ async def _publish_reaction_event(db: AsyncSession, note: Note) -> None:
             }
         )
 
-        if note.visibility == "public":
-            await valkey_client.publish("timeline:public", event)
-
-        await valkey_client.publish(f"timeline:home:{note.actor_id}", event)
-
         follower_ids = await get_follower_ids(db, note.actor_id)
+
+        pipe = valkey_client.pipeline()
+        if note.visibility == "public":
+            pipe.publish("timeline:public", event)
+        pipe.publish(f"timeline:home:{note.actor_id}", event)
         for fid in follower_ids:
-            await valkey_client.publish(f"timeline:home:{fid}", event)
+            pipe.publish(f"timeline:home:{fid}", event)
+        await pipe.execute()
     except Exception:
         pass
 

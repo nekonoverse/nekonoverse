@@ -180,7 +180,16 @@ async def _actor_to_account(
     following_count: int | None = None,
     statuses_count: int | None = None,
     db: AsyncSession | None = None,
+    resolve_emojis: bool = True,
 ) -> dict:
+    """Actor を Mastodon 互換 account dict に変換する。
+
+    Args:
+        resolve_emojis: False を指定すると絵文字解決の per-actor クエリをスキップする。
+            呼び出し側で ``_batch_resolve_actor_emojis`` により一括解決済みの場合に
+            指定する。``moved`` フィールドの解決には影響しない (``db`` が渡されていれば
+            引き続き行われる)。
+    """
     import re
 
     avatar = (
@@ -218,7 +227,7 @@ async def _actor_to_account(
     }
 
     # display_name、summary、fields からカスタム絵文字を解決
-    if db:
+    if db and resolve_emojis:
         shortcode_re = re.compile(r":([a-zA-Z0-9_]+):")
         texts = [data["display_name"] or "", data["note"]]
         for f in actor.fields or []:
@@ -594,7 +603,8 @@ async def list_followers(
     emoji_map = await _batch_resolve_actor_emojis(db, actors)
     results = []
     for a in actors:
-        account = await _actor_to_account(a)
+        # db は moved フィールド解決のために渡す。絵文字は emoji_map で差し込む。
+        account = await _actor_to_account(a, db=db, resolve_emojis=False)
         if a.id in emoji_map:
             account["emojis"] = emoji_map[a.id]
         results.append(account)
@@ -618,7 +628,7 @@ async def list_following(
     emoji_map = await _batch_resolve_actor_emojis(db, actors)
     results = []
     for a in actors:
-        account = await _actor_to_account(a)
+        account = await _actor_to_account(a, db=db, resolve_emojis=False)
         if a.id in emoji_map:
             account["emojis"] = emoji_map[a.id]
         results.append(account)
@@ -867,8 +877,15 @@ async def list_blocks(
         return []
 
     result = await db.execute(select(Actor).where(Actor.id.in_(blocked_ids)))
-    actors = result.scalars().all()
-    return [await _actor_to_account(a, db=db) for a in actors]
+    actors = list(result.scalars().all())
+    emoji_map = await _batch_resolve_actor_emojis(db, actors)
+    results = []
+    for a in actors:
+        account = await _actor_to_account(a, db=db, resolve_emojis=False)
+        if a.id in emoji_map:
+            account["emojis"] = emoji_map[a.id]
+        results.append(account)
+    return results
 
 
 @relationships_router.get("/mutes")
@@ -883,5 +900,12 @@ async def list_mutes(
         return []
 
     result = await db.execute(select(Actor).where(Actor.id.in_(muted_ids)))
-    actors = result.scalars().all()
-    return [await _actor_to_account(a, db=db) for a in actors]
+    actors = list(result.scalars().all())
+    emoji_map = await _batch_resolve_actor_emojis(db, actors)
+    results = []
+    for a in actors:
+        account = await _actor_to_account(a, db=db, resolve_emojis=False)
+        if a.id in emoji_map:
+            account["emojis"] = emoji_map[a.id]
+        results.append(account)
+    return results

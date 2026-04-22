@@ -121,6 +121,17 @@ async def delete_list_endpoint(
     return {}
 
 
+def _parse_account_ids(account_ids: list[str]) -> list[uuid.UUID]:
+    """account_ids の UUID パース。不正があれば 422 を返す (L-1)。"""
+    parsed: list[uuid.UUID] = []
+    for account_id in account_ids:
+        try:
+            parsed.append(uuid.UUID(account_id))
+        except (ValueError, AttributeError):
+            raise HTTPException(status_code=422, detail=f"Invalid account ID: {account_id}")
+    return parsed
+
+
 @router.get("/{list_id}/accounts")
 async def get_list_accounts(
     list_id: uuid.UUID,
@@ -130,7 +141,7 @@ async def get_list_accounts(
     lst = await _get_owned_list(db, list_id, user)
     from sqlalchemy import select as sel
 
-    from app.api.mastodon.accounts import _actor_to_account
+    from app.api.mastodon.accounts import _actor_to_account, _batch_resolve_actor_emojis
     from app.models.actor import Actor
     from app.models.list import ListMember
 
@@ -139,8 +150,15 @@ async def get_list_accounts(
         .join(ListMember, ListMember.actor_id == Actor.id)
         .where(ListMember.list_id == lst.id)
     )
-    actors = result.scalars().all()
-    return [await _actor_to_account(a, db=db) for a in actors]
+    actors = list(result.scalars().all())
+    emoji_map = await _batch_resolve_actor_emojis(db, actors)
+    results = []
+    for a in actors:
+        account = await _actor_to_account(a, db=db, resolve_emojis=False)
+        if a.id in emoji_map:
+            account["emojis"] = emoji_map[a.id]
+        results.append(account)
+    return results
 
 
 @router.post(
@@ -158,17 +176,10 @@ async def add_list_accounts(
 
     from app.models.actor import Actor
 
-    # L-1: 不正UUIDに対して422エラーを返す
-    for account_id in body.account_ids:
-        try:
-            uuid.UUID(account_id)
-        except (ValueError, AttributeError):
-            raise HTTPException(status_code=422, detail=f"Invalid account ID: {account_id}")
-    for account_id in body.account_ids:
-        aid = uuid.UUID(account_id)
-        result = await db.execute(sel(Actor).where(Actor.id == aid))
-        actor = result.scalar_one_or_none()
-        if actor:
+    parsed_ids = _parse_account_ids(body.account_ids)
+    if parsed_ids:
+        result = await db.execute(sel(Actor).where(Actor.id.in_(parsed_ids)))
+        for actor in result.scalars().all():
             await add_list_member(db, lst, actor)
     await db.commit()
     return {}
@@ -189,17 +200,10 @@ async def remove_list_accounts(
 
     from app.models.actor import Actor
 
-    # L-1: 不正UUIDに対して422エラーを返す
-    for account_id in body.account_ids:
-        try:
-            uuid.UUID(account_id)
-        except (ValueError, AttributeError):
-            raise HTTPException(status_code=422, detail=f"Invalid account ID: {account_id}")
-    for account_id in body.account_ids:
-        aid = uuid.UUID(account_id)
-        result = await db.execute(sel(Actor).where(Actor.id == aid))
-        actor = result.scalar_one_or_none()
-        if actor:
+    parsed_ids = _parse_account_ids(body.account_ids)
+    if parsed_ids:
+        result = await db.execute(sel(Actor).where(Actor.id.in_(parsed_ids)))
+        for actor in result.scalars().all():
             await remove_list_member(db, lst, actor)
     await db.commit()
     return {}

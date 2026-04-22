@@ -402,8 +402,6 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         from app.valkey_client import valkey as valkey_client
 
         event = json.dumps({"event": "update", "payload": {"id": str(note.id)}})
-        if visibility == "public":
-            await valkey_client.publish("timeline:public", event)
         # このリモートアクターのフォロワー (フォローしているローカルユーザー) に配信
         # システムアカウントのアクターIDを除外
         from app.services.proxy_service import get_system_actor_ids
@@ -419,14 +417,17 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         )
 
         exclusive_user_ids = await get_exclusive_list_user_actor_ids(db, actor.id)
+        list_ids = await get_list_ids_for_actor(db, actor.id)
+
+        pipe = valkey_client.pipeline()
+        if visibility == "public":
+            pipe.publish("timeline:public", event)
         for fid in follower_ids:
             if fid not in system_ids and fid not in exclusive_user_ids:
-                await valkey_client.publish(f"timeline:home:{fid}", event)
-
-        # リストタイムラインチャンネルに配信
-        list_ids = await get_list_ids_for_actor(db, actor.id)
+                pipe.publish(f"timeline:home:{fid}", event)
         for lid in list_ids:
-            await valkey_client.publish(f"timeline:list:{lid}", event)
+            pipe.publish(f"timeline:list:{lid}", event)
+        await pipe.execute()
     except Exception:
         logger.exception("Failed to publish remote note to streaming")
 

@@ -230,6 +230,50 @@ async def test_list_mutes_api(db, app_client, mock_valkey, test_user, test_user_
     assert any(a["username"] == "testuser_b" for a in data)
 
 
+# Regression: PR #997 で _actor_to_account(a, db=db) を _actor_to_account(a) に変更した際に
+# moved フィールドの解決が一緒に止まっていた。#999 で resolve_emojis=False による
+# バッチ絵文字との両立を入れた後の検証。
+async def test_list_blocks_includes_moved_field(
+    db, app_client, mock_valkey, test_user
+):
+    """ブロックした相手が移行済みなら moved フィールドが返る。"""
+    # 移行先アクター
+    target = await make_remote_actor(db, username="alice_new", domain="new.example")
+    # 移行元アクター (moved_to_ap_id を target に)
+    source = await make_remote_actor(db, username="alice_old", domain="old.example")
+    source.moved_to_ap_id = target.ap_id
+    await db.commit()
+
+    client = authed_client_for(app_client, mock_valkey, test_user)
+    await client.post(f"/api/v1/accounts/{source.id}/block")
+
+    resp = await client.get("/api/v1/blocks")
+    assert resp.status_code == 200
+    data = resp.json()
+    entry = next(a for a in data if a["username"] == "alice_old")
+    assert "moved" in entry, "moved field must be resolved"
+    assert entry["moved"]["username"] == "alice_new"
+
+
+async def test_list_mutes_includes_moved_field(
+    db, app_client, mock_valkey, test_user
+):
+    target = await make_remote_actor(db, username="bob_new", domain="new.example")
+    source = await make_remote_actor(db, username="bob_old", domain="old.example")
+    source.moved_to_ap_id = target.ap_id
+    await db.commit()
+
+    client = authed_client_for(app_client, mock_valkey, test_user)
+    await client.post(f"/api/v1/accounts/{source.id}/mute")
+
+    resp = await client.get("/api/v1/mutes")
+    assert resp.status_code == 200
+    data = resp.json()
+    entry = next(a for a in data if a["username"] == "bob_old")
+    assert "moved" in entry
+    assert entry["moved"]["username"] == "bob_new"
+
+
 # ── Bookmark Service ─────────────────────────────────────────────────────────
 
 

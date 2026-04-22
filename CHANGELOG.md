@@ -1,3 +1,23 @@
+## [20260423-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260423-1) — 2026-04-23
+
+### バグ修正
+
+- **配送失敗時のエラー詳細を記録** — "Non-success status code" の一括表示から `HTTP 503: <body>` や `ConnectError: <detail>` のような具体的メッセージに変更。診断時にステータスコード・例外型で集計できるようになる (#993, #995)
+- **孤児 processing ジョブの自動回収** — worker のクラッシュ/再起動時に `status='processing'` のまま残されたジョブを起動時および 1 分毎に回収 (#992, #996)
+- **moved フィールドが `/blocks`, `/mutes`, リスト API で解決されない問題を修正** — バッチ絵文字解決導入時のリグレッション。`/followers`, `/following` の pre-existing 同問題も併せて修正 (#999, #1000)
+
+### パフォーマンス
+
+- **リスト / blocks / mutes API の N+1 解消** — `add/remove/get_list_accounts`, `list_blocks`, `list_mutes` で発生していたループ内 Actor / 絵文字クエリを一括化 (#989, #990, #997)
+- **ストリーミング publish の Valkey pipeline 化** — Announce 受信・リモート Note 受信・Reblog・リアクション通知で、フォロワー数に比例していた Valkey 往復を 1 回に削減 (#991, #998)
+
+### インフラ
+
+- **Cloudflare WARP 経由の外向き HTTP IP 秘匿対応** — backend の forward proxy 機構が既に実装済みだったため `httpx[socks]` 追加 + docker-compose に warp サービス定義 + `.env` に `HTTPS_PROXY=socks5://warp:1080` で有効化できる (#987, #988)
+- **neko-vision: WebP/GIF → JPEG 変換** — llama.cpp の stb_image が WebP/GIF を扱えない問題に対応し、受信側で Pillow 経由の JPEG 変換を行う
+
+---
+
 ## [20260417-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260417-1) — 2026-04-17
 
 ### 機能追加

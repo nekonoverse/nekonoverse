@@ -1520,12 +1520,15 @@ async def reblog_status(
         from app.valkey_client import valkey as valkey_client
 
         event = _json.dumps({"event": "update", "payload": {"id": str(reblog_note.id)}})
-        if reblog_vis == "public":
-            await valkey_client.publish("timeline:public", event)
         follower_ids = await get_follower_ids(db, actor.id)
+
+        pipe = valkey_client.pipeline()
+        if reblog_vis == "public":
+            pipe.publish("timeline:public", event)
         for fid in follower_ids:
-            await valkey_client.publish(f"timeline:home:{fid}", event)
-        await valkey_client.publish(f"timeline:home:{actor.id}", event)
+            pipe.publish(f"timeline:home:{fid}", event)
+        pipe.publish(f"timeline:home:{actor.id}", event)
+        await pipe.execute()
     except Exception:
         pass  # pub/sub の失敗でリブログを失敗させない
 
