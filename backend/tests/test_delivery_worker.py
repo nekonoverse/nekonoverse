@@ -6,7 +6,6 @@ from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy import select
 
 from app.models.delivery import DeliveryJob
 from app.worker.delivery_worker import (
@@ -149,7 +148,7 @@ async def test_get_actor_with_key_nonexistent(db, mock_valkey):
 # ── deliver_activity ──
 
 
-def _mock_httpx_client(status_code=202, side_effect=None):
+def _mock_httpx_client(status_code=202, side_effect=None, text=""):
     """Helper to create a mocked httpx client for _get_http_client."""
     mock_client = AsyncMock()
     if side_effect:
@@ -157,6 +156,7 @@ def _mock_httpx_client(status_code=202, side_effect=None):
     else:
         mock_response = MagicMock()
         mock_response.status_code = status_code
+        mock_response.text = text
         mock_client.post = AsyncMock(return_value=mock_response)
     return mock_client
 
@@ -169,23 +169,84 @@ async def test_deliver_activity_success(db, test_user, pending_job, mock_valkey)
         patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
         patch("app.utils.network.is_private_host", return_value=False),
     ):
-        result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
+        success, status_code, error_detail = await deliver_activity(
+            pending_job, actor, test_user.private_key_pem
+        )
 
-    assert result is True
+    assert success is True
+    assert status_code == 202
+    assert error_detail == ""
     mock_client.post.assert_called_once()
 
 
 async def test_deliver_activity_failure_500(db, test_user, pending_job, mock_valkey):
     actor = test_user.actor
-    mock_client = _mock_httpx_client(500)
+    mock_client = _mock_httpx_client(500, text="upstream exploded")
 
     with (
         patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
         patch("app.utils.network.is_private_host", return_value=False),
     ):
-        result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
+        success, status_code, error_detail = await deliver_activity(
+            pending_job, actor, test_user.private_key_pem
+        )
 
-    assert result is False
+    assert success is False
+    assert status_code == 500
+    assert "HTTP 500" in error_detail
+    assert "upstream exploded" in error_detail
+
+
+async def test_deliver_activity_error_detail_truncates_body(
+    db, test_user, pending_job, mock_valkey
+):
+    huge_body = "x" * 10_000
+    mock_client = _mock_httpx_client(400, text=huge_body)
+
+    with (
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
+    ):
+        _, _, error_detail = await deliver_activity(
+            pending_job, test_user.actor, test_user.private_key_pem
+        )
+
+    # 先頭 300 文字 + "HTTP 400: " のプレフィックスで十分短い
+    assert len(error_detail) < 400
+
+
+async def test_deliver_activity_network_exception_returns_type_name(
+    db, test_user, pending_job, mock_valkey
+):
+    import httpx
+
+    mock_client = _mock_httpx_client(side_effect=httpx.ConnectError("all attempts failed"))
+
+    with (
+        patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
+        patch("app.utils.network.is_private_host", return_value=False),
+    ):
+        success, status_code, error_detail = await deliver_activity(
+            pending_job, test_user.actor, test_user.private_key_pem
+        )
+
+    assert success is False
+    assert status_code == 0
+    assert "ConnectError" in error_detail
+    assert "all attempts failed" in error_detail
+
+
+async def test_deliver_activity_private_host_blocked(
+    db, test_user, pending_job, mock_valkey
+):
+    with patch("app.utils.network.is_private_host", return_value=True):
+        success, status_code, error_detail = await deliver_activity(
+            pending_job, test_user.actor, test_user.private_key_pem
+        )
+
+    assert success is False
+    assert status_code == 0
+    assert "private host" in error_detail
 
 
 async def test_deliver_activity_accepts_200(db, test_user, pending_job, mock_valkey):
@@ -196,9 +257,11 @@ async def test_deliver_activity_accepts_200(db, test_user, pending_job, mock_val
         patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
         patch("app.utils.network.is_private_host", return_value=False),
     ):
-        result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
+        success, _, _ = await deliver_activity(
+            pending_job, actor, test_user.private_key_pem
+        )
 
-    assert result is True
+    assert success is True
 
 
 async def test_deliver_activity_accepts_204(db, test_user, pending_job, mock_valkey):
@@ -209,9 +272,11 @@ async def test_deliver_activity_accepts_204(db, test_user, pending_job, mock_val
         patch("app.worker.delivery_worker._get_http_client", return_value=mock_client),
         patch("app.utils.network.is_private_host", return_value=False),
     ):
-        result = await deliver_activity(pending_job, actor, test_user.private_key_pem)
+        success, _, _ = await deliver_activity(
+            pending_job, actor, test_user.private_key_pem
+        )
 
-    assert result is True
+    assert success is True
 
 
 async def test_deliver_activity_sends_signed_headers(db, test_user, pending_job, mock_valkey):
