@@ -173,10 +173,14 @@ async def handle_announce(db: AsyncSession, activity: dict):
         from app.valkey_client import valkey as valkey_client
 
         event = json.dumps({"event": "update", "payload": {"id": str(note.id)}})
-        if visibility == "public":
-            await valkey_client.publish("timeline:public", event)
         follower_ids = await get_follower_ids(db, actor.id)
+
+        # 大量フォロワーでも 1 往復で済むよう pipeline で一括 publish。
+        pipe = valkey_client.pipeline()
+        if visibility == "public":
+            pipe.publish("timeline:public", event)
         for fid in follower_ids:
-            await valkey_client.publish(f"timeline:home:{fid}", event)
+            pipe.publish(f"timeline:home:{fid}", event)
+        await pipe.execute()
     except Exception:
         logger.debug("Failed to publish Announce streaming event", exc_info=True)
