@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -22,6 +22,13 @@ logger = logging.getLogger(__name__)
 AP_CONTENT_TYPE = 'application/ld+json; profile="https://www.w3.org/ns/activitystreams"'
 
 MAX_CONCURRENT = 16
+
+# 孤児ジョブ回収の閾値。worker がクラッシュ/再起動で status='processing' のまま
+# 残したジョブをこの時間経過後に pending に戻す。配送タイムアウト (30s) と
+# 処理時間を含めても数分あれば十分。
+ORPHAN_RECLAIM_THRESHOLD = timedelta(minutes=10)
+# ループ中に孤児回収を走らせる間隔。
+ORPHAN_RECLAIM_INTERVAL = timedelta(minutes=1)
 
 # L-1: 署名鍵キャッシュ (actor_id -> (Actor, private_key_pem, cached_at))
 _signing_key_cache: dict[uuid.UUID, tuple[Actor, str, float]] = {}
@@ -61,6 +68,37 @@ async def get_pending_jobs(
         .with_for_update(skip_locked=True)
     )
     return list(result.scalars().all())
+
+
+async def reclaim_orphan_jobs(
+    db: AsyncSession, threshold: timedelta = ORPHAN_RECLAIM_THRESHOLD
+) -> int:
+    """processing のまま放置された孤児ジョブを pending に戻す。
+
+    worker がクラッシュ/再起動したときに status='processing' のまま残されたジョブを
+    回収する。attempts は保持するので、次回実行時のバックオフは引き続き有効。
+
+    Returns:
+        回収したジョブ数
+    """
+    cutoff = datetime.now(timezone.utc) - threshold
+    result = await db.execute(
+        update(DeliveryJob)
+        .where(
+            DeliveryJob.status == "processing",
+            DeliveryJob.last_attempted_at < cutoff,
+        )
+        .values(status="pending")
+    )
+    await db.commit()
+    count = result.rowcount or 0
+    if count > 0:
+        logger.warning(
+            "Reclaimed %d orphan processing jobs (older than %s)",
+            count,
+            threshold,
+        )
+    return count
 
 
 async def get_next_jobs(db: AsyncSession, limit: int = 20) -> list[DeliveryJob]:
@@ -230,12 +268,30 @@ async def run_delivery_loop():
     """並行ジョブ処理を行うメイン配送ワーカーループ。"""
     logger.info("Delivery worker started (max_concurrent=%d)", MAX_CONCURRENT)
 
+    # 起動時: 前回の worker がクラッシュ/強制停止した際に processing のまま残したジョブを回収。
+    try:
+        async with async_session() as db:
+            await reclaim_orphan_jobs(db)
+    except Exception:
+        logger.exception("Startup orphan reclamation failed")
+
     sem = asyncio.Semaphore(MAX_CONCURRENT)
     tasks: set[asyncio.Task] = set()
+    last_reclaim_at = datetime.now(timezone.utc)
 
     while True:
         try:
             await _update_heartbeat()
+
+            # 定期的に孤児ジョブを回収 (ループ実行中に他インスタンスがクラッシュした場合の保険)。
+            now = datetime.now(timezone.utc)
+            if now - last_reclaim_at >= ORPHAN_RECLAIM_INTERVAL:
+                try:
+                    async with async_session() as db:
+                        await reclaim_orphan_jobs(db)
+                except Exception:
+                    logger.exception("Periodic orphan reclamation failed")
+                last_reclaim_at = now
 
             had_work = False
             async with async_session() as db:
