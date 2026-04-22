@@ -9,10 +9,12 @@ import pytest
 
 from app.models.delivery import DeliveryJob
 from app.worker.delivery_worker import (
+    ORPHAN_RECLAIM_THRESHOLD,
     _deliver_one,
     deliver_activity,
     get_actor_with_key,
     get_pending_jobs,
+    reclaim_orphan_jobs,
 )
 from tests.conftest import make_remote_actor
 
@@ -480,3 +482,84 @@ async def test_deliver_one_skips_non_processing_job(db, pending_job, mock_valkey
 
     # Job should remain in pending state, untouched
     assert pending_job.status == "pending"
+
+
+# ── reclaim_orphan_jobs ──
+
+
+async def test_reclaim_orphan_jobs_recovers_old_processing(db, test_user, mock_valkey):
+    old_job = DeliveryJob(
+        actor_id=test_user.actor_id,
+        target_inbox_url="http://remote.example/inbox",
+        payload={"type": "Create"},
+        status="processing",
+        attempts=3,
+        last_attempted_at=datetime.now(timezone.utc) - ORPHAN_RECLAIM_THRESHOLD - timedelta(
+            minutes=5
+        ),
+    )
+    db.add(old_job)
+    await db.flush()
+
+    count = await reclaim_orphan_jobs(db)
+
+    assert count == 1
+    await db.refresh(old_job)
+    assert old_job.status == "pending"
+    # attempts は保持されるべき (次回バックオフが引き続き効く)
+    assert old_job.attempts == 3
+
+
+async def test_reclaim_orphan_jobs_leaves_fresh_processing(db, test_user, mock_valkey):
+    fresh_job = DeliveryJob(
+        actor_id=test_user.actor_id,
+        target_inbox_url="http://remote.example/inbox",
+        payload={"type": "Create"},
+        status="processing",
+        attempts=1,
+        last_attempted_at=datetime.now(timezone.utc) - timedelta(seconds=30),
+    )
+    db.add(fresh_job)
+    await db.flush()
+
+    count = await reclaim_orphan_jobs(db)
+
+    assert count == 0
+    await db.refresh(fresh_job)
+    assert fresh_job.status == "processing"
+
+
+async def test_reclaim_orphan_jobs_ignores_other_statuses(db, test_user, mock_valkey):
+    old_ts = datetime.now(timezone.utc) - ORPHAN_RECLAIM_THRESHOLD - timedelta(hours=1)
+    pending = DeliveryJob(
+        actor_id=test_user.actor_id,
+        target_inbox_url="http://remote.example/inbox",
+        payload={"type": "Create"},
+        status="pending",
+        last_attempted_at=old_ts,
+    )
+    delivered = DeliveryJob(
+        actor_id=test_user.actor_id,
+        target_inbox_url="http://remote.example/inbox",
+        payload={"type": "Create"},
+        status="delivered",
+        last_attempted_at=old_ts,
+    )
+    dead = DeliveryJob(
+        actor_id=test_user.actor_id,
+        target_inbox_url="http://remote.example/inbox",
+        payload={"type": "Create"},
+        status="dead",
+        last_attempted_at=old_ts,
+    )
+    db.add_all([pending, delivered, dead])
+    await db.flush()
+
+    count = await reclaim_orphan_jobs(db)
+
+    assert count == 0
+    for job in (pending, delivered, dead):
+        await db.refresh(job)
+    assert pending.status == "pending"
+    assert delivered.status == "delivered"
+    assert dead.status == "dead"
