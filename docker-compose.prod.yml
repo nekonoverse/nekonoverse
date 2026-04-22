@@ -352,6 +352,34 @@ services:
   #   volumes:
   #     - video_thumb_sock:/var/run/video-thumb
 
+  # Optional: Cloudflare WARP (uncomment to use)
+  # 外向きの連合配送・リモートメディア取得の送信元 IP を Cloudflare WARP で秘匿する。
+  # 使用時は .env で HTTPS_PROXY=socks5://warp:1080 / HTTP_PROXY=socks5://warp:1080 を設定。
+  # app/worker に `depends_on: [warp]` を追加するとさらに堅牢。
+  # 注意: 出口 IP が Cloudflare ASN になるため、一部 fediverse 鯖にブロックされる可能性あり。
+  # warp:
+  #   image: caomingjun/warp
+  #   restart: unless-stopped
+  #   cap_add:
+  #     - NET_ADMIN
+  #   sysctls:
+  #     - net.ipv6.conf.all.disable_ipv6=0
+  #     - net.ipv4.conf.all.src_valid_mark=1
+  #   environment:
+  #     WARP_SLEEP: 2
+  #     # Zero Trust Teams を使う場合のみ（無料プランでは不要）:
+  #     # BETA_FIX_HOST_CONNECTIVITY: 1
+  #     # REGISTER_WHEN_MDM_EXISTS: 1
+  #     # WARP_LICENSE_KEY: ${WARP_LICENSE_KEY:-}
+  #   volumes:
+  #     - ./volumes/warp:/var/lib/cloudflare-warp
+  #   healthcheck:
+  #     test: ["CMD", "curl", "-fsS", "--socks5", "127.0.0.1:1080", "https://www.cloudflare.com/cdn-cgi/trace"]
+  #     interval: 15s
+  #     timeout: 5s
+  #     retries: 6
+  #     start_period: 30s
+
   # Optional: Cloudflare Tunnel (uncomment to use)
   # cp .env.cloudflared.example .env.cloudflared してトークンを設定
   # 使用時は nginx の ports を削除し networks: [internal] のみにする。
