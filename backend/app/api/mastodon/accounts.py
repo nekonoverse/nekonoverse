@@ -867,8 +867,15 @@ async def list_blocks(
         return []
 
     result = await db.execute(select(Actor).where(Actor.id.in_(blocked_ids)))
-    actors = result.scalars().all()
-    return [await _actor_to_account(a, db=db) for a in actors]
+    actors = list(result.scalars().all())
+    emoji_map = await _batch_resolve_actor_emojis(db, actors)
+    results = []
+    for a in actors:
+        account = await _actor_to_account(a)
+        if a.id in emoji_map:
+            account["emojis"] = emoji_map[a.id]
+        results.append(account)
+    return results
 
 
 @relationships_router.get("/mutes")
@@ -883,5 +890,12 @@ async def list_mutes(
         return []
 
     result = await db.execute(select(Actor).where(Actor.id.in_(muted_ids)))
-    actors = result.scalars().all()
-    return [await _actor_to_account(a, db=db) for a in actors]
+    actors = list(result.scalars().all())
+    emoji_map = await _batch_resolve_actor_emojis(db, actors)
+    results = []
+    for a in actors:
+        account = await _actor_to_account(a)
+        if a.id in emoji_map:
+            account["emojis"] = emoji_map[a.id]
+        results.append(account)
+    return results
