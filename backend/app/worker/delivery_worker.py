@@ -99,8 +99,23 @@ async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Act
     return actor, actor.local_user.private_key_pem
 
 
-async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str) -> bool:
-    """activity をリモート Inbox に配送する。"""
+# 配送失敗時にエラーメッセージへ残すレスポンスボディの最大長。
+# 診断に必要なシグナル（先頭のエラーメッセージ）は確保しつつ、巨大な HTML や PII の流入を防ぐ。
+_ERROR_BODY_PREVIEW_MAX = 300
+
+
+async def deliver_activity(
+    job: DeliveryJob, actor: Actor, private_key_pem: str
+) -> tuple[bool, int, str]:
+    """activity をリモート Inbox に配送する。
+
+    Returns:
+        tuple of ``(success, status_code, error_detail)``.
+        - ``success``: 2xx/204 を受け取れたか
+        - ``status_code``: HTTP ステータスコード。レスポンス未受信時は 0
+        - ``error_detail``: 成功時は空文字。失敗時は ``"HTTP 503: <body>"`` や
+          ``"ConnectError: <detail>"`` のような診断可能な文字列
+    """
     # SSRF防止: 内部ネットワークへの配送をブロック
     from urllib.parse import urlparse
 
@@ -110,7 +125,7 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
     parsed = urlparse(job.target_inbox_url)
     if not app_settings.allow_private_networks and is_private_host(parsed.hostname or ""):
         logger.warning("Blocked delivery to private host: %s", job.target_inbox_url)
-        return False
+        return False, 0, "Blocked: private host"
 
     body = json.dumps(job.payload).encode("utf-8")
     # 正しいスキームを保証するためローカルアクターの動的 URL を使用
@@ -130,12 +145,25 @@ async def deliver_activity(job: DeliveryJob, actor: Actor, private_key_pem: str)
 
     from app.config import settings
 
-    resp = await _get_http_client(settings).post(
-        job.target_inbox_url,
-        content=body,
-        headers=headers,
-    )
-    return resp.status_code in (200, 202, 204)
+    try:
+        resp = await _get_http_client(settings).post(
+            job.target_inbox_url,
+            content=body,
+            headers=headers,
+        )
+    except Exception as e:
+        # httpx.ConnectError / TimeoutException / RemoteProtocolError など。
+        # 例外クラス名を残すことで後続の集計 (タイムアウト多発、SSL 失敗 etc.) を可能にする。
+        return False, 0, f"{type(e).__name__}: {str(e)[:_ERROR_BODY_PREVIEW_MAX]}"
+
+    if resp.status_code in (200, 202, 204):
+        return True, resp.status_code, ""
+
+    try:
+        body_preview = (resp.text or "")[:_ERROR_BODY_PREVIEW_MAX]
+    except Exception:
+        body_preview = ""
+    return False, resp.status_code, f"HTTP {resp.status_code}: {body_preview}".rstrip(": ")
 
 
 async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
@@ -154,19 +182,29 @@ async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
                 return
 
             try:
-                success = await deliver_activity(job, actor, private_key_pem)
-                if success:
-                    job.status = "delivered"
-                    logger.info("Delivered to %s", job.target_inbox_url)
-                else:
-                    raise Exception("Non-success status code")
+                success, status_code, error_detail = await deliver_activity(
+                    job, actor, private_key_pem
+                )
             except Exception as e:
+                # deliver_activity は想定される例外を握り潰す設計だが、
+                # sign_request 等の内部で想定外が出た場合のフォールバック。
+                logger.exception(
+                    "Unexpected error during delivery to %s", job.target_inbox_url
+                )
+                success = False
+                status_code = 0
+                error_detail = f"Unexpected {type(e).__name__}: {str(e)[:300]}"
+
+            if success:
+                job.status = "delivered"
+                logger.info("Delivered to %s (HTTP %d)", job.target_inbox_url, status_code)
+            else:
                 logger.warning(
                     "Delivery failed to %s (attempt %d/%d): %s",
                     job.target_inbox_url,
                     job.attempts,
                     job.max_attempts,
-                    str(e),
+                    error_detail,
                 )
                 if job.attempts >= job.max_attempts:
                     job.status = "dead"
@@ -174,7 +212,7 @@ async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
                     job.status = "pending"
                     delay = min(60 * (2**job.attempts), 21600)  # Max 6 hours
                     job.next_retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
-                job.error_message = str(e)
+                job.error_message = error_detail
 
             await db.commit()
 
