@@ -1,6 +1,7 @@
 import asyncio
 import logging
 
+from app.worker.delivery_purge_worker import run_delivery_purge_loop
 from app.worker.delivery_worker import run_delivery_loop
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
@@ -21,6 +22,7 @@ async def run_worker():
 
     await asyncio.gather(
         run_delivery_loop(),
+        run_delivery_purge_loop(),
         run_face_detect_loop(),
         run_summary_proxy_loop(),
         run_email_loop(),
