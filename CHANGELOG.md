@@ -1,3 +1,15 @@
+## [20260423-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260423-2) — 2026-04-23
+
+### パフォーマンス
+
+- **`delivery_queue` の bloat 対策** — delivered 済み配送ジョブを 1 時間ごとに自動 purge するワーカーを追加し、`delivery_queue` の autovacuum を攻めた設定 (`scale_factor=0.05`) に変更。本番で `dead_ratio` が 0.03 → 0.19 まで悪化していた根本原因だった `purge_delivered` の定期未実行と UPDATE-heavy テーブルのデフォルト autovacuum を同時に解消 (#1002, #1003)
+
+### 運用メモ
+
+- 初回アップグレード時は `quickstart.md` 記載の `DELETE ... + VACUUM FULL delivery_queue` を一度だけ手動実行して既存の bloat を解消する必要がある (テーブルロック発生のため深夜帯推奨)
+
+---
+
 ## [20260423-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260423-1) — 2026-04-23
 
 ### バグ修正
