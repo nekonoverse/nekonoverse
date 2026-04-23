@@ -123,6 +123,26 @@ docker compose restart nginx
 !!! note "UDS 構成と TCP 構成"
     `docker-compose.prod.yml` では全サービス間通信を Unix Domain Socket で行うため、コンテナ再作成時に nginx の再起動が不要。TCP 構成 (`docker-compose.yml`) では内部 IP が変わるため `restart nginx` が必要。
 
+### migration 042 適用時の delivery_queue bloat 解消 (一度だけ)
+
+migration 042 適用後は定期 purge ワーカーが 1 時間ごとに 24h 超の `delivered` 行を削除し、`delivery_queue` の autovacuum も攻めた設定 (`scale_factor=0.05`) に変わります。ただし既存の bloat は手動で `VACUUM FULL` する必要があります（初回適用時のみ）。
+
+```bash
+# 現状確認: dead_ratio が 0.1 を超えていたら実施推奨
+docker compose exec postgresql psql -U nekonoverse -d nekonoverse -c "
+SELECT pg_size_pretty(pg_total_relation_size('delivery_queue')) AS size,
+       n_dead_tup::float / NULLIF(n_live_tup,0) AS dead_ratio,
+       n_live_tup AS live_rows
+FROM pg_stat_user_tables WHERE relname='delivery_queue';
+"
+
+# 既存の delivered を purge してから VACUUM FULL（テーブルロックが走るので深夜帯推奨）
+docker compose exec postgresql psql -U nekonoverse -d nekonoverse -c "
+DELETE FROM delivery_queue WHERE status='delivered' AND created_at < now() - interval '24 hours';
+VACUUM FULL delivery_queue;
+"
+```
+
 ### Docker イメージタグ
 
 | タグ | 内容 | 用途 |
