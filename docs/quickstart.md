@@ -137,10 +137,10 @@ FROM pg_stat_user_tables WHERE relname='delivery_queue';
 "
 
 # 既存の delivered を purge してから VACUUM FULL（テーブルロックが走るので深夜帯推奨）
-docker compose exec postgresql psql -U nekonoverse -d nekonoverse -c "
-DELETE FROM delivery_queue WHERE status='delivered' AND created_at < now() - interval '24 hours';
-VACUUM FULL delivery_queue;
-"
+# VACUUM FULL はトランザクション内で実行できないため `-c` を分ける必要がある
+docker compose exec postgresql psql -U nekonoverse -d nekonoverse \
+  -c "DELETE FROM delivery_queue WHERE status='delivered' AND created_at < now() - interval '24 hours';" \
+  -c "VACUUM FULL delivery_queue;"
 ```
 
 ### Docker イメージタグ
