@@ -317,7 +317,8 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         status_count = stats_row.statuses or 0
         domain_count = stats_row.domains or 0
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception("instance v1 stats query failed")
 
     # VAPID公開鍵 (Web Push用、push_enabledの場合のみ)
     vapid_key = None
@@ -476,7 +477,8 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         )
         user_count = user_result.scalar() or 0
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception("instance v2 user_count query failed")
 
     vapid_key = None
     try:
