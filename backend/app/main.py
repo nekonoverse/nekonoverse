@@ -233,7 +233,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
-    from sqlalchemy import func, literal_column, select
+    from sqlalchemy import func, select
 
     from app.models.actor import Actor
     from app.models.note import Note
@@ -310,7 +310,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
                 user_sq.label("users"),
                 status_sq.label("statuses"),
                 domain_sq.label("domains"),
-            ).select_from(literal_column("(SELECT 1) AS _dummy"))
+            )
         )
         stats_row = stats_result.one()
         user_count = stats_row.users or 0

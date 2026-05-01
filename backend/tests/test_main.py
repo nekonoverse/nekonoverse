@@ -24,6 +24,24 @@ async def test_instance_info_registrations(app_client):
     assert isinstance(data["registrations"], bool)
 
 
+async def test_instance_info_stats_reflect_db(app_client, db, mock_valkey):
+    """stats.user_count は実 DB 件数を反映する (#1006 回帰: select_from(literal_column(...)) で
+    SQLAlchemy が ArgumentError を投げ、try/except で握り潰されて常に 0 を返していた)。"""
+    from app.services.user_service import create_user
+
+    await create_user(db, "stats_user_1", "su1@example.com", "password1234")
+    await create_user(db, "stats_user_2", "su2@example.com", "password1234")
+    await db.commit()
+
+    resp = await app_client.get("/api/v1/instance")
+    data = resp.json()
+    stats = data["stats"]
+    assert isinstance(stats["user_count"], int)
+    assert isinstance(stats["status_count"], int)
+    assert isinstance(stats["domain_count"], int)
+    assert stats["user_count"] >= 2
+
+
 async def test_instance_contact_account(app_client, db, mock_valkey):
     """contact.account returns admin Account object for Mastodon client compat."""
     from app.services.user_service import create_user
