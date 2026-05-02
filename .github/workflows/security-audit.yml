@@ -33,7 +33,13 @@ jobs:
           python-version: '3.12'
       - run: pip install pip-audit
       - run: pip install -e backend/
-      - run: pip-audit --ignore-vuln CVE-2026-4539  # pygments 2.19.2, no fix available yet
+      - run: |
+          pip-audit \
+            --ignore-vuln CVE-2026-4539 \
+            --ignore-vuln CVE-2026-3219
+          # CVE-2026-4539: pygments 2.19.2, no fix available yet
+          # CVE-2026-3219: pip 26.0.1 自身、修正版未リリース。tar+ZIP 連結ファイル誤認識 (CVSS 4.6
+          #   MEDIUM、AV:L + UI:A)。CI は信頼できる PyPI/自前依存のみ install するので実質リスクなし
 
   npm-audit:
     name: npm audit (Node.js)
