@@ -233,7 +233,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
     except Exception:
         pass
 
-    from sqlalchemy import func, literal_column, select
+    from sqlalchemy import func, select
 
     from app.models.actor import Actor
     from app.models.note import Note
@@ -310,14 +310,15 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
                 user_sq.label("users"),
                 status_sq.label("statuses"),
                 domain_sq.label("domains"),
-            ).select_from(literal_column("(SELECT 1) AS _dummy"))
+            )
         )
         stats_row = stats_result.one()
         user_count = stats_row.users or 0
         status_count = stats_row.statuses or 0
         domain_count = stats_row.domains or 0
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception("instance v1 stats query failed")
 
     # VAPID公開鍵 (Web Push用、push_enabledの場合のみ)
     vapid_key = None
@@ -476,7 +477,8 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         )
         user_count = user_result.scalar() or 0
     except Exception:
-        pass
+        import logging
+        logging.getLogger(__name__).exception("instance v2 user_count query failed")
 
     vapid_key = None
     try:
