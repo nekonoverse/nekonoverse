@@ -1,3 +1,23 @@
+## [20260502-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260502-1) — 2026-05-02
+
+### バグ修正
+
+- **`/api/v1/instance` の `stats` が常に 0 を返すバグを修正** — #976 で導入された統計クエリ最適化 (`select_from(literal_column("(SELECT 1) AS _dummy"))`) が SQLAlchemy 2 と非互換で `ArgumentError` を投げ、`except Exception: pass` で握り潰されてログイン前画面の統計が描画されない状態だった。同関数内 + v2 instance 側の同パターンの except も `logger.exception()` 化し、握り潰し再発を防止 (#1006, #1007)
+
+### 依存関係
+
+- **postcss 8.5.8 → 8.5.13** — 8.5.10 (XSS) / 8.5.12 (任意ファイル読み取り) の security fix を含む。Vite 経由の build-time devDep のため実環境への影響は軽微 (#1005)
+
+### CI / セキュリティ
+
+- **pip-audit で CVE-2026-3219 (pip 自身の未修正脆弱性) を suppress** — pip 26.0.1 自身の tar+ZIP 連結ファイル誤認識 CVE。修正版未リリースだが CVSS 4.6 (MEDIUM) + AV:L + UI:A で CI 環境では実質リスクなし。修正版リリース後に解除予定 (#1008)
+
+### 運用ドキュメント
+
+- **CLAUDE.md (claude-md submodule)**: `except Exception: pass` で握り潰さない方針 + クエリ最適化系の PR は実値 assert する回帰テスト必須を追加
+
+---
+
 ## [20260423-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260423-2) — 2026-04-23
 
 ### パフォーマンス
