@@ -276,17 +276,13 @@ services:
   # Optional: media-proxy-rs (uncomment to use)
   # 画像変換専用。/transform POST のみ使用するため外部アクセス不要。
   # network_mode: "none" で TCP を無効化し UDS のみで通信。
+  # イメージは distroless ベース (shell / chown / su なし) なので、socket 用 named volume は
+  # tmpfs + uid/gid 指定で初回から 852 所有にし、コンテナ自体は 852 で直接起動する。
   # media-proxy-rs:
   #   image: ghcr.io/nekonoverse/media-proxy-rs:main
   #   restart: unless-stopped
   #   network_mode: "none"
-  #   user: "0:0"
-  #   command:
-  #     - sh
-  #     - -c
-  #     - |
-  #       chown 852:852 /var/run/media-proxy-rs &&
-  #       exec su -s /bin/sh proxy -c './media-proxy-rs'
+  #   user: "852:852"
   #   deploy:
   #     resources:
   #       limits:
@@ -428,7 +424,12 @@ volumes:
   # face-detect UDS 使用時はコメント解除
   # face_detect_sock:
   # media-proxy-rs UDS 使用時はコメント解除
+  # (distroless イメージは chown を持たないため tmpfs + uid/gid 指定で 852 所有を初期化する)
   # media_proxy_rs_sock:
+  #   driver_opts:
+  #     type: tmpfs
+  #     device: tmpfs
+  #     o: "uid=852,gid=852,mode=0770"
   # neko-vision UDS 使用時はコメント解除
   # neko_vision_sock:
   # video-thumb UDS 使用時はコメント解除
