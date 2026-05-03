@@ -261,6 +261,9 @@ services:
   # video-thumb:
   #   image: ghcr.io/nekonoverse/video-thumb:latest
   #   restart: unless-stopped
+  #   environment:
+  #     # nekono3s が private IP に解決されるため /thumbnail_from_url で許可する
+  #     ALLOW_PRIVATE_URL: "1"
   #   expose:
   #     - "8005"
 
