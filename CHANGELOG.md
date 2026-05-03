@@ -1,8 +1,12 @@
-## 未リリース
+## [20260504-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260504-1) — 2026-05-04
 
 ### パフォーマンス
 
 - **動画サムネ生成を S3 presigned URL 渡しに切替** — 旧来「backend が S3 から動画フル DL → multipart POST → video-thumb が tempfile に書く」の流れを「presigned URL を JSON で送る → video-thumb が HTTP Range で先頭フレームのみ取得」に変更。backend のメモリ使用量と backend↔video-thumb 間の帯域がほぼゼロに、video-thumb 側の tempfile も不要になり大容量動画でも高速化 (#1013, #1014)
+
+### 運用上の注意
+
+- 本リリースから video-thumb イメージは **`/thumbnail_from_url` 対応版が必須**。`docker compose pull` で video-thumb の最新イメージを取得すること。nekono3s が private IP に解決されるため、video-thumb サービスの環境変数に `ALLOW_PRIVATE_URL=1` を設定する必要あり (`docker-compose.yml.example` / `docker-compose.prod.yml` のサンプルに反映済み)
 
 ---
 
