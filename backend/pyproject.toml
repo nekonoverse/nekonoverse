@@ -37,6 +37,8 @@ dev = [
     "psycopg2-binary>=2.9.0",
     "httpx[socks]>=0.28.0",
     "ruff>=0.8.0",
+    # SigV4 presigned URL の自前実装が AWS 仕様と一致するか検証する参照実装として使う
+    "botocore>=1.35.0",
 ]
 
 [tool.setuptools.packages.find]
