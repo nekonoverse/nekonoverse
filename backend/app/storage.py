@@ -173,3 +173,79 @@ async def get_file_stream(key: str) -> tuple[AsyncIterator[bytes], str, int]:
 def get_public_url(key: str) -> str:
     """指定された S3 キーの公開 URL を返す。"""
     return f"{settings.media_url}/{key}"
+
+
+def generate_presigned_get_url(key: str, expires_in: int = 300) -> str:
+    """S3 オブジェクトの GET 用 presigned URL を返す (AWS SigV4 query string 方式)。
+
+    video-thumb の `/thumbnail_from_url` 等、内部マイクロサービスから一時的に
+    S3 オブジェクトを取得させたい場面で使う。
+
+    Args:
+        key: S3 object key (bucket prefix なし)
+        expires_in: 有効期限 (秒、1 〜 604800 = 7 日)
+
+    Returns:
+        presigned URL (`{s3_endpoint_url}/{bucket}/{key}?X-Amz-Algorithm=...`)
+
+    Raises:
+        ValueError: expires_in が AWS 仕様の範囲 (1-604800 秒) を超える場合
+    """
+    if not 1 <= expires_in <= 604800:
+        raise ValueError(
+            f"expires_in must be between 1 and 604800 seconds, got {expires_in}"
+        )
+    now = datetime.now(timezone.utc)
+    date_str = now.strftime("%Y%m%d")
+    amz_date = now.strftime("%Y%m%dT%H%M%SZ")
+    credential_scope = f"{date_str}/{settings.s3_region}/s3/aws4_request"
+
+    host = _endpoint_host()
+    path = f"/{settings.s3_bucket}/{key}"
+    canonical_uri = quote(path, safe="/")
+
+    # 署名対象は host ヘッダのみ (presigned URL の慣習)
+    signed_headers = "host"
+    canonical_headers = f"host:{host}\n"
+
+    # クエリ文字列 (キー名はソートする必要がある)
+    query_params = {
+        "X-Amz-Algorithm": "AWS4-HMAC-SHA256",
+        "X-Amz-Credential": f"{settings.s3_access_key_id}/{credential_scope}",
+        "X-Amz-Date": amz_date,
+        "X-Amz-Expires": str(expires_in),
+        "X-Amz-SignedHeaders": signed_headers,
+    }
+    canonical_query = "&".join(
+        f"{quote(k, safe='-_.~')}={quote(v, safe='-_.~')}"
+        for k, v in sorted(query_params.items())
+    )
+
+    canonical_request = "\n".join(
+        [
+            "GET",
+            canonical_uri,
+            canonical_query,
+            canonical_headers,
+            signed_headers,
+            "UNSIGNED-PAYLOAD",
+        ]
+    )
+    string_to_sign = "\n".join(
+        [
+            "AWS4-HMAC-SHA256",
+            amz_date,
+            credential_scope,
+            hashlib.sha256(canonical_request.encode()).hexdigest(),
+        ]
+    )
+    signature = hmac.new(
+        _signing_key(date_str),
+        string_to_sign.encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+    return (
+        f"{settings.s3_endpoint_url}{canonical_uri}"
+        f"?{canonical_query}&X-Amz-Signature={signature}"
+    )

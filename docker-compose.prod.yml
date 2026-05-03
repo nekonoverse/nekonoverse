@@ -345,6 +345,9 @@ services:
   #       chown 101:101 /var/run/video-thumb &&
   #       exec setpriv --reuid=101 --regid=101 --clear-groups \
   #         uvicorn main:app --uds /var/run/video-thumb/uvicorn.sock
+  #   environment:
+  #     # nekono3s が private IP に解決されるため /thumbnail_from_url で許可する
+  #     ALLOW_PRIVATE_URL: "1"
   #   volumes:
   #     - video_thumb_sock:/var/run/video-thumb
 
