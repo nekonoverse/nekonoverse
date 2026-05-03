@@ -1,3 +1,15 @@
+## [20260504-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260504-2) — 2026-05-04
+
+### 観測性
+
+- **`/api/v1/instance` / `/api/v2/instance` の残存 `except Exception: pass` を logger 化** — settings batch / VAPID / 法的ページ / stats 等のサイレント故障を本番ログから検出可能に。Valkey cache の get/set 失敗は DB フォールバックで継続できる経路のため `logger.warning` (traceback なし) に降格してログ洪水を防止。`lifespan` 起動時の警告 4 箇所もモジュール logger に統一 (#1010, #1018)
+
+### テスト
+
+- **SigV4 presigned URL 署名が botocore (AWS 公式 SDK) と完全一致することを検証** — 自前 SigV4 実装が AWS 仕様に追従していることを担保する回帰テストを追加。タイムスタンプ依存を排除するため自前実装が生成した URL の `X-Amz-Date` を botocore に注入し、Signature を含む全クエリパラメータのバイト一致を確認。canonical_request 構築 → string_to_sign → HMAC のいずれかが破綻すると確実に落ちる (#1016, #1019)
+
+---
+
 ## [20260504-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260504-1) — 2026-05-04
 
 ### パフォーマンス
