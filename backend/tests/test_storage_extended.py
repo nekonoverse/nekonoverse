@@ -197,8 +197,6 @@ def test_generate_presigned_get_url_signature_matches_botocore():
     バイト一致を確認する。署名アルゴリズム (canonical_request 構築 → string_to_sign →
     HMAC) のいずれかが破綻すると確実に落ちる。
     """
-    pytest.importorskip("botocore")
-
     from urllib.parse import parse_qs, urlparse
 
     from botocore.auth import S3SigV4QueryAuth
@@ -224,9 +222,11 @@ def test_generate_presigned_get_url_signature_matches_botocore():
         region_name=settings.s3_region,
         expires=300,
     )
+    # 自前実装の rstrip("/") 経路と path 構造を揃える (endpoint の末尾スラッシュ正規化)
+    endpoint = settings.s3_endpoint_url.rstrip("/")
     request = AWSRequest(
         method="GET",
-        url=f"{settings.s3_endpoint_url}/{settings.s3_bucket}/{key}",
+        url=f"{endpoint}/{settings.s3_bucket}/{key}",
     )
     request.context["timestamp"] = our_qs["X-Amz-Date"][0]
     auth.add_auth(request)
