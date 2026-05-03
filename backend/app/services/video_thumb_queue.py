@@ -25,7 +25,9 @@ DEAD_KEY = "video_thumb:dead"
 HEARTBEAT_KEY = "worker:video_thumb:heartbeat"
 
 MAX_ATTEMPTS = 5
-MAX_CONCURRENT = 2  # 動画処理はCPU/メモリ集約的
+# 動画は presigned URL を渡すだけで backend 側は CPU/メモリ集約的でないが、
+# video-thumb (FFmpeg) が同時並列処理できる本数の方が実質的な律速。デフォルトは保守的に 2 並列。
+MAX_CONCURRENT = 2
 
 _VIDEO_MIMES = {"video/mp4", "video/webm", "video/quicktime", "video/x-matroska"}
 
@@ -97,7 +99,7 @@ async def _process_local(job: dict) -> None:
 
         # S3 presigned URL を生成 (video-thumb はこの URL から HTTP Range で取得)。
         # 有効期限はサムネ生成 1 回分の処理時間に余裕を持たせて 5 分。リトライで遅延しても
-        # URL は `_process_local` 実行時に毎回再発行されるので、再 enqueue 時点で再生成される。
+        # URL は `_process_local` 再実行時に毎回再発行される。
         video_url = generate_presigned_get_url(drive_file.s3_key, expires_in=300)
 
         # video-thumb サービスに URL を渡す

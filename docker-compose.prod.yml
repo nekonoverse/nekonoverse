@@ -333,6 +333,10 @@ services:
   # Optional: Video thumbnail generation service (uncomment to use)
   # 動画のサムネイル生成 (FFmpeg + Pillow)。GPU 不要。
   # Also uncomment video_thumb_sock volume in app/worker service and VIDEO_THUMB_URL/UDS env vars.
+  # ⚠️ SECURITY NOTE
+  # ALLOW_PRIVATE_URL=1 はプライベート IP 宛 fetch を許可するため、video-thumb は
+  # **UDS のみで通信し外部ネットワーク露出ゼロ** で運用すること (`network_mode: "none"` 必須)。
+  # 内部メタデータエンドポイント等への SSRF 踏み台にならないよう境界を保つ。
   # video-thumb:
   #   image: ghcr.io/nekonoverse/video-thumb:latest
   #   restart: unless-stopped

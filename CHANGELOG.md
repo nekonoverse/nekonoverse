@@ -7,6 +7,11 @@
 ### 運用上の注意
 
 - 本リリースから video-thumb イメージは **`/thumbnail_from_url` 対応版が必須**。`docker compose pull` で video-thumb の最新イメージを取得すること。nekono3s が private IP に解決されるため、video-thumb サービスの環境変数に `ALLOW_PRIVATE_URL=1` を設定する必要あり (`docker-compose.yml.example` / `docker-compose.prod.yml` のサンプルに反映済み)
+- ⚠️ `ALLOW_PRIVATE_URL=1` はプライベート IP 宛 HTTP fetch を許可するため、video-thumb は **backend/worker からのみ到達可能なネットワーク境界** で運用すること (`docker-compose.prod.yml` の UDS 構成または同等の隔離)。サンプルコメントにも明記済み
+
+### インフラ
+
+- **`docker-compose.prod.yml` の `media-proxy-rs` UDS 設定例を distroless 対応に更新** — runtime image が distroless/static-debian13 化された ([nekonoverse/media-proxy-rs#6](https://github.com/nekonoverse/media-proxy-rs/pull/6)) ことに伴い、`sh -c "chown..."` パターンを廃止し socket volume を tmpfs + uid/gid 指定で初期化する形式に。コメントアウト済みブロックなので機能影響なし (#1011, #1012)
 
 ---
 

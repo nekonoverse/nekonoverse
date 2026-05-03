@@ -258,6 +258,12 @@ services:
   # Optional: Video thumbnail generation service (uncomment to use)
   # 動画のサムネイル生成 (FFmpeg + Pillow)。GPU 不要。
   # Set VIDEO_THUMB_URL=http://video-thumb:8005 in app/worker environment.
+  #
+  # ⚠️ SECURITY NOTE
+  # ALLOW_PRIVATE_URL=1 を設定するとプライベート IP 宛 fetch が許可されるため、
+  # video-thumb は **backend / worker からのみ到達可能なネットワーク境界に配置すること**。
+  # ホスト直公開 (`ports: 8005:8005`) や同一 Docker network 上で他コンテナから直叩き可能な
+  # 構成にすると、内部メタデータエンドポイント等への SSRF 踏み台になる。
   # video-thumb:
   #   image: ghcr.io/nekonoverse/video-thumb:latest
   #   restart: unless-stopped
