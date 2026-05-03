@@ -231,8 +231,9 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         _cached = await _valkey.get(_cache_key)
         if _cached:
             return _json.loads(_cached)
-    except Exception:
-        logger.exception("instance v1 cache get failed")
+    except Exception as e:
+        # Valkey down 時は DB から再生成して継続するため warning 止まり (traceback なし)
+        logger.warning("instance v1 cache get failed: %s", e)
 
     from sqlalchemy import func, select
 
@@ -407,8 +408,9 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
 
     try:
         await _valkey.set(_cache_key, _json.dumps(resp), ex=120)
-    except Exception:
-        logger.exception("instance v1 cache set failed")
+    except Exception as e:
+        # キャッシュ書き込み失敗してもレスポンス自体は正常なので warning 止まり
+        logger.warning("instance v1 cache set failed: %s", e)
 
     return resp
 
@@ -425,8 +427,9 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         _cached2 = await _valkey2.get(_cache_key2)
         if _cached2:
             return _json2.loads(_cached2)
-    except Exception:
-        logger.exception("instance v2 cache get failed")
+    except Exception as e:
+        # Valkey down 時は DB から再生成して継続するため warning 止まり
+        logger.warning("instance v2 cache get failed: %s", e)
 
     from sqlalchemy import func, select
 
@@ -572,8 +575,9 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
 
     try:
         await _valkey2.set(_cache_key2, _json2.dumps(resp), ex=120)
-    except Exception:
-        logger.exception("instance v2 cache set failed")
+    except Exception as e:
+        # キャッシュ書き込み失敗してもレスポンス自体は正常なので warning 止まり
+        logger.warning("instance v2 cache set failed: %s", e)
 
     return resp
 
