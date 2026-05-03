@@ -158,3 +158,15 @@ def test_generate_presigned_get_url_url_safe_encoding():
 
     url = generate_presigned_get_url("path/to/file.with.dots.mp4", expires_in=60)
     assert "/path/to/file.with.dots.mp4?" in url
+
+
+def test_generate_presigned_get_url_rejects_invalid_expires_in():
+    """expires_in は AWS 仕様 (1-604800 秒) の範囲外で ValueError。"""
+    from app.storage import generate_presigned_get_url
+
+    with pytest.raises(ValueError):
+        generate_presigned_get_url("k", expires_in=0)
+    with pytest.raises(ValueError):
+        generate_presigned_get_url("k", expires_in=-1)
+    with pytest.raises(ValueError):
+        generate_presigned_get_url("k", expires_in=604801)

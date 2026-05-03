@@ -1,3 +1,11 @@
+## 未リリース
+
+### パフォーマンス
+
+- **動画サムネ生成を S3 presigned URL 渡しに切替** — 旧来「backend が S3 から動画フル DL → multipart POST → video-thumb が tempfile に書く」の流れを「presigned URL を JSON で送る → video-thumb が HTTP Range で先頭フレームのみ取得」に変更。backend のメモリ使用量と backend↔video-thumb 間の帯域がほぼゼロに、video-thumb 側の tempfile も不要になり大容量動画でも高速化 (#1013, #1014)
+
+---
+
 ## [20260502-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260502-1) — 2026-05-02
 
 ### バグ修正

@@ -183,11 +183,18 @@ def generate_presigned_get_url(key: str, expires_in: int = 300) -> str:
 
     Args:
         key: S3 object key (bucket prefix なし)
-        expires_in: 有効期限 (秒、最大 7 日 = 604800)
+        expires_in: 有効期限 (秒、1 〜 604800 = 7 日)
 
     Returns:
         presigned URL (`{s3_endpoint_url}/{bucket}/{key}?X-Amz-Algorithm=...`)
+
+    Raises:
+        ValueError: expires_in が AWS 仕様の範囲 (1-604800 秒) を超える場合
     """
+    if not 1 <= expires_in <= 604800:
+        raise ValueError(
+            f"expires_in must be between 1 and 604800 seconds, got {expires_in}"
+        )
     now = datetime.now(timezone.utc)
     date_str = now.strftime("%Y%m%d")
     amz_date = now.strftime("%Y%m%dT%H%M%SZ")

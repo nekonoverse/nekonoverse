@@ -95,8 +95,9 @@ async def _process_local(job: dict) -> None:
             )
             return
 
-        # S3 presigned URL を生成 (video-thumb はこの URL から HTTP Range で取得)
-        # 有効期限はサムネ生成 1 回分 + リトライ余裕として 5 分
+        # S3 presigned URL を生成 (video-thumb はこの URL から HTTP Range で取得)。
+        # 有効期限はサムネ生成 1 回分の処理時間に余裕を持たせて 5 分。リトライで遅延しても
+        # URL は `_process_local` 実行時に毎回再発行されるので、再 enqueue 時点で再生成される。
         video_url = generate_presigned_get_url(drive_file.s3_key, expires_in=300)
 
         # video-thumb サービスに URL を渡す
