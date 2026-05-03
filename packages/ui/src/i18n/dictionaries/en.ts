@@ -67,7 +67,8 @@ export const en: Dictionary = {
   "composer.reply": "Reply",
   "composer.quote": "Quote",
   "composer.new": "New Post",
-  "composer.unsavedChanges": "You have unsaved changes. What would you like to do?",
+  "composer.unsavedChanges":
+    "You have unsaved changes. What would you like to do?",
   "composer.discard": "Discard",
   "composer.saveDraft": "Save Draft",
   "composer.drafts": "Drafts",
@@ -75,7 +76,8 @@ export const en: Dictionary = {
   "composer.sensitive": "Mark as sensitive",
   "composer.cw": "Content warning",
   "composer.cwPlaceholder": "Write a warning...",
-  "composer.visibilityWiderWarning": "Selected visibility is wider than the original post",
+  "composer.visibilityWiderWarning":
+    "Selected visibility is wider than the original post",
   "lang.ja": "日本語",
   "lang.en": "English",
   "auth.or": "or",
@@ -120,7 +122,7 @@ export const en: Dictionary = {
   "settings.fontSystem": "System Default",
   "settings.fontCustom": "Custom",
   "settings.fontCustomPlaceholder": "Enter font name...",
-  "settings.fontCustomHint": "e.g. \"Comic Sans MS\", \"Fira Code\", serif",
+  "settings.fontCustomHint": 'e.g. "Comic Sans MS", "Fira Code", serif',
   "settings.tabAccount": "Account",
   "settings.tabPosting": "Posting",
   "settings.tabAppearance": "Appearance",
@@ -142,11 +144,14 @@ export const en: Dictionary = {
   "settings.defaultVisibility": "Default Visibility",
   "settings.rememberVisibility": "Remember last visibility",
   "settings.timeline": "Timeline",
-  "settings.hideNonFollowedReplies": "Hide replies to non-followed users on home TL",
+  "settings.hideNonFollowedReplies":
+    "Hide replies to non-followed users on home TL",
   "settings.nyaize": "Nyaize (convert cat users' text to cat language)",
   "settings.sourceMediaType": "Source media type for outgoing notes",
-  "settings.sourceMediaTypeDescription": "Choose the source.mediaType sent to federated servers.",
-  "settings.sourceMediaTypeAuto": "Auto (MFM if MFM syntax detected, otherwise plain text)",
+  "settings.sourceMediaTypeDescription":
+    "Choose the source.mediaType sent to federated servers.",
+  "settings.sourceMediaTypeAuto":
+    "Auto (MFM if MFM syntax detected, otherwise plain text)",
   "settings.sourceMediaTypeMfm": "Always MFM (text/x.misskeymarkdown)",
   "settings.sourceMediaTypePlain": "Always plain text (text/plain)",
   "note.nyaizeOn": "Nyaized (click to disable)",
@@ -190,7 +195,8 @@ export const en: Dictionary = {
   "reactions.notDelivered": "Emoji reactions won't be delivered to this server",
   "reactions.importAndReact": "Import & React",
   "reactions.importDenied": "Import denied by author",
-  "reactions.copyViolationWarning": "Copying of this emoji is denied on {domain}. This source may be a rights violation",
+  "reactions.copyViolationWarning":
+    "Copying of this emoji is denied on {domain}. This source may be a rights violation",
   "reactions.emojiShortcode": "Shortcode",
   "reactions.emojiCategory": "Category",
   "reactions.emojiAuthor": "Author",
@@ -198,7 +204,8 @@ export const en: Dictionary = {
   "reactions.emojiDescription": "Description",
   "reactions.emojiSensitive": "Sensitive",
   "reactions.emojiAliases": "Aliases",
-  "reactions.confirmUnsupported": "This user's server does not support emoji reactions. Send reaction anyway?",
+  "reactions.confirmUnsupported":
+    "This user's server does not support emoji reactions. Send reaction anyway?",
   "reactions.dontShowAgain": "Don't show this message again",
   "reactions.sendReaction": "Send reaction",
   "admin.title": "Admin",
@@ -337,7 +344,8 @@ export const en: Dictionary = {
   "followRequest.reject": "Reject",
   "followRequest.empty": "No follow requests",
   "followRequest.loginRequired": "Please log in to view follow requests.",
-  "followRequest.confirmUnlock": "Disabling approval mode will automatically accept all pending follow requests. Are you sure?",
+  "followRequest.confirmUnlock":
+    "Disabling approval mode will automatically accept all pending follow requests. Are you sure?",
   "followRequest.confirmUnlockTitle": "Disable approval mode",
   "poll.vote": "Vote",
   "poll.votes": "votes",
@@ -387,7 +395,8 @@ export const en: Dictionary = {
   "apps.authorizedApps": "Authorized Apps",
   "apps.noApps": "No authorized apps",
   "apps.revoke": "Revoke Access",
-  "apps.confirmRevoke": "Revoke access for this app? All tokens will be invalidated.",
+  "apps.confirmRevoke":
+    "Revoke access for this app? All tokens will be invalidated.",
   "apps.authorizedAt": "Authorized",
   "admin.serverIcon": "Server Icon",
   "admin.uploadIcon": "Upload Icon",
@@ -588,7 +597,8 @@ export const en: Dictionary = {
   "deletion.success": "Account deletion has been scheduled",
   "deletion.failed": "Failed to schedule account deletion",
   "deletion.pendingTitle": "Deletion Scheduled",
-  "deletion.pendingDescription": "Your account is scheduled for deletion. Cancel to restore your account.",
+  "deletion.pendingDescription":
+    "Your account is scheduled for deletion. Cancel to restore your account.",
   "deletion.scheduledAt": "Scheduled deletion date",
   "deletion.cancel": "Cancel deletion",
   "deletion.cancelConfirm": "Cancel account deletion?",
@@ -714,10 +724,12 @@ export const en: Dictionary = {
   "settings.inputModeTouch": "Touch",
   "settings.inputModePc": "PC",
   "inputModeModal.title": "Select input mode",
-  "inputModeModal.description": "Choose based on your device. You can change this later in appearance settings.",
+  "inputModeModal.description":
+    "Choose based on your device. You can change this later in appearance settings.",
   "inputModeModal.recommended": "Recommended",
   "settings.reactionConfirm": "Reaction Confirmation",
-  "settings.reactionConfirmDesc": "Shows a confirmation dialog when reacting to a post from a server that doesn't support emoji reactions. If you chose \"Don't show again\", you can reset it here.",
+  "settings.reactionConfirmDesc":
+    "Shows a confirmation dialog when reacting to a post from a server that doesn't support emoji reactions. If you chose \"Don't show again\", you can reset it here.",
   "settings.reactionConfirmReset": "Re-enable confirmation dialog",
   "settings.mfmMotion": "MFM Animation",
   "settings.reduceMfmMotion": "Disable animated MFM",
@@ -736,9 +748,11 @@ export const en: Dictionary = {
   "email.newEmail": "New email address",
   "email.passwordConfirm": "Current password",
   "email.changeButton": "Change Email",
-  "email.changeSuccess": "Email address updated. Please check your inbox for verification.",
+  "email.changeSuccess":
+    "Email address updated. Please check your inbox for verification.",
   "dataExport.title": "Data Export",
-  "dataExport.description": "Export your posts, media, follows, bookmarks, blocks, and mutes as a ZIP archive.",
+  "dataExport.description":
+    "Export your posts, media, follows, bookmarks, blocks, and mutes as a ZIP archive.",
   "dataExport.start": "Start Export",
   "dataExport.processing": "Generating export...",
   "dataExport.ready": "Your export is ready for download.",
@@ -746,12 +760,15 @@ export const en: Dictionary = {
   "dataExport.expiresAt": "Expires",
   "dataExport.failed": "Export failed. Please try again.",
   "dataExport.retry": "Retry",
-  "dataExport.cooldown": "Please wait 24 hours before requesting another export.",
+  "dataExport.cooldown":
+    "Please wait 24 hours before requesting another export.",
   "auth.forgotPassword": "Forgot password?",
   "auth.forgotPasswordTitle": "Forgot Password",
-  "auth.forgotPasswordDesc": "Enter your email address and we'll send you a link to reset your password.",
+  "auth.forgotPasswordDesc":
+    "Enter your email address and we'll send you a link to reset your password.",
   "auth.sendResetLink": "Send Reset Link",
-  "auth.resetLinkSent": "If an account with that email exists, a reset link has been sent.",
+  "auth.resetLinkSent":
+    "If an account with that email exists, a reset link has been sent.",
   "auth.resetPasswordTitle": "Reset Password",
   "auth.resetPasswordDesc": "Enter your new password below.",
   "auth.resetPassword": "Reset Password",
@@ -784,17 +801,24 @@ export const en: Dictionary = {
   "admin.vapidPublicKey": "VAPID Public Key",
   "admin.vapidNotGenerated": "VAPID key has not been generated yet",
   "admin.vapidGenerate": "Generate New VAPID Key",
-  "admin.vapidConfirmGenerate": "Generate a new VAPID key? Existing subscriptions will be invalidated.",
-  "admin.vapidGenerateWarning": "Regenerating the key will invalidate all existing push notification subscriptions. Users will need to re-subscribe.",
+  "admin.vapidConfirmGenerate":
+    "Generate a new VAPID key? Existing subscriptions will be invalidated.",
+  "admin.vapidGenerateWarning":
+    "Regenerating the key will invalidate all existing push notification subscriptions. Users will need to re-subscribe.",
   "admin.katexSettings": "KaTeX Math Settings",
   "admin.katexEnabled": "Advertise KaTeX support in NodeInfo",
+  "admin.serverListingSettings": "Server Directory Listing",
+  "admin.serverListingDescription":
+    "Configure server directory listing. When enabled, server information will be periodically sent to the specified URL.",
+  "admin.serverListingEnabled": "Enable server directory listing",
   "admin.timelineSettings": "Timeline Settings",
   "admin.timelineDefaultLimit": "Default fetch count",
   "admin.timelineMaxLimit": "Maximum fetch count",
   "admin.tabPermissions": "Moderator Permissions",
   "admin.descPermissions": "Configure what moderators can access",
   "admin.permissionsTitle": "Moderator Permissions",
-  "admin.permissionsDesc": "Configure which admin features moderators can access. Admins always have full access.",
+  "admin.permissionsDesc":
+    "Configure which admin features moderators can access. Admins always have full access.",
   "admin.permUsers": "User Management",
   "admin.permUsersDesc": "Suspend, unsuspend, and silence users",
   "admin.permReports": "Report Management",
@@ -845,7 +869,8 @@ export const en: Dictionary = {
   "announcements.titleLabel": "Title",
   "announcements.titlePlaceholder": "Announcement title",
   "announcements.contentLabel": "Content",
-  "announcements.contentPlaceholder": "Announcement content (Markdown supported)",
+  "announcements.contentPlaceholder":
+    "Announcement content (Markdown supported)",
   "announcements.allDay": "All day",
   "announcements.startsAt": "Starts at",
   "announcements.endsAt": "Ends at",

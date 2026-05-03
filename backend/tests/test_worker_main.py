@@ -15,6 +15,7 @@ async def test_run_worker_calls_delivery_loop():
         patch("app.services.vision_queue.run_vision_loop", new_callable=AsyncMock),
         patch("app.services.deletion_queue.run_deletion_check_loop", new_callable=AsyncMock),
         patch("app.services.video_thumb_queue.run_video_thumb_loop", new_callable=AsyncMock),
+        patch("app.services.server_listing_worker.run_server_listing_loop", new_callable=AsyncMock),
     ):
         from app.worker.main import run_worker
 
