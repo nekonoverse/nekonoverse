@@ -25,7 +25,9 @@ DEAD_KEY = "video_thumb:dead"
 HEARTBEAT_KEY = "worker:video_thumb:heartbeat"
 
 MAX_ATTEMPTS = 5
-MAX_CONCURRENT = 2  # 動画処理はCPU/メモリ集約的
+# 動画は presigned URL を渡すだけで backend 側は CPU/メモリ集約的でないが、
+# video-thumb (FFmpeg) が同時並列処理できる本数の方が実質的な律速。デフォルトは保守的に 2 並列。
+MAX_CONCURRENT = 2
 
 _VIDEO_MIMES = {"video/mp4", "video/webm", "video/quicktime", "video/x-matroska"}
 
@@ -64,12 +66,17 @@ async def enqueue_remote(note_id: uuid.UUID, attachment_ids: list[uuid.UUID]) ->
 
 
 async def _process_local(job: dict) -> None:
-    """ローカルDriveFileのサムネイル生成ジョブを処理する。"""
+    """ローカルDriveFileのサムネイル生成ジョブを処理する。
+
+    S3 presigned URL を生成して video-thumb の `/thumbnail_from_url` に投げる。
+    backend は動画をメモリにロードせず、video-thumb 側も HTTP Range で先頭フレーム
+    周辺だけ取得するため、メモリ・帯域・ディスクをほとんど消費しない。
+    """
     from sqlalchemy import select
 
     from app.database import async_session
     from app.models.drive_file import DriveFile
-    from app.storage import download_file, upload_file
+    from app.storage import generate_presigned_get_url, upload_file
     from app.utils.http_client import make_video_thumb_client
 
     drive_file_id = uuid.UUID(job["drive_file_id"])
@@ -90,18 +97,17 @@ async def _process_local(job: dict) -> None:
             )
             return
 
-        # S3 から動画をダウンロード
-        video_data = await download_file(drive_file.s3_key)
+        # S3 presigned URL を生成 (video-thumb はこの URL から HTTP Range で取得)。
+        # 有効期限はサムネ生成 1 回分の処理時間に余裕を持たせて 5 分。リトライで遅延しても
+        # URL は `_process_local` 再実行時に毎回再発行される。
+        video_url = generate_presigned_get_url(drive_file.s3_key, expires_in=300)
 
-        # video-thumb サービスにリクエスト
+        # video-thumb サービスに URL を渡す
         base = settings.video_thumb_base_url
-        url = f"{base}/thumbnail" if not base.endswith("/thumbnail") else base
+        url = f"{base}/thumbnail_from_url"
 
         async with make_video_thumb_client() as client:
-            resp = await client.post(
-                url,
-                files={"file": ("video", video_data, drive_file.mime_type)},
-            )
+            resp = await client.post(url, json={"url": video_url})
             resp.raise_for_status()
 
         thumb_data = resp.content

@@ -159,7 +159,10 @@ async def test_process_local_generates_thumbnail(mock_valkey):
 
     with (
         patch("app.database.async_session", return_value=mock_session),
-        patch("app.storage.download_file", new_callable=AsyncMock) as mock_dl,
+        patch(
+            "app.storage.generate_presigned_get_url",
+            return_value="http://nekono3s:8080/nekonoverse/u/abc/test.mp4?X-Amz-Signature=abc",
+        ) as mock_presign,
         patch("app.storage.upload_file", new_callable=AsyncMock) as mock_ul,
         patch(
             "app.utils.http_client.make_video_thumb_client", return_value=mock_client
@@ -167,11 +170,17 @@ async def test_process_local_generates_thumbnail(mock_valkey):
         patch("app.services.video_thumb_queue.settings") as mock_settings,
     ):
         mock_settings.video_thumb_base_url = "http://video-thumb:8005"
-        mock_dl.return_value = b"video-data"
 
         await _process_local({"drive_file_id": str(uuid.uuid4())})
 
-    mock_dl.assert_called_once_with("u/abc/test.mp4")
+    # 動画は DL せず presigned URL を生成 → /thumbnail_from_url に JSON で渡す
+    mock_presign.assert_called_once_with("u/abc/test.mp4", expires_in=300)
+    mock_client.post.assert_called_once()
+    call_args, call_kwargs = mock_client.post.call_args
+    assert call_args[0] == "http://video-thumb:8005/thumbnail_from_url"
+    assert call_kwargs["json"] == {
+        "url": "http://nekono3s:8080/nekonoverse/u/abc/test.mp4?X-Amz-Signature=abc"
+    }
     mock_ul.assert_called_once_with("thumb/u/abc/test.mp4.webp", thumb_bytes, "image/webp")
     assert mock_file.thumbnail_s3_key == "thumb/u/abc/test.mp4.webp"
     assert mock_file.thumbnail_mime_type == "image/webp"
