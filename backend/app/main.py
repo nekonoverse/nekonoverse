@@ -1,6 +1,9 @@
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI, HTTPException, Query
+
+logger = logging.getLogger(__name__)
 
 _DEFAULT_FAVICON_SVG = (
     b'<svg xmlns="http://www.w3.org/2000/svg"'
@@ -70,8 +73,6 @@ from app.dependencies import get_db, get_permitted_staff
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    import logging
-
     import httpx
 
     from app.storage import ensure_bucket
@@ -79,7 +80,7 @@ async def lifespan(app: FastAPI):
     try:
         await ensure_bucket()
     except Exception as e:
-        logging.getLogger(__name__).warning("Could not ensure S3 bucket: %s", e)
+        logger.warning("Could not ensure S3 bucket: %s", e)
 
     from app.config import settings as app_settings
     from app.utils.http_client import make_async_client
@@ -99,7 +100,7 @@ async def lifespan(app: FastAPI):
         async with async_session() as startup_db:
             await load_db_vapid_key_async(startup_db)
     except Exception as e:
-        logging.getLogger(__name__).warning("Could not load VAPID key: %s", e)
+        logger.warning("Could not load VAPID key: %s", e)
 
     # デフォルトサーバーアイコンの自動生成（初回起動時）
     try:
@@ -109,7 +110,7 @@ async def lifespan(app: FastAPI):
         async with _as() as icon_db:
             await ensure_default_icons(icon_db)
     except Exception as e:
-        logging.getLogger(__name__).warning("Could not ensure default icons: %s", e)
+        logger.warning("Could not ensure default icons: %s", e)
 
     # システムアカウントの自動作成
     try:
@@ -119,7 +120,7 @@ async def lifespan(app: FastAPI):
         async with _sa() as sys_db:
             await ensure_system_accounts(sys_db)
     except Exception as e:
-        logging.getLogger(__name__).warning("Could not ensure system accounts: %s", e)
+        logger.warning("Could not ensure system accounts: %s", e)
 
     from app.pubsub_hub import pubsub_hub
 
@@ -230,8 +231,9 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         _cached = await _valkey.get(_cache_key)
         if _cached:
             return _json.loads(_cached)
-    except Exception:
-        pass
+    except Exception as e:
+        # Valkey down 時は DB から再生成して継続するため warning 止まり (traceback なし)
+        logger.warning("instance v1 cache get failed: %s", e)
 
     from sqlalchemy import func, select
 
@@ -277,7 +279,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         if s.get("katex_enabled") == "true":
             katex_enabled = True
     except Exception:
-        pass
+        logger.exception("instance v1 settings batch failed")
 
     # サーバー統計を1クエリで取得（スカラーサブクエリ）
     user_count = 0
@@ -317,8 +319,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         status_count = stats_row.statuses or 0
         domain_count = stats_row.domains or 0
     except Exception:
-        import logging
-        logging.getLogger(__name__).exception("instance v1 stats query failed")
+        logger.exception("instance v1 stats query failed")
 
     # VAPID公開鍵 (Web Push用、push_enabledの場合のみ)
     vapid_key = None
@@ -328,7 +329,7 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         if await is_push_enabled(db):
             vapid_key = get_vapid_public_key_base64url()
     except Exception:
-        pass
+        logger.exception("instance v1 vapid key load failed")
 
     contact_info = await _build_contact(db)
 
@@ -403,12 +404,13 @@ async def instance_info(db: AsyncSession = Depends(get_db)):
         if s.get("privacy_policy"):
             resp["privacy_policy_url"] = f"https://{settings.domain}/privacy"
     except Exception:
-        pass
+        logger.exception("instance v1 legal page URL build failed")
 
     try:
         await _valkey.set(_cache_key, _json.dumps(resp), ex=120)
-    except Exception:
-        pass
+    except Exception as e:
+        # キャッシュ書き込み失敗してもレスポンス自体は正常なので warning 止まり
+        logger.warning("instance v1 cache set failed: %s", e)
 
     return resp
 
@@ -425,8 +427,9 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         _cached2 = await _valkey2.get(_cache_key2)
         if _cached2:
             return _json2.loads(_cached2)
-    except Exception:
-        pass
+    except Exception as e:
+        # Valkey down 時は DB から再生成して継続するため warning 止まり
+        logger.warning("instance v2 cache get failed: %s", e)
 
     from sqlalchemy import func, select
 
@@ -465,7 +468,7 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         if s.get("katex_enabled") == "true":
             katex_enabled = True
     except Exception:
-        pass
+        logger.exception("instance v2 settings batch failed")
 
     user_count = 0
     try:
@@ -477,8 +480,7 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         )
         user_count = user_result.scalar() or 0
     except Exception:
-        import logging
-        logging.getLogger(__name__).exception("instance v2 user_count query failed")
+        logger.exception("instance v2 user_count query failed")
 
     vapid_key = None
     try:
@@ -487,7 +489,7 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
         if await is_push_enabled(db):
             vapid_key = get_vapid_public_key_base64url()
     except Exception:
-        pass
+        logger.exception("instance v2 vapid key load failed")
 
     contact_info = await _build_contact(db)
 
@@ -573,8 +575,9 @@ async def instance_info_v2(db: AsyncSession = Depends(get_db)):
 
     try:
         await _valkey2.set(_cache_key2, _json2.dumps(resp), ex=120)
-    except Exception:
-        pass
+    except Exception as e:
+        # キャッシュ書き込み失敗してもレスポンス自体は正常なので warning 止まり
+        logger.warning("instance v2 cache set failed: %s", e)
 
     return resp
 
