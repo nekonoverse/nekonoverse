@@ -118,3 +118,43 @@ def test_auth_headers_contain_authorization():
     assert "Authorization" in headers
     assert "AWS4-HMAC-SHA256" in headers["Authorization"]
     assert "x-amz-date" in headers
+
+
+# ── generate_presigned_get_url ───────────────────────────────────────────
+
+
+def test_generate_presigned_get_url_format():
+    """presigned URL に必要なクエリパラメータが含まれる。"""
+    from app.storage import generate_presigned_get_url
+
+    url = generate_presigned_get_url("u/abc/test.mp4", expires_in=300)
+
+    # endpoint + bucket + key
+    assert url.startswith("http://nekono3s:8080/nekonoverse/u/abc/test.mp4?")
+    # AWS SigV4 query parameters
+    assert "X-Amz-Algorithm=AWS4-HMAC-SHA256" in url
+    assert "X-Amz-Credential=" in url
+    assert "X-Amz-Date=" in url
+    assert "X-Amz-Expires=300" in url
+    assert "X-Amz-SignedHeaders=host" in url
+    assert "X-Amz-Signature=" in url
+
+
+def test_generate_presigned_get_url_distinct_signatures_for_different_keys():
+    """異なる key は異なる署名になる。"""
+    from app.storage import generate_presigned_get_url
+
+    url1 = generate_presigned_get_url("a.mp4", expires_in=300)
+    url2 = generate_presigned_get_url("b.mp4", expires_in=300)
+
+    sig1 = url1.split("X-Amz-Signature=")[1]
+    sig2 = url2.split("X-Amz-Signature=")[1]
+    assert sig1 != sig2
+
+
+def test_generate_presigned_get_url_url_safe_encoding():
+    """key に / や . を含んでも URL エンコードが壊れない。"""
+    from app.storage import generate_presigned_get_url
+
+    url = generate_presigned_get_url("path/to/file.with.dots.mp4", expires_in=60)
+    assert "/path/to/file.with.dots.mp4?" in url
