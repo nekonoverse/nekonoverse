@@ -193,7 +193,7 @@ def generate_presigned_get_url(key: str, expires_in: int = 300) -> str:
     """
     if not 1 <= expires_in <= 604800:
         raise ValueError(
-            f"expires_in must be between 1 and 604800 seconds, got {expires_in}"
+            f"expires_in は 1 〜 604800 秒の範囲で指定してください (got {expires_in})"
         )
     now = datetime.now(timezone.utc)
     date_str = now.strftime("%Y%m%d")
@@ -245,7 +245,9 @@ def generate_presigned_get_url(key: str, expires_in: int = 300) -> str:
         hashlib.sha256,
     ).hexdigest()
 
+    # endpoint URL に末尾スラッシュがあると `//bucket/key` になるため除去
+    endpoint = settings.s3_endpoint_url.rstrip("/")
     return (
-        f"{settings.s3_endpoint_url}{canonical_uri}"
+        f"{endpoint}{canonical_uri}"
         f"?{canonical_query}&X-Amz-Signature={signature}"
     )

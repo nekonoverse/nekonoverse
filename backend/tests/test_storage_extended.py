@@ -170,3 +170,19 @@ def test_generate_presigned_get_url_rejects_invalid_expires_in():
         generate_presigned_get_url("k", expires_in=-1)
     with pytest.raises(ValueError):
         generate_presigned_get_url("k", expires_in=604801)
+
+
+def test_generate_presigned_get_url_strips_trailing_slash():
+    """endpoint URL に末尾スラッシュがあっても `//bucket/key` にならない。"""
+    import app.storage
+    from app.storage import generate_presigned_get_url
+
+    # settings.s3_endpoint_url を一時的に末尾スラッシュ付きに
+    orig = app.storage.settings.s3_endpoint_url
+    try:
+        app.storage.settings.s3_endpoint_url = "http://nekono3s:8080/"
+        url = generate_presigned_get_url("test.mp4", expires_in=60)
+        assert url.startswith("http://nekono3s:8080/nekonoverse/test.mp4?")
+        assert "//nekonoverse" not in url
+    finally:
+        app.storage.settings.s3_endpoint_url = orig
