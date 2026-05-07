@@ -200,8 +200,9 @@ async def test_detect_focal_points_query_includes_null_version_rows(db, test_use
     WHERE で除外される三値論理問題があるため、IS NULL を or_ で明示的に許可する必要がある。
     バグがある状態だと未検出 (NULL) の画像がそもそも処理対象に入らない。
     """
-    from sqlalchemy import or_, select
+    from sqlalchemy import select
 
+    from app.cli import _drive_file_pending_focal_conditions
     from app.models.drive_file import DriveFile
 
     # NULL 版の画像 (まだ検出されていない)
@@ -243,19 +244,8 @@ async def test_detect_focal_points_query_includes_null_version_rows(db, test_use
     db.add_all([df_null, df_manual, df_old, df_current])
     await db.commit()
 
-    # CLI と同じ WHERE 条件を再現
-    detect_version = "current-version-2"
-    conditions = [
-        DriveFile.mime_type.startswith("image/"),
-        or_(
-            DriveFile.focal_detect_version.is_(None),
-            DriveFile.focal_detect_version != "manual",
-        ),
-        or_(
-            DriveFile.focal_detect_version.is_(None),
-            DriveFile.focal_detect_version != detect_version,
-        ),
-    ]
+    # CLI 実装側のヘルパを呼び出して WHERE 条件を取得 (実装が変わればテストも追従)
+    conditions = _drive_file_pending_focal_conditions("current-version-2")
     rows = await db.execute(select(DriveFile).where(*conditions))
     target_ids = {r.id for r in rows.scalars().all()}
 
@@ -264,3 +254,45 @@ async def test_detect_focal_points_query_includes_null_version_rows(db, test_use
     assert df_old.id in target_ids
     assert df_manual.id not in target_ids
     assert df_current.id not in target_ids
+
+
+async def test_detect_focal_points_note_attachment_includes_null_version_rows(db, test_user, mock_valkey):
+    """NoteAttachment 側も同じ三値論理問題から守られていることの回帰テスト (#1022)。
+
+    DriveFile 側と対称な NULL 行除外バグが NoteAttachment 側にも存在していたため、
+    片肺修正ではなく両系列でテストカバーする。
+    """
+    from sqlalchemy import select
+
+    from tests.conftest import make_note
+
+    from app.cli import _note_attachment_pending_focal_conditions
+    from app.models.note_attachment import NoteAttachment
+
+    # NoteAttachment は note_id FK 必須なので Note を 1 件用意
+    actor_id = test_user.actor_id
+    from app.models.actor import Actor
+    actor = (await db.execute(select(Actor).where(Actor.id == actor_id))).scalar_one()
+    note = await make_note(db, actor)
+    await db.commit()
+
+    common = {
+        "note_id": note.id,
+        "remote_url": "https://remote.example/img.png",
+        "remote_mime_type": "image/png",
+    }
+    att_null = NoteAttachment(**common, position=0, focal_detect_version=None)
+    att_manual = NoteAttachment(**common, position=1, focal_detect_version="manual")
+    att_old = NoteAttachment(**common, position=2, focal_detect_version="old-1")
+    att_current = NoteAttachment(**common, position=3, focal_detect_version="current-2")
+    db.add_all([att_null, att_manual, att_old, att_current])
+    await db.commit()
+
+    conditions = _note_attachment_pending_focal_conditions("current-2")
+    rows = await db.execute(select(NoteAttachment).where(*conditions))
+    target_ids = {r.id for r in rows.scalars().all()}
+
+    assert att_null.id in target_ids, "NULL 版が処理対象に含まれていない (三値論理バグの再発)"
+    assert att_old.id in target_ids
+    assert att_manual.id not in target_ids
+    assert att_current.id not in target_ids
