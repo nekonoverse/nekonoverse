@@ -119,8 +119,67 @@ async def _create_admin(args: argparse.Namespace) -> None:
     await engine.dispose()
 
 
+def _drive_file_pending_focal_conditions(detect_version: str | None) -> list:
+    """`detect-focal-points` で処理対象とする DriveFile の WHERE 条件リストを返す。
+
+    SQL の三値論理 (NULL != 'manual' は NULL = UNKNOWN → WHERE で除外) を回避するため
+    `IS NULL` を or_ で明示的に許可する。実装とテストで共用するために関数化。
+    """
+    from sqlalchemy import or_
+
+    from app.models.drive_file import DriveFile
+
+    conditions = [
+        DriveFile.mime_type.startswith("image/"),
+        or_(
+            DriveFile.focal_detect_version.is_(None),
+            DriveFile.focal_detect_version != "manual",
+        ),
+    ]
+    if detect_version:
+        conditions.append(
+            or_(
+                DriveFile.focal_detect_version.is_(None),
+                DriveFile.focal_detect_version != detect_version,
+            )
+        )
+    else:
+        conditions.append(DriveFile.focal_detect_version.is_(None))
+    return conditions
+
+
+def _note_attachment_pending_focal_conditions(detect_version: str | None) -> list:
+    """`detect-focal-points` で処理対象とする NoteAttachment の WHERE 条件リストを返す。
+
+    DriveFile 側と同じ三値論理問題への対処を含む。
+    """
+    from sqlalchemy import or_
+
+    from app.models.note_attachment import NoteAttachment
+
+    image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"}
+    conditions = [
+        NoteAttachment.remote_url.isnot(None),
+        NoteAttachment.remote_mime_type.in_(image_mimes),
+        or_(
+            NoteAttachment.focal_detect_version.is_(None),
+            NoteAttachment.focal_detect_version != "manual",
+        ),
+    ]
+    if detect_version:
+        conditions.append(
+            or_(
+                NoteAttachment.focal_detect_version.is_(None),
+                NoteAttachment.focal_detect_version != detect_version,
+            )
+        )
+    else:
+        conditions.append(NoteAttachment.focal_detect_version.is_(None))
+    return conditions
+
+
 async def _detect_focal_points(args: argparse.Namespace) -> None:
-    from sqlalchemy import or_, select
+    from sqlalchemy import select
 
     from app.config import settings
     from app.models.drive_file import DriveFile
@@ -149,20 +208,7 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     # 検出が必要な画像を検索: バージョン NULL (未チェック) または古いバージョン
     # スキップ: 手動フォーカルポイント、現在のバージョンでチェック済み
     async with async_session() as db:
-        conditions = [
-            DriveFile.mime_type.startswith("image/"),
-            DriveFile.focal_detect_version != "manual",
-        ]
-        if detect_version:
-            conditions.append(
-                or_(
-                    DriveFile.focal_detect_version.is_(None),
-                    DriveFile.focal_detect_version != detect_version,
-                )
-            )
-        else:
-            conditions.append(DriveFile.focal_detect_version.is_(None))
-
+        conditions = _drive_file_pending_focal_conditions(detect_version)
         rows = await db.execute(select(DriveFile).where(*conditions))
         local_files = list(rows.scalars().all())
 
@@ -203,23 +249,8 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
         print()
 
     # --- リモート NoteAttachment ---
-    image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"}
     async with async_session() as db:
-        conditions = [
-            NoteAttachment.remote_url.isnot(None),
-            NoteAttachment.remote_mime_type.in_(image_mimes),
-            NoteAttachment.focal_detect_version != "manual",
-        ]
-        if detect_version:
-            conditions.append(
-                or_(
-                    NoteAttachment.focal_detect_version.is_(None),
-                    NoteAttachment.focal_detect_version != detect_version,
-                )
-            )
-        else:
-            conditions.append(NoteAttachment.focal_detect_version.is_(None))
-
+        conditions = _note_attachment_pending_focal_conditions(detect_version)
         rows = await db.execute(select(NoteAttachment).where(*conditions))
         remote_atts = list(rows.scalars().all())
 
