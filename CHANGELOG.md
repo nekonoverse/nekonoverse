@@ -1,5 +1,14 @@
 ## [20260507-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260507-1) — 2026-05-07
 
+### セキュリティ
+
+- **python-multipart 0.0.26 → 0.0.27** — Denial of Service via unbounded multipart part headers (HIGH) の修正取り込み (#1025)
+- **Mako 1.3.11 → 1.3.12** — TemplateLookup の path traversal via backslash URI on Windows (HIGH) の修正取り込み。本番は Linux で実害無いが念のため追従 (#1026)
+
+### CI
+
+- **pip-audit job で pip 自身を upgrade** — pip 26.0.1 の CVE-2026-6357 (新規) に追従するため pip-audit 前に \`pip install --upgrade pip\` を実行 (#1027)
+
 ### バグ修正
 
 - **`app.cli detect-focal-points` で未検出 (NULL) 画像が処理対象から除外されるバグを修正** — SQL の三値論理 (`column != 'manual'` は `column IS NULL` の行で NULL = UNKNOWN を返し WHERE で除外される) が原因で、`focal_detect_version IS NULL` の画像 (= まだフォーカルポイント検出が走っていない画像) がそもそも処理対象に入らなかった。DriveFile / NoteAttachment 両方を `or_(IS NULL, != "manual")` に修正。WHERE 条件をヘルパ関数化して実装/テストで共用 (#1022, #1023)
