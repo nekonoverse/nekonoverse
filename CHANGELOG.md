@@ -1,4 +1,8 @@
-## [20260504-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260504-2) — 2026-05-04
+## [20260507-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260507-1) — 2026-05-07
+
+### バグ修正
+
+- **`app.cli detect-focal-points` で未検出 (NULL) 画像が処理対象から除外されるバグを修正** — SQL の三値論理 (`column != 'manual'` は `column IS NULL` の行で NULL = UNKNOWN を返し WHERE で除外される) が原因で、`focal_detect_version IS NULL` の画像 (= まだフォーカルポイント検出が走っていない画像) がそもそも処理対象に入らなかった。DriveFile / NoteAttachment 両方を `or_(IS NULL, != "manual")` に修正。WHERE 条件をヘルパ関数化して実装/テストで共用 (#1022, #1023)
 
 ### 観測性
 
@@ -6,7 +10,7 @@
 
 ### テスト
 
-- **SigV4 presigned URL 署名が botocore (AWS 公式 SDK) と完全一致することを検証** — 自前 SigV4 実装が AWS 仕様に追従していることを担保する回帰テストを追加。タイムスタンプ依存を排除するため自前実装が生成した URL の `X-Amz-Date` を botocore に注入し、Signature を含む全クエリパラメータのバイト一致を確認。canonical_request 構築 → string_to_sign → HMAC のいずれかが破綻すると確実に落ちる (#1016, #1019)
+- **SigV4 presigned URL 署名が botocore (AWS 公式 SDK) と完全一致することを検証** — 自前 SigV4 実装が AWS 仕様に追従していることを担保する回帰テストを追加。タイムスタンプ依存を排除するため自前実装が生成した URL の `X-Amz-Date` を botocore に注入し、Signature を含む全クエリパラメータのバイト一致を確認。canonical_request 構築 → string_to_sign → HMAC のいずれかが破綻すると確実に落ちる (#1016, #1019)。さらに parametrize で URL エンコード経路 (space / `+` / 非 ASCII / unreserved) も網羅 (#1020 レビュー由来)
 
 ---
 
