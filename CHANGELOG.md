@@ -7,7 +7,7 @@
 
 ### CI
 
-- **pip-audit job で pip 自身を upgrade** — pip 26.0.1 の CVE-2026-6357 (新規) に追従するため pip-audit 前に \`pip install --upgrade pip\` を実行 (#1027)
+- **pip-audit job で pip 自身を upgrade** — pip 26.0.1 の CVE-2026-6357 (新規) に追従するため pip-audit 前に `pip install --upgrade pip` を実行 (#1027)
 
 ### バグ修正
 
