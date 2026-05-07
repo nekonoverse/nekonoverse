@@ -2,6 +2,7 @@
 
 import argparse
 import sys
+import uuid
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -187,3 +188,79 @@ def test_main_reset_password_calls_async(monkeypatch):
     mock_run.assert_called_once()
     coro = mock_run.call_args[0][0]
     coro.close()
+
+
+# ── _detect_focal_points: SQL 三値論理回帰 ──
+
+
+async def test_detect_focal_points_query_includes_null_version_rows(db, test_user, mock_valkey):
+    """focal_detect_version IS NULL の DriveFile が `!= 'manual'` フィルタで除外されないこと (#1022 回帰)。
+
+    SQL の `column != 'manual'` は column IS NULL の行で NULL (=UNKNOWN) を返し
+    WHERE で除外される三値論理問題があるため、IS NULL を or_ で明示的に許可する必要がある。
+    バグがある状態だと未検出 (NULL) の画像がそもそも処理対象に入らない。
+    """
+    from sqlalchemy import or_, select
+
+    from app.models.drive_file import DriveFile
+
+    # NULL 版の画像 (まだ検出されていない)
+    df_null = DriveFile(
+        owner_id=test_user.id,
+        s3_key=f"uploads/{uuid.uuid4().hex}/null.png",
+        filename="null.png",
+        mime_type="image/png",
+        size_bytes=1024,
+        focal_detect_version=None,
+    )
+    # manual 版の画像 (除外されるべき)
+    df_manual = DriveFile(
+        owner_id=test_user.id,
+        s3_key=f"uploads/{uuid.uuid4().hex}/manual.png",
+        filename="manual.png",
+        mime_type="image/png",
+        size_bytes=1024,
+        focal_detect_version="manual",
+    )
+    # 旧バージョン (再検出対象)
+    df_old = DriveFile(
+        owner_id=test_user.id,
+        s3_key=f"uploads/{uuid.uuid4().hex}/old.png",
+        filename="old.png",
+        mime_type="image/png",
+        size_bytes=1024,
+        focal_detect_version="old-version-1",
+    )
+    # 現バージョン (スキップ)
+    df_current = DriveFile(
+        owner_id=test_user.id,
+        s3_key=f"uploads/{uuid.uuid4().hex}/current.png",
+        filename="current.png",
+        mime_type="image/png",
+        size_bytes=1024,
+        focal_detect_version="current-version-2",
+    )
+    db.add_all([df_null, df_manual, df_old, df_current])
+    await db.commit()
+
+    # CLI と同じ WHERE 条件を再現
+    detect_version = "current-version-2"
+    conditions = [
+        DriveFile.mime_type.startswith("image/"),
+        or_(
+            DriveFile.focal_detect_version.is_(None),
+            DriveFile.focal_detect_version != "manual",
+        ),
+        or_(
+            DriveFile.focal_detect_version.is_(None),
+            DriveFile.focal_detect_version != detect_version,
+        ),
+    ]
+    rows = await db.execute(select(DriveFile).where(*conditions))
+    target_ids = {r.id for r in rows.scalars().all()}
+
+    # NULL と old は対象、manual と current は除外
+    assert df_null.id in target_ids, "NULL 版が処理対象に含まれていない (三値論理バグの再発)"
+    assert df_old.id in target_ids
+    assert df_manual.id not in target_ids
+    assert df_current.id not in target_ids

@@ -148,10 +148,15 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
     # --- ローカル DriveFile ---
     # 検出が必要な画像を検索: バージョン NULL (未チェック) または古いバージョン
     # スキップ: 手動フォーカルポイント、現在のバージョンでチェック済み
+    # 注意: SQL の `column != 'manual'` は column IS NULL の行で NULL (=UNKNOWN) を返し
+    # WHERE で除外される三値論理問題があるため、IS NULL を or_ で明示的に許可する。
     async with async_session() as db:
         conditions = [
             DriveFile.mime_type.startswith("image/"),
-            DriveFile.focal_detect_version != "manual",
+            or_(
+                DriveFile.focal_detect_version.is_(None),
+                DriveFile.focal_detect_version != "manual",
+            ),
         ]
         if detect_version:
             conditions.append(
@@ -203,12 +208,16 @@ async def _detect_focal_points(args: argparse.Namespace) -> None:
         print()
 
     # --- リモート NoteAttachment ---
+    # SQL の三値論理問題は DriveFile 側と同じ。focal_detect_version IS NULL を or_ で明示。
     image_mimes = {"image/jpeg", "image/png", "image/webp", "image/gif", "image/avif", "image/apng"}
     async with async_session() as db:
         conditions = [
             NoteAttachment.remote_url.isnot(None),
             NoteAttachment.remote_mime_type.in_(image_mimes),
-            NoteAttachment.focal_detect_version != "manual",
+            or_(
+                NoteAttachment.focal_detect_version.is_(None),
+                NoteAttachment.focal_detect_version != "manual",
+            ),
         ]
         if detect_version:
             conditions.append(
