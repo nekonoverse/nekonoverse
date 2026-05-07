@@ -1,6 +1,6 @@
 [project]
 name = "nekonoverse"
-version = "20260504-1"
+version = "20260507-1"
 description = "ActivityPub server with Misskey-compatible emoji reactions"
 requires-python = ">=3.12"
 dependencies = [
@@ -16,7 +16,7 @@ dependencies = [
     "httpx[socks]>=0.28.0",
     "valkey>=6.0.0",
     "bleach>=6.2.0",
-    "python-multipart>=0.0.26",
+    "python-multipart>=0.0.27",
     "Pillow>=12.2.0",
     "email-validator>=2.0.0",
     "webauthn>=2.0.0",
@@ -37,6 +37,8 @@ dev = [
     "psycopg2-binary>=2.9.0",
     "httpx[socks]>=0.28.0",
     "ruff>=0.8.0",
+    # SigV4 presigned URL の自前実装が AWS 仕様と一致するか検証する参照実装として使う
+    "botocore>=1.35.0",
 ]
 
 [tool.setuptools.packages.find]

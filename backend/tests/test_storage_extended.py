@@ -186,3 +186,84 @@ def test_generate_presigned_get_url_strips_trailing_slash():
         assert "//nekonoverse" not in url
     finally:
         app.storage.settings.s3_endpoint_url = orig
+
+
+@pytest.mark.parametrize(
+    "key",
+    [
+        # 通常 (UUID 由来の S3 キー)
+        "u/abc/test.mp4",
+        # スペースを含む (URL では %20 にエンコード必須)
+        "path with space/file.mp4",
+        # `+` を含む (URL では %2B にエンコード必須、空白と混同されやすい)
+        "a+b/file.mp4",
+        # 非 ASCII (UTF-8 マルチバイト)
+        "日本語/file.mp4",
+        # `~` `_` `-` `.` (RFC 3986 unreserved、ノーエンコード)
+        "u/abc/foo~bar_baz-qux.mp4",
+    ],
+    ids=["ascii", "space", "plus", "utf8", "unreserved"],
+)
+def test_generate_presigned_get_url_signature_matches_botocore(key):
+    """自前実装の署名が botocore (AWS 公式 SDK) の S3SigV4QueryAuth と一致する。
+
+    自前 SigV4 実装が AWS 仕様に追従していることを担保する回帰テスト (#1016)。
+    タイムスタンプ依存を排除するため、自前実装が生成した URL から X-Amz-Date を
+    抽出して botocore に同じ時刻で再署名させ、署名値を含む全クエリパラメータの
+    バイト一致を確認する。署名アルゴリズム (canonical_request 構築 → string_to_sign →
+    HMAC) のいずれかが破綻すると確実に落ちる。
+
+    parametrize で複数の key 形 (ASCII / スペース / `+` / 非 ASCII / unreserved
+    記号) を投入し、URL エンコード経路の差異も拾う。
+    """
+    from urllib.parse import parse_qs, quote, urlparse
+
+    from botocore.auth import S3SigV4QueryAuth
+    from botocore.awsrequest import AWSRequest
+    from botocore.credentials import Credentials
+
+    from app.config import settings
+    from app.storage import generate_presigned_get_url
+
+    # 自前実装で URL を生成
+    our_url = generate_presigned_get_url(key, expires_in=300)
+    our_qs = parse_qs(urlparse(our_url).query)
+
+    # 自前実装の X-Amz-Date を botocore の timestamp として注入
+    creds = Credentials(
+        access_key=settings.s3_access_key_id,
+        secret_key=settings.s3_secret_access_key,
+    )
+    auth = S3SigV4QueryAuth(
+        credentials=creds,
+        service_name="s3",
+        region_name=settings.s3_region,
+        expires=300,
+    )
+    # 自前実装の rstrip("/") 経路と path 構造を揃える (endpoint の末尾スラッシュ正規化)。
+    # botocore の S3 canonical_uri は AWSRequest.url の path をそのまま使うため、
+    # 自前実装と同じ encode 形式 (`quote(key, safe="/")`) で path を事前構築して渡す。
+    # こうしないと botocore が literal space や非 ASCII 文字を canonical に含めてしまい、
+    # 実際の HTTP wire 形式 (%-encoded) と乖離して署名一致を判定できない。
+    endpoint = settings.s3_endpoint_url.rstrip("/")
+    encoded_key = quote(key, safe="/")
+    request = AWSRequest(
+        method="GET",
+        url=f"{endpoint}/{settings.s3_bucket}/{encoded_key}",
+    )
+    request.context["timestamp"] = our_qs["X-Amz-Date"][0]
+    auth.add_auth(request)
+    ref_qs = parse_qs(urlparse(request.url).query)
+
+    # 全パラメータが完全一致 (署名アルゴリズム破綻時に確実に落ちる)
+    for param in (
+        "X-Amz-Algorithm",
+        "X-Amz-Credential",
+        "X-Amz-Date",
+        "X-Amz-Expires",
+        "X-Amz-SignedHeaders",
+        "X-Amz-Signature",
+    ):
+        assert our_qs[param] == ref_qs[param], (
+            f"{param} mismatch: ours={our_qs[param]!r} botocore={ref_qs[param]!r}"
+        )
