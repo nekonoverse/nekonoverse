@@ -31,6 +31,8 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      # pip 自身の CVE (CVE-2026-3219 / CVE-2026-6357 など) を吸収するため最新へ upgrade
+      - run: pip install --upgrade pip
       - run: pip install pip-audit
       - run: pip install -e backend/
       - run: |
