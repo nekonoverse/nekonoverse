@@ -1,3 +1,11 @@
+## [20260509-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260509-1) — 2026-05-09
+
+### セキュリティ
+
+- **fast-uri 3.1.0 → 3.1.2** — CVE-2026-6321 / GHSA-q3j6-qgpj-74h6 (path traversal via percent-encoded dot segments, HIGH) の修正取り込み。frontend の dev 依存 (vitest 経由 ajv) の transitive dep のため lockfile のみ更新 (#1029)
+
+---
+
 ## [20260507-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260507-1) — 2026-05-07
 
 ### セキュリティ
