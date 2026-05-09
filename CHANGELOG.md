@@ -3,6 +3,7 @@
 ### セキュリティ
 
 - **fast-uri 3.1.0 → 3.1.2** — CVE-2026-6321 / GHSA-q3j6-qgpj-74h6 (path traversal via percent-encoded dot segments, HIGH) の修正取り込み。frontend の dev 依存 (vitest 経由 ajv) の transitive dep のため lockfile のみ更新 (#1029)
+- **@babel/plugin-transform-modules-systemjs 7.29.0 → 7.29.4** — GHSA 系 (HIGH, arbitrary code generation when compiling malicious input) の修正取り込み。frontend の dev 依存 (vite 経由) の transitive dep のため lockfile のみ更新
 
 ---
 
