@@ -1,3 +1,11 @@
+## [20260513-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260513-1) — 2026-05-13
+
+### セキュリティ
+
+- **urllib3 2.6.3 → 2.7.0** — GHSA-qccp-gfcp-xxvc (プロキシ経由の低レベルリダイレクトでセンシティブヘッダがクロスオリジン転送される, HIGH) / GHSA-mf9v-mfxr-j63j (ストリーミング API の一部で解凍爆弾防御をバイパス可能, HIGH) の修正取り込み。botocore / requests 等の transitive dep のため uv.lock のみ更新 (#1032)
+
+---
+
 ## [20260509-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260509-1) — 2026-05-09
 
 ### セキュリティ
