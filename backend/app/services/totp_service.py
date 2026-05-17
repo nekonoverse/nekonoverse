@@ -72,10 +72,12 @@ def verify_totp_code_with_counter(
 ) -> int | None:
     # RFC 6238 §5.2: 受理済みの time-step に対する OTP は再使用を拒否する。
     # 成功時は採用された counter (>= last_counter+1) を返し、失敗時は None を返す。
+    # 注: pyotp.TOTP.at(int) は整数を Unix timestamp として解釈するため、
+    #     counter を直接渡せる HOTP.at(counter) を使う (HOTP/TOTP は同一アルゴリズム)。
     if now is None:
         now = time.time()
     current = int(now) // TOTP_STEP_SECONDS
-    totp = pyotp.TOTP(secret)
+    hotp = pyotp.HOTP(secret)
     candidate = (code or "").strip().replace(" ", "")
     if not candidate:
         return None
@@ -86,7 +88,7 @@ def verify_totp_code_with_counter(
     matched: int | None = None
     for offset in offsets:
         counter = current + offset
-        expected = totp.at(counter)
+        expected = hotp.at(counter)
         if secrets.compare_digest(expected, candidate):
             matched = counter
             break

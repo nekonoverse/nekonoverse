@@ -49,34 +49,30 @@ def test_verify_totp_code_invalid():
 
 
 def test_verify_totp_code_with_counter_returns_counter():
-    import time
-
     from app.services.totp_service import (
         TOTP_STEP_SECONDS,
         verify_totp_code_with_counter,
     )
 
     secret = "JBSWY3DPEHPK3PXP"
-    now = time.time()
-    expected_counter = int(now) // TOTP_STEP_SECONDS
-    code = pyotp.TOTP(secret).at(expected_counter)
+    expected_counter = 56000000
+    now = expected_counter * TOTP_STEP_SECONDS
+    code = pyotp.HOTP(secret).at(expected_counter)
     matched = verify_totp_code_with_counter(secret, code, None, now=now)
     assert matched == expected_counter
 
 
 def test_verify_totp_code_with_counter_rejects_replay():
     """RFC 6238 §5.2: 同一カウンタの OTP の再使用は拒否されること。"""
-    import time
-
     from app.services.totp_service import (
         TOTP_STEP_SECONDS,
         verify_totp_code_with_counter,
     )
 
     secret = "JBSWY3DPEHPK3PXP"
-    now = time.time()
-    counter = int(now) // TOTP_STEP_SECONDS
-    code = pyotp.TOTP(secret).at(counter)
+    counter = 56000000
+    now = counter * TOTP_STEP_SECONDS
+    code = pyotp.HOTP(secret).at(counter)
 
     first = verify_totp_code_with_counter(secret, code, None, now=now)
     assert first == counter
@@ -88,17 +84,15 @@ def test_verify_totp_code_with_counter_rejects_replay():
 
 def test_verify_totp_code_with_counter_rejects_older_window():
     """前ステップ (last_counter-1) のコードも単調増加性により拒否されること。"""
-    import time
-
     from app.services.totp_service import (
         TOTP_STEP_SECONDS,
         verify_totp_code_with_counter,
     )
 
     secret = "JBSWY3DPEHPK3PXP"
-    now = time.time()
-    current = int(now) // TOTP_STEP_SECONDS
-    prev_code = pyotp.TOTP(secret).at(current - 1)
+    current = 56000000
+    now = current * TOTP_STEP_SECONDS
+    prev_code = pyotp.HOTP(secret).at(current - 1)
 
     # last_counter として現在カウンタを既に使用したとマーク
     matched = verify_totp_code_with_counter(secret, prev_code, current, now=now)
