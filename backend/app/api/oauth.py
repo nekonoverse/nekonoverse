@@ -370,6 +370,8 @@ async def authorize_submit(
             raise HTTPException(status_code=401, detail="User not found")
 
         from app.services.totp_service import (
+            advance_last_totp_counter,
+            current_time_step,
             decrypt_secret,
             verify_totp_code_with_counter,
         )
@@ -379,10 +381,15 @@ async def authorize_submit(
         matched_counter = verify_totp_code_with_counter(
             secret, code, user.last_totp_counter,
         )
-        totp_valid = matched_counter is not None
-        if totp_valid:
-            user.last_totp_counter = matched_counter
-            await db.commit()
+        totp_valid = False
+        if matched_counter is not None:
+            # atomic CAS で並列同一コードのリプレイを拒否
+            advanced = await advance_last_totp_counter(
+                db, user.id, matched_counter,
+            )
+            if advanced:
+                await db.commit()
+                totp_valid = True
 
         if not totp_valid and user.totp_recovery_codes:
             from app.services.totp_service import verify_recovery_code
@@ -392,6 +399,8 @@ async def authorize_submit(
             )
             if valid:
                 user.totp_recovery_codes = remaining
+                # Defense-in-depth: リカバリー成功時も TOTP カウンタを進める
+                await advance_last_totp_counter(db, user.id, current_time_step())
                 await db.commit()
                 totp_valid = True
 

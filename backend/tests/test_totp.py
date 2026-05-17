@@ -105,6 +105,50 @@ def test_verify_totp_code_with_counter_invalid_code():
     assert verify_totp_code_with_counter("JBSWY3DPEHPK3PXP", "000000", None) is None
 
 
+# ── advance_last_totp_counter (atomic CAS) tests ──
+
+
+async def test_advance_last_totp_counter_initial(db, test_user):
+    """NULL から初回 advance は成功する。"""
+    from app.services.totp_service import advance_last_totp_counter
+
+    assert test_user.last_totp_counter is None
+    ok = await advance_last_totp_counter(db, test_user.id, 100)
+    assert ok is True
+    await db.refresh(test_user)
+    assert test_user.last_totp_counter == 100
+
+
+async def test_advance_last_totp_counter_replay_rejected(db, test_user):
+    """同一カウンタを 2 回 advance すると 2 回目は False (race condition 防止)。"""
+    from app.services.totp_service import advance_last_totp_counter
+
+    ok1 = await advance_last_totp_counter(db, test_user.id, 200)
+    ok2 = await advance_last_totp_counter(db, test_user.id, 200)
+    assert ok1 is True
+    assert ok2 is False
+
+
+async def test_advance_last_totp_counter_downgrade_rejected(db, test_user):
+    """過去カウンタへのダウングレードは拒否される。"""
+    from app.services.totp_service import advance_last_totp_counter
+
+    assert await advance_last_totp_counter(db, test_user.id, 300) is True
+    assert await advance_last_totp_counter(db, test_user.id, 250) is False
+    await db.refresh(test_user)
+    assert test_user.last_totp_counter == 300
+
+
+async def test_advance_last_totp_counter_monotonic_increase(db, test_user):
+    """より大きいカウンタへの advance は成功する。"""
+    from app.services.totp_service import advance_last_totp_counter
+
+    assert await advance_last_totp_counter(db, test_user.id, 400) is True
+    assert await advance_last_totp_counter(db, test_user.id, 401) is True
+    await db.refresh(test_user)
+    assert test_user.last_totp_counter == 401
+
+
 def test_generate_recovery_codes():
     from app.services.totp_service import generate_recovery_codes
 

@@ -896,6 +896,7 @@ async def totp_enable(
     db: AsyncSession = Depends(get_db),
 ):
     from app.services.totp_service import (
+        advance_last_totp_counter,
         decrypt_secret,
         generate_recovery_codes,
         hash_recovery_codes,
@@ -922,13 +923,19 @@ async def totp_enable(
             status_code=400,
             detail="Invalid TOTP code",
         )
+    advanced = await advance_last_totp_counter(db, user.id, matched_counter)
+    if not advanced:
+        # 並列リクエストが先に同じカウンタを記録 — リプレイとして拒否
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid TOTP code",
+        )
 
     recovery_codes = generate_recovery_codes()
     hashed = await asyncio.to_thread(hash_recovery_codes, recovery_codes)
 
     user.totp_enabled = True
     user.totp_recovery_codes = hashed
-    user.last_totp_counter = matched_counter
     await db.commit()
 
     return {"recovery_codes": recovery_codes}
@@ -994,6 +1001,8 @@ async def totp_verify(
         raise HTTPException(status_code=401, detail="User not found")
 
     from app.services.totp_service import (
+        advance_last_totp_counter,
+        current_time_step,
         decrypt_secret,
         verify_totp_code_with_counter,
     )
@@ -1005,8 +1014,15 @@ async def totp_verify(
         secret, code, user.last_totp_counter,
     )
     if matched_counter is not None:
-        # 有効な TOTP コード — カウンタを更新してセッションを作成
-        user.last_totp_counter = matched_counter
+        # 有効な TOTP コード — atomic CAS でカウンタを進める。
+        # 並列リクエストに先を越されたら (rowcount==0) リプレイとして拒否し、
+        # セッション発行前にコミットして耐ロールバック性も確保する。
+        advanced = await advance_last_totp_counter(db, user.id, matched_counter)
+        if not advanced:
+            await valkey.incr(attempts_key)
+            await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
+            raise HTTPException(status_code=401, detail="Invalid TOTP code")
+        await db.commit()
     elif user.totp_recovery_codes:
         # リカバリーコードを試行
         from app.services.totp_service import verify_recovery_code
@@ -1025,6 +1041,9 @@ async def totp_verify(
                 detail="Invalid TOTP code",
             )
         user.totp_recovery_codes = remaining
+        # Defense-in-depth: リカバリー認証成功時も TOTP カウンタを現在ステップまで
+        # 進めておくと、リカバリー直後に古い TOTP を再生される穴を塞げる。
+        await advance_last_totp_counter(db, user.id, current_time_step())
         await db.commit()
     else:
         # 失敗時に試行カウンターをインクリメント

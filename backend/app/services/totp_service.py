@@ -3,10 +3,13 @@ import hashlib
 import secrets
 import string
 import time
+import uuid
 
 import bcrypt as _bcrypt
 import pyotp
+import sqlalchemy as sa
 from cryptography.fernet import Fernet
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
 
@@ -60,8 +63,42 @@ def generate_provisioning_uri(
 
 
 def verify_totp_code(secret: str, code: str) -> bool:
+    """非推奨。リプレイ保護なし。新規利用は verify_totp_code_with_counter を使うこと。"""
     totp = pyotp.TOTP(secret)
     return totp.verify(code, valid_window=TOTP_VALID_WINDOW)
+
+
+def current_time_step(now: float | None = None) -> int:
+    """現在の TOTP time-step counter を返す (Unix time / 30)。"""
+    if now is None:
+        now = time.time()
+    return int(now) // TOTP_STEP_SECONDS
+
+
+async def advance_last_totp_counter(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    new_counter: int,
+) -> bool:
+    """atomic に users.last_totp_counter を進める (単調増加 CAS)。
+
+    rowcount == 1 (採用された) なら True、別リクエストが先に同等以上の
+    counter を記録していたら False を返す。リプレイ防止の競合解決に使う。
+    呼び出し側でコミットすること。
+    """
+    from app.models.user import User
+    result = await db.execute(
+        sa.update(User)
+        .where(User.id == user_id)
+        .where(
+            sa.or_(
+                User.last_totp_counter.is_(None),
+                User.last_totp_counter < new_counter,
+            )
+        )
+        .values(last_totp_counter=new_counter)
+    )
+    return result.rowcount > 0
 
 
 def verify_totp_code_with_counter(
