@@ -1,3 +1,11 @@
+## [20260517-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260517-2) — 2026-05-17
+
+### バグ修正
+
+- **バージョン番号の更新漏れを修正** — 20260517-1 のリリース時に `backend/app/__init__.py`, `backend/pyproject.toml`, `frontend/package.json` のバージョン番号が `20260513-1` のまま据え置かれていた。`__version__` を参照する nodeinfo が古いバージョンを返し続け、クライアントのアップデート検知が反応しないため、3 箇所を `20260517-2` に揃えるパッチ。
+
+---
+
 ## [20260517-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260517-1) — 2026-05-17
 
 ### セキュリティ
