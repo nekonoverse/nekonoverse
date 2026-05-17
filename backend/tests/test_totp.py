@@ -48,6 +48,107 @@ def test_verify_totp_code_invalid():
     assert verify_totp_code("JBSWY3DPEHPK3PXP", "000000") is False
 
 
+def test_verify_totp_code_with_counter_returns_counter():
+    from app.services.totp_service import (
+        TOTP_STEP_SECONDS,
+        verify_totp_code_with_counter,
+    )
+
+    secret = "JBSWY3DPEHPK3PXP"
+    expected_counter = 56000000
+    now = expected_counter * TOTP_STEP_SECONDS
+    code = pyotp.HOTP(secret).at(expected_counter)
+    matched = verify_totp_code_with_counter(secret, code, None, now=now)
+    assert matched == expected_counter
+
+
+def test_verify_totp_code_with_counter_rejects_replay():
+    """RFC 6238 §5.2: 同一カウンタの OTP の再使用は拒否されること。"""
+    from app.services.totp_service import (
+        TOTP_STEP_SECONDS,
+        verify_totp_code_with_counter,
+    )
+
+    secret = "JBSWY3DPEHPK3PXP"
+    counter = 56000000
+    now = counter * TOTP_STEP_SECONDS
+    code = pyotp.HOTP(secret).at(counter)
+
+    first = verify_totp_code_with_counter(secret, code, None, now=now)
+    assert first == counter
+
+    # 同じカウンタを last_counter として渡すと、同じコードは拒否される
+    second = verify_totp_code_with_counter(secret, code, first, now=now)
+    assert second is None
+
+
+def test_verify_totp_code_with_counter_rejects_older_window():
+    """前ステップ (last_counter-1) のコードも単調増加性により拒否されること。"""
+    from app.services.totp_service import (
+        TOTP_STEP_SECONDS,
+        verify_totp_code_with_counter,
+    )
+
+    secret = "JBSWY3DPEHPK3PXP"
+    current = 56000000
+    now = current * TOTP_STEP_SECONDS
+    prev_code = pyotp.HOTP(secret).at(current - 1)
+
+    # last_counter として現在カウンタを既に使用したとマーク
+    matched = verify_totp_code_with_counter(secret, prev_code, current, now=now)
+    assert matched is None
+
+
+def test_verify_totp_code_with_counter_invalid_code():
+    from app.services.totp_service import verify_totp_code_with_counter
+
+    assert verify_totp_code_with_counter("JBSWY3DPEHPK3PXP", "000000", None) is None
+
+
+# ── advance_last_totp_counter (atomic CAS) tests ──
+
+
+async def test_advance_last_totp_counter_initial(db, test_user):
+    """NULL から初回 advance は成功する。"""
+    from app.services.totp_service import advance_last_totp_counter
+
+    assert test_user.last_totp_counter is None
+    ok = await advance_last_totp_counter(db, test_user.id, 100)
+    assert ok is True
+    await db.refresh(test_user)
+    assert test_user.last_totp_counter == 100
+
+
+async def test_advance_last_totp_counter_replay_rejected(db, test_user):
+    """同一カウンタを 2 回 advance すると 2 回目は False (race condition 防止)。"""
+    from app.services.totp_service import advance_last_totp_counter
+
+    ok1 = await advance_last_totp_counter(db, test_user.id, 200)
+    ok2 = await advance_last_totp_counter(db, test_user.id, 200)
+    assert ok1 is True
+    assert ok2 is False
+
+
+async def test_advance_last_totp_counter_downgrade_rejected(db, test_user):
+    """過去カウンタへのダウングレードは拒否される。"""
+    from app.services.totp_service import advance_last_totp_counter
+
+    assert await advance_last_totp_counter(db, test_user.id, 300) is True
+    assert await advance_last_totp_counter(db, test_user.id, 250) is False
+    await db.refresh(test_user)
+    assert test_user.last_totp_counter == 300
+
+
+async def test_advance_last_totp_counter_monotonic_increase(db, test_user):
+    """より大きいカウンタへの advance は成功する。"""
+    from app.services.totp_service import advance_last_totp_counter
+
+    assert await advance_last_totp_counter(db, test_user.id, 400) is True
+    assert await advance_last_totp_counter(db, test_user.id, 401) is True
+    await db.refresh(test_user)
+    assert test_user.last_totp_counter == 401
+
+
 def test_generate_recovery_codes():
     from app.services.totp_service import generate_recovery_codes
 
@@ -237,6 +338,45 @@ async def test_totp_verify_success(app_client, test_user, db, mock_valkey):
     assert resp.json()["ok"] is True
     # Attempt counter should be deleted on success
     mock_valkey.delete.assert_any_call(f"totp_attempts:{totp_token}")
+    # 検証成功時にユーザーの last_totp_counter が更新されているべき
+    await db.refresh(test_user)
+    assert test_user.last_totp_counter is not None
+
+
+async def test_totp_verify_rejects_replay(app_client, test_user, db, mock_valkey):
+    """同一カウンタの TOTP コードを 2 回送信したら 2 回目は拒否されること (RFC 6238 §5.2)。"""
+    from app.services.totp_service import encrypt_secret
+
+    secret = "JBSWY3DPEHPK3PXP"
+    test_user.totp_enabled = True
+    test_user.totp_secret = encrypt_secret(secret)
+    await db.commit()
+
+    totp_token = uuid.uuid4().hex
+    mock_valkey.get = AsyncMock(
+        side_effect=_totp_verify_get_side_effect(str(test_user.id)),
+    )
+
+    totp = pyotp.TOTP(secret)
+    code = totp.now()
+
+    # 1 回目: 成功
+    resp1 = await app_client.post(
+        "/api/v1/auth/totp/verify",
+        json={"totp_token": totp_token, "code": code},
+    )
+    assert resp1.status_code == 200
+
+    # 2 回目: 同じコード — 拒否されるべき
+    totp_token2 = uuid.uuid4().hex
+    mock_valkey.get = AsyncMock(
+        side_effect=_totp_verify_get_side_effect(str(test_user.id)),
+    )
+    resp2 = await app_client.post(
+        "/api/v1/auth/totp/verify",
+        json={"totp_token": totp_token2, "code": code},
+    )
+    assert resp2.status_code == 401
 
 
 async def test_totp_verify_invalid_code(app_client, test_user, db, mock_valkey):
