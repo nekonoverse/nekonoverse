@@ -2,12 +2,16 @@ import base64
 import hashlib
 import secrets
 import string
+import time
 
 import bcrypt as _bcrypt
 import pyotp
 from cryptography.fernet import Fernet
 
 from app.config import settings
+
+TOTP_STEP_SECONDS = 30
+TOTP_VALID_WINDOW = 1
 
 
 def _get_fernet() -> Fernet:
@@ -57,7 +61,40 @@ def generate_provisioning_uri(
 
 def verify_totp_code(secret: str, code: str) -> bool:
     totp = pyotp.TOTP(secret)
-    return totp.verify(code, valid_window=1)
+    return totp.verify(code, valid_window=TOTP_VALID_WINDOW)
+
+
+def verify_totp_code_with_counter(
+    secret: str,
+    code: str,
+    last_counter: int | None,
+    now: float | None = None,
+) -> int | None:
+    # RFC 6238 §5.2: 受理済みの time-step に対する OTP は再使用を拒否する。
+    # 成功時は採用された counter (>= last_counter+1) を返し、失敗時は None を返す。
+    if now is None:
+        now = time.time()
+    current = int(now) // TOTP_STEP_SECONDS
+    totp = pyotp.TOTP(secret)
+    candidate = (code or "").strip().replace(" ", "")
+    if not candidate:
+        return None
+    # 隣接ウィンドウは現在を優先しつつ前後を許容する標準的な順序で比較する。
+    offsets = [0]
+    for i in range(1, TOTP_VALID_WINDOW + 1):
+        offsets.extend((-i, i))
+    matched: int | None = None
+    for offset in offsets:
+        counter = current + offset
+        expected = totp.at(counter)
+        if secrets.compare_digest(expected, candidate):
+            matched = counter
+            break
+    if matched is None:
+        return None
+    if last_counter is not None and matched <= last_counter:
+        return None
+    return matched
 
 
 def generate_recovery_codes(count: int = 8) -> list[str]:

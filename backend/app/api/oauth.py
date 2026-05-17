@@ -369,11 +369,20 @@ async def authorize_submit(
         if not user:
             raise HTTPException(status_code=401, detail="User not found")
 
-        from app.services.totp_service import decrypt_secret, verify_totp_code
+        from app.services.totp_service import (
+            decrypt_secret,
+            verify_totp_code_with_counter,
+        )
 
         secret = decrypt_secret(user.totp_secret)
         code = totp_code.strip().replace("-", "")
-        totp_valid = verify_totp_code(secret, code)
+        matched_counter = verify_totp_code_with_counter(
+            secret, code, user.last_totp_counter,
+        )
+        totp_valid = matched_counter is not None
+        if totp_valid:
+            user.last_totp_counter = matched_counter
+            await db.commit()
 
         if not totp_valid and user.totp_recovery_codes:
             from app.services.totp_service import verify_recovery_code

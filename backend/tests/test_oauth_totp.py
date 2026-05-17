@@ -87,7 +87,8 @@ async def test_oauth_login_totp_verify_success(
     with patch(
         "app.services.totp_service.decrypt_secret", return_value="plain_secret",
     ), patch(
-        "app.services.totp_service.verify_totp_code", return_value=True,
+        "app.services.totp_service.verify_totp_code_with_counter",
+        return_value=99999,
     ):
         resp = await app_client.post(
             "/oauth/authorize",
@@ -142,7 +143,8 @@ async def test_oauth_login_totp_verify_invalid(
     with patch(
         "app.services.totp_service.decrypt_secret", return_value="plain_secret",
     ), patch(
-        "app.services.totp_service.verify_totp_code", return_value=False,
+        "app.services.totp_service.verify_totp_code_with_counter",
+        return_value=None,
     ):
         resp = await app_client.post(
             "/oauth/authorize",
@@ -335,7 +337,8 @@ async def test_oauth_totp_oob(app_client, db, test_user, mock_valkey):
     with patch(
         "app.services.totp_service.decrypt_secret", return_value="plain_secret",
     ), patch(
-        "app.services.totp_service.verify_totp_code", return_value=True,
+        "app.services.totp_service.verify_totp_code_with_counter",
+        return_value=99999,
     ):
         resp = await app_client.post(
             "/oauth/authorize",

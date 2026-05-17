@@ -899,7 +899,7 @@ async def totp_enable(
         decrypt_secret,
         generate_recovery_codes,
         hash_recovery_codes,
-        verify_totp_code,
+        verify_totp_code_with_counter,
     )
 
     if user.totp_enabled:
@@ -914,7 +914,10 @@ async def totp_enable(
         )
 
     secret = decrypt_secret(user.totp_secret)
-    if not verify_totp_code(secret, body.code):
+    matched_counter = verify_totp_code_with_counter(
+        secret, body.code, user.last_totp_counter,
+    )
+    if matched_counter is None:
         raise HTTPException(
             status_code=400,
             detail="Invalid TOTP code",
@@ -925,6 +928,7 @@ async def totp_enable(
 
     user.totp_enabled = True
     user.totp_recovery_codes = hashed
+    user.last_totp_counter = matched_counter
     await db.commit()
 
     return {"recovery_codes": recovery_codes}
@@ -989,14 +993,20 @@ async def totp_verify(
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
 
-    from app.services.totp_service import decrypt_secret, verify_totp_code
+    from app.services.totp_service import (
+        decrypt_secret,
+        verify_totp_code_with_counter,
+    )
 
     secret = decrypt_secret(user.totp_secret)
     code = body.code.strip().replace("-", "")
 
-    if verify_totp_code(secret, code):
-        # 有効な TOTP コード — セッションを作成
-        pass
+    matched_counter = verify_totp_code_with_counter(
+        secret, code, user.last_totp_counter,
+    )
+    if matched_counter is not None:
+        # 有効な TOTP コード — カウンタを更新してセッションを作成
+        user.last_totp_counter = matched_counter
     elif user.totp_recovery_codes:
         # リカバリーコードを試行
         from app.services.totp_service import verify_recovery_code
