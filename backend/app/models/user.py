@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, String, Text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSON, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -34,6 +34,9 @@ class User(Base):
         Boolean, default=False, server_default="false", nullable=False
     )
     totp_recovery_codes: Mapped[Optional[list]] = mapped_column(JSON, nullable=True, default=None)
+    last_totp_counter: Mapped[Optional[int]] = mapped_column(
+        BigInteger, nullable=True, default=None
+    )
     email_verified: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False
     )

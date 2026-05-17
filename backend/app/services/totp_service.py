@@ -2,12 +2,19 @@ import base64
 import hashlib
 import secrets
 import string
+import time
+import uuid
 
 import bcrypt as _bcrypt
 import pyotp
+import sqlalchemy as sa
 from cryptography.fernet import Fernet
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
+
+TOTP_STEP_SECONDS = 30
+TOTP_VALID_WINDOW = 1
 
 
 def _get_fernet() -> Fernet:
@@ -56,8 +63,77 @@ def generate_provisioning_uri(
 
 
 def verify_totp_code(secret: str, code: str) -> bool:
+    """非推奨。リプレイ保護なし。新規利用は verify_totp_code_with_counter を使うこと。"""
     totp = pyotp.TOTP(secret)
-    return totp.verify(code, valid_window=1)
+    return totp.verify(code, valid_window=TOTP_VALID_WINDOW)
+
+
+def current_time_step(now: float | None = None) -> int:
+    """現在の TOTP time-step counter を返す (Unix time / 30)。"""
+    if now is None:
+        now = time.time()
+    return int(now) // TOTP_STEP_SECONDS
+
+
+async def advance_last_totp_counter(
+    db: AsyncSession,
+    user_id: uuid.UUID,
+    new_counter: int,
+) -> bool:
+    """atomic に users.last_totp_counter を進める (単調増加 CAS)。
+
+    rowcount == 1 (採用された) なら True、別リクエストが先に同等以上の
+    counter を記録していたら False を返す。リプレイ防止の競合解決に使う。
+    呼び出し側でコミットすること。
+    """
+    from app.models.user import User
+    result = await db.execute(
+        sa.update(User)
+        .where(User.id == user_id)
+        .where(
+            sa.or_(
+                User.last_totp_counter.is_(None),
+                User.last_totp_counter < new_counter,
+            )
+        )
+        .values(last_totp_counter=new_counter)
+    )
+    return result.rowcount > 0
+
+
+def verify_totp_code_with_counter(
+    secret: str,
+    code: str,
+    last_counter: int | None,
+    now: float | None = None,
+) -> int | None:
+    # RFC 6238 §5.2: 受理済みの time-step に対する OTP は再使用を拒否する。
+    # 成功時は採用された counter (>= last_counter+1) を返し、失敗時は None を返す。
+    # 注: pyotp.TOTP.at(int) は整数を Unix timestamp として解釈するため、
+    #     counter を直接渡せる HOTP.at(counter) を使う (HOTP/TOTP は同一アルゴリズム)。
+    if now is None:
+        now = time.time()
+    current = int(now) // TOTP_STEP_SECONDS
+    hotp = pyotp.HOTP(secret)
+    candidate = (code or "").strip().replace(" ", "")
+    if not candidate:
+        return None
+    # 隣接ウィンドウは現在を優先しつつ前後を許容する標準的な順序で比較する。
+    offsets = [0]
+    for i in range(1, TOTP_VALID_WINDOW + 1):
+        offsets.extend((-i, i))
+    matched: int | None = None
+    for offset in offsets:
+        counter = current + offset
+        expected = hotp.at(counter)
+        if secrets.compare_digest(expected, candidate):
+            matched = counter
+            break
+    if matched is None:
+        return None
+    if last_counter is not None and matched <= last_counter:
+        return None
+    return matched
 
 
 def generate_recovery_codes(count: int = 8) -> list[str]:
