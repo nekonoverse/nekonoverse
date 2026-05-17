@@ -1,3 +1,11 @@
+## [20260517-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260517-1) — 2026-05-17
+
+### セキュリティ
+
+- **TOTP コードのリプレイ防止** — RFC 6238 §5.2 に準拠し、検証成功した time-step counter を `users.last_totp_counter` に永続化、それ以下のカウンタの OTP を拒否する単調増加方式を導入。`valid_window=1` (前後 30 秒) で許容されていた同一/過去カウンタの再使用を塞ぐ。`/auth/totp/verify`、`/auth/totp/enable`、OAuth フロー内の TOTP 検証すべてに適用。並列同一コードに対しては atomic CAS UPDATE (`UPDATE ... WHERE last_totp_counter IS NULL OR last_totp_counter < :c`) で race condition を排除し、TOTP 成功直後に commit してロールバック耐性も確保。リカバリーコード認証成功時にも現在 time-step まで counter を進める defense-in-depth を追加 (#1035)
+
+---
+
 ## [20260513-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260513-1) — 2026-05-13
 
 ### セキュリティ
