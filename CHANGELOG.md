@@ -3,6 +3,7 @@
 ### セキュリティ
 
 - **idna 3.11 → 3.15** — CVE-2026-45409 / GHSA-65pc-fj4g-8rjx (medium, IDNA encode の `idna.encode()` 細工入力で CVE-2024-3651 fix をバイパス可能) の修正取り込み。runtime dependency (backend/uv.lock 経由) のため即時更新 (#1039)
+- **markdown 3.10.2 → 3.7 ダウングレード** — PYSEC-2026-89 (high availability, `html.parser.HTMLParser` の未捕捉 AssertionError で DoS, Python-Markdown >= 3.8 が影響) を回避。upstream fix 未リリースのため `markdown>=3.7,<3.8` に固定。fix 版リリース後に upper bound を外す
 
 ### 新機能
 

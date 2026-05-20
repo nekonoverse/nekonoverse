@@ -22,7 +22,10 @@ dependencies = [
     "webauthn>=2.0.0",
     "pyotp>=2.9.0",
     "pywebpush>=2.0.0",
-    "markdown>=3.7",
+    # PYSEC-2026-89: markdown >= 3.8 で html.parser.HTMLParser の未捕捉
+    # AssertionError による DoS。upstream fix 未リリースのため 3.8 未満に固定。
+    # fix リリース後は upper bound を外す。
+    "markdown>=3.7,<3.8",
     "aiosmtplib>=3.0.0",
     "cbor2>=5.9.0",
 ]
