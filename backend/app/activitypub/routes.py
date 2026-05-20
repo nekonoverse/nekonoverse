@@ -302,8 +302,8 @@ async def verify_inbox_signature(request: Request, db: AsyncSession) -> tuple[bo
     if not key_id:
         return False, ""
 
-    actor, public_key_pem = await get_actor_public_key(db, key_id)
-    if not public_key_pem:
+    actor, public_key_material, algorithm = await get_actor_public_key(db, key_id)
+    if not public_key_material:
         return False, key_id
 
     headers_dict = {k.lower(): v for k, v in request.headers.items()}
@@ -312,11 +312,12 @@ async def verify_inbox_signature(request: Request, db: AsyncSession) -> tuple[bo
         path += f"?{request.url.query}"
 
     valid = verify_signature(
-        public_key_pem=public_key_pem,
+        public_key_material=public_key_material,
         signature_header=sig_header,
         method=request.method,
         path=path,
         headers=headers_dict,
+        algorithm_hint=algorithm,
     )
     return valid, key_id
 

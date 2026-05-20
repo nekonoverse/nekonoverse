@@ -30,8 +30,8 @@ ORPHAN_RECLAIM_THRESHOLD = timedelta(minutes=10)
 # ループ中に孤児回収を走らせる間隔。
 ORPHAN_RECLAIM_INTERVAL = timedelta(minutes=1)
 
-# L-1: 署名鍵キャッシュ (actor_id -> (Actor, private_key_pem, cached_at))
-_signing_key_cache: dict[uuid.UUID, tuple[Actor, str, float]] = {}
+# L-1: 署名鍵キャッシュ (actor_id -> (Actor, rsa_pem, ed25519_pem|None, cached_at))
+_signing_key_cache: dict[uuid.UUID, tuple[Actor, str, str | None, float]] = {}
 _SIGNING_KEY_CACHE_TTL = 3600  # 1 hour
 
 # ワーカー用の共有HTTPクライアント
@@ -116,25 +116,48 @@ async def get_next_jobs(db: AsyncSession, limit: int = 20) -> list[DeliveryJob]:
     return list(result.scalars().all())
 
 
-async def get_actor_with_key(db: AsyncSession, actor_id: uuid.UUID) -> tuple[Actor | None, str]:
-    """署名用にアクターとその秘密鍵を取得する。インメモリキャッシュを使用。"""
+async def get_actor_with_key(
+    db: AsyncSession, actor_id: uuid.UUID
+) -> tuple[Actor | None, str, str | None]:
+    """署名用にアクターと秘密鍵を取得する。(actor, rsa_pem, ed25519_pem|None)。
+
+    インメモリキャッシュを使用。Ed25519 鍵未保有の (古い) アクターは None を返す。
+    """
     import time
 
     cached = _signing_key_cache.get(actor_id)
     if cached:
-        actor, pem, cached_at = cached
+        actor, rsa_pem, ed_pem, cached_at = cached
         if time.time() - cached_at < _SIGNING_KEY_CACHE_TTL:
-            return actor, pem
+            return actor, rsa_pem, ed_pem
 
     result = await db.execute(
         select(Actor).options(selectinload(Actor.local_user)).where(Actor.id == actor_id)
     )
     actor = result.scalar_one_or_none()
     if not actor or not actor.local_user:
-        return actor, ""
+        return actor, "", None
 
-    _signing_key_cache[actor_id] = (actor, actor.local_user.private_key_pem, time.time())
-    return actor, actor.local_user.private_key_pem
+    rsa_pem = actor.local_user.private_key_pem
+    ed_pem = actor.local_user.private_key_ed25519_pem
+    _signing_key_cache[actor_id] = (actor, rsa_pem, ed_pem, time.time())
+    return actor, rsa_pem, ed_pem
+
+
+async def _find_target_actor_for_inbox(db: AsyncSession, inbox_url: str) -> Actor | None:
+    """配送先 inbox URL から相手リモートアクターを 1 件取得する。
+
+    共有 inbox の場合は複数候補があり得るが、鍵選択の判定には任意の代表 1 件で
+    十分 (共有 inbox の受信側でルーティングするため送信側の鍵種は自由)。失敗時は None。
+    """
+    from sqlalchemy import or_
+
+    result = await db.execute(
+        select(Actor)
+        .where(or_(Actor.inbox_url == inbox_url, Actor.shared_inbox_url == inbox_url))
+        .limit(1)
+    )
+    return result.scalar_one_or_none()
 
 
 # 配送失敗時にエラーメッセージへ残すレスポンスボディの最大長。
@@ -143,7 +166,11 @@ _ERROR_BODY_PREVIEW_MAX = 300
 
 
 async def deliver_activity(
-    job: DeliveryJob, actor: Actor, private_key_pem: str
+    job: DeliveryJob,
+    actor: Actor,
+    private_key_pem: str,
+    private_key_ed25519_pem: str | None = None,
+    db: AsyncSession | None = None,
 ) -> tuple[bool, int, str]:
     """activity をリモート Inbox に配送する。
 
@@ -168,16 +195,28 @@ async def deliver_activity(
     body = json.dumps(job.payload).encode("utf-8")
     # 正しいスキームを保証するためローカルアクターの動的 URL を使用
     if actor.domain is None:
-        key_id = f"{app_settings.server_url}/users/{actor.username}#main-key"
+        actor_url_base = f"{app_settings.server_url}/users/{actor.username}"
     else:
-        key_id = f"{actor.ap_id}#main-key"
+        actor_url_base = actor.ap_id
+
+    # 鍵選択: 自分も相手も Ed25519 capable なら Ed25519、それ以外は RSA フォールバック。
+    algorithm = "rsa-sha256"
+    signing_key_pem = private_key_pem
+    key_id = f"{actor_url_base}#main-key"
+    if private_key_ed25519_pem and db is not None:
+        remote = await _find_target_actor_for_inbox(db, job.target_inbox_url)
+        if remote and remote.public_key_ed25519_multibase:
+            algorithm = "ed25519"
+            signing_key_pem = private_key_ed25519_pem
+            key_id = f"{actor_url_base}#ed25519-key"
 
     headers = sign_request(
-        private_key_pem=private_key_pem,
+        private_key_pem=signing_key_pem,
         key_id=key_id,
         method="POST",
         url=job.target_inbox_url,
         body=body,
+        algorithm=algorithm,
     )
     headers["Content-Type"] = AP_CONTENT_TYPE
 
@@ -212,7 +251,9 @@ async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
             if not job or job.status != "processing":
                 return
 
-            actor, private_key_pem = await get_actor_with_key(db, job.actor_id)
+            actor, private_key_pem, private_key_ed25519_pem = await get_actor_with_key(
+                db, job.actor_id
+            )
             if not actor or not private_key_pem:
                 job.status = "dead"
                 job.error_message = "Actor or private key not found"
@@ -221,7 +262,7 @@ async def _deliver_one(job_id: uuid.UUID, sem: asyncio.Semaphore) -> None:
 
             try:
                 success, status_code, error_detail = await deliver_activity(
-                    job, actor, private_key_pem
+                    job, actor, private_key_pem, private_key_ed25519_pem, db=db
                 )
             except Exception as e:
                 # deliver_activity は想定される例外を握り潰す設計だが、

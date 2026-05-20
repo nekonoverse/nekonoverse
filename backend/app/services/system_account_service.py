@@ -10,7 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.actor import Actor
 from app.models.user import User
-from app.utils.crypto import generate_rsa_keypair
+from app.utils.crypto import generate_ed25519_keypair, generate_rsa_keypair
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +38,18 @@ async def ensure_system_account(
     )
     actor = result.scalar_one_or_none()
     if actor and actor.local_user:
+        # 既存システムアカウントで Ed25519 鍵未保有なら補完 (冪等)
+        if actor.public_key_ed25519_multibase is None:
+            ed_priv, ed_mb = generate_ed25519_keypair()
+            actor.public_key_ed25519_multibase = ed_mb
+            actor.key_id_ed25519 = f"{actor.ap_id}#ed25519-key"
+            actor.local_user.private_key_ed25519_pem = ed_priv
+            await db.commit()
+            await db.refresh(actor.local_user)
         return actor.local_user
 
     private_pem, public_pem = generate_rsa_keypair()
+    private_ed25519_pem, public_ed25519_multibase = generate_ed25519_keypair()
 
     actor_id = uuid.uuid4()
     ap_id = f"{settings.server_url}/users/{username}"
@@ -57,6 +66,8 @@ async def ensure_system_account(
         followers_url=f"{ap_id}/followers",
         following_url=f"{ap_id}/following",
         public_key_pem=public_pem,
+        public_key_ed25519_multibase=public_ed25519_multibase,
+        key_id_ed25519=f"{ap_id}#ed25519-key",
         is_bot=True,
         discoverable=False,
     )
@@ -76,6 +87,7 @@ async def ensure_system_account(
         role="admin",
         is_system=True,
         private_key_pem=private_pem,
+        private_key_ed25519_pem=private_ed25519_pem,
     )
     db.add(user)
     await db.commit()

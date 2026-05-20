@@ -6,10 +6,13 @@ from email.utils import format_datetime, parsedate_to_datetime
 from urllib.parse import urlparse
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding
+from cryptography.hazmat.primitives.asymmetric import ed25519, padding, rsa
+
+from app.utils.crypto import ed25519_multibase_to_public_bytes
 
 
-# C-4: パース済みRSA鍵をキャッシュしてCPU負荷を削減
+# C-4: パース済み鍵をキャッシュして CPU 負荷を削減。
+# Ed25519 PEM も load_pem_*_key で型が判別されて返るため、関数自体は単一。
 @functools.lru_cache(maxsize=256)
 def _parse_private_key(pem: str):
     return serialization.load_pem_private_key(pem.encode(), password=None)
@@ -20,14 +23,27 @@ def _parse_public_key(pem: str):
     return serialization.load_pem_public_key(pem.encode())
 
 
+@functools.lru_cache(maxsize=1024)
+def _parse_public_key_multibase(multibase: str) -> ed25519.Ed25519PublicKey:
+    """FEP-521a Multikey (`z6Mk...`) を Ed25519PublicKey に復元する。"""
+    raw = ed25519_multibase_to_public_bytes(multibase)
+    return ed25519.Ed25519PublicKey.from_public_bytes(raw)
+
+
 def sign_request(
     private_key_pem: str,
     key_id: str,
     method: str,
     url: str,
     body: bytes | None = None,
+    algorithm: str = "rsa-sha256",
 ) -> dict[str, str]:
-    """ActivityPub 配送用に HTTP リクエストに署名する。"""
+    """ActivityPub 配送用に HTTP リクエストに署名する。
+
+    algorithm:
+      - "rsa-sha256" (デフォルト, cavage 互換): PKCS1v15 + SHA-256
+      - "ed25519": Ed25519 (内部で SHA-512、ハッシュ前計算不要)
+    """
     parsed = urlparse(url)
     path = parsed.path
     if parsed.query:
@@ -58,17 +74,27 @@ def sign_request(
     signed_string = "\n".join(signed_parts)
 
     private_key = _parse_private_key(private_key_pem)
-    signature = private_key.sign(
-        signed_string.encode("utf-8"),
-        padding.PKCS1v15(),
-        hashes.SHA256(),
-    )
+    if algorithm == "rsa-sha256":
+        if not isinstance(private_key, rsa.RSAPrivateKey):
+            raise TypeError("algorithm='rsa-sha256' requires an RSA private key")
+        signature = private_key.sign(
+            signed_string.encode("utf-8"),
+            padding.PKCS1v15(),
+            hashes.SHA256(),
+        )
+    elif algorithm == "ed25519":
+        if not isinstance(private_key, ed25519.Ed25519PrivateKey):
+            raise TypeError("algorithm='ed25519' requires an Ed25519 private key")
+        # Ed25519 はハッシュ前計算しない (内部で SHA-512)
+        signature = private_key.sign(signed_string.encode("utf-8"))
+    else:
+        raise ValueError(f"unsupported algorithm: {algorithm!r}")
 
     signature_b64 = base64.b64encode(signature).decode()
     headers_str = " ".join(headers_to_sign)
     sig_header = (
         f'keyId="{key_id}",'
-        f'algorithm="rsa-sha256",'
+        f'algorithm="{algorithm}",'
         f'headers="{headers_str}",'
         f'signature="{signature_b64}"'
     )
@@ -92,13 +118,24 @@ def parse_signature_header(sig_header: str) -> dict[str, str]:
 
 
 def verify_signature(
-    public_key_pem: str,
+    public_key_material: str,
     signature_header: str,
     method: str,
     path: str,
     headers: dict[str, str],
+    algorithm_hint: str | None = None,
 ) -> bool:
-    """公開鍵に対して HTTP Signature を検証する。"""
+    """公開鍵に対して HTTP Signature を検証する。
+
+    public_key_material:
+      - RSA PEM 文字列 ("-----BEGIN PUBLIC KEY-----" で始まる)、または
+      - Ed25519 Multikey (`z6Mk...`) のいずれか。
+
+    algorithm_hint:
+      - signature header の algorithm パラメータが `hs2019` や空の場合に、
+        どちらのアルゴリズムでパースするかを呼び出し側が指定する。
+        通常は鍵種別から自動判別する。
+    """
     params = parse_signature_header(signature_header)
 
     if "signature" not in params or "headers" not in params or "keyId" not in params:
@@ -126,14 +163,45 @@ def verify_signature(
 
     signed_string = "\n".join(signed_parts)
 
+    # 鍵種別の自動判別 (algorithm hint が無ければ public_key_material から推定)
+    is_multibase = public_key_material.startswith("z")
+
+    # algorithm パラメータの解釈:
+    #   - "ed25519" → Ed25519 強制
+    #   - "rsa-sha256" or 空 → RSA
+    #   - "hs2019" → algorithm_hint or 鍵種別から決定
+    declared = (params.get("algorithm") or "").lower()
+    if declared == "ed25519":
+        algo = "ed25519"
+    elif declared == "rsa-sha256":
+        algo = "rsa-sha256"
+    elif declared in ("hs2019", ""):
+        # algorithm 不在 / hs2019 はどちらも曖昧。algorithm_hint を尊重しつつ、
+        # なければ鍵種別から推定。Ed25519 鍵保有相手が空 algorithm を送ってきても
+        # 取りこぼさない。
+        algo = algorithm_hint or ("ed25519" if is_multibase else "rsa-sha256")
+    else:
+        return False
+
+    # 鍵種別と algorithm の整合性を確認 (取り違えで誤受理しないよう厳格に)
+    if algo == "ed25519" and not is_multibase:
+        return False
+    if algo == "rsa-sha256" and is_multibase:
+        return False
+
     try:
-        public_key = _parse_public_key(public_key_pem)
-        public_key.verify(
-            base64.b64decode(params["signature"]),
-            signed_string.encode("utf-8"),
-            padding.PKCS1v15(),
-            hashes.SHA256(),
-        )
+        signature_bytes = base64.b64decode(params["signature"])
+        if algo == "rsa-sha256":
+            public_key = _parse_public_key(public_key_material)
+            public_key.verify(
+                signature_bytes,
+                signed_string.encode("utf-8"),
+                padding.PKCS1v15(),
+                hashes.SHA256(),
+            )
+        else:
+            ed_key = _parse_public_key_multibase(public_key_material)
+            ed_key.verify(signature_bytes, signed_string.encode("utf-8"))
         return True
     except Exception:
         return False

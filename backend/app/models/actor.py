@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -38,6 +39,14 @@ class Actor(Base):
     followers_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     following_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     public_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
+    # FEP-521a Multikey: Ed25519 公開鍵を `z6Mk...` の Multibase 文字列で保持。
+    # ローカルは migration 044 で生成、リモートは actor JSON-LD の assertionMethod 経由で保存。
+    public_key_ed25519_multibase: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None
+    )
+    # リモートアクターから取り込んだ Ed25519 鍵の Multikey id (assertionMethod[].id)。
+    # ローカルでは `{actor_url}#ed25519-key` を都度生成するため参考値。
+    key_id_ed25519: Mapped[str | None] = mapped_column(String(2048), nullable=True, default=None)
     is_cat: Mapped[bool] = mapped_column(Boolean, default=False)
     manually_approves_followers: Mapped[bool] = mapped_column(Boolean, default=False)
     discoverable: Mapped[bool] = mapped_column(Boolean, default=True)
@@ -100,6 +109,16 @@ class Actor(Base):
         UniqueConstraint("username", "domain", name="uq_actors_username_domain"),
         Index("ix_actors_domain_username", "domain", "username"),
         Index("ix_actors_lower_username_domain", func.lower(username), "domain", unique=True),
+        # delivery_worker._find_target_actor_for_inbox の OR (inbox_url, shared_inbox_url)
+        # 用。migration 044 で同名の index を作成しており、テスト DB の
+        # Base.metadata.create_all でも整合させる。inbox_url は NOT NULL のため
+        # 通常 index、shared_inbox_url は nullable のため部分 index で省サイズ。
+        Index("ix_actors_inbox_url", "inbox_url"),
+        Index(
+            "ix_actors_shared_inbox_url",
+            "shared_inbox_url",
+            postgresql_where=text("shared_inbox_url IS NOT NULL"),
+        ),
     )
 
     @property
