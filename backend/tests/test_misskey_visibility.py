@@ -195,8 +195,8 @@ async def test_render_actor_outputs_misskey_fields(db, mock_valkey):
     assert data["_misskey_makeNotesFollowersOnlyBefore"] == epoch_ms
     assert data["_misskey_makeNotesHiddenBefore"] == epoch_ms
 
-    # Context should include the namespace mappings
-    context_dict = data["@context"][2]
+    # Context should include the namespace mappings (dict entry in AP_CONTEXT list)
+    context_dict = next(entry for entry in data["@context"] if isinstance(entry, dict))
     assert "_misskey_requireSigninToViewContents" in context_dict
     assert "_misskey_makeNotesFollowersOnlyBefore" in context_dict
     assert "_misskey_makeNotesHiddenBefore" in context_dict
