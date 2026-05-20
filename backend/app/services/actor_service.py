@@ -339,9 +339,12 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         existing.followers_url = data.get("followers")
         existing.following_url = data.get("following")
         existing.public_key_pem = public_key_pem or existing.public_key_pem
-        # Ed25519 鍵: 相手が提示しなくなった (鍵廃止) ケースも反映するため、
-        # multibase が未抽出なら NULL に戻す。古い multibase で Ed25519 送信を
-        # 続けてしまうと検証側で必ず失敗するため、明示的に取り下げる方が安全。
+        # Ed25519 鍵: 相手が Multikey を提示しなくなった (鍵廃止) ケースを反映する
+        # ため、multibase が未抽出なら NULL に戻す。古い multibase で Ed25519 送信
+        # を続けると検証側で必ず失敗するので、明示的に取り下げる方が安全。
+        # 注: 一時的に Multikey を含まない actor JSON を返された場合 (CDN/キャッシュ
+        # 不整合等) 次回 fetch で復帰するまで RSA フォールバックになる窓ができるが、
+        # 致命ではない。両カラムは常に一緒に更新する不変条件。
         existing.public_key_ed25519_multibase = ed25519_multibase
         existing.key_id_ed25519 = ed25519_key_id
         existing.last_fetched_at = now
@@ -497,9 +500,11 @@ async def get_actor_public_key(
 ) -> tuple[Actor | None, str, str]:
     """鍵 ID から (actor, public_key_material, algorithm) を返す。
 
-    key_id の fragment が actor の `key_id_ed25519` または `#ed25519-key` パターンに
-    一致し、かつ Ed25519 multibase が保存されていれば Ed25519 鍵を、それ以外は
-    RSA PEM を返す。algorithm は "ed25519" または "rsa-sha256"。
+    `key_id` が actor の `key_id_ed25519` と完全一致した場合のみ Ed25519 鍵を
+    返す。それ以外は RSA PEM を返す。algorithm は "ed25519" または
+    "rsa-sha256"。fragment の部分一致 ("#main-key-ed25519-2024" 等) で誤判定
+    しないよう、リモートが actor JSON-LD の assertionMethod[].id で提示した
+    完全な URL に対してのみ Ed25519 と判定する。
     """
     actor_ap_id = key_id.split("#")[0]
     actor = await fetch_remote_actor(db, actor_ap_id)

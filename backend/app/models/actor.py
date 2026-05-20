@@ -13,6 +13,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB, UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -108,6 +109,19 @@ class Actor(Base):
         UniqueConstraint("username", "domain", name="uq_actors_username_domain"),
         Index("ix_actors_domain_username", "domain", "username"),
         Index("ix_actors_lower_username_domain", func.lower(username), "domain", unique=True),
+        # delivery_worker._find_target_actor_for_inbox の OR (inbox_url, shared_inbox_url)
+        # 用。migration 044 で同名の部分 index を作成しており、テスト DB の
+        # Base.metadata.create_all でも整合させる。
+        Index(
+            "ix_actors_inbox_url",
+            "inbox_url",
+            postgresql_where=text("inbox_url IS NOT NULL"),
+        ),
+        Index(
+            "ix_actors_shared_inbox_url",
+            "shared_inbox_url",
+            postgresql_where=text("shared_inbox_url IS NOT NULL"),
+        ),
     )
 
     @property

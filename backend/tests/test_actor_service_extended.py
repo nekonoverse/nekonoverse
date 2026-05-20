@@ -187,6 +187,42 @@ async def test_upsert_no_multikey_keeps_ed25519_null(db):
     assert actor.key_id_ed25519 is None
 
 
+async def test_upsert_resets_ed25519_when_multikey_removed(db):
+    """create 時に Multikey ありの actor が update 時に Multikey を提示しなくなったら
+    NULL に戻すこと (古い multibase で Ed25519 送信を続けて検証失敗するのを防ぐ)。"""
+    multibase = "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+    initial = {
+        "id": "http://rotate.example/users/rotateuser",
+        "type": "Person",
+        "preferredUsername": "rotateuser",
+        "inbox": "http://rotate.example/users/rotateuser/inbox",
+        "publicKey": {"publicKeyPem": "RSA_PEM"},
+        "assertionMethod": [
+            {
+                "id": "http://rotate.example/users/rotateuser#ed25519-key",
+                "type": "Multikey",
+                "publicKeyMultibase": multibase,
+            }
+        ],
+    }
+    actor = await upsert_remote_actor(db, initial)
+    assert actor.public_key_ed25519_multibase == multibase
+
+    # Multikey を含まない更新 (相手が Ed25519 を廃止 / 一時的に Multikey 抜きの actor JSON を返した)
+    updated = {
+        "id": "http://rotate.example/users/rotateuser",
+        "type": "Person",
+        "preferredUsername": "rotateuser",
+        "inbox": "http://rotate.example/users/rotateuser/inbox",
+        "publicKey": {"publicKeyPem": "RSA_PEM_NEW"},
+    }
+    actor2 = await upsert_remote_actor(db, updated)
+    assert actor2.id == actor.id
+    assert actor2.public_key_ed25519_multibase is None
+    assert actor2.key_id_ed25519 is None
+    assert actor2.public_key_pem == "RSA_PEM_NEW"
+
+
 async def test_upsert_creates_service_actor_as_bot(db):
     data = {
         "id": "http://bot.example/users/botuser",

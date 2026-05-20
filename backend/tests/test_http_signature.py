@@ -176,6 +176,28 @@ def test_hs2019_algorithm_dispatches_by_key_type():
     ) is True
 
 
+def test_empty_algorithm_with_ed25519_key_accepted():
+    """algorithm パラメータが空の場合も algorithm_hint と鍵種別を尊重する。
+
+    Ed25519 鍵保有相手が algorithm を省略してきても受理される (PR description の
+    『受信: algorithm が空 を受理』を Ed25519 鍵保有相手でも成立させる)。
+    """
+    ed_priv, ed_pub_mb = generate_ed25519_keypair()
+    headers = sign_request(
+        ed_priv, "key-id", "POST", "https://remote.example/inbox", algorithm="ed25519"
+    )
+    # algorithm パラメータを除去 (空状態をシミュレート)
+    import re
+
+    stripped = re.sub(r',?algorithm="[^"]*"', "", headers["Signature"])
+    verify_headers = {k.lower(): v for k, v in headers.items()}
+    verify_headers["signature"] = stripped
+    assert verify_signature(
+        ed_pub_mb, stripped, "POST", "/inbox", verify_headers,
+        algorithm_hint="ed25519",
+    ) is True
+
+
 def test_sign_rsa_algorithm_with_ed25519_key_raises():
     """algorithm='rsa-sha256' に Ed25519 秘密鍵を渡したら TypeError。"""
     import pytest
