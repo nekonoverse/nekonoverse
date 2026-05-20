@@ -234,6 +234,28 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
     if isinstance(pk, dict):
         public_key_pem = pk.get("publicKeyPem", "")
 
+    # FEP-521a Multikey: assertionMethod / verificationMethod から Ed25519 鍵を抽出。
+    # Ed25519 multibase は base58btc + multicodec varint 0xED 0x01 で必ず "z6Mk" で始まる。
+    ed25519_multibase: str | None = None
+    ed25519_key_id: str | None = None
+    for field in ("assertionMethod", "verificationMethod"):
+        method_value = data.get(field)
+        if not method_value:
+            continue
+        candidates = method_value if isinstance(method_value, list) else [method_value]
+        for cand in candidates:
+            if not isinstance(cand, dict):
+                continue
+            if cand.get("type") != "Multikey":
+                continue
+            mb = cand.get("publicKeyMultibase")
+            if isinstance(mb, str) and mb.startswith("z6Mk"):
+                ed25519_multibase = mb
+                ed25519_key_id = cand.get("id")
+                break
+        if ed25519_multibase:
+            break
+
     shared_inbox = None
     endpoints = data.get("endpoints")
     if isinstance(endpoints, dict):
@@ -317,6 +339,14 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         existing.followers_url = data.get("followers")
         existing.following_url = data.get("following")
         existing.public_key_pem = public_key_pem or existing.public_key_pem
+        # Ed25519 鍵: 相手が Multikey を提示しなくなった (鍵廃止) ケースを反映する
+        # ため、multibase が未抽出なら NULL に戻す。古い multibase で Ed25519 送信
+        # を続けると検証側で必ず失敗するので、明示的に取り下げる方が安全。
+        # 注: 一時的に Multikey を含まない actor JSON を返された場合 (CDN/キャッシュ
+        # 不整合等) 次回 fetch で復帰するまで RSA フォールバックになる窓ができるが、
+        # 致命ではない。両カラムは常に一緒に更新する不変条件。
+        existing.public_key_ed25519_multibase = ed25519_multibase
+        existing.key_id_ed25519 = ed25519_key_id
         existing.last_fetched_at = now
         icon = data.get("icon")
         if isinstance(icon, dict):
@@ -373,6 +403,8 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         followers_url=data.get("followers"),
         following_url=data.get("following"),
         public_key_pem=public_key_pem,
+        public_key_ed25519_multibase=ed25519_multibase,
+        key_id_ed25519=ed25519_key_id,
         is_cat=data.get("isCat", False),
         is_bot=is_bot,
         require_signin_to_view=bool(data.get("_misskey_requireSigninToViewContents", False)),
@@ -463,10 +495,26 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
     return await fetch_remote_actor(db, ap_id)
 
 
-async def get_actor_public_key(db: AsyncSession, key_id: str) -> tuple[Actor | None, str]:
-    """鍵 ID (例: https://example.com/users/alice#main-key) からアクターと公開鍵を取得する。"""
+async def get_actor_public_key(
+    db: AsyncSession, key_id: str
+) -> tuple[Actor | None, str, str]:
+    """鍵 ID から (actor, public_key_material, algorithm) を返す。
+
+    `key_id` が actor の `key_id_ed25519` と完全一致した場合のみ Ed25519 鍵を
+    返す。それ以外は RSA PEM を返す。algorithm は "ed25519" または
+    "rsa-sha256"。fragment の部分一致 ("#main-key-ed25519-2024" 等) で誤判定
+    しないよう、リモートが actor JSON-LD の assertionMethod[].id で提示した
+    完全な URL に対してのみ Ed25519 と判定する。
+    """
     actor_ap_id = key_id.split("#")[0]
     actor = await fetch_remote_actor(db, actor_ap_id)
-    if actor:
-        return actor, actor.public_key_pem
-    return None, ""
+    if not actor:
+        return None, "", "rsa-sha256"
+
+    # Ed25519 鍵判定: 保存済み key_id_ed25519 と完全一致した場合のみ Ed25519 を返す。
+    # `#main-key-ed25519-2024` のような変則命名で誤判定するのを避けるため、
+    # リモートが actor JSON-LD で提示している assertionMethod[].id を信頼する。
+    if actor.public_key_ed25519_multibase and actor.key_id_ed25519 == key_id:
+        return actor, actor.public_key_ed25519_multibase, "ed25519"
+
+    return actor, actor.public_key_pem, "rsa-sha256"

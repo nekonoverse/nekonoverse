@@ -128,6 +128,101 @@ async def test_upsert_creates_full_actor(db):
     assert actor.is_bot is False
 
 
+async def test_upsert_extracts_ed25519_multikey(db):
+    """assertionMethod に Multikey (Ed25519) があれば actor に保存されること。"""
+    multibase = "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+    data = {
+        "id": "http://ed.example/users/eduser",
+        "type": "Person",
+        "preferredUsername": "eduser",
+        "inbox": "http://ed.example/users/eduser/inbox",
+        "publicKey": {"publicKeyPem": "RSA_PEM"},
+        "assertionMethod": [
+            {
+                "id": "http://ed.example/users/eduser#ed25519-key",
+                "type": "Multikey",
+                "controller": "http://ed.example/users/eduser",
+                "publicKeyMultibase": multibase,
+            }
+        ],
+    }
+    actor = await upsert_remote_actor(db, data)
+    assert actor is not None
+    assert actor.public_key_ed25519_multibase == multibase
+    assert actor.key_id_ed25519 == "http://ed.example/users/eduser#ed25519-key"
+    # RSA 鍵も並存
+    assert actor.public_key_pem == "RSA_PEM"
+
+
+async def test_upsert_extracts_ed25519_from_verification_method_fallback(db):
+    """verificationMethod (一部実装が使う旧フィールド名) からも抽出できること。"""
+    multibase = "z6MkrYZ5LH3JxqFEFy4kHcwdcWnHmwwSXfwgQVrZbtAzGSqj"
+    data = {
+        "id": "http://vm.example/users/vmuser",
+        "type": "Person",
+        "preferredUsername": "vmuser",
+        "inbox": "http://vm.example/users/vmuser/inbox",
+        "publicKey": {"publicKeyPem": "RSA_PEM"},
+        "verificationMethod": {
+            "id": "http://vm.example/users/vmuser#ed25519-key",
+            "type": "Multikey",
+            "publicKeyMultibase": multibase,
+        },
+    }
+    actor = await upsert_remote_actor(db, data)
+    assert actor.public_key_ed25519_multibase == multibase
+
+
+async def test_upsert_no_multikey_keeps_ed25519_null(db):
+    """Multikey が無い (Mastodon 互換) アクターは Ed25519 カラムが null のまま。"""
+    data = {
+        "id": "http://mast.example/users/mastuser",
+        "type": "Person",
+        "preferredUsername": "mastuser",
+        "inbox": "http://mast.example/users/mastuser/inbox",
+        "publicKey": {"publicKeyPem": "RSA_PEM"},
+    }
+    actor = await upsert_remote_actor(db, data)
+    assert actor.public_key_ed25519_multibase is None
+    assert actor.key_id_ed25519 is None
+
+
+async def test_upsert_resets_ed25519_when_multikey_removed(db):
+    """create 時に Multikey ありの actor が update 時に Multikey を提示しなくなったら
+    NULL に戻すこと (古い multibase で Ed25519 送信を続けて検証失敗するのを防ぐ)。"""
+    multibase = "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+    initial = {
+        "id": "http://rotate.example/users/rotateuser",
+        "type": "Person",
+        "preferredUsername": "rotateuser",
+        "inbox": "http://rotate.example/users/rotateuser/inbox",
+        "publicKey": {"publicKeyPem": "RSA_PEM"},
+        "assertionMethod": [
+            {
+                "id": "http://rotate.example/users/rotateuser#ed25519-key",
+                "type": "Multikey",
+                "publicKeyMultibase": multibase,
+            }
+        ],
+    }
+    actor = await upsert_remote_actor(db, initial)
+    assert actor.public_key_ed25519_multibase == multibase
+
+    # Multikey を含まない更新 (相手が Ed25519 を廃止 / 一時的に Multikey 抜きの actor JSON を返した)
+    updated = {
+        "id": "http://rotate.example/users/rotateuser",
+        "type": "Person",
+        "preferredUsername": "rotateuser",
+        "inbox": "http://rotate.example/users/rotateuser/inbox",
+        "publicKey": {"publicKeyPem": "RSA_PEM_NEW"},
+    }
+    actor2 = await upsert_remote_actor(db, updated)
+    assert actor2.id == actor.id
+    assert actor2.public_key_ed25519_multibase is None
+    assert actor2.key_id_ed25519 is None
+    assert actor2.public_key_pem == "RSA_PEM_NEW"
+
+
 async def test_upsert_creates_service_actor_as_bot(db):
     data = {
         "id": "http://bot.example/users/botuser",
@@ -461,10 +556,11 @@ async def test_get_actor_public_key_found(db):
     await db.flush()
 
     key_id = f"{actor.ap_id}#main-key"
-    found_actor, pub_key = await get_actor_public_key(db, key_id)
+    found_actor, pub_key, algorithm = await get_actor_public_key(db, key_id)
     assert found_actor is not None
     assert found_actor.id == actor.id
     assert pub_key != ""
+    assert algorithm == "rsa-sha256"
 
 
 async def test_get_actor_public_key_not_found(db):
@@ -473,9 +569,29 @@ async def test_get_actor_public_key_not_found(db):
         new_callable=AsyncMock,
         return_value=None,
     ):
-        found_actor, pub_key = await get_actor_public_key(
+        found_actor, pub_key, algorithm = await get_actor_public_key(
             db,
             "http://nonexistent.example/users/nobody#main-key",
         )
     assert found_actor is None
     assert pub_key == ""
+    assert algorithm == "rsa-sha256"
+
+
+async def test_get_actor_public_key_ed25519(db):
+    """Ed25519 multibase を保持した actor に対して `#ed25519-key` fragment で
+    Ed25519 鍵と algorithm='ed25519' が返ること。"""
+    from app.utils.crypto import generate_ed25519_keypair
+
+    actor = await make_remote_actor(db, username="edactor", domain="ed.example")
+    _, multibase = generate_ed25519_keypair()
+    actor.public_key_ed25519_multibase = multibase
+    actor.key_id_ed25519 = f"{actor.ap_id}#ed25519-key"
+    actor.last_fetched_at = datetime.now(timezone.utc)
+    await db.flush()
+
+    key_id = f"{actor.ap_id}#ed25519-key"
+    found_actor, material, algorithm = await get_actor_public_key(db, key_id)
+    assert found_actor is not None
+    assert material == multibase
+    assert algorithm == "ed25519"

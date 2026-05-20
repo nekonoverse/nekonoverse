@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import settings
 from app.models.actor import Actor
 from app.models.user import User
-from app.utils.crypto import generate_rsa_keypair
+from app.utils.crypto import generate_ed25519_keypair, generate_rsa_keypair
 
 # ユーザー登録で使用できない予約語（すべて小文字で比較）
 RESERVED_USERNAMES: frozenset[str] = frozenset({
@@ -58,8 +58,10 @@ async def create_user(
     if existing_email.scalar_one_or_none():
         raise ValueError("Username or email is already in use")
 
-    # RSA鍵ペアを生成
+    # RSA鍵ペアを生成 (Mastodon 等との後方互換のため継続使用)
     private_pem, public_pem = generate_rsa_keypair()
+    # Ed25519 鍵ペアを生成 (FEP-521a Multikey, Fedibird/Mitra 等向け)
+    private_ed25519_pem, public_ed25519_multibase = generate_ed25519_keypair()
 
     # アクターを作成
     actor_id = uuid.uuid4()
@@ -77,6 +79,8 @@ async def create_user(
         followers_url=f"{ap_id}/followers",
         following_url=f"{ap_id}/following",
         public_key_pem=public_pem,
+        public_key_ed25519_multibase=public_ed25519_multibase,
+        key_id_ed25519=f"{ap_id}#ed25519-key",
     )
     db.add(actor)
 
@@ -89,6 +93,7 @@ async def create_user(
         actor_id=actor_id,
         role=role,
         private_key_pem=private_pem,
+        private_key_ed25519_pem=private_ed25519_pem,
         approval_status=approval_status,
         registration_reason=registration_reason,
     )

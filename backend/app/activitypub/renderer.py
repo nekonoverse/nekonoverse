@@ -17,6 +17,7 @@ def _iso_z(dt: datetime) -> str:
 AP_CONTEXT = [
     "https://www.w3.org/ns/activitystreams",
     "https://w3id.org/security/v1",
+    "https://w3id.org/security/multikey/v1",
     {
         "misskey": "https://misskey-hub.net/ns#",
         "toot": "http://joinmastodon.org/ns#",
@@ -81,6 +82,22 @@ def render_actor(actor: Actor) -> dict:
             "owner": actor_url,
             "publicKeyPem": actor.public_key_pem,
         },
+        # FEP-521a Multikey: Ed25519 鍵を assertionMethod 配列で公開 (Fedibird/Mitra 互換)。
+        # Mastodon 等は publicKey フィールドを使うので、後方互換のため双方を出力する。
+        **(
+            {
+                "assertionMethod": [
+                    {
+                        "id": f"{actor_url}#ed25519-key",
+                        "type": "Multikey",
+                        "controller": actor_url,
+                        "publicKeyMultibase": actor.public_key_ed25519_multibase,
+                    }
+                ]
+            }
+            if getattr(actor, "public_key_ed25519_multibase", None)
+            else {}
+        ),
         "endpoints": {
             "sharedInbox": shared_inbox or f"{settings.server_url}/inbox",
         },

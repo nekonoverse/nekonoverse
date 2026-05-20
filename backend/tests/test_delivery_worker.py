@@ -128,23 +128,28 @@ async def test_get_pending_jobs_respects_limit(db, test_user, mock_valkey):
 
 
 async def test_get_actor_with_key_local(db, test_user, mock_valkey):
-    found_actor, found_key = await get_actor_with_key(db, test_user.actor_id)
+    found_actor, found_key, ed_key = await get_actor_with_key(db, test_user.actor_id)
     assert found_actor is not None
     assert found_actor.id == test_user.actor_id
     assert "PRIVATE KEY" in found_key
+    # test_user fixture が Ed25519 鍵も持っていれば返り、無ければ None。
+    # 044 移行後の create_user 経由なら必ず含まれる想定。
+    assert ed_key is None or "PRIVATE KEY" in ed_key
 
 
 async def test_get_actor_with_key_remote_no_key(db, mock_valkey):
     remote = await make_remote_actor(db, username="nokey")
-    found_actor, found_key = await get_actor_with_key(db, remote.id)
+    found_actor, found_key, ed_key = await get_actor_with_key(db, remote.id)
     assert found_actor is not None
     assert found_key == ""
+    assert ed_key is None
 
 
 async def test_get_actor_with_key_nonexistent(db, mock_valkey):
-    found_actor, found_key = await get_actor_with_key(db, uuid.uuid4())
+    found_actor, found_key, ed_key = await get_actor_with_key(db, uuid.uuid4())
     assert found_actor is None
     assert found_key == ""
+    assert ed_key is None
 
 
 # ── deliver_activity ──
