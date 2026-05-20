@@ -1,3 +1,20 @@
+## [20260520-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260520-1) — 2026-05-20
+
+### セキュリティ
+
+- **idna 3.11 → 3.15** — CVE-2026-45409 / GHSA-65pc-fj4g-8rjx (medium, IDNA encode の `idna.encode()` 細工入力で CVE-2024-3651 fix をバイパス可能) の修正取り込み。runtime dependency (backend/uv.lock 経由) のため即時更新 (#1039)
+- **PYSEC-2026-89 (markdown DoS) を tolerable_risk として受容** — Python-Markdown >= 3.8 で細工された HTML 系入力により `html.parser.HTMLParser` が未捕捉 AssertionError を出す問題 (CVSS HIGH availability)。nekonoverse での markdown 利用は **admin 専用経路** (利用規約・お知らせ) のみで、入力は admin/staff 認証必須、出力は `bleach.clean` でサニタイズ済み。untrusted markdown を受け取る経路が無いため attack vector が成立しない。`security-audit.yml` の `--ignore-vuln` リストに追加して dismiss。upstream fix リリース後は #1047 で取り込む
+
+### 新機能
+
+- **ActivityPub HTTP Signature の Ed25519 対応 (FEP-521a Multikey)** — 各ローカルアクターは RSA と Ed25519 を並行保持する dual-key 構成。`assertionMethod[]` の Multikey で Ed25519 を *追加* 公開し、既存 `publicKey` (RSA) は据え置きで Mastodon / Misskey 等との後方互換を維持。送信時は配送先アクターの capability に応じて Ed25519 / RSA をディスパッチ、未対応相手は RSA フォールバック。**migration 044 で全ローカル User に Ed25519 鍵を一度きり backfill する**ため、デプロイ後の初回 `alembic upgrade head` は actor 数に比例した時間がかかる (1 鍵あたり < 1ms、数万ユーザーまでは数秒オーダー)。Fedibird / Mitra との接続性向上 (#1040, #1041)
+
+### パフォーマンス
+
+- **actors の inbox_url 系 index を CREATE INDEX CONCURRENTLY 化** — migration 044 で追加した `ix_actors_inbox_url` / `ix_actors_shared_inbox_url` を新規 migration 045 で `CREATE INDEX CONCURRENTLY` 版に rebuild。大規模 instance (actors 10 万行+) で migration が `ACCESS EXCLUSIVE` ロックを長時間保持していた問題を解消し、index 構築中も配送・WebFinger の読み取りを邪魔しない。**CONCURRENTLY が中断すると INVALID index が残る場合がある** (Postgres 仕様)。残った場合は `DROP INDEX CONCURRENTLY <indexname>` で削除してから `alembic upgrade head` を再実行 (045 の upgrade 冒頭で `DROP IF EXISTS` が走るため自動回収) (#1042, #1043)
+
+---
+
 ## [20260517-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260517-2) — 2026-05-17
 
 ### バグ修正
