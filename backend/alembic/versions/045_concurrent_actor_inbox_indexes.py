@@ -28,6 +28,8 @@ depends_on = None
 
 def upgrade() -> None:
     with op.get_context().autocommit_block():
+        # drop は CONCURRENTLY + IF EXISTS で冪等。中断で INVALID index が
+        # 残った状態で再 apply されても、ここで INVALID も含めて巻き取られる。
         op.drop_index(
             "ix_actors_inbox_url",
             table_name="actors",
@@ -56,7 +58,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # CONCURRENTLY で削除してから 044 状態 (通常 index) で再作成する。
+    # 巻き戻しでも ACCESS EXCLUSIVE を取らないよう、再作成も CONCURRENTLY で行う。
+    # 044 とは index 種別が同等 (機能的に同一の B-tree) なので、運用上 044 完全一致
+    # である必要はない。
     with op.get_context().autocommit_block():
         op.drop_index(
             "ix_actors_shared_inbox_url",
@@ -70,10 +74,16 @@ def downgrade() -> None:
             postgresql_concurrently=True,
             if_exists=True,
         )
-    op.create_index("ix_actors_inbox_url", "actors", ["inbox_url"])
-    op.create_index(
-        "ix_actors_shared_inbox_url",
-        "actors",
-        ["shared_inbox_url"],
-        postgresql_where=sa.text("shared_inbox_url IS NOT NULL"),
-    )
+        op.create_index(
+            "ix_actors_inbox_url",
+            "actors",
+            ["inbox_url"],
+            postgresql_concurrently=True,
+        )
+        op.create_index(
+            "ix_actors_shared_inbox_url",
+            "actors",
+            ["shared_inbox_url"],
+            postgresql_concurrently=True,
+            postgresql_where=sa.text("shared_inbox_url IS NOT NULL"),
+        )
