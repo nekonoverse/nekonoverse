@@ -60,16 +60,16 @@ def upgrade() -> None:
 def downgrade() -> None:
     # 巻き戻しでも ACCESS EXCLUSIVE を取らないよう、再作成も CONCURRENTLY で行う。
     # 044 とは index 種別が同等 (機能的に同一の B-tree) なので、運用上 044 完全一致
-    # である必要はない。
+    # である必要はない。drop/create の順序は upgrade と揃える (inbox_url → shared)。
     with op.get_context().autocommit_block():
         op.drop_index(
-            "ix_actors_shared_inbox_url",
+            "ix_actors_inbox_url",
             table_name="actors",
             postgresql_concurrently=True,
             if_exists=True,
         )
         op.drop_index(
-            "ix_actors_inbox_url",
+            "ix_actors_shared_inbox_url",
             table_name="actors",
             postgresql_concurrently=True,
             if_exists=True,
