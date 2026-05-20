@@ -173,9 +173,12 @@ def verify_signature(
     declared = (params.get("algorithm") or "").lower()
     if declared == "ed25519":
         algo = "ed25519"
-    elif declared in ("rsa-sha256", ""):
+    elif declared == "rsa-sha256":
         algo = "rsa-sha256"
-    elif declared == "hs2019":
+    elif declared in ("hs2019", ""):
+        # algorithm 不在 / hs2019 はどちらも曖昧。algorithm_hint を尊重しつつ、
+        # なければ鍵種別から推定。Ed25519 鍵保有相手が空 algorithm を送ってきても
+        # 取りこぼさない。
         algo = algorithm_hint or ("ed25519" if is_multibase else "rsa-sha256")
     else:
         return False

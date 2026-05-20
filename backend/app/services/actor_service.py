@@ -339,10 +339,11 @@ async def upsert_remote_actor(db: AsyncSession, data: dict) -> Actor | None:
         existing.followers_url = data.get("followers")
         existing.following_url = data.get("following")
         existing.public_key_pem = public_key_pem or existing.public_key_pem
-        # Ed25519 鍵は新しい値が来た時だけ上書き (Mastodon 等から取得すると null になる)
-        if ed25519_multibase:
-            existing.public_key_ed25519_multibase = ed25519_multibase
-            existing.key_id_ed25519 = ed25519_key_id
+        # Ed25519 鍵: 相手が提示しなくなった (鍵廃止) ケースも反映するため、
+        # multibase が未抽出なら NULL に戻す。古い multibase で Ed25519 送信を
+        # 続けてしまうと検証側で必ず失敗するため、明示的に取り下げる方が安全。
+        existing.public_key_ed25519_multibase = ed25519_multibase
+        existing.key_id_ed25519 = ed25519_key_id
         existing.last_fetched_at = now
         icon = data.get("icon")
         if isinstance(icon, dict):
@@ -505,11 +506,10 @@ async def get_actor_public_key(
     if not actor:
         return None, "", "rsa-sha256"
 
-    # Ed25519 鍵判定: 保存済み key_id_ed25519 と完全一致するか、fragment が
-    # `ed25519-key` 系で multibase がセットされている場合。
-    if actor.public_key_ed25519_multibase:
-        fragment = key_id.split("#", 1)[1] if "#" in key_id else ""
-        if actor.key_id_ed25519 == key_id or "ed25519" in fragment.lower():
-            return actor, actor.public_key_ed25519_multibase, "ed25519"
+    # Ed25519 鍵判定: 保存済み key_id_ed25519 と完全一致した場合のみ Ed25519 を返す。
+    # `#main-key-ed25519-2024` のような変則命名で誤判定するのを避けるため、
+    # リモートが actor JSON-LD で提示している assertionMethod[].id を信頼する。
+    if actor.public_key_ed25519_multibase and actor.key_id_ed25519 == key_id:
+        return actor, actor.public_key_ed25519_multibase, "ed25519"
 
     return actor, actor.public_key_pem, "rsa-sha256"

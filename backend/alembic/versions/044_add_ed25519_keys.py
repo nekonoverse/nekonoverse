@@ -66,6 +66,21 @@ def upgrade() -> None:
         sa.Column("private_key_ed25519_pem", sa.Text(), nullable=True),
     )
 
+    # delivery_worker._find_target_actor_for_inbox は OR (inbox_url, shared_inbox_url) で
+    # actors を引くため、両カラムに部分 index が無いと配送毎にシーケンシャルスキャンになる。
+    op.create_index(
+        "ix_actors_inbox_url",
+        "actors",
+        ["inbox_url"],
+        postgresql_where=sa.text("inbox_url IS NOT NULL"),
+    )
+    op.create_index(
+        "ix_actors_shared_inbox_url",
+        "actors",
+        ["shared_inbox_url"],
+        postgresql_where=sa.text("shared_inbox_url IS NOT NULL"),
+    )
+
     # 既存ローカル User (actors.domain IS NULL) 全員に Ed25519 鍵ペアを生成して backfill。
     conn = op.get_bind()
     rows = conn.execute(
@@ -95,6 +110,8 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_actors_shared_inbox_url", table_name="actors")
+    op.drop_index("ix_actors_inbox_url", table_name="actors")
     op.drop_column("users", "private_key_ed25519_pem")
     op.drop_column("actors", "key_id_ed25519")
     op.drop_column("actors", "public_key_ed25519_multibase")
