@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from email.utils import format_datetime
 
@@ -187,8 +188,6 @@ def test_empty_algorithm_with_ed25519_key_accepted():
         ed_priv, "key-id", "POST", "https://remote.example/inbox", algorithm="ed25519"
     )
     # algorithm パラメータを除去 (空状態をシミュレート)
-    import re
-
     stripped = re.sub(r',?algorithm="[^"]*"', "", headers["Signature"])
     verify_headers = {k.lower(): v for k, v in headers.items()}
     verify_headers["signature"] = stripped

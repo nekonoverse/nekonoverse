@@ -67,13 +67,10 @@ def upgrade() -> None:
     )
 
     # delivery_worker._find_target_actor_for_inbox は OR (inbox_url, shared_inbox_url) で
-    # actors を引くため、両カラムに部分 index が無いと配送毎にシーケンシャルスキャンになる。
-    op.create_index(
-        "ix_actors_inbox_url",
-        "actors",
-        ["inbox_url"],
-        postgresql_where=sa.text("inbox_url IS NOT NULL"),
-    )
+    # actors を引くため、両カラムに index が無いと配送毎にシーケンシャルスキャンになる。
+    # inbox_url は NOT NULL のため通常 index、shared_inbox_url は nullable のため
+    # 部分 index で省サイズ化する。
+    op.create_index("ix_actors_inbox_url", "actors", ["inbox_url"])
     op.create_index(
         "ix_actors_shared_inbox_url",
         "actors",

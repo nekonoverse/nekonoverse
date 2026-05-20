@@ -110,13 +110,10 @@ class Actor(Base):
         Index("ix_actors_domain_username", "domain", "username"),
         Index("ix_actors_lower_username_domain", func.lower(username), "domain", unique=True),
         # delivery_worker._find_target_actor_for_inbox の OR (inbox_url, shared_inbox_url)
-        # 用。migration 044 で同名の部分 index を作成しており、テスト DB の
-        # Base.metadata.create_all でも整合させる。
-        Index(
-            "ix_actors_inbox_url",
-            "inbox_url",
-            postgresql_where=text("inbox_url IS NOT NULL"),
-        ),
+        # 用。migration 044 で同名の index を作成しており、テスト DB の
+        # Base.metadata.create_all でも整合させる。inbox_url は NOT NULL のため
+        # 通常 index、shared_inbox_url は nullable のため部分 index で省サイズ。
+        Index("ix_actors_inbox_url", "inbox_url"),
         Index(
             "ix_actors_shared_inbox_url",
             "shared_inbox_url",
