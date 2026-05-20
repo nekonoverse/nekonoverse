@@ -38,6 +38,14 @@ class Actor(Base):
     followers_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     following_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     public_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
+    # FEP-521a Multikey: Ed25519 公開鍵を `z6Mk...` の Multibase 文字列で保持。
+    # ローカルは migration 044 で生成、リモートは actor JSON-LD の assertionMethod 経由で保存。
+    public_key_ed25519_multibase: Mapped[str | None] = mapped_column(
+        String(255), nullable=True, default=None
+    )
+    # リモートアクターから取り込んだ Ed25519 鍵の Multikey id (assertionMethod[].id)。
+    # ローカルでは `{actor_url}#ed25519-key` を都度生成するため参考値。
+    key_id_ed25519: Mapped[str | None] = mapped_column(String(2048), nullable=True, default=None)
     is_cat: Mapped[bool] = mapped_column(Boolean, default=False)
     manually_approves_followers: Mapped[bool] = mapped_column(Boolean, default=False)
     discoverable: Mapped[bool] = mapped_column(Boolean, default=True)

@@ -29,6 +29,9 @@ class User(Base):
         Boolean, default=False, server_default="false", nullable=False
     )
     private_key_pem: Mapped[str] = mapped_column(Text, nullable=False)
+    # Ed25519 秘密鍵 (PKCS8 PEM)。migration 044 で既存ユーザーに backfill。
+    # 新規ユーザーは create_user 時に RSA とセットで生成される。
+    private_key_ed25519_pem: Mapped[str | None] = mapped_column(Text, nullable=True, default=None)
     totp_secret: Mapped[Optional[str]] = mapped_column(Text, nullable=True, default=None)
     totp_enabled: Mapped[bool] = mapped_column(
         Boolean, default=False, server_default="false", nullable=False

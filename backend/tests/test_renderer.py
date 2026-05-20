@@ -2,16 +2,13 @@ from datetime import datetime, timezone
 from types import SimpleNamespace
 
 from app.activitypub.renderer import (
-    render_accept_activity,
     render_actor,
     render_create_activity,
-    render_delete_activity,
     render_emoji_react_activity,
     render_follow_activity,
     render_like_activity,
     render_note,
     render_ordered_collection,
-    render_ordered_collection_page,
     render_undo_activity,
 )
 
@@ -25,6 +22,8 @@ def _make_actor(**overrides):
         followers_url="http://localhost/users/alice/followers",
         following_url="http://localhost/users/alice/following",
         public_key_pem="PUBLIC_KEY_PEM",
+        public_key_ed25519_multibase=None,
+        key_id_ed25519=None,
         is_cat=False, manually_approves_followers=False, discoverable=True,
         summary=None, avatar_url=None, header_url=None, domain=None,
         fields=None, require_signin_to_view=False,
@@ -63,6 +62,36 @@ def test_render_actor_public_key():
 
     data = render_actor(_make_actor())
     assert data["publicKey"]["id"] == f"{settings.server_url}/users/alice#main-key"
+    assert data["publicKey"]["publicKeyPem"] == "PUBLIC_KEY_PEM"
+
+
+def test_render_actor_multikey_context_included():
+    """@context に FEP-521a Multikey vocabulary が含まれること。"""
+    data = render_actor(_make_actor())
+    assert "https://w3id.org/security/multikey/v1" in data["@context"]
+
+
+def test_render_actor_no_assertion_method_when_ed25519_absent():
+    """Ed25519 鍵未保有のアクター (移行前の状態) は assertionMethod を出さない。"""
+    data = render_actor(_make_actor())
+    assert "assertionMethod" not in data
+
+
+def test_render_actor_assertion_method_when_ed25519_present():
+    """Ed25519 鍵を持つアクターは assertionMethod に Multikey を出力する。"""
+    from app.config import settings
+
+    multibase = "z6MkhaXgBZDvotDkL5257faiztiGiC2QtKLGpbnnEGta2doK"
+    data = render_actor(_make_actor(public_key_ed25519_multibase=multibase))
+    assert "assertionMethod" in data
+    assert isinstance(data["assertionMethod"], list)
+    assert len(data["assertionMethod"]) == 1
+    entry = data["assertionMethod"][0]
+    assert entry["type"] == "Multikey"
+    assert entry["id"] == f"{settings.server_url}/users/alice#ed25519-key"
+    assert entry["controller"] == f"{settings.server_url}/users/alice"
+    assert entry["publicKeyMultibase"] == multibase
+    # publicKey (RSA) も依然として出力 (後方互換)
     assert data["publicKey"]["publicKeyPem"] == "PUBLIC_KEY_PEM"
 
 
