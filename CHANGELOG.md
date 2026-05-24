@@ -1,3 +1,12 @@
+## [20260524-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260524-1) — 2026-05-24
+
+### CI / 運用ドキュメント
+
+- **Alembic migration roundtrip CI job を追加** — `alembic upgrade head → downgrade base → upgrade head` の往復を実 PostgreSQL に対して実行する job を `test.yml` に追加。pytest は `Base.metadata.create_all` で初期化するため migration 自体は CI で走らない穴を塞ぐ。`autocommit_block + postgresql_concurrently=True` の互換性も毎 PR で自動検証される (#1044, #1049)
+- **docs/deploy.md に CONCURRENTLY migration の運用ガイドを追記** — 実行中の挙動 (ロックレベル、一時的 index 不在ウィンドウ、所要時間目安)、失敗時のリカバリ手順 (INVALID index の検出と `DROP INDEX CONCURRENTLY`)、運用上の注意 (中断しないこと、downgrade 中断時も同様) を記載 (#1045, #1049)
+
+---
+
 ## [20260520-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260520-1) — 2026-05-20
 
 ### セキュリティ
