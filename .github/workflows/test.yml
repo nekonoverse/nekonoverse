@@ -74,6 +74,68 @@ jobs:
           REGISTRATION_OPEN: "true"
         run: python -m pytest tests/ -v -n auto --shard-id=${{ matrix.shard }} --num-shards=4
 
+  alembic-migration:
+    # 実 PostgreSQL に対して `alembic upgrade head` → `downgrade base` → `upgrade head`
+    # の往復を実行し、migration の構文ミス・revision chain の不整合・autocommit_block
+    # + CONCURRENTLY 系の互換性を検出する。pytest は Base.metadata.create_all で初期化
+    # するため migration 自体は走らない (#1044)。
+    runs-on: ubuntu-latest
+    name: Alembic migration roundtrip
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: nekonoverse
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: nekonoverse_mig
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -e ".[dev]"
+
+      - name: alembic upgrade head
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_mig
+          VALKEY_URL: valkey://localhost:6379/0
+          DOMAIN: localhost
+          SECRET_KEY: dummy
+          DEBUG: "false"
+        run: PYTHONPATH=. alembic upgrade head
+
+      - name: alembic downgrade base (full reverse)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_mig
+          VALKEY_URL: valkey://localhost:6379/0
+          DOMAIN: localhost
+          SECRET_KEY: dummy
+          DEBUG: "false"
+        run: PYTHONPATH=. alembic downgrade base
+
+      - name: alembic upgrade head (re-apply)
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_mig
+          VALKEY_URL: valkey://localhost:6379/0
+          DOMAIN: localhost
+          SECRET_KEY: dummy
+          DEBUG: "false"
+        run: PYTHONPATH=. alembic upgrade head
+
   frontend-build:
     runs-on: ubuntu-latest
     steps:

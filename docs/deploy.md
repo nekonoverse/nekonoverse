@@ -38,6 +38,46 @@ docker compose -f docker-compose.prod.yml up -d
 
 ---
 
+## CONCURRENTLY マイグレーションの運用ガイド
+
+`backend/alembic/versions/045_concurrent_actor_inbox_indexes.py` 以降、大規模テーブル (actors 等) への index 追加・rebuild は `CREATE INDEX CONCURRENTLY` を使う migration が混在する。通常 migration とは挙動が違うので運用時の留意点を以下にまとめる。
+
+### 実行中の挙動
+
+- ロックレベルは `SHARE UPDATE EXCLUSIVE` に弱まり、配送・WebFinger 等の `actors` 読み取り SELECT は **ブロックされない**。
+- ただし drop → create の **間に該当 index が一時的に存在しないウィンドウ** が発生し、その間 `inbox_url` / `shared_inbox_url` ルックアップはシーケンシャルスキャンになる。大規模 instance (actors 10 万行+) で配送遅延が一時的に増える可能性があるため、**メンテナンスウィンドウ中の実行を推奨**。
+- 1 ブロック (`autocommit_block`) 内で drop ×2 + create ×2 が連続実行されるため、所要時間は actors 行数に比例 (100 万行で数十秒〜数分)。
+
+### 失敗時のリカバリ手順
+
+`CREATE INDEX CONCURRENTLY` は途中で中断されると **INVALID index が残る** (Postgres 仕様)。発見と削除:
+
+```sql
+-- 1. INVALID index を発見
+SELECT c.relname
+  FROM pg_index i JOIN pg_class c ON c.oid = i.indexrelid
+ WHERE NOT i.indisvalid AND c.relname LIKE 'ix_actors_%';
+
+-- 2. INVALID index を削除 (CONCURRENTLY で他クエリを止めない)
+DROP INDEX CONCURRENTLY <indexname>;
+
+-- 3. alembic を再実行
+-- 045 以降の upgrade 冒頭で `DROP INDEX CONCURRENTLY IF EXISTS` が走るため、
+-- INVALID が残っていても再 apply で自動回収される。
+```
+
+```bash
+docker compose exec app alembic upgrade head
+```
+
+### 注意
+
+- migration 中に `Ctrl-C` で中断すると上記の INVALID 状態に至りやすい。**完了まで止めない**こと。
+- `alembic downgrade -1` も同じ CONCURRENTLY 経路で巻き戻る (045 以降)。downgrade 中の中断も同様にリカバリ手順が必要。
+- ローカル開発 (`docker-compose.e2e.yml`) では actors が空〜数行なので ms オーダーで完了する。本番のみ留意。
+
+---
+
 ## Docker を使わない場合
 
 Docker を使わずに各サービスを直接ホスト上で動かす構成。
