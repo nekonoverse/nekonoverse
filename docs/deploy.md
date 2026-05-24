@@ -46,11 +46,19 @@ docker compose -f docker-compose.prod.yml up -d
 
 - ロックレベルは `SHARE UPDATE EXCLUSIVE` に弱まり、配送・WebFinger 等の `actors` 読み取り SELECT は **ブロックされない**。
 - ただし drop → create の **間に該当 index が一時的に存在しないウィンドウ** が発生し、その間 `inbox_url` / `shared_inbox_url` ルックアップはシーケンシャルスキャンになる。大規模 instance (actors 10 万行+) で配送遅延が一時的に増える可能性があるため、**メンテナンスウィンドウ中の実行を推奨**。
-- 1 ブロック (`autocommit_block`) 内で drop ×2 + create ×2 が連続実行されるため、所要時間は actors 行数に比例 (100 万行で数十秒〜数分)。
+- 1 ブロック (`autocommit_block`) 内で対象 index (`ix_actors_inbox_url` / `ix_actors_shared_inbox_url`) の drop ×2 + create ×2 が連続実行されるため、所要時間は actors 行数に比例 (100 万行で数十秒〜数分)。
 
 ### 失敗時のリカバリ手順
 
-`CREATE INDEX CONCURRENTLY` は途中で中断されると **INVALID index が残る** (Postgres 仕様)。発見と削除:
+`CREATE INDEX CONCURRENTLY` は途中で中断されると **INVALID index が残る** (Postgres 仕様)。
+
+**通常は alembic 再実行だけで自動回収できる** — 045 以降の upgrade 冒頭で `DROP INDEX CONCURRENTLY IF EXISTS ix_actors_inbox_url` / `ix_actors_shared_inbox_url` が走るため、INVALID 状態の index も含めて drop してから create し直す:
+
+```bash
+docker compose exec app alembic upgrade head
+```
+
+**自動回収できない場合 (alembic を再実行しても解消しない、別 index に INVALID が残った等)** は INVALID index を手動で発見・削除してから再実行:
 
 ```sql
 -- 1. INVALID index を発見
@@ -60,15 +68,9 @@ SELECT c.relname
 
 -- 2. INVALID index を削除 (CONCURRENTLY で他クエリを止めない)
 DROP INDEX CONCURRENTLY <indexname>;
-
--- 3. alembic を再実行
--- 045 以降の upgrade 冒頭で `DROP INDEX CONCURRENTLY IF EXISTS` が走るため、
--- INVALID が残っていても再 apply で自動回収される。
 ```
 
-```bash
-docker compose exec app alembic upgrade head
-```
+その後 `alembic upgrade head` を再実行する。
 
 ### 注意
 

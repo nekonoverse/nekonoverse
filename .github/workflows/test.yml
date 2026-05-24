@@ -95,6 +95,13 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+    env:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_mig
+      DOMAIN: localhost
+      SECRET_KEY: test-secret-key
+      DEBUG: "true"
+      # 注: valkey service は不要 (alembic は Valkey に接続しない)。
+      #     env.py が将来 Valkey 接続を import した場合に備えて URL は設定しない。
     steps:
       - uses: actions/checkout@v4
 
@@ -108,32 +115,14 @@ jobs:
 
       - name: alembic upgrade head
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_mig
-          VALKEY_URL: valkey://localhost:6379/0
-          DOMAIN: localhost
-          SECRET_KEY: dummy
-          DEBUG: "false"
         run: PYTHONPATH=. alembic upgrade head
 
       - name: alembic downgrade base (full reverse)
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_mig
-          VALKEY_URL: valkey://localhost:6379/0
-          DOMAIN: localhost
-          SECRET_KEY: dummy
-          DEBUG: "false"
         run: PYTHONPATH=. alembic downgrade base
 
       - name: alembic upgrade head (re-apply)
         working-directory: backend
-        env:
-          DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_mig
-          VALKEY_URL: valkey://localhost:6379/0
-          DOMAIN: localhost
-          SECRET_KEY: dummy
-          DEBUG: "false"
         run: PYTHONPATH=. alembic upgrade head
 
   frontend-build:
