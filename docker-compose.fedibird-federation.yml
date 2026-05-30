@@ -4,9 +4,9 @@
 #   # 初回のみ: Fedibirdイメージのビルド（5-10分かかる）
 #   docker compose -f docker-compose.fedibird-federation.yml build fedibird-web
 #
-#   # テスト実行
+#   # テスト実行 (run には --build を必須で付ける。理由は claude-md/CLAUDE.md の Federation 節)
 #   docker compose -f docker-compose.fedibird-federation.yml up -d --build --wait
-#   docker compose -f docker-compose.fedibird-federation.yml run --rm test-runner
+#   docker compose -f docker-compose.fedibird-federation.yml run --build --rm test-runner
 #   docker compose -f docker-compose.fedibird-federation.yml down -v
 
 services:
