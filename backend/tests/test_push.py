@@ -308,6 +308,72 @@ async def test_send_web_push_calls_webpush(db, test_user):
 
 
 
+def test_vapid_private_key_base64url_format():
+    """秘密鍵は base64url(raw 32 バイト) で取得される (PEM ではない)。"""
+    import base64
+
+    from app.services.push_service import _get_vapid_private_key_base64url
+
+    key = _get_vapid_private_key_base64url()
+
+    # PEM ヘッダが混ざっていないこと
+    assert "-----" not in key
+    assert "BEGIN" not in key
+
+    # padding なし base64url が 32 バイトをエンコードした場合は 43 文字
+    assert len(key) == 43, key
+
+    # base64url として decode 可能で、結果が 32 バイトであること
+    decoded = base64.urlsafe_b64decode(key + "==")
+    assert len(decoded) == 32
+
+
+def test_vapid_private_key_loadable_by_pywebpush():
+    """送り出す秘密鍵が py_vapid.Vapid.from_string() で例外なく読める。
+
+    これまで PEM 文字列を渡しており、py_vapid 内で base64url decode → DER parse に
+    落ちて ASN.1 error になっていた (#1056)。本テストは送出経路の鍵フォーマットを
+    end-to-end で検証する回帰防止。
+    """
+    from py_vapid import Vapid
+
+    from app.services.push_service import _get_vapid_private_key_base64url
+
+    key = _get_vapid_private_key_base64url()
+    # 例外が出ないことが期待値。出るならフォーマット側のリグレッション。
+    Vapid.from_string(private_key=key)
+
+
+async def test_send_web_push_passes_base64url_key_to_webpush(db, test_user):
+    """webpush() に渡される vapid_private_key が base64url 文字列 (PEM ではない)。"""
+    from app.services.push_service import create_subscription, send_web_push
+
+    await create_subscription(
+        db,
+        actor_id=test_user.actor_id,
+        session_id="sess-key-fmt",
+        endpoint="https://push.example.com/keyfmt",
+        key_p256dh="key",
+        key_auth="auth",
+    )
+    await db.commit()
+
+    with (
+        patch("pywebpush.webpush") as mock_wp,
+        patch("app.services.push_service.is_push_enabled", return_value=True),
+    ):
+        await send_web_push(
+            db,
+            recipient_id=test_user.actor_id,
+            notification_type="follow",
+            sender_display_name="Alice",
+        )
+
+    passed_key = mock_wp.call_args[1]["vapid_private_key"]
+    assert "-----" not in passed_key
+    assert len(passed_key) == 43
+
+
 async def test_send_web_push_removes_stale_410(db, test_user):
     """410 Gone should trigger automatic subscription removal."""
     from pywebpush import WebPushException
@@ -346,6 +412,51 @@ async def test_send_web_push_removes_stale_410(db, test_user):
     fetched = await get_subscription_by_session(db, "sess-stale")
     assert fetched is None
 
+
+
+async def test_send_web_push_logs_response_body_on_4xx(db, test_user, caplog):
+    """4xx 時はプッシュサービス応答の status と本文をログに出す (iPhone PWA 通知不調の調査用)。"""
+    import logging
+
+    from pywebpush import WebPushException
+
+    from app.services.push_service import create_subscription, send_web_push
+
+    await create_subscription(
+        db,
+        actor_id=test_user.actor_id,
+        session_id="sess-4xx",
+        endpoint="https://web.push.apple.com/AAAA/BBBB",
+        key_p256dh="key",
+        key_auth="auth",
+    )
+    await db.commit()
+
+    mock_response = type(
+        "Response",
+        (),
+        {"status_code": 403, "text": "BadJwtToken: Vapid sub claim invalid"},
+    )()
+    error = WebPushException("Forbidden", response=mock_response)
+
+    with (
+        caplog.at_level(logging.WARNING, logger="app.services.push_service"),
+        patch("pywebpush.webpush", side_effect=error),
+        patch("app.services.push_service.is_push_enabled", return_value=True),
+    ):
+        await send_web_push(
+            db,
+            recipient_id=test_user.actor_id,
+            notification_type="follow",
+            sender_display_name="Alice",
+        )
+
+    records = [r.getMessage() for r in caplog.records if r.name == "app.services.push_service"]
+    assert any("status=403" in m for m in records), records
+    assert any("BadJwtToken" in m for m in records), records
+    # endpoint URL 全体ではなく host だけが出ること (path 部分はトークンを含むので)
+    assert any("host=web.push.apple.com" in m for m in records), records
+    assert not any("AAAA/BBBB" in m for m in records), records
 
 
 async def test_send_web_push_policy_filter(db, test_user, test_user_b):

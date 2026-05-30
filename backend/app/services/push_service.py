@@ -6,6 +6,7 @@ import hmac
 import json
 import logging
 import uuid
+from urllib.parse import urlsplit
 
 from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -94,16 +95,16 @@ def _get_vapid_claims() -> dict:
     }
 
 
-def _get_vapid_private_key_pem() -> str:
-    """pywebpush 用に VAPID 秘密鍵を PEM 文字列として取得する。"""
-    from cryptography.hazmat.primitives import serialization
+def _get_vapid_private_key_base64url() -> str:
+    """pywebpush 用に VAPID 秘密鍵を base64url(raw 32 バイト) で取得する。
 
-    ec_key = _private_key_to_ec()
-    return ec_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    ).decode()
+    pywebpush (py_vapid) の Vapid.from_string() は引数を base64url decode し、
+    長さが 32 バイトなら from_raw()、そうでなければ from_der() を試みる。
+    PEM 文字列を渡すと from_der() に落ちて ASN.1 parse error になるため、
+    必ず raw 鍵の base64url 形式 (=43 文字) を渡す。
+    """
+    raw = _get_vapid_private_key_bytes()
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
 # --- 購読 CRUD ---
@@ -234,7 +235,7 @@ async def send_web_push(
 
     from pywebpush import WebPushException, webpush
 
-    vapid_private_key_pem = _get_vapid_private_key_pem()
+    vapid_private_key = _get_vapid_private_key_base64url()
     vapid_claims = _get_vapid_claims()
 
     payload = json.dumps({
@@ -267,17 +268,31 @@ async def send_web_push(
             webpush(
                 subscription_info=subscription_info,
                 data=payload,
-                vapid_private_key=vapid_private_key_pem,
+                vapid_private_key=vapid_private_key,
                 vapid_claims=vapid_claims,
             )
         except WebPushException as e:
+            response = getattr(e, "response", None)
+            status = getattr(response, "status_code", None) if response is not None else None
+
             # 410 Gone = 購読が無効 → 自動削除
-            if hasattr(e, "response") and e.response is not None and e.response.status_code == 410:
+            if status == 410:
                 stale_ids.append(sub.id)
-            else:
-                logger.warning("Web Push failed for %s: %s", sub.endpoint, e)
+                continue
+
+            # 4xx/5xx の応答本文はプッシュサービス (Apple/Mozilla/FCM) の
+            # 具体的な拒否理由を含む。推測ベースのデバッグを避けるため
+            # status と本文の先頭をログに残す。
+            _log_web_push_failure(sub.endpoint, response, e)
         except Exception as e:
-            logger.warning("Web Push unexpected error for %s: %s", sub.endpoint, e)
+            # pywebpush 外の予期せぬ例外は本 PR の観測強化対象外だが、
+            # スタックトレースが無いと後から追えないので exc_info も残す
+            logger.warning(
+                "Web Push unexpected error: host=%s error=%s",
+                _endpoint_host(sub.endpoint),
+                e,
+                exc_info=True,
+            )
 
     # 無効な購読を一括削除
     if stale_ids:
@@ -285,6 +300,45 @@ async def send_web_push(
             delete(PushSubscription).where(PushSubscription.id.in_(stale_ids))
         )
         await db.flush()
+
+
+def _endpoint_host(endpoint: str) -> str:
+    """endpoint URL からホスト部分のみを取り出す (ログでの PII / 検索性配慮)。"""
+    try:
+        return urlsplit(endpoint).hostname or endpoint
+    except ValueError:
+        return endpoint
+
+
+def _log_web_push_failure(
+    endpoint: str, response: object | None, error: Exception
+) -> None:
+    """WebPushException 発生時にプッシュサービスからの応答本文を含めてログする。
+
+    Apple (web.push.apple.com) などは status だけでなく本文に具体的な拒否理由を
+    返す。response が取れない場合は例外メッセージで代替する。
+    """
+    host = _endpoint_host(endpoint)
+    if response is None:
+        logger.warning("Web Push failed: host=%s error=%s", host, error)
+        return
+
+    status = getattr(response, "status_code", None)
+    body_excerpt = ""
+    try:
+        text = getattr(response, "text", None)
+        if text:
+            body_excerpt = text[:500]
+    except Exception:
+        # 「なぜ body が unavailable だったか」を後から追えるよう原因も残す
+        logger.debug("Failed to read Web Push response body", exc_info=True)
+        body_excerpt = "<unavailable>"
+    logger.warning(
+        "Web Push failed: host=%s status=%s body=%s",
+        host,
+        status,
+        body_excerpt,
+    )
 
 
 def _build_title(notification_type: str, sender_name: str | None) -> str:
