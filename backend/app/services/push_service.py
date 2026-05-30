@@ -285,10 +285,13 @@ async def send_web_push(
             # status と本文の先頭をログに残す。
             _log_web_push_failure(sub.endpoint, response, e)
         except Exception as e:
+            # pywebpush 外の予期せぬ例外は本 PR の観測強化対象外だが、
+            # スタックトレースが無いと後から追えないので exc_info も残す
             logger.warning(
                 "Web Push unexpected error: host=%s error=%s",
                 _endpoint_host(sub.endpoint),
                 e,
+                exc_info=True,
             )
 
     # 無効な購読を一括削除
