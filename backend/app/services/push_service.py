@@ -95,16 +95,16 @@ def _get_vapid_claims() -> dict:
     }
 
 
-def _get_vapid_private_key_pem() -> str:
-    """pywebpush 用に VAPID 秘密鍵を PEM 文字列として取得する。"""
-    from cryptography.hazmat.primitives import serialization
+def _get_vapid_private_key_base64url() -> str:
+    """pywebpush 用に VAPID 秘密鍵を base64url(raw 32 バイト) で取得する。
 
-    ec_key = _private_key_to_ec()
-    return ec_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    ).decode()
+    pywebpush (py_vapid) の Vapid.from_string() は引数を base64url decode し、
+    長さが 32 バイトなら from_raw()、そうでなければ from_der() を試みる。
+    PEM 文字列を渡すと from_der() に落ちて ASN.1 parse error になるため、
+    必ず raw 鍵の base64url 形式 (=43 文字) を渡す。
+    """
+    raw = _get_vapid_private_key_bytes()
+    return base64.urlsafe_b64encode(raw).rstrip(b"=").decode()
 
 
 # --- 購読 CRUD ---
@@ -235,7 +235,7 @@ async def send_web_push(
 
     from pywebpush import WebPushException, webpush
 
-    vapid_private_key_pem = _get_vapid_private_key_pem()
+    vapid_private_key = _get_vapid_private_key_base64url()
     vapid_claims = _get_vapid_claims()
 
     payload = json.dumps({
@@ -268,7 +268,7 @@ async def send_web_push(
             webpush(
                 subscription_info=subscription_info,
                 data=payload,
-                vapid_private_key=vapid_private_key_pem,
+                vapid_private_key=vapid_private_key,
                 vapid_claims=vapid_claims,
             )
         except WebPushException as e:
