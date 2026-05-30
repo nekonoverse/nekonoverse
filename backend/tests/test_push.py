@@ -348,6 +348,51 @@ async def test_send_web_push_removes_stale_410(db, test_user):
 
 
 
+async def test_send_web_push_logs_response_body_on_4xx(db, test_user, caplog):
+    """4xx 時はプッシュサービス応答の status と本文をログに出す (iPhone PWA 通知不調の調査用)。"""
+    import logging
+
+    from pywebpush import WebPushException
+
+    from app.services.push_service import create_subscription, send_web_push
+
+    await create_subscription(
+        db,
+        actor_id=test_user.actor_id,
+        session_id="sess-4xx",
+        endpoint="https://web.push.apple.com/AAAA/BBBB",
+        key_p256dh="key",
+        key_auth="auth",
+    )
+    await db.commit()
+
+    mock_response = type(
+        "Response",
+        (),
+        {"status_code": 403, "text": "BadJwtToken: Vapid sub claim invalid"},
+    )()
+    error = WebPushException("Forbidden", response=mock_response)
+
+    with (
+        caplog.at_level(logging.WARNING, logger="app.services.push_service"),
+        patch("pywebpush.webpush", side_effect=error),
+        patch("app.services.push_service.is_push_enabled", return_value=True),
+    ):
+        await send_web_push(
+            db,
+            recipient_id=test_user.actor_id,
+            notification_type="follow",
+            sender_display_name="Alice",
+        )
+
+    records = [r.getMessage() for r in caplog.records if r.name == "app.services.push_service"]
+    assert any("status=403" in m for m in records), records
+    assert any("BadJwtToken" in m for m in records), records
+    # endpoint URL 全体ではなく host だけが出ること (path 部分はトークンを含むので)
+    assert any("host=web.push.apple.com" in m for m in records), records
+    assert not any("AAAA/BBBB" in m for m in records), records
+
+
 async def test_send_web_push_policy_filter(db, test_user, test_user_b):
     """Push with policy='followed' should only send if recipient follows sender."""
     from app.services.push_service import create_subscription, send_web_push
