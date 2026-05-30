@@ -1,3 +1,16 @@
+## [20260530-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260530-1) — 2026-05-30
+
+### バグ修正
+
+- **Web Push 通知が全 endpoint で失敗していた問題を修正** — `pywebpush.webpush()` の `vapid_private_key` 引数に PEM 文字列を渡していたため、`py_vapid.Vapid.from_string()` が base64url decode → 32 バイト判定で DER フォールバックに落ち、PEM 由来のバイト列を DER として parse して `ASN.1 parsing error: invalid length` で例外を出していた。base64url(raw 32 バイト) を渡すように修正。Apple/Mozilla/FCM 含むすべての endpoint で通知が送信可能になる。既存購読はそのまま使え、クライアント側の再購読は不要 (#1056, #1057)
+- **Web Push 失敗時のログ強化** — `WebPushException` 発生時にプッシュサービス応答の `status_code` と本文先頭 500 文字を WARNING ログに記録 (Apple は具体的拒否理由を本文で返す)。endpoint は `host` のみ出力し、path に含まれる push token は漏らさない。pywebpush 外の予期せぬ例外でも `exc_info=True` でスタックトレースを残す。上記 PEM バグはこの観測強化で発覚した (#1054, #1055)
+
+### ドキュメント
+
+- **連合テスト手順を `run --build --rm test-runner` に修正** — Misskey/Mastodon/Mitra/Pleroma/Fedibird の連合テストを連続実行すると、test-runner イメージ (`nekonoverse-test-runner:latest`) が variant 間で再利用されて 2 個目以降が必ず失敗する問題があった。compose project 名が共通で image tag が衝突し、`down -v` でもイメージが残るのが原因。`run` に `--build` を付けて毎回再ビルドさせることで回避。CLAUDE.md (submodule) の PR レビュー手順も Devin Review → nekonaudit 表記に更新 (#1052, #1053)
+
+---
+
 ## [20260524-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260524-1) — 2026-05-24
 
 ### CI / 運用ドキュメント
