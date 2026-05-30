@@ -307,7 +307,9 @@ def _endpoint_host(endpoint: str) -> str:
         return endpoint
 
 
-def _log_web_push_failure(endpoint: str, response, error: Exception) -> None:
+def _log_web_push_failure(
+    endpoint: str, response: object | None, error: Exception
+) -> None:
     """WebPushException 発生時にプッシュサービスからの応答本文を含めてログする。
 
     Apple (web.push.apple.com) などは status だけでなく本文に具体的な拒否理由を
@@ -321,10 +323,12 @@ def _log_web_push_failure(endpoint: str, response, error: Exception) -> None:
     status = getattr(response, "status_code", None)
     body_excerpt = ""
     try:
-        text = response.text
+        text = getattr(response, "text", None)
         if text:
             body_excerpt = text[:500]
     except Exception:
+        # 「なぜ body が unavailable だったか」を後から追えるよう原因も残す
+        logger.debug("Failed to read Web Push response body", exc_info=True)
         body_excerpt = "<unavailable>"
     logger.warning(
         "Web Push failed: host=%s status=%s body=%s",
