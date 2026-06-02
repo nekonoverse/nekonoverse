@@ -285,6 +285,7 @@ async def create_note(
             pending_notifs.append(notif)
 
     # メンション通知 (ローカルアクターのみ、リプライ先はスキップ、解決済みアクターを再利用)
+    mention_recipient_ids: set[uuid.UUID] = set()
     for mentioned in mention_actors:
         if not mentioned.domain:  # local actor
             if mentioned.id != reply_recipient_id:
@@ -297,6 +298,23 @@ async def create_note(
                 )
                 if notif:
                     pending_notifs.append(notif)
+                    mention_recipient_ids.add(mentioned.id)
+
+    # 引用通知 (引用先がローカルアクターのみ、reply/mention 先と重複しないようにスキップ)
+    if quote_id and quoted and quoted.actor and not quoted.actor.domain:
+        if (
+            quoted.actor_id != reply_recipient_id
+            and quoted.actor_id not in mention_recipient_ids
+        ):
+            notif = await create_notification(
+                db,
+                "quote",
+                quoted.actor_id,
+                actor.id,
+                note_id,
+            )
+            if notif:
+                pending_notifs.append(notif)
 
     await db.commit()
 

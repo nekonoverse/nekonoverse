@@ -31,6 +31,7 @@ import { getSessions, deleteSession, getLoginHistory, type SessionInfo, type Log
 import { setupTotp, enableTotp, disableTotp, getTotpStatus } from "@nekonoverse/ui/api/totp";
 import PasskeyManager from "../components/PasskeyManager";
 import ThemeCustomizer from "../components/settings/ThemeCustomizer";
+import DiscordWebhooksManager from "../components/settings/DiscordWebhooksManager";
 import Breadcrumb from "../components/Breadcrumb";
 
 declare const __APP_VERSION__: string;
@@ -60,6 +61,7 @@ const categories: SettingsCategory[] = [
       { key: "security", labelKey: "settings.tabSecurity", descKey: "settings.descSecurity" },
       { key: "email", labelKey: "settings.tabEmail", descKey: "settings.descEmail" },
       { key: "apps", labelKey: "settings.tabApps", descKey: "settings.descApps" },
+      { key: "discordWebhooks", labelKey: "settings.tabDiscordWebhooks", descKey: "settings.descDiscordWebhooks" },
       { key: "blocks", labelKey: "settings.tabBlocks", descKey: "settings.descBlocks" },
       { key: "mutes", labelKey: "settings.tabMutes", descKey: "settings.descMutes" },
       { key: "sessions", labelKey: "settings.tabSessions", descKey: "settings.descSessions" },
@@ -133,6 +135,7 @@ export default function Settings() {
           <Match when={section() === "security"}><SecurityTab onLogout={handleLogout} /></Match>
           <Match when={section() === "email"}><EmailTab /></Match>
           <Match when={section() === "apps"}><AppsTab /></Match>
+          <Match when={section() === "discordWebhooks"}><DiscordWebhooksManager /></Match>
           <Match when={section() === "blocks"}><BlocksTab /></Match>
           <Match when={section() === "mutes"}><MutesTab /></Match>
           <Match when={section() === "sessions"}><SessionsTab /></Match>

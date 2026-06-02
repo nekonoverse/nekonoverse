@@ -45,6 +45,8 @@ NOTIFICATION_TYPE_TO_ALERT = {
     "favourite": "favourite",
     "renote": "reblog",
     "reblog": "reblog",
+    # 引用は Mastodon API 互換で reblog にマッピング
+    "quote": "reblog",
     "poll": "poll",
 }
 

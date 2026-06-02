@@ -48,6 +48,7 @@ from app.api.admin import router as admin_router
 from app.api.auth import router as auth_router
 from app.api.authorized_apps import router as authorized_apps_router
 from app.api.data_export import router as data_export_router
+from app.api.discord_webhooks import router as discord_webhooks_router
 from app.api.email_verification import router as email_router
 from app.api.invites import router as invites_router
 from app.api.mastodon.accounts import relationships_router
@@ -808,6 +809,7 @@ app.include_router(media_proxy_router)
 app.include_router(media_router)
 app.include_router(admin_router)
 app.include_router(invites_router)
+app.include_router(discord_webhooks_router)
 app.include_router(webfinger_router)
 app.include_router(nodeinfo_router)
 app.include_router(ap_router)
