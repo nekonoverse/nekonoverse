@@ -3809,6 +3809,129 @@ a:hover {
   background: rgba(233, 69, 96, 0.15);
 }
 
+/* Discord webhook manager (settings) */
+.webhook-empty {
+  color: var(--text-secondary);
+  font-size: 0.875em;
+  margin: 12px 0 16px;
+}
+
+.webhook-list {
+  list-style: none;
+  margin: 12px 0 16px;
+  padding: 0;
+}
+
+.webhook-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.webhook-item:last-child {
+  border-bottom: none;
+}
+
+.webhook-info {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.webhook-name {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 1em;
+  font-weight: 500;
+  color: var(--text-primary);
+}
+
+.webhook-url {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.8em;
+  color: var(--text-secondary);
+  word-break: break-all;
+}
+
+.webhook-badge {
+  display: inline-block;
+  font-size: 0.7em;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-weight: 500;
+}
+
+.webhook-badge-warn {
+  background: rgba(241, 196, 15, 0.15);
+  color: #f1c40f;
+}
+
+.webhook-error-message {
+  background: rgba(233, 69, 96, 0.12);
+  color: #e94560;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-size: 0.8em;
+  word-break: break-word;
+}
+
+.webhook-test-success {
+  background: rgba(46, 204, 113, 0.15);
+  color: #2ecc71;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-size: 0.8em;
+}
+
+.webhook-test-failure {
+  background: rgba(233, 69, 96, 0.12);
+  color: #e94560;
+  padding: 6px 10px;
+  border-radius: var(--radius);
+  font-size: 0.8em;
+  word-break: break-word;
+}
+
+.webhook-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+/* Discord webhook modal form */
+.webhook-form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  flex: 1;
+}
+
+.webhook-form-body {
+  padding: 16px 18px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.webhook-notify-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 4px 12px;
+  margin-top: 4px;
+}
+
+.webhook-notify-grid .toggle-label {
+  margin-top: 0;
+}
+
 /* Passkey login divider */
 .passkey-divider {
   display: flex;
