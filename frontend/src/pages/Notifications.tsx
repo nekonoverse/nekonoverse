@@ -357,10 +357,13 @@ export default function Notifications() {
               <div class="notifications-list">
                 <For each={filtered()}>
                   {(notif) => {
-                    // 表示用 type: nekonoverse 拡張の生 type を優先し、
-                    // 無ければ Mastodon マッピング後 type にフォールバック。
-                    // これで quote が reblog に同化せず区別表示できる。
-                    const displayType = notif.nekonoverse_type ?? notif.type;
+                    // 表示用 type: nekonoverse_type が "quote" のときだけ
+                    // raw を使い 💭 と「に引用されました」を出す。
+                    // それ以外は Mastodon マッピング後の type を使い、
+                    // 既存の renote→reblog / ⭐ reaction→favourite 表示を維持する
+                    // (raw を素通ししてしまうと boost と ⭐ favourite が壊れる)。
+                    const displayType =
+                      notif.nekonoverse_type === "quote" ? "quote" : notif.type;
                     return (
                     <div class={`notification-item${notif.read ? "" : " unread"}`}>
                       <div class="notification-icon" ref={(el) => { el.textContent = notifIcon(displayType); twemojify(el); }} />
