@@ -1,3 +1,16 @@
+## [20260602-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260602-2) — 2026-06-02
+
+### 新機能
+
+- **Discord 互換 Webhook 通知機能** — ユーザーごとに任意数の Discord 互換 Webhook URL を登録し、通知タイプ別 (`mention` / `direct` / `quote` / `reaction` / `renote` / `follow` / `follow_request`) に boolean で配送を制御できる第 3 の通知経路を追加。配送経路として既存の Web Push / SSE と並列で `create_notification()` からフックされる。Discord embeds 形式で配送し、3 回 retry + 5 連続失敗で自動 disable、429 (Retry-After 尊重) は失敗カウンタに数えない。SSRF 対策として private / loopback / link-local / multicast / reserved / `.local` への配送は拒否、`allowed_mentions={"parse": []}` で `@everyone` 抑止。設定 UI から CRUD + テスト送信が可能。引用通知 (`quote`) を新 notification type として導入し、ローカル投稿 + 連合受信の両方で発火 (#1065, #1066)
+- **観測性の改善** — 通知配送 (Web Push / Discord Webhook) の失敗を `logger.exception()` でログに残すよう変更。従来 `except Exception: pass` で握り潰されていた失敗を運用時に検知できるようになる
+
+### バグ修正
+
+- **連合経由の引用ノートで `quoted_note.actor` の lazy load を回避** — `fetch_remote_note` 経由で取得したノートの `actor` リレーションが async セッションで未ロードのため `MissingGreenlet` を起こす可能性があった。`db.get(Actor, quoted_note.actor_id)` で明示的にアクター行を引き直し、`domain` カラムで is_local 判定するよう修正
+
+---
+
 ## [20260602-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260602-1) — 2026-06-02
 
 ### セキュリティ
