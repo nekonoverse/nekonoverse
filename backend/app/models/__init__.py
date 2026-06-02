@@ -4,6 +4,7 @@ from app.models.bookmark import Bookmark
 from app.models.custom_emoji import CustomEmoji
 from app.models.data_export import DataExport
 from app.models.delivery import DeliveryJob
+from app.models.discord_webhook import DiscordWebhook
 from app.models.domain_block import DomainBlock
 from app.models.drive_file import DriveFile
 from app.models.follow import Follow
@@ -38,6 +39,7 @@ __all__ = [
     "CustomEmoji",
     "DataExport",
     "DeliveryJob",
+    "DiscordWebhook",
     "DomainBlock",
     "DriveFile",
     "Follow",

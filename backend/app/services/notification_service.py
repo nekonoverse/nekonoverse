@@ -1,5 +1,6 @@
 """通知サービス: 作成、一覧取得、既読化、全消去。"""
 
+import logging
 import uuid
 
 from sqlalchemy import func, select, update
@@ -8,6 +9,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models.note import Note
 from app.models.notification import Notification
+
+logger = logging.getLogger(__name__)
 
 
 async def create_notification(
@@ -58,20 +61,25 @@ async def create_notification(
     db.add(notification)
     await db.flush()
 
-    # Web Push通知を送信 (flush後で問題ない — push通知はDBクエリしない)
+    # 送信者・対象 note を 1 回だけ取得して Web Push と Discord Webhook で共有する
+    sender = None
+    sender_name = None
+    if sender_id:
+        from app.models.actor import Actor
+
+        result = await db.execute(select(Actor).where(Actor.id == sender_id))
+        sender = result.scalar_one_or_none()
+        if sender:
+            sender_name = sender.display_name or sender.username
+
+    note = None
+    if note_id:
+        result = await db.execute(select(Note).where(Note.id == note_id))
+        note = result.scalar_one_or_none()
+
+    # Web Push 通知 (失敗で通知作成を失敗させない)
     try:
         from app.services.push_service import send_web_push
-
-        sender_name = None
-        if sender_id:
-            from app.models.actor import Actor
-
-            result = await db.execute(
-                select(Actor).where(Actor.id == sender_id)
-            )
-            sender = result.scalar_one_or_none()
-            if sender:
-                sender_name = sender.display_name or sender.preferred_username
 
         await send_web_push(
             db=db,
@@ -82,7 +90,17 @@ async def create_notification(
             sender_id=sender_id,
         )
     except Exception:
-        pass  # プッシュ失敗で通知作成を失敗させない
+        # 通知作成を失敗させないが、観測のためログには残す
+        logger.exception("Failed to dispatch web push notification")
+
+    # Discord 互換 Webhook 配送 (失敗で通知作成を失敗させない)
+    try:
+        from app.services.discord_webhook_service import dispatch_webhooks
+
+        await dispatch_webhooks(db, notification, sender=sender, note=note)
+    except Exception:
+        # 通知作成を失敗させないが、観測のためログには残す
+        logger.exception("Failed to dispatch discord webhook notification")
 
     return notification
 
