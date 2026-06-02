@@ -122,3 +122,18 @@ async def test_test_endpoint_invokes_send(authed_client, test_user):
 async def test_unauthorized_without_session(app_client):
     resp = await app_client.get("/api/v1/discord-webhooks")
     assert resp.status_code in (401, 403)
+
+
+async def test_create_rejects_private_url(authed_client, test_user):
+    """SSRF 対策: プライベート/ループバック IP に向く URL は 400 で弾く。"""
+    for url in [
+        "http://127.0.0.1/x",
+        "http://localhost/x",
+        "http://10.0.0.1/webhook",
+        "http://169.254.169.254/latest/meta-data",
+    ]:
+        resp = await authed_client.post(
+            "/api/v1/discord-webhooks",
+            json={"name": "evil", "webhook_url": url},
+        )
+        assert resp.status_code == 400, f"{url} should be rejected, got {resp.status_code}"

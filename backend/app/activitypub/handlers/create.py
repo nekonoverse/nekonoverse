@@ -2,11 +2,13 @@
 
 import logging
 import math
+import uuid
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.activitypub import extract_mfm_source
 from app.config import settings
+from app.models.actor import Actor
 from app.models.note import Note
 from app.services.actor_service import fetch_remote_actor, get_actor_by_ap_id, get_actors_by_ap_ids
 from app.services.note_service import fetch_remote_note, get_note_by_ap_id
@@ -371,7 +373,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     # メンションアクターをバッチ取得（N+1回避）
     mention_ap_ids = [m["ap_id"] for m in mentions_list if m.get("ap_id")]
     mentioned_actors = await get_actors_by_ap_ids(db, mention_ap_ids) if mention_ap_ids else {}
-    mention_recipient_ids: set = set()
+    mention_recipient_ids: set[uuid.UUID] = set()
     for mention in mentions_list:
         mentioned_actor = mentioned_actors.get(mention["ap_id"])
         if (
@@ -391,23 +393,26 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
                 mention_recipient_ids.add(mentioned_actor.id)
 
     # 引用通知 (引用先がローカルアクター、reply/mention 先と重複しない場合のみ)
+    # quoted_note は fetch_remote_note 由来だと actor リレーションが lazy で
+    # async セッション中の属性アクセスが MissingGreenlet を起こすため、
+    # actor_id (カラム) から明示的にアクター行を引き直してドメイン判定する。
     if (
         quoted_note
-        and quoted_note.actor
-        and quoted_note.actor.is_local
         and quoted_note.actor_id != actor.id
         and quoted_note.actor_id != reply_recipient_id
         and quoted_note.actor_id not in mention_recipient_ids
     ):
-        notif = await create_notification(
-            db,
-            "quote",
-            quoted_note.actor_id,
-            actor.id,
-            note.id,
-        )
-        if notif:
-            pending_notifs.append(notif)
+        quoted_actor = await db.get(Actor, quoted_note.actor_id)
+        if quoted_actor and quoted_actor.domain is None:  # ローカル
+            notif = await create_notification(
+                db,
+                "quote",
+                quoted_note.actor_id,
+                actor.id,
+                note.id,
+            )
+            if notif:
+                pending_notifs.append(notif)
 
     await db.commit()
     logger.info("Saved remote note %s from %s", ap_id, actor_ap_id)

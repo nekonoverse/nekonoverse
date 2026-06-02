@@ -42,13 +42,48 @@ def test_select_notify_column(notification_type, visibility, expected_column):
 def test_mask_webhook_url_discord_format():
     url = "https://discord.com/api/webhooks/1234567890/abcdefghijklmnop"
     masked = mask_webhook_url(url)
-    assert masked.startswith("https://discord.com/api/webhooks/1234567890/abcd")
-    assert masked.endswith("***")
-    assert "abcdefghijklmnop" not in masked
+    assert masked.startswith("https://discord.com/api/webhooks/1234567890/***")
+    # 末尾 4 文字だけ残す
+    assert masked.endswith("mnop")
+    # 中間トークンは隠す (abc/cdef 等は出てこない)
+    assert "abcdefghijkl" not in masked
 
 
 def test_mask_webhook_url_short():
     assert mask_webhook_url("xx") == "***"
+
+
+async def test_is_safe_webhook_target_rejects_localhost():
+    from app.services.discord_webhook_service import is_safe_webhook_target
+
+    assert not await is_safe_webhook_target("http://127.0.0.1/x")
+    assert not await is_safe_webhook_target("http://localhost/x")
+    assert not await is_safe_webhook_target("http://10.0.0.1/x")
+    assert not await is_safe_webhook_target("http://192.168.1.1/x")
+    assert not await is_safe_webhook_target("http://169.254.169.254/x")
+    assert not await is_safe_webhook_target("http://[::1]/x")
+    assert not await is_safe_webhook_target("http://foo.local/x")
+    # スキームが http/https でない
+    assert not await is_safe_webhook_target("file:///etc/passwd")
+
+
+async def test_is_safe_webhook_target_accepts_public(mock_valkey):
+    from unittest.mock import patch as _patch
+
+    # DNS 解決をモックして公開 IP を返す
+    fake_infos = [(2, 1, 6, "", ("1.2.3.4", 0))]
+
+    class _Loop:
+        async def getaddrinfo(self, *args, **kwargs):
+            return fake_infos
+
+    from app.services.discord_webhook_service import is_safe_webhook_target
+
+    with _patch(
+        "app.services.discord_webhook_service.asyncio.get_running_loop",
+        return_value=_Loop(),
+    ):
+        assert await is_safe_webhook_target("https://discord.com/api/webhooks/1/abc")
 
 
 async def _get_actor(db, actor_id):

@@ -19,6 +19,7 @@ from app.services.discord_webhook_service import (
     create_webhook,
     delete_webhook,
     get_webhook,
+    is_safe_webhook_target,
     list_webhooks,
     mask_webhook_url,
     send_test_payload,
@@ -64,12 +65,18 @@ async def create_my_webhook(
     user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
+    url = str(body.webhook_url)
+    if not await is_safe_webhook_target(url):
+        raise HTTPException(
+            status_code=400,
+            detail="Webhook URL must resolve to a public host",
+        )
     try:
         webhook = await create_webhook(
             db,
             user.id,
             name=body.name,
-            webhook_url=str(body.webhook_url),
+            webhook_url=url,
             notify_mention=body.notify_mention,
             notify_direct=body.notify_direct,
             notify_quote=body.notify_quote,
@@ -112,6 +119,11 @@ async def update_my_webhook(
     updates = body.model_dump(exclude_unset=True)
     if "webhook_url" in updates and updates["webhook_url"] is not None:
         updates["webhook_url"] = str(updates["webhook_url"])
+        if not await is_safe_webhook_target(updates["webhook_url"]):
+            raise HTTPException(
+                status_code=400,
+                detail="Webhook URL must resolve to a public host",
+            )
     try:
         await update_webhook(db, webhook, updates)
         await db.commit()

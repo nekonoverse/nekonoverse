@@ -5,12 +5,16 @@ embeds 形式の payload を POST する。create_notification() からフック
 """
 
 import asyncio
+import html
+import ipaddress
 import logging
 import re
+import socket
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import settings
@@ -31,8 +35,16 @@ AUTO_DISABLE_THRESHOLD = 5
 DISCORD_TITLE_LIMIT = 256
 DISCORD_DESCRIPTION_LIMIT = 4000
 
-# HTTP retry の試行回数と backoff (秒)
+# HTTP retry の試行回数と backoff (秒)。429 は Retry-After を尊重し、それ以外で
+# 5xx/接続失敗の暫定 backoff として使う。
 RETRY_DELAYS = [0.5, 1.0, 2.0]
+
+# 429 で Retry-After を尊重するときの上限秒数 (悪意ある攻撃者が大きな値を
+# 返してきても DoS にならないように)。
+MAX_RETRY_AFTER_SECONDS = 30.0
+
+# fire-and-forget 配送タスクの強参照保持 (GC 防止)
+_outstanding_tasks: set[asyncio.Task] = set()
 
 # 通知タイプ別の embed 色 (10進)
 NOTIFICATION_COLORS = {
@@ -96,28 +108,77 @@ def mask_webhook_url(url: str) -> str:
     """Webhook URL の末尾トークンを伏せ字にする。
 
     Discord 形式 `https://discord.com/api/webhooks/{id}/{token}` を想定。
-    パスの最後のセグメントを `***` に置き換える。判定できなければ末尾 8 文字を伏せる。
+    パスの最後のセグメントを完全マスクし、末尾 4 文字だけ残す。
     """
     if "/" in url:
         head, sep, tail = url.rpartition("/")
         if tail and len(tail) >= 4:
-            return f"{head}{sep}{tail[:4]}***"
+            return f"{head}{sep}***{tail[-4:]}"
     if len(url) > 8:
-        return url[:-8] + "***"
+        return "***" + url[-4:]
     return "***"
 
 
-def _strip_html(html: str) -> str:
+def _strip_html(html_text: str) -> str:
     """HTML タグを荒く除去してプレーンテキスト化する。
 
     Discord embed description 用の最小限の整形。完全な sanitize ではなく、
-    タグ除去 + 連続空白の正規化のみ行う。
+    タグ除去 + エンティティデコード + 連続空白の正規化のみ行う。
     """
-    text = re.sub(r"<br\s*/?>", "\n", html, flags=re.IGNORECASE)
+    text = re.sub(r"<br\s*/?>", "\n", html_text, flags=re.IGNORECASE)
     text = re.sub(r"</p>", "\n\n", text, flags=re.IGNORECASE)
     text = re.sub(r"<[^>]+>", "", text)
+    text = html.unescape(text)
     text = re.sub(r"\n{3,}", "\n\n", text)
     return text.strip()
+
+
+async def is_safe_webhook_target(url: str) -> bool:
+    """Webhook URL の宛先が外部公開 IP に解決されることを確認する (SSRF 対策)。
+
+    以下のいずれかなら False を返す:
+    - スキームが http/https ではない
+    - ホスト名が空、または `.local` で終わる (mDNS)
+    - DNS 解決した IP のいずれかが private / loopback / link-local /
+      multicast / reserved / unspecified
+    - DNS 解決そのものが失敗
+    """
+    try:
+        parsed = urlparse(url)
+    except ValueError:
+        return False
+    if parsed.scheme not in ("http", "https"):
+        return False
+    host = parsed.hostname
+    if not host:
+        return False
+    if host.endswith(".local"):
+        return False
+
+    loop = asyncio.get_running_loop()
+    try:
+        infos = await loop.getaddrinfo(host, None, type=socket.SOCK_STREAM)
+    except socket.gaierror:
+        return False
+    if not infos:
+        return False
+
+    for _family, _socktype, _proto, _canonname, sockaddr in infos:
+        ip_str = sockaddr[0]
+        try:
+            ip = ipaddress.ip_address(ip_str)
+        except ValueError:
+            return False
+        if (
+            ip.is_private
+            or ip.is_loopback
+            or ip.is_link_local
+            or ip.is_multicast
+            or ip.is_reserved
+            or ip.is_unspecified
+        ):
+            return False
+    return True
 
 
 def _build_embed(
@@ -166,62 +227,125 @@ def _build_embed(
             author["url"] = sender.ap_id
         embed["author"] = author
 
-    return {"username": "Nekonoverse", "embeds": [embed]}
+    # note 本文中の @everyone / @here / ロール ID が Discord 側で展開されないよう抑止
+    return {
+        "username": "Nekonoverse",
+        "embeds": [embed],
+        "allowed_mentions": {"parse": []},
+    }
 
 
-async def _post_with_retry(url: str, payload: dict) -> tuple[bool, int | None, str | None]:
-    """POST を最大 3 回 (デフォルト) リトライする。
+DeliveryOutcome = str  # "success" | "failed" | "rate_limited"
+
+
+async def _post_with_retry(
+    url: str, payload: dict
+) -> tuple[DeliveryOutcome, int | None, str | None]:
+    """POST を最大 3 回リトライする。
 
     Returns:
-        (success, last_status_code, last_error_text)
+        (outcome, last_status_code, last_error_text)
+
+    outcome:
+        - "success"      : 2xx 応答
+        - "failed"       : 永続的失敗 (4xx <非429>, 5xx 連続, ネットワーク失敗)
+        - "rate_limited" : 全試行で 429 のみ。consecutive_failures は触らない
     """
     last_status: int | None = None
     last_error: str | None = None
-    async with make_async_client(use_proxy=False, timeout=10.0) as client:
-        for attempt, delay in enumerate(RETRY_DELAYS):
+    saw_only_rate_limit = True
+    async with make_async_client(timeout=10.0) as client:
+        attempts = len(RETRY_DELAYS)
+        for attempt in range(attempts):
             try:
                 response = await client.post(url, json=payload)
             except Exception as exc:
                 last_status = None
                 last_error = f"{type(exc).__name__}: {exc}"[:500]
+                saw_only_rate_limit = False
             else:
                 last_status = response.status_code
                 if 200 <= response.status_code < 300:
-                    return True, last_status, None
-                # 4xx は永続的失敗とみなして即座に終了
+                    return "success", last_status, None
+                if response.status_code == 429:
+                    # rate limited — Retry-After を尊重して再試行 (auto-disable には数えない)
+                    try:
+                        retry_after = float(response.headers.get("Retry-After", "1"))
+                    except ValueError:
+                        retry_after = 1.0
+                    retry_after = min(max(retry_after, 0.0), MAX_RETRY_AFTER_SECONDS)
+                    last_error = "rate limited"
+                    if attempt < attempts - 1:
+                        await asyncio.sleep(retry_after)
+                        continue
+                    return "rate_limited", last_status, "rate limited"
+                # 429 以外の 4xx は永続失敗として即時終了
                 if 400 <= response.status_code < 500:
                     last_error = (response.text or "")[:500]
-                    return False, last_status, last_error
+                    return "failed", last_status, last_error
+                # 5xx — リトライ対象
                 last_error = (response.text or "")[:500]
-            if attempt < len(RETRY_DELAYS) - 1:
-                await asyncio.sleep(delay)
-    return False, last_status, last_error
+                saw_only_rate_limit = False
+            if attempt < attempts - 1:
+                await asyncio.sleep(RETRY_DELAYS[attempt])
+    if saw_only_rate_limit and last_status == 429:
+        return "rate_limited", last_status, last_error
+    return "failed", last_status, last_error
 
 
 async def _record_result(
     webhook_id: uuid.UUID,
-    success: bool,
+    outcome: DeliveryOutcome,
     error: str | None,
 ) -> None:
     """配送結果を別セッションで DB に書き戻す。
 
     別セッションにする理由: 元の create_notification() の Transaction が
     commit/rollback されるタイミングと独立して保存したいため。
+    consecutive_failures は原子的に SQL でインクリメントしロストアップデートを防ぐ。
     """
     try:
         async with async_session() as session:
-            webhook = await session.get(DiscordWebhook, webhook_id)
-            if webhook is None:
+            if outcome == "rate_limited":
+                # auto-disable には数えないが last_error は記録する
+                await session.execute(
+                    update(DiscordWebhook)
+                    .where(DiscordWebhook.id == webhook_id)
+                    .values(last_error=error)
+                )
+                await session.commit()
                 return
-            if success:
-                webhook.consecutive_failures = 0
-                webhook.last_error = None
-                webhook.last_delivered_at = datetime.now(timezone.utc)
-            else:
-                webhook.consecutive_failures += 1
-                webhook.last_error = error
-                if webhook.consecutive_failures >= AUTO_DISABLE_THRESHOLD:
-                    webhook.enabled = False
+            if outcome == "success":
+                await session.execute(
+                    update(DiscordWebhook)
+                    .where(DiscordWebhook.id == webhook_id)
+                    .values(
+                        consecutive_failures=0,
+                        last_error=None,
+                        last_delivered_at=datetime.now(timezone.utc),
+                    )
+                )
+                await session.commit()
+                return
+            # failed: 原子的にカウンタをインクリメント
+            await session.execute(
+                update(DiscordWebhook)
+                .where(DiscordWebhook.id == webhook_id)
+                .values(
+                    consecutive_failures=DiscordWebhook.consecutive_failures + 1,
+                    last_error=error,
+                )
+            )
+            await session.commit()
+            # 閾値超えで disable (別 UPDATE で原子的に判定)
+            await session.execute(
+                update(DiscordWebhook)
+                .where(
+                    DiscordWebhook.id == webhook_id,
+                    DiscordWebhook.consecutive_failures >= AUTO_DISABLE_THRESHOLD,
+                )
+                .values(enabled=False)
+            )
             await session.commit()
     except Exception:
         logger.exception("Failed to record discord webhook delivery result")
@@ -229,14 +353,30 @@ async def _record_result(
 
 async def _deliver(webhook_id: uuid.UUID, url: str, payload: dict) -> None:
     """1 つの Webhook に対して配送 → 結果記録を行う。fire-and-forget で呼ばれる。"""
-    success, _, error = await _post_with_retry(url, payload)
-    if not success:
+    if not await is_safe_webhook_target(url):
         logger.warning(
-            "Discord webhook delivery failed: webhook_id=%s error=%s",
+            "Discord webhook delivery rejected (unsafe target): webhook_id=%s",
+            webhook_id,
+        )
+        await _record_result(webhook_id, "failed", "unsafe target")
+        return
+    outcome, _, error = await _post_with_retry(url, payload)
+    if outcome != "success":
+        logger.warning(
+            "Discord webhook delivery %s: webhook_id=%s error=%s",
+            outcome,
             webhook_id,
             error,
         )
-    await _record_result(webhook_id, success, error)
+    await _record_result(webhook_id, outcome, error)
+
+
+def _spawn_delivery(webhook_id: uuid.UUID, url: str, payload: dict) -> asyncio.Task:
+    """_deliver を fire-and-forget で投げ、強参照を保持して GC を防ぐ。"""
+    task = asyncio.create_task(_deliver(webhook_id, url, payload))
+    _outstanding_tasks.add(task)
+    task.add_done_callback(_outstanding_tasks.discard)
+    return task
 
 
 async def dispatch_webhooks(
@@ -277,7 +417,7 @@ async def dispatch_webhooks(
         if not getattr(webhook, column_name):
             continue
         # fire-and-forget。Web Push と同じく失敗で通知作成を失敗させない
-        asyncio.create_task(_deliver(webhook.id, webhook.webhook_url, payload))
+        _spawn_delivery(webhook.id, webhook.webhook_url, payload)
 
 
 # ──────────────────────────────────────────────
@@ -359,12 +499,18 @@ async def delete_webhook(db: AsyncSession, webhook: DiscordWebhook) -> None:
     await db.flush()
 
 
-async def send_test_payload(webhook: DiscordWebhook) -> tuple[bool, int | None, str | None]:
+async def send_test_payload(
+    webhook: DiscordWebhook,
+) -> tuple[bool, int | None, str | None]:
     """テスト送信。CRUD とは別に呼ばれ、結果を直接返す。
 
     成功/失敗を Webhook の状態 (consecutive_failures, last_error, last_delivered_at)
     にも反映する (別セッションで _record_result 経由)。
     """
+    if not await is_safe_webhook_target(webhook.webhook_url):
+        await _record_result(webhook.id, "failed", "unsafe target")
+        return False, None, "unsafe target"
+
     payload = {
         "username": "Nekonoverse",
         "embeds": [
@@ -378,7 +524,8 @@ async def send_test_payload(webhook: DiscordWebhook) -> tuple[bool, int | None, 
                 "timestamp": datetime.now(timezone.utc).isoformat(),
             }
         ],
+        "allowed_mentions": {"parse": []},
     }
-    success, status, error = await _post_with_retry(webhook.webhook_url, payload)
-    await _record_result(webhook.id, success, error)
-    return success, status, error
+    outcome, status, error = await _post_with_retry(webhook.webhook_url, payload)
+    await _record_result(webhook.id, outcome, error)
+    return outcome == "success", status, error
