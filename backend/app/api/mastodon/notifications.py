@@ -259,9 +259,9 @@ async def _notification_to_response(
     elif notif.type == "renote":
         notif_type = "reblog"
     elif notif.type == "quote":
-        # quote \u306f Mastodon \u6a19\u6e96\u306b\u306a\u3044\u305f\u3081\u3001\u77e5\u3089\u306a\u3044 type \u3092\u843d\u3068\u3059\u516c\u5f0f/\u30b5\u30fc\u30c9
-        # \u30d1\u30fc\u30c6\u30a3\u30af\u30e9\u30a4\u30a2\u30f3\u30c8\u3068\u306e\u4e92\u63db\u6027\u306e\u305f\u3081 "reblog" \u306b\u5909\u63db (Web Push \u306e
-        # NOTIFICATION_TYPE_TO_ALERT \u3082 "quote" \u2192 "reblog" \u306b\u3057\u3066\u3044\u308b\u306e\u3068\u540c\u3058\u65b9\u91dd)
+        # quote \u306f Mastodon \u6a19\u6e96\u306b\u306a\u3044\u3002
+        # \u4e92\u63db\u6027\u306e\u305f\u3081 "reblog" \u306b\u30de\u30c3\u30d4\u30f3\u30b0
+        # (Web Push \u306e NOTIFICATION_TYPE_TO_ALERT \u3068\u540c\u65b9\u91dd)
         notif_type = "reblog"
 
     return NotificationResponse(
