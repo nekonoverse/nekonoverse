@@ -1,3 +1,11 @@
+## [20260602-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260602-1) — 2026-06-02
+
+### セキュリティ
+
+- **vitest 4.1.0 以上に更新 (GHSA-5xrq-8626-4rwp)** — Vitest UI server が listening 時に任意ファイルの読込/実行が可能な critical 脆弱性の修正。devDependency のみのため runtime 影響なし。`frontend/` を `^4.0.18` → `^4.1.8`、`tests/mastodon-client/` を `^3.0.0` → `^4.1.0` (3.x → 4.x のメジャー更新) に揃え、Dependabot alert #42 / #43 を解消 (#1061, #1062)
+
+---
+
 ## [20260530-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260530-1) — 2026-05-30
 
 ### バグ修正
