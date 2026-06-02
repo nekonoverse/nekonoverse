@@ -259,9 +259,9 @@ async def _notification_to_response(
     elif notif.type == "renote":
         notif_type = "reblog"
     elif notif.type == "quote":
-        # quote \u306f Mastodon \u6a19\u6e96\u306b\u306a\u3044\u3002
-        # \u4e92\u63db\u6027\u306e\u305f\u3081 "reblog" \u306b\u30de\u30c3\u30d4\u30f3\u30b0
-        # (Web Push \u306e NOTIFICATION_TYPE_TO_ALERT \u3068\u540c\u65b9\u91dd)
+        # quote は Mastodon 標準にない。
+        # 互換性のため "reblog" にマッピング
+        # (Web Push の NOTIFICATION_TYPE_TO_ALERT と同方針)
         notif_type = "reblog"
 
     return NotificationResponse(
