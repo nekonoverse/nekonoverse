@@ -3907,7 +3907,12 @@ a:hover {
 }
 
 /* Discord webhook modal form */
-.webhook-modal {
+/*
+  .modal-content (max-width:560px) と同詳細度の単独セレクタだと
+  ファイル後方に出てくる .modal-content が後勝ちで負ける。
+  詳細度を 1 段上げて確実に効かせる。
+*/
+.modal-content.webhook-modal {
   max-width: 520px;
 }
 

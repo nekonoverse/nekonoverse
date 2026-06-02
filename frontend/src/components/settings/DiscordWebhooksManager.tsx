@@ -252,7 +252,7 @@ export default function DiscordWebhooksManager() {
               <button
                 class="modal-close"
                 onClick={closeModal}
-                aria-label={t("common.close" as any)}
+                aria-label={t("common.close")}
               >
                 ✕
               </button>
