@@ -24,10 +24,11 @@ async def test_create_and_list_webhook(authed_client, test_user):
     assert body["notify_direct"] is False
     assert body["enabled"] is True
     assert body["webhook_url_masked"].startswith(
-        "https://discord.com/api/webhooks/123/abcd"
+        "https://discord.com/api/webhooks/123/***"
     )
-    assert body["webhook_url_masked"].endswith("***")
-    # 生 URL がレスポンスに含まれない
+    # 末尾 4 文字だけ残す
+    assert body["webhook_url_masked"].endswith("ijkl")
+    # 中間の token は隠す
     assert "abcdefghijkl" not in body["webhook_url_masked"]
     webhook_id = body["id"]
 
