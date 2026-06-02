@@ -371,6 +371,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     # メンションアクターをバッチ取得（N+1回避）
     mention_ap_ids = [m["ap_id"] for m in mentions_list if m.get("ap_id")]
     mentioned_actors = await get_actors_by_ap_ids(db, mention_ap_ids) if mention_ap_ids else {}
+    mention_recipient_ids: set = set()
     for mention in mentions_list:
         mentioned_actor = mentioned_actors.get(mention["ap_id"])
         if (
@@ -387,6 +388,26 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
             )
             if notif:
                 pending_notifs.append(notif)
+                mention_recipient_ids.add(mentioned_actor.id)
+
+    # 引用通知 (引用先がローカルアクター、reply/mention 先と重複しない場合のみ)
+    if (
+        quoted_note
+        and quoted_note.actor
+        and quoted_note.actor.is_local
+        and quoted_note.actor_id != actor.id
+        and quoted_note.actor_id != reply_recipient_id
+        and quoted_note.actor_id not in mention_recipient_ids
+    ):
+        notif = await create_notification(
+            db,
+            "quote",
+            quoted_note.actor_id,
+            actor.id,
+            note.id,
+        )
+        if notif:
+            pending_notifs.append(notif)
 
     await db.commit()
     logger.info("Saved remote note %s from %s", ap_id, actor_ap_id)
