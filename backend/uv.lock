@@ -1018,7 +1018,7 @@ wheels = [
 
 [[package]]
 name = "nekonoverse"
-version = "20260602.post2"
+version = "20260602.post3"
 source = { virtual = "." }
 dependencies = [
     { name = "aiosmtplib" },

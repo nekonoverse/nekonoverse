@@ -1,3 +1,11 @@
+## [20260602-3](https://github.com/nekonoverse/nekonoverse/releases/tag/20260602-3) — 2026-06-02
+
+### バグ修正
+
+- **`quote` 通知の表示と Mastodon API 互換の追従漏れを修正** — 20260602-2 で導入した新 notification type `quote` について、(1) フロントエンド i18n 辞書 (ja/en/neko) に `notifications.type.quote` が無く Notifications ページのラベルが空になっていた、(2) `Notifications.tsx` の `notifIcon` switch に `quote` ケースが無く既定のベルアイコンになっていた、(3) Mastodon API の通知レスポンスで `type: "quote"` をそのまま返していたため、Mastodon 標準にない type を落とす公式/サードパーティクライアントで通知行ごと表示されない可能性があった、の 3 点を修正。Mastodon API は Web Push の `NOTIFICATION_TYPE_TO_ALERT` と同じ方針で `quote → reblog` にマッピングする (#1069)
+
+---
+
 ## [20260602-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260602-2) — 2026-06-02
 
 ### 新機能
