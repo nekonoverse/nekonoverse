@@ -76,6 +76,7 @@ export default function DiscordWebhooksManager() {
   }
 
   function openEdit(webhook: DiscordWebhook) {
+    setTestResult(null);
     setDraft({
       name: webhook.name,
       webhook_url: "",
@@ -127,6 +128,7 @@ export default function DiscordWebhooksManager() {
 
   async function handleDelete(webhook: DiscordWebhook) {
     if (!confirm(t("settings.discordWebhooks.deleteConfirm" as any))) return;
+    setTestResult(null);
     try {
       await deleteDiscordWebhook(webhook.id);
       await refetch();
@@ -238,8 +240,7 @@ export default function DiscordWebhooksManager() {
       <Show when={showModal()}>
         <div class="modal-overlay" onClick={closeModal}>
           <div
-            class="modal-content"
-            style={{ "max-width": "520px" }}
+            class="modal-content webhook-modal"
             onClick={(e) => e.stopPropagation()}
           >
             <div class="modal-header">
@@ -248,7 +249,11 @@ export default function DiscordWebhooksManager() {
                   ? t("settings.discordWebhooks.editTitle" as any)
                   : t("settings.discordWebhooks.addTitle" as any)}
               </h3>
-              <button class="modal-close" onClick={closeModal} aria-label="close">
+              <button
+                class="modal-close"
+                onClick={closeModal}
+                aria-label={t("common.close" as any)}
+              >
                 ✕
               </button>
             </div>

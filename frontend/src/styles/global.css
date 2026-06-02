@@ -3900,12 +3900,17 @@ a:hover {
 
 .webhook-actions {
   display: flex;
-  flex-direction: column;
+  flex-wrap: wrap;
   gap: 6px;
   flex-shrink: 0;
+  align-self: flex-start;
 }
 
 /* Discord webhook modal form */
+.webhook-modal {
+  max-width: 520px;
+}
+
 .webhook-form {
   display: flex;
   flex-direction: column;
