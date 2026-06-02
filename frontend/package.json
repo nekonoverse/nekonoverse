@@ -1,6 +1,6 @@
 {
   "name": "nekonoverse-frontend",
-  "version": "20260530-1",
+  "version": "20260602-1",
   "private": true,
   "type": "module",
   "scripts": {
@@ -26,7 +26,7 @@
     "vite": "^6.4.2",
     "vite-plugin-pwa": "^0.21.0",
     "vite-plugin-solid": "^2.11.0",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.8"
   },
   "overrides": {
     "serialize-javascript": "^7.0.5",
