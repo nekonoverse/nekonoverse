@@ -224,6 +224,7 @@ export default function Notifications() {
       case "reblog": return "\u{1F501}";
       case "favourite": return "\u2B50";
       case "reaction": return "\u2728";
+      case "quote": return "\u{1F4AD}";
       default: return "\u{1F514}";
     }
   };
@@ -355,9 +356,17 @@ export default function Notifications() {
             >
               <div class="notifications-list">
                 <For each={filtered()}>
-                  {(notif) => (
+                  {(notif) => {
+                    // 表示用 type: nekonoverse_type が "quote" のときだけ
+                    // raw を使い 💭 と「に引用されました」を出す。
+                    // それ以外は Mastodon マッピング後の type を使い、
+                    // 既存の renote→reblog / ⭐ reaction→favourite 表示を維持する
+                    // (raw を素通ししてしまうと boost と ⭐ favourite が壊れる)。
+                    const displayType =
+                      notif.nekonoverse_type === "quote" ? "quote" : notif.type;
+                    return (
                     <div class={`notification-item${notif.read ? "" : " unread"}`}>
-                      <div class="notification-icon" ref={(el) => { el.textContent = notifIcon(notif.type); twemojify(el); }} />
+                      <div class="notification-icon" ref={(el) => { el.textContent = notifIcon(displayType); twemojify(el); }} />
                       <div class="notification-body">
                         <div class="notification-meta">
                           <Show when={notif.account}>
@@ -375,9 +384,9 @@ export default function Notifications() {
                             </a>
                           </Show>
                           <span class="notification-type-text">
-                            {t(`notifications.type.${notif.type}` as keyof Dictionary)}
+                            {t(`notifications.type.${displayType}` as keyof Dictionary)}
                           </span>
-                          <Show when={notif.type === "reaction" && notif.emoji}>
+                          <Show when={displayType === "reaction" && notif.emoji}>
                             <span class="notification-emoji">
                               <Emoji emoji={notif.emoji!} url={notif.emoji_url} />
                             </span>
@@ -406,7 +415,8 @@ export default function Notifications() {
                         </Show>
                       </div>
                     </div>
-                  )}
+                    );
+                  }}
                 </For>
               </div>
               <Show when={hasMore()}>

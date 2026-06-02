@@ -258,10 +258,16 @@ async def _notification_to_response(
         notif_type = "favourite"
     elif notif.type == "renote":
         notif_type = "reblog"
+    elif notif.type == "quote":
+        # quote は Mastodon 標準にない。
+        # 互換性のため "reblog" にマッピング
+        # (Web Push の NOTIFICATION_TYPE_TO_ALERT と同方針)
+        notif_type = "reblog"
 
     return NotificationResponse(
         id=notif.id,
         type=notif_type,
+        nekonoverse_type=notif.type,
         created_at=_to_mastodon_datetime(notif.created_at),
         read=notif.read,
         group_key=f"ungrouped-{notif.id}",
