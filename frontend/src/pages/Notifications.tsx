@@ -356,9 +356,14 @@ export default function Notifications() {
             >
               <div class="notifications-list">
                 <For each={filtered()}>
-                  {(notif) => (
+                  {(notif) => {
+                    // 表示用 type: nekonoverse 拡張の生 type を優先し、
+                    // 無ければ Mastodon マッピング後 type にフォールバック。
+                    // これで quote が reblog に同化せず区別表示できる。
+                    const displayType = notif.nekonoverse_type ?? notif.type;
+                    return (
                     <div class={`notification-item${notif.read ? "" : " unread"}`}>
-                      <div class="notification-icon" ref={(el) => { el.textContent = notifIcon(notif.type); twemojify(el); }} />
+                      <div class="notification-icon" ref={(el) => { el.textContent = notifIcon(displayType); twemojify(el); }} />
                       <div class="notification-body">
                         <div class="notification-meta">
                           <Show when={notif.account}>
@@ -376,9 +381,9 @@ export default function Notifications() {
                             </a>
                           </Show>
                           <span class="notification-type-text">
-                            {t(`notifications.type.${notif.type}` as keyof Dictionary)}
+                            {t(`notifications.type.${displayType}` as keyof Dictionary)}
                           </span>
-                          <Show when={notif.type === "reaction" && notif.emoji}>
+                          <Show when={displayType === "reaction" && notif.emoji}>
                             <span class="notification-emoji">
                               <Emoji emoji={notif.emoji!} url={notif.emoji_url} />
                             </span>
@@ -407,7 +412,8 @@ export default function Notifications() {
                         </Show>
                       </div>
                     </div>
-                  )}
+                    );
+                  }}
                 </For>
               </div>
               <Show when={hasMore()}>

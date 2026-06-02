@@ -267,6 +267,7 @@ async def _notification_to_response(
     return NotificationResponse(
         id=notif.id,
         type=notif_type,
+        nekonoverse_type=notif.type,
         created_at=_to_mastodon_datetime(notif.created_at),
         read=notif.read,
         group_key=f"ungrouped-{notif.id}",

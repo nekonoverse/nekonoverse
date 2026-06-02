@@ -5,6 +5,10 @@ import type { Note } from "./statuses";
 export interface Notification {
   id: string;
   type: string;
+  // サーバ内部の生 type。type は Mastodon 互換のためマッピング後 (quote→reblog,
+  // reaction→favourite 等) が入るが、こちらは Notification 行に格納された生値
+  // (quote / reaction / reply 等を区別したい自家 UI 向け nekonoverse 拡張)。
+  nekonoverse_type?: string;
   created_at: string;
   read: boolean;
   account?: NoteActor;
