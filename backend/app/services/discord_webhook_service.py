@@ -46,7 +46,7 @@ MAX_RETRY_AFTER_SECONDS = 30.0
 # fire-and-forget 配送タスクの強参照保持 (GC 防止)
 _outstanding_tasks: set[asyncio.Task] = set()
 
-# 通知タイプ別の embed 色 (10進)
+# 通知タイプ別の embed 色 (Discord API は 0xRRGGBB 形式の整数)
 NOTIFICATION_COLORS = {
     "mention": 0x4C8AF0,        # blue
     "reply": 0x4C8AF0,
@@ -278,7 +278,13 @@ async def _post_with_retry(
                     if attempt < attempts - 1:
                         await asyncio.sleep(retry_after)
                         continue
-                    return "rate_limited", last_status, "rate limited"
+                    # 全試行 429 のときだけ rate_limited 扱いにする。
+                    # 5xx 混在のあと 429 で終わったケースは失敗とみなす
+                    # (Discord が過負荷時にステータスを切り替えるパターンでも
+                    # 失敗カウンタが進む方が安全寄り)
+                    if saw_only_rate_limit:
+                        return "rate_limited", last_status, "rate limited"
+                    return "failed", last_status, last_error
                 # 429 以外の 4xx は永続失敗として即時終了
                 if 400 <= response.status_code < 500:
                     last_error = (response.text or "")[:500]

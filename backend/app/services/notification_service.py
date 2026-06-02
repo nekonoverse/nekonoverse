@@ -1,5 +1,6 @@
 """通知サービス: 作成、一覧取得、既読化、全消去。"""
 
+import logging
 import uuid
 
 from sqlalchemy import func, select, update
@@ -8,6 +9,8 @@ from sqlalchemy.orm import selectinload
 
 from app.models.note import Note
 from app.models.notification import Notification
+
+logger = logging.getLogger(__name__)
 
 
 async def create_notification(
@@ -87,7 +90,8 @@ async def create_notification(
             sender_id=sender_id,
         )
     except Exception:
-        pass
+        # 通知作成を失敗させないが、観測のためログには残す
+        logger.exception("Failed to dispatch web push notification")
 
     # Discord 互換 Webhook 配送 (失敗で通知作成を失敗させない)
     try:
@@ -95,7 +99,8 @@ async def create_notification(
 
         await dispatch_webhooks(db, notification, sender=sender, note=note)
     except Exception:
-        pass
+        # 通知作成を失敗させないが、観測のためログには残す
+        logger.exception("Failed to dispatch discord webhook notification")
 
     return notification
 
