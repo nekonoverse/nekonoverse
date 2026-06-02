@@ -266,6 +266,7 @@ export const ja = {
   "notifications.type.favourite": "にお気に入りされました",
   "notifications.type.reaction": "がリアクションしました",
   "notifications.type.reply": "に返信されました",
+  "notifications.type.quote": "に引用されました",
   "notifications.tabMentions": "メンション",
   "notifications.tabOther": "その他",
   "mentions.title": "メンション",
