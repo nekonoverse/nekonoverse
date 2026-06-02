@@ -224,6 +224,7 @@ export default function Notifications() {
       case "reblog": return "\u{1F501}";
       case "favourite": return "\u2B50";
       case "reaction": return "\u2728";
+      case "quote": return "\u{1F4AD}";
       default: return "\u{1F514}";
     }
   };

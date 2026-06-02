@@ -268,6 +268,7 @@ export const neko: Dictionary = {
   "notifications.type.favourite": "におきにいりされたにゃ",
   "notifications.type.reaction": "がりあくしょんしたにゃ",
   "notifications.type.reply": "にへんしんされたにゃ",
+  "notifications.type.quote": "にいんようされたにゃ",
   "notifications.tabMentions": "めんしょんにゃ",
   "notifications.tabOther": "そのたにゃ",
   "mentions.title": "めんしょんにゃ",
