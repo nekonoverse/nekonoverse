@@ -1,4 +1,4 @@
-## [20260605-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260605-1) — 2026-06-05
+## [20260608-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260608-1) — 2026-06-08
 
 ### セキュリティ
 
