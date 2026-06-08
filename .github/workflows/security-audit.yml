@@ -39,15 +39,10 @@ jobs:
       - run: |
           pip-audit \
             --ignore-vuln CVE-2026-4539 \
-            --ignore-vuln CVE-2026-3219 \
-            --ignore-vuln PYSEC-2026-89
+            --ignore-vuln CVE-2026-3219
           # CVE-2026-4539: pygments 2.19.2, no fix available yet
           # CVE-2026-3219: pip 26.0.1 自身、修正版未リリース。tar+ZIP 連結ファイル誤認識 (CVSS 4.6
           #   MEDIUM、AV:L + UI:A)。CI は信頼できる PyPI/自前依存のみ install するので実質リスクなし
-          # PYSEC-2026-89: markdown >= 3.8 の html.parser.HTMLParser 未捕捉 AssertionError による DoS。
-          #   修正版未リリース。nekonoverse での markdown 利用は admin 専用経路 (利用規約・お知らせ)
-          #   のみで、入力は admin/staff から、出力は bleach.clean サニタイズ。untrusted markdown は
-          #   受け取らないため attack vector が成立しない。upstream fix は #1047 で追跡。
 
   npm-audit:
     name: npm audit (Node.js)

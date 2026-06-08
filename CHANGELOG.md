@@ -1,3 +1,16 @@
+## [20260608-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260608-1) — 2026-06-08
+
+### セキュリティ
+
+- **markdown DoS (PYSEC-2026-89) の修正版を取り込み `--ignore-vuln` を解除** — Python-Markdown >= 3.8 で細工された HTML 系入力により `html.parser.HTMLParser` が未捕捉 `AssertionError` を出す DoS (CVSS HIGH availability) は upstream の markdown 3.8.1 で修正済み。`backend/uv.lock` は既に 3.10.2 (修正版) を解決しているため、20260520-1 で `security-audit.yml` に追加していた `--ignore-vuln PYSEC-2026-89` と受容理由コメントを削除。将来の `uv lock` 再解決でも脆弱版を引かないよう依存宣言の floor を `markdown>=3.7` → `>=3.8.1` に引き上げ、`uv.lock` の specifier も同期した (#1047, #1076)
+
+### 依存関係
+
+- **starlette 0.52.1 → 1.0.1** — Starlette 初の安定版メジャーリリースを取り込み。FastAPI 0.135.1 は `starlette>=0.46.0` を要求しており 1.0.1 と互換、本体に starlette の直接 import は無く backend / E2E / 連合 / Mastodon クライアント互換テストはすべて green。1.0.1 は不正な `Host` ヘッダを無視して `request.url` を構築する fix を含む (#1075)
+- **aiohttp 3.13.5 → 3.14.0** — Dependabot による定期更新。CI green (#1074)
+
+---
+
 ## [20260602-3](https://github.com/nekonoverse/nekonoverse/releases/tag/20260602-3) — 2026-06-02
 
 ### バグ修正
