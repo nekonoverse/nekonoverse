@@ -1,3 +1,18 @@
+## [20260616-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260616-1) — 2026-06-16
+
+### セキュリティ
+
+依存関係のセキュリティ更新リリース。Dependabot アラート群 (high 5 / medium 7 / low 多数) を解消し、ビルドを壊さず修正できない 1 件を受容理由付きで dismiss した。
+
+- **backend ランタイム依存の更新 (high)** — `cryptography` 46.0.7 → 49.0.0 (#56)、`python-multipart` 0.0.27 → 0.0.32 (#62)、`starlette` 1.0.1 → 1.3.1 (#58/#64)。`pyproject.toml` の制約は据え置き `uv lock --upgrade-package` で解決。cryptography は 3 メジャー跨ぐため `app.utils.crypto` / `app.activitypub.http_signature` の RSA/Ed25519 鍵生成・署名スモークに加え、Misskey (56 tests) / Mastodon (37 tests) との federation interop で HTTP Signature 互換を確認 (#1085)
+- **backend ランタイム依存の更新 (medium/low)** — `aiohttp` 3.14.0 → 3.14.1 (#48–#55)、`bleach` 6.3.0 → 6.4.0 (#68/#69/#70)。bleach #69 (GHSA-g75f-g53v-794x, `linkify(parse_email=True)` の CPU 枯渇) は vulnerable range が `=6.3.0` のみで 6.4.0 へ上げて range 外。`sanitize.py` は `bleach.clean` のみ使用し linkify は自前正規表現のため実到達なしの予防的更新 (#1089)
+- **vite 6.4.3 に更新 (server.fs.deny バイパス等)** — Dependabot アラート #66 (high, GHSA-fx2h-pf6j-xcff, Windows 上の `server.fs.deny` バイパス) / #67 (medium) を解消。devDependency、esbuild は 0.25 系に据え置き vite 6 dev サーバ互換を維持 (#1086)
+- **dompurify 3.4.10 に更新 (XSS advisory 解消)** — `npm audit --omit=dev` で検出される IN_PLACE 系 XSS advisory 群 (GHSA-x4vx-rjvf-j5p4 ほか) を解消。利用箇所は Terms.tsx / Privacy.tsx の `ALLOWED_TAGS`/`ALLOWED_ATTR` 明示呼び出しのみで挙動互換 (#1082)
+- **@babel/core 7.29.7 に更新** — Dependabot アラート #65 (low) を解消。transitive devDependency で本番 bundle に @babel ランタイムは含まれない (#1090)
+- **esbuild の Deno 限定 RCE (GHSA-gv7w-rqvm-qjhr) を tolerable_risk で受容** — devDependency かつ Deno 経由インストール限定の脆弱性で、本プロジェクトは npm + Docker (Node.js) でビルドし Deno を使用しないため実エクスポージャなし。esbuild 0.28.1 への更新は vite 6 の dev サーバ optimizeDeps を破壊し (esbuild を廃せるのは vite 8 だが vite-plugin-solid 非互換でビルドが落ちる)、ビルドを壊さず修正する依存経路が存在しないため dismiss (alert #47)
+
+---
+
 ## [20260608-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260608-1) — 2026-06-08
 
 ### セキュリティ
