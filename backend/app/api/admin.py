@@ -129,6 +129,8 @@ async def get_server_settings(
         timeline_default_limit=int(settings.get("timeline_default_limit", "20")),
         timeline_max_limit=int(settings.get("timeline_max_limit", "40")),
         katex_enabled=settings.get("katex_enabled", "false") == "true",
+        server_listing_enabled=settings.get("server_listing_enabled", "false") == "true",
+        server_listing_url=settings.get("server_listing_url"),
     )
 
 
@@ -154,7 +156,7 @@ async def update_server_settings(
                 await _resolve_pending_users(db, user, value)
         elif key == "invite_create_role":
             await set_setting(db, key, value)
-        elif key in ("push_enabled", "katex_enabled"):
+        elif key in ("push_enabled", "katex_enabled", "server_listing_enabled"):
             await set_setting(db, key, "true" if value else "false")
         elif key in ("timeline_default_limit", "timeline_max_limit"):
             await set_setting(db, key, str(int(value)))
@@ -202,6 +204,8 @@ async def update_server_settings(
         timeline_default_limit=int(settings.get("timeline_default_limit", "20")),
         timeline_max_limit=int(settings.get("timeline_max_limit", "40")),
         katex_enabled=settings.get("katex_enabled", "false") == "true",
+        server_listing_enabled=settings.get("server_listing_enabled", "false") == "true",
+        server_listing_url=settings.get("server_listing_url"),
     )
 
 

@@ -20,6 +20,8 @@ class ServerSettingsResponse(BaseModel):
     timeline_default_limit: int = 20
     timeline_max_limit: int = 40
     katex_enabled: bool = False
+    server_listing_enabled: bool = False
+    server_listing_url: str | None = None
 
 
 class ServerSettingsUpdate(BaseModel):
@@ -31,13 +33,13 @@ class ServerSettingsUpdate(BaseModel):
     registration_open: bool | None = None
     registration_mode: str | None = Field(None, pattern=r"^(open|invite|closed|approval)$")
     invite_create_role: str | None = Field(None, pattern=r"^(admin|moderator|user)$")
-    server_theme_color: str | None = Field(
-        None, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$"
-    )
+    server_theme_color: str | None = Field(None, max_length=7, pattern=r"^#[0-9a-fA-F]{6}$")
     push_enabled: bool | None = None
     timeline_default_limit: int | None = Field(None, ge=1, le=1000)
     timeline_max_limit: int | None = Field(None, ge=1, le=1000)
     katex_enabled: bool | None = None
+    server_listing_enabled: bool | None = None
+    server_listing_url: str | None = Field(None, max_length=2048)
 
 
 class PendingRegistrationResponse(BaseModel):
