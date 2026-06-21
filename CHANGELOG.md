@@ -1,3 +1,15 @@
+## [20260621-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260621-1) — 2026-06-21
+
+### セキュリティ
+
+依存関係のセキュリティ更新リリース。Dependabot アラート 4 件 (high 1 / medium 3) を解消した。いずれもランタイムコードは無変更で、lockfile / 依存宣言の更新のみ。
+
+- **frontend ランタイム依存 `dompurify` を 3.4.11 に更新 (medium)** — `ALLOWED_ATTR` が `setConfig()` 経由で hook clone-guard を回避して恒久汚染される脆弱性 (GHSA-cmwh-pvxp-8882, 3.4.7 の hook 汚染修正の不完全な対応)。利用箇所は Terms.tsx / Privacy.tsx の `ALLOWED_TAGS`/`ALLOWED_ATTR` 明示呼び出しのみで挙動互換。`dependencies` の直接依存を `^3.4.10` → `^3.4.11` (#1095)
+- **frontend devDependency `undici` を 7.28.0 に更新 (high + medium)** — SOCKS5 ProxyAgent で `requestTls` が欠落し TLS 証明書検証がバイパスされる脆弱性 (GHSA-vmh5-mc38-953g, high) と、共有キャッシュの空白バイパスによるクロスユーザー情報漏洩 (GHSA-pr7r-676h-xcf6, medium)。jsdom (devDependency) の transitive 依存で、`overrides` のピンを `^7.24.0` → `^7.28.0` に引き上げて解決。テスト/ビルド専用で本番バンドルには含まれない (#1095)
+- **backend ランタイム依存 `pydantic-settings` を 2.14.2 に更新 (medium)** — `NestedSecretsSettingsSource` が `secrets_dir` 外への symlink を辿り、ローカルファイル読み取りと `secrets_dir_max_size` バイパスを許す脆弱性 (GHSA-4xgf-cpjx-pc3j)。`pyproject.toml` 制約 `>=2.7.0` は満たすため `uv lock --upgrade-package` で当該パッケージのみ更新 (2.13.1 → 2.14.2)、`backend/uv.lock` の差分のみ (#1097)
+
+---
+
 ## [20260616-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260616-1) — 2026-06-16
 
 ### セキュリティ
