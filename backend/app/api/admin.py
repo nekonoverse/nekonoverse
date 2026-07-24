@@ -1,5 +1,6 @@
 """管理およびモデレーション API エンドポイント。"""
 
+import logging
 import uuid
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Query, UploadFile
@@ -46,6 +47,8 @@ from app.schemas.announcement import (
     AnnouncementCreateRequest,
     AnnouncementUpdateRequest,
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -1119,8 +1122,9 @@ async def import_emojis(
                     import_from=import_host,
                 )
                 results["imported"] += 1
-            except Exception as e:
-                results["errors"].append(f"{shortcode}: {str(e)}")
+            except Exception:
+                logger.exception("emoji import failed: %s", shortcode)
+                results["errors"].append(f"{shortcode}: import failed")
 
     await db.commit()
     return results
