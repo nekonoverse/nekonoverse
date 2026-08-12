@@ -31,6 +31,7 @@ valkey_data/
 
 # Temp
 .tmp/
+tmp/
 
 # OS
 .DS_Store
