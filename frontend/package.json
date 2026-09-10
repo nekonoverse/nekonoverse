@@ -26,7 +26,7 @@
     "vite": "^6.4.3",
     "vite-plugin-pwa": "^0.21.0",
     "vite-plugin-solid": "^2.11.0",
-    "vitest": "^4.1.8"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "serialize-javascript": "^7.0.5",
