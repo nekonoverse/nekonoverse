@@ -48,6 +48,29 @@ async def handle_announce(db: AsyncSession, activity: dict):
     if not original:
         original = await fetch_remote_note(db, note_ap_id)
 
+    # 元ノートの作者 (ローカルの場合) が送信者をブロックしていれば記録しない。
+    # instance 全体ではなく、この元ノートの作者だけを対象に判定する。
+    # original は fetch_remote_note 経由だと .actor が eager load されていない
+    # ことがあるため (async では触ると MissingGreenlet になり得る)、
+    # actor_id から明示的に問い合わせる (下の renote 通知と同じやり方)。
+    if original:
+        from sqlalchemy import select as _sel
+
+        from app.models.actor import Actor as _Actor
+
+        original_author = (
+            await db.execute(_sel(_Actor).where(_Actor.id == original.actor_id))
+        ).scalar_one_or_none()
+
+        if original_author and original_author.is_local:
+            from app.services.block_service import is_blocking
+
+            if await is_blocking(db, original_author.id, actor.id):
+                logger.info(
+                    "Dropped Announce from blocked actor %s on note %s", actor_ap_id, note_ap_id
+                )
+                return
+
     # to/cc から公開範囲を決定
     to_list = activity.get("to", [])
     cc_list = activity.get("cc", [])
