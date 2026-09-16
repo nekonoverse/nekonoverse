@@ -112,6 +112,8 @@ async def test_proxy_valid_hmac(app_client, mock_valkey):
     assert resp.headers["content-type"] == "image/png"
     assert "cache-control" in resp.headers
     assert resp.content == b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    assert "sandbox" in resp.headers["content-security-policy"]
+    assert resp.headers["x-content-type-options"] == "nosniff"
     # 上流への接続は接続先 IP を検証するクライアントで行う
     assert factory.call_args.kwargs["ssrf_guard"] is True
 
@@ -312,3 +314,20 @@ async def test_attachment_url_proxied(authed_client, db, mock_valkey):
     media_url = data["media_attachments"][0]["url"]
     assert "/api/v1/media/proxy?url=" in media_url
     assert "media.example" in media_url
+
+
+async def test_proxy_svg_served_sandboxed(app_client, mock_valkey):
+    """SVG は表示用に中継するが、直接開いてもスクリプトが動かないよう sandbox 付きで返す。"""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    with (
+        _upstream([httpx.Response(200, content=svg, headers={"content-type": "image/svg+xml"})]),
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+    ):
+        resp = await app_client.get(
+            "/api/v1/media/proxy", params=_proxy_params("https://remote.example/a.svg")
+        )
+    assert resp.status_code == 200
+    csp = resp.headers["content-security-policy"]
+    assert "sandbox" in csp
+    assert "default-src 'none'" in csp
+    assert "script-src" not in csp

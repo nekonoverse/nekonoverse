@@ -17,6 +17,7 @@ _MAX_SIZE = 20 * 1024 * 1024  # 20 MB
 _ALLOWED_CONTENT_PREFIXES = ("image/", "video/", "audio/")
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
 _TOTAL_TIMEOUT = 30.0
+_PROXY_RESPONSE_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
 
 # Content-Type が信頼できない場合の画像検出用マジックバイトシグネチャ
 _IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
@@ -176,5 +177,8 @@ async def proxy_media(
         headers={
             "Cache-Control": "public, max-age=86400",
             "Content-Length": str(len(body)),
+            # リモート由来の SVG 等を直接開かれても自オリジンでスクリプトを実行させない
+            "Content-Security-Policy": _PROXY_RESPONSE_CSP,
+            "X-Content-Type-Options": "nosniff",
         },
     )
