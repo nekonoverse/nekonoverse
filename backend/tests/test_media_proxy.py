@@ -1,9 +1,8 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
 
 from app.utils.media_proxy import media_proxy_url, verify_proxy_hmac
-
 
 # --- Unit tests for helper ---
 
@@ -63,50 +62,65 @@ async def test_proxy_missing_params(app_client, mock_valkey):
     assert resp.status_code == 422
 
 
+def _proxy_params(url: str) -> dict:
+    """Generate valid proxy query params for the given URL."""
+    from urllib.parse import parse_qs
+    from urllib.parse import urlparse as _urlparse
+    proxy = media_proxy_url(url)
+    parsed = _urlparse(proxy)
+    params = parse_qs(parsed.query)
+    return {"url": params["url"][0], "h": params["h"][0]}
+
+
+def _upstream(responses):
+    """上流サーバーのレスポンスを順に返すモッククライアントに差し替える。
+
+    responses は httpx.Response のリスト、またはリクエストを受け取る関数。
+    戻り値の patch オブジェクトの .requests に受けたリクエストが記録される。
+    """
+    requests: list[httpx.Request] = []
+    queue = list(responses) if isinstance(responses, list) else None
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        requests.append(request)
+        return queue.pop(0) if queue is not None else responses(request)
+
+    p = patch(
+        "app.utils.http_client.make_async_client",
+        side_effect=lambda **kw: httpx.AsyncClient(transport=httpx.MockTransport(handler)),
+    )
+    p.requests = requests
+    return p
+
+
 async def test_proxy_valid_hmac(app_client, mock_valkey):
     """Valid HMAC should proxy the remote content."""
     url = "https://remote.example/image.png"
-    proxy = media_proxy_url(url)
-    # Extract query params
-    from urllib.parse import parse_qs, urlparse
-
-    parsed = urlparse(proxy)
-    params = parse_qs(parsed.query)
-
     fake_response = httpx.Response(
         200,
         content=b"\x89PNG\r\n\x1a\n" + b"\x00" * 100,
         headers={"content-type": "image/png"},
     )
+    upstream = _upstream([fake_response])
 
     with (
-        patch("app.api.mastodon.media_proxy.httpx.AsyncClient") as MockClient,
+        upstream as factory,
         patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
     ):
-        instance = AsyncMock()
-        instance.get = AsyncMock(return_value=fake_response)
-        instance.__aenter__ = AsyncMock(return_value=instance)
-        instance.__aexit__ = AsyncMock(return_value=False)
-        MockClient.return_value = instance
-
-        resp = await app_client.get(
-            "/api/v1/media/proxy",
-            params={"url": params["url"][0], "h": params["h"][0]},
-        )
-        assert resp.status_code == 200
-        assert resp.headers["content-type"] == "image/png"
-        assert "cache-control" in resp.headers
+        resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
+    assert resp.status_code == 200
+    assert resp.headers["content-type"] == "image/png"
+    assert "cache-control" in resp.headers
+    assert resp.content == b"\x89PNG\r\n\x1a\n" + b"\x00" * 100
+    assert "sandbox" in resp.headers["content-security-policy"]
+    assert resp.headers["x-content-type-options"] == "nosniff"
+    # 上流への接続は接続先 IP を検証するクライアントで行う
+    assert factory.call_args.kwargs["ssrf_guard"] is True
 
 
 async def test_proxy_blocks_non_media_content_type(app_client, mock_valkey):
     """Should reject responses with non-media Content-Type."""
     url = "https://remote.example/page.html"
-    proxy = media_proxy_url(url)
-    from urllib.parse import parse_qs, urlparse
-
-    parsed = urlparse(proxy)
-    params = parse_qs(parsed.query)
-
     fake_response = httpx.Response(
         200,
         content=b"<html></html>",
@@ -114,38 +128,11 @@ async def test_proxy_blocks_non_media_content_type(app_client, mock_valkey):
     )
 
     with (
-        patch("app.api.mastodon.media_proxy.httpx.AsyncClient") as MockClient,
+        _upstream([fake_response]),
         patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
     ):
-        instance = AsyncMock()
-        instance.get = AsyncMock(return_value=fake_response)
-        instance.__aenter__ = AsyncMock(return_value=instance)
-        instance.__aexit__ = AsyncMock(return_value=False)
-        MockClient.return_value = instance
-
-        resp = await app_client.get(
-            "/api/v1/media/proxy",
-            params={"url": params["url"][0], "h": params["h"][0]},
-        )
-        assert resp.status_code == 403
-
-
-def _proxy_params(url: str) -> dict:
-    """Generate valid proxy query params for the given URL."""
-    from urllib.parse import parse_qs, urlparse as _urlparse
-    proxy = media_proxy_url(url)
-    parsed = _urlparse(proxy)
-    params = parse_qs(parsed.query)
-    return {"url": params["url"][0], "h": params["h"][0]}
-
-
-def _mock_client(get_side_effect):
-    """Create a mock async client with the given get side_effect."""
-    instance = AsyncMock()
-    instance.get = AsyncMock(side_effect=get_side_effect)
-    instance.__aenter__ = AsyncMock(return_value=instance)
-    instance.__aexit__ = AsyncMock(return_value=False)
-    return instance
+        resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
+    assert resp.status_code == 403
 
 
 async def test_proxy_redirect_follows_and_checks_ssrf(app_client, mock_valkey):
@@ -158,10 +145,9 @@ async def test_proxy_redirect_follows_and_checks_ssrf(app_client, mock_valkey):
     final_resp = httpx.Response(
         200, content=b"\x89PNG" + b"\x00" * 50, headers={"content-type": "image/png"},
     )
-    instance = _mock_client([redirect_resp, final_resp])
 
     with (
-        patch("app.api.mastodon.media_proxy.httpx.AsyncClient", return_value=instance),
+        _upstream([redirect_resp, final_resp]),
         patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
     ):
         resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
@@ -176,17 +162,18 @@ async def test_proxy_redirect_to_private_blocked(app_client, mock_valkey):
     redirect_resp = httpx.Response(
         302, headers={"location": "http://169.254.169.254/metadata"},
     )
-    instance = _mock_client([redirect_resp])
+    upstream = _upstream([redirect_resp])
 
     def is_private(hostname):
         return hostname in ("169.254.169.254",)
 
     with (
-        patch("app.api.mastodon.media_proxy.httpx.AsyncClient", return_value=instance),
+        upstream,
         patch("app.api.mastodon.media_proxy._is_private_host", side_effect=is_private),
     ):
         resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
     assert resp.status_code == 403
+    assert [str(r.url) for r in upstream.requests] == [url]
 
 
 async def test_proxy_relative_redirect(app_client, mock_valkey):
@@ -197,38 +184,116 @@ async def test_proxy_relative_redirect(app_client, mock_valkey):
     final_resp = httpx.Response(
         200, content=b"\x89PNG" + b"\x00" * 50, headers={"content-type": "image/png"},
     )
-    instance = _mock_client([redirect_resp, final_resp])
+    upstream = _upstream([redirect_resp, final_resp])
 
     with (
-        patch("app.api.mastodon.media_proxy.httpx.AsyncClient", return_value=instance),
+        upstream,
         patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
     ):
         resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
     assert resp.status_code == 200
     # 2回目のGETは絶対URLに解決されたURLで呼ばれる
-    second_call_url = instance.get.call_args_list[1][0][0]
-    assert second_call_url == "https://cdn.example/new/image.png"
+    assert str(upstream.requests[1].url) == "https://cdn.example/new/image.png"
 
 
 async def test_proxy_too_many_redirects(app_client, mock_valkey):
     """More than 3 redirects should return 502."""
     url = "https://cdn.example/loop.png"
 
-    redirect_resp = httpx.Response(302, headers={"location": "https://cdn.example/loop.png"})
-    instance = _mock_client([redirect_resp, redirect_resp, redirect_resp])
+    def loop(request):
+        return httpx.Response(302, headers={"location": "https://cdn.example/loop.png"})
 
     with (
-        patch("app.api.mastodon.media_proxy.httpx.AsyncClient", return_value=instance),
+        _upstream(loop),
         patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
     ):
         resp = await app_client.get("/api/v1/media/proxy", params=_proxy_params(url))
     assert resp.status_code == 502
 
 
+async def test_proxy_rejects_oversized_declared_length(app_client, mock_valkey):
+    """Content-Length が上限を超える場合は本文を読まずに 413。"""
+    from app.api.mastodon import media_proxy
+
+    class _NeverRead(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            raise AssertionError("body must not be read")
+            yield b""  # pragma: no cover
+
+    def handler(request):
+        return httpx.Response(
+            200,
+            headers={
+                "content-type": "image/png",
+                "content-length": str(media_proxy._MAX_SIZE + 1),
+            },
+            stream=_NeverRead(),
+        )
+
+    with (
+        _upstream(handler),
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+    ):
+        resp = await app_client.get(
+            "/api/v1/media/proxy", params=_proxy_params("https://big.example/a.png")
+        )
+    assert resp.status_code == 413
+
+
+async def test_proxy_stops_reading_when_stream_exceeds_limit(app_client, mock_valkey):
+    """Content-Length なしで上限を超えて送られてきたら途中で打ち切って 413。"""
+    chunks_sent = 0
+
+    class _Endless(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            nonlocal chunks_sent
+            while True:
+                chunks_sent += 1
+                yield b"\x00" * 1024
+
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "image/png"}, stream=_Endless())
+
+    with (
+        _upstream(handler),
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+        patch("app.api.mastodon.media_proxy._MAX_SIZE", 10 * 1024),
+    ):
+        resp = await app_client.get(
+            "/api/v1/media/proxy", params=_proxy_params("https://big.example/b.png")
+        )
+    assert resp.status_code == 413
+    assert chunks_sent == 11
+
+
+async def test_proxy_total_timeout(app_client, mock_valkey):
+    """少しずつ送り続ける上流は全体の制限時間で打ち切る。"""
+    import asyncio
+
+    class _Slow(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            while True:
+                await asyncio.sleep(0.05)
+                yield b"\x00"
+
+    def handler(request):
+        return httpx.Response(200, headers={"content-type": "image/png"}, stream=_Slow())
+
+    with (
+        _upstream(handler),
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+        patch("app.api.mastodon.media_proxy._TOTAL_TIMEOUT", 0.3),
+    ):
+        resp = await app_client.get(
+            "/api/v1/media/proxy", params=_proxy_params("https://slow.example/c.png")
+        )
+    assert resp.status_code == 504
+
+
 async def test_attachment_url_proxied(authed_client, db, mock_valkey):
     """Remote attachment URLs in API response should be proxied."""
-    from tests.conftest import make_remote_actor, make_note
     from app.models.note_attachment import NoteAttachment
+    from tests.conftest import make_note, make_remote_actor
 
     remote = await make_remote_actor(db, username="media_test", domain="media.example")
     note = await make_note(db, remote, content="With media", local=False)
@@ -249,3 +314,20 @@ async def test_attachment_url_proxied(authed_client, db, mock_valkey):
     media_url = data["media_attachments"][0]["url"]
     assert "/api/v1/media/proxy?url=" in media_url
     assert "media.example" in media_url
+
+
+async def test_proxy_svg_served_sandboxed(app_client, mock_valkey):
+    """SVG は表示用に中継するが、直接開いてもスクリプトが動かないよう sandbox 付きで返す。"""
+    svg = b'<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>'
+    with (
+        _upstream([httpx.Response(200, content=svg, headers={"content-type": "image/svg+xml"})]),
+        patch("app.api.mastodon.media_proxy._is_private_host", return_value=False),
+    ):
+        resp = await app_client.get(
+            "/api/v1/media/proxy", params=_proxy_params("https://remote.example/a.svg")
+        )
+    assert resp.status_code == 200
+    csp = resp.headers["content-security-policy"]
+    assert "sandbox" in csp
+    assert "default-src 'none'" in csp
+    assert "script-src" not in csp

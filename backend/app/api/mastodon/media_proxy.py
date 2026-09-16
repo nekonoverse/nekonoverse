@@ -1,3 +1,5 @@
+import asyncio
+import logging
 from urllib.parse import urljoin, urlparse
 
 import httpx
@@ -7,11 +9,15 @@ from fastapi.responses import Response
 from app.utils.media_proxy import verify_proxy_hmac
 from app.utils.network import is_private_host as _is_private_host
 
+logger = logging.getLogger(__name__)
+
 router = APIRouter(prefix="/api/v1/media", tags=["media_proxy"])
 
 _MAX_SIZE = 20 * 1024 * 1024  # 20 MB
 _ALLOWED_CONTENT_PREFIXES = ("image/", "video/", "audio/")
 _TIMEOUT = httpx.Timeout(10.0, connect=5.0)
+_TOTAL_TIMEOUT = 30.0
+_PROXY_RESPONSE_CSP = "default-src 'none'; img-src data:; style-src 'unsafe-inline'; sandbox"
 
 # Content-Type が信頼できない場合の画像検出用マジックバイトシグネチャ
 _IMAGE_SIGNATURES: list[tuple[bytes, str]] = [
@@ -59,9 +65,53 @@ async def _transform_image(body: bytes, **params) -> tuple[bytes, str]:
             )
             if resp.status_code == 200:
                 return resp.content, resp.headers.get("content-type", "image/webp")
+            logger.warning("Media transform returned HTTP %s", resp.status_code)
     except Exception:
-        pass
+        logger.exception("Media transform failed; serving original image")
     return body, "image/webp"
+
+
+async def _fetch_media(client: httpx.AsyncClient, url: str) -> tuple[str, bytes]:
+    """リダイレクトを各ホップで SSRF 検証しつつ、サイズ上限付きでメディアを取得する。
+
+    全量をメモリに読み込んでからサイズ判定すると巨大なレスポンスでメモリを
+    使い果たすため、ストリーミングで読みながら上限を超えた時点で打ち切る。
+    """
+    current_url = url
+    for _ in range(3):
+        resp = await client.send(client.build_request("GET", current_url), stream=True)
+        try:
+            if resp.status_code in (301, 302, 303, 307, 308):
+                location = resp.headers.get("location")
+                if not location:
+                    raise HTTPException(status_code=502, detail="Redirect without location")
+                # 相対URLを絶対URLに解決
+                resolved = urljoin(current_url, location)
+                redirect_parsed = urlparse(resolved)
+                if redirect_parsed.scheme not in ("http", "https") or not redirect_parsed.hostname:
+                    raise HTTPException(status_code=403, detail="Invalid redirect URL")
+                if _is_private_host(redirect_parsed.hostname):
+                    raise HTTPException(status_code=403, detail="Forbidden redirect host")
+                current_url = resolved
+                continue
+
+            if resp.status_code != 200:
+                raise HTTPException(status_code=502, detail="Upstream returned non-200")
+
+            declared = resp.headers.get("content-length", "")
+            if declared.isdigit() and int(declared) > _MAX_SIZE:
+                raise HTTPException(status_code=413, detail="Response too large")
+            chunks: list[bytes] = []
+            received = 0
+            async for chunk in resp.aiter_bytes():
+                received += len(chunk)
+                if received > _MAX_SIZE:
+                    raise HTTPException(status_code=413, detail="Response too large")
+                chunks.append(chunk)
+            return resp.headers.get("content-type", ""), b"".join(chunks)
+        finally:
+            await resp.aclose()
+    raise HTTPException(status_code=502, detail="Too many redirects")
 
 
 @router.get("/proxy")
@@ -87,51 +137,25 @@ async def proxy_media(
     from app.utils.http_client import make_async_client
 
     async with make_async_client(
-        timeout=_TIMEOUT, follow_redirects=False,
+        ssrf_guard=True, timeout=_TIMEOUT, follow_redirects=False,
     ) as client:
         try:
-            # リダイレクトを手動で追跡し、各ホップでSSRF検証を行う
-            current_url = url
-            resp = None
-            for _ in range(3):
-                resp = await client.get(current_url)
-                if resp.status_code in (301, 302, 303, 307, 308):
-                    location = resp.headers.get("location")
-                    if not location:
-                        raise HTTPException(status_code=502, detail="Redirect without location")
-                    # 相対URLを絶対URLに解決
-                    resolved = urljoin(current_url, location)
-                    redirect_parsed = urlparse(resolved)
-                    if (
-                        redirect_parsed.scheme not in ("http", "https")
-                        or not redirect_parsed.hostname
-                    ):
-                        raise HTTPException(status_code=403, detail="Invalid redirect URL")
-                    if _is_private_host(redirect_parsed.hostname):
-                        raise HTTPException(status_code=403, detail="Forbidden redirect host")
-                    current_url = resolved
-                else:
-                    break
-            else:
-                raise HTTPException(status_code=502, detail="Too many redirects")
+            # 読み取りタイムアウトはチャンク単位のため、少しずつ送り続ける相手に
+            # 接続を占有されないよう全体の制限時間も設ける
+            async with asyncio.timeout(_TOTAL_TIMEOUT):
+                content_type, body = await _fetch_media(client, url)
+        except TimeoutError:
+            raise HTTPException(status_code=504, detail="Upstream fetch timed out")
         except httpx.HTTPError:
             raise HTTPException(status_code=502, detail="Upstream fetch failed")
 
-        if resp.status_code != 200:
-            raise HTTPException(status_code=502, detail="Upstream returned non-200")
-
-        content_type = resp.headers.get("content-type", "")
-        body = resp.content
-
-        if not any(content_type.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
-            # application/octet-stream 等の場合、先頭バイトで画像判定
-            detected = _detect_image_type(body[:12]) if body else None
-            if detected:
-                content_type = detected
-            else:
-                raise HTTPException(status_code=403, detail="Disallowed content type")
-        if len(body) > _MAX_SIZE:
-            raise HTTPException(status_code=413, detail="Response too large")
+    if not any(content_type.startswith(p) for p in _ALLOWED_CONTENT_PREFIXES):
+        # application/octet-stream 等の場合、先頭バイトで画像判定
+        detected = _detect_image_type(body[:12]) if body else None
+        if detected:
+            content_type = detected
+        else:
+            raise HTTPException(status_code=403, detail="Disallowed content type")
 
     # パラメータが指定されており、画像コンテンツかつサービスが設定済みの場合に変換
     from app.config import settings
@@ -153,5 +177,8 @@ async def proxy_media(
         headers={
             "Cache-Control": "public, max-age=86400",
             "Content-Length": str(len(body)),
+            # リモート由来の SVG 等を直接開かれても自オリジンでスクリプトを実行させない
+            "Content-Security-Policy": _PROXY_RESPONSE_CSP,
+            "X-Content-Type-Options": "nosniff",
         },
     )

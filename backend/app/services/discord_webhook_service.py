@@ -254,7 +254,7 @@ async def _post_with_retry(
     last_status: int | None = None
     last_error: str | None = None
     saw_only_rate_limit = True
-    async with make_async_client(timeout=10.0) as client:
+    async with make_async_client(ssrf_guard=True, timeout=10.0) as client:
         attempts = len(RETRY_DELAYS)
         for attempt in range(attempts):
             try:

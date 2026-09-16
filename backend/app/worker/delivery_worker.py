@@ -45,6 +45,7 @@ def _get_http_client(settings) -> httpx.AsyncClient:
         from app.utils.http_client import make_async_client
 
         _http_client = make_async_client(
+            ssrf_guard=True,
             timeout=30.0,
             verify=not settings.skip_ssl_verify,
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
