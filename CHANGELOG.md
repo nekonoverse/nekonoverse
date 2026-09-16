@@ -1,3 +1,23 @@
+## [20260916-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260916-1) — 2026-09-16
+
+### セキュリティ
+
+依存関係のセキュリティ更新リリース。Dependabot が個別に開いていた4件のセキュリティ更新PRを1本に統合し、あわせて `npm audit` が検出した devDependency の脆弱性3件も解消した (#1122)。いずれもテスト/ビルド専用の依存で、本番バンドルおよびバックエンドには含まれない (`npm audit --omit=dev` は更新前から 0 件)。
+
+- **frontend devDependency `fast-uri` を 3.1.7 に更新 (high)** — ホスト名の IDN 正規化スキップ・パーセントエンコードされたスキームの正規化・IP リテラルの括弧不整合によるホスト混同 (GHSA-5jgf-p345-68v8, GHSA-jqff-g426-hqxp, GHSA-58mr-gqgx-xq4g)、ホスト名の多重パーセントデコード・不正な IPv6 正規化による SSRF (GHSA-fph4-wmhf-6fwf, GHSA-f65p-4m7j-42xc)、`serialize()` でのポート未検証による authority インジェクション (GHSA-qw65-cvwx-89v3) を修正。`ajv` (`vite-plugin-pwa` 系列) の transitive 依存で、`overrides` の下限を `^3.1.7` に引き上げ (3.1.5 → 3.1.7) (#1118, #1122)
+- **frontend devDependency `browserslist` を 4.28.9 に更新 (high)** — 異なるクエリ結果のキャッシュが解放されないことによるメモリ枯渇 (GHSA-c83g-rgw3-j3cx) と、カスタム stats ファイル読み込み時のクラッシュ/プロトタイプ書き込み (GHSA-73wf-gq98-2v4g) を修正 (4.28.1 → 4.28.9) (#1119, #1122)
+- **frontend devDependency `brace-expansion` を更新 (high)** — 展開長・中間配列の上限欠如による DoS を修正 (GHSA-mh99-v99m-4gvg, GHSA-rgw5-rvv9-x895)。`overrides` の下限をトップレベル系列 `^5.0.9`、`filelist` 配下の系列 `^2.1.4` に引き上げ (5.0.8 → 5.0.12, 2.1.2 → 2.1.7) (#1122)
+- **frontend devDependency `lodash` を 4.18.1 に更新 (high)** — `_.template` の imports キー名によるコードインジェクション (GHSA-r5fr-rjxr-66jc) と、`_.unset`/`_.omit` の配列パスによるプロトタイプ汚染 (GHSA-f23m-r3pf-42rh) を修正 (4.17.23 → 4.18.1) (#1122)
+- **frontend devDependency `nanoid` を 3.3.19 に更新 (high)** — size 0 指定時のカスタムジェネレータの無限ループを修正 (GHSA-2v37-7h3g-55p8) (3.3.16 → 3.3.19) (#1122)
+- **frontend devDependency `vitest` / `@vitest/mocker` を 4.1.11 に更新 (moderate)** — `@vitest/mocker` のリダイレクトモックにおけるパストラバーサル/任意ファイル読み取りを修正 (GHSA-82fw-gwwq-j7x9) (4.1.8 → 4.1.11) (#1120, #1122)
+- **frontend devDependency `baseline-browser-mapping` を 2.11.21 に更新 (moderate)** — 不正な入力でプロセスが終了する DoS を修正 (GHSA-w5vr-8v7q-w6rv / CVE-2026-45819)。`browserslist` の transitive 依存 (2.10.0 → 2.11.21) (#1121, #1122)
+
+### インフラ
+
+- CI から nekonaudit (`claude-review` workflow) を除去 (#1117)
+
+---
+
 ## [20260810-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260810-1) — 2026-08-10
 
 ### セキュリティ
