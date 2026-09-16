@@ -228,7 +228,11 @@ def render_note(note: Note) -> dict:
     tag = []
     if hasattr(note, "mentions") and note.mentions:
         for m in note.mentions:
-            name = f"@{m['username']}@{m['domain']}" if m.get("domain") else f"@{m['username']}"
+            # 受信したリモートノートのメンションは {"ap_id", "name"} 形式で username を持たない
+            if m.get("username"):
+                name = f"@{m['username']}@{m['domain']}" if m.get("domain") else f"@{m['username']}"
+            else:
+                name = m.get("name") or m["ap_id"]
             tag.append(
                 {
                     "type": "Mention",

@@ -168,3 +168,36 @@ def verify_recovery_code(
         remaining = hashed_codes[:matched_index] + hashed_codes[matched_index + 1 :]
         return True, remaining
     return False, hashed_codes
+
+
+# パスワードを知る攻撃者は保留トークンを何度でも取り直せるため、
+# トークン単位とは別にユーザー単位でも TOTP の失敗回数を制限する
+TOTP_USER_MAX_FAILURES = 10
+TOTP_USER_LOCKOUT_TTL = 900  # 15 minutes
+
+
+def _user_failure_key(user_id: uuid.UUID) -> str:
+    return f"totp_failures:user:{user_id}"
+
+
+async def is_totp_locked(user_id: uuid.UUID) -> bool:
+    """ユーザー単位の TOTP 失敗回数が上限に達しているか。"""
+    from app.valkey_client import valkey
+
+    failures = await valkey.get(_user_failure_key(user_id))
+    return failures is not None and int(failures) >= TOTP_USER_MAX_FAILURES
+
+
+async def record_totp_failure(user_id: uuid.UUID) -> None:
+    """TOTP の失敗をユーザー単位で記録する (最初の失敗からの固定ウィンドウ)。"""
+    from app.valkey_client import valkey
+
+    key = _user_failure_key(user_id)
+    await valkey.incr(key)
+    await valkey.expire(key, TOTP_USER_LOCKOUT_TTL, nx=True)
+
+
+async def clear_totp_failures(user_id: uuid.UUID) -> None:
+    from app.valkey_client import valkey
+
+    await valkey.delete(_user_failure_key(user_id))

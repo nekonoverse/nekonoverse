@@ -207,6 +207,15 @@ async def reset_password(
         body.password.encode(), bcrypt.gensalt()
     ).decode()
     user.password_reset_token = None
+
+    # パスワードを奪われた状態からの復旧経路なので、既存のログイン状態をすべて無効にする
+    from app.services.moderation_service import (
+        invalidate_user_sessions,
+        revoke_user_oauth_tokens,
+    )
+
+    await revoke_user_oauth_tokens(db, user.id)
     await db.commit()
+    await invalidate_user_sessions(user.id)
 
     return {"message": "Password has been reset successfully"}

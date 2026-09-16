@@ -117,6 +117,17 @@ async def has_permission(db: AsyncSession, user: User, permission: str) -> bool:
     return bool(perms.get(permission, False))
 
 
+async def has_any_permission(db: AsyncSession, user: User) -> bool:
+    """ロール経由でいずれかのモデレーター権限を持っているか確認する。"""
+    role = await get_role(db, user.role)
+    if not role:
+        return user.is_admin
+    if role.is_admin:
+        return True
+    perms = role.permissions or {}
+    return any(perms.get(p) for p in MODERATOR_PERMISSIONS)
+
+
 async def get_quota_for_user(db: AsyncSession, user: User) -> int:
     """ユーザーのロールに応じたquota_bytesを返す。0 = 無制限。"""
     role = await get_role(db, user.role)

@@ -251,7 +251,8 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
     from app.services.note_service import get_note_by_id
 
     note = await get_note_by_id(db, note_id)
-    if not note or note.visibility not in ("public", "unlisted"):
+    # リモートノートの正本は元サーバーにあり、このオリジンで AP 表現を返すべきではない
+    if not note or not note.local or note.visibility not in ("public", "unlisted"):
         raise HTTPException(status_code=404, detail="Note not found")
 
     if not is_ap_request(request):
@@ -369,12 +370,19 @@ async def _check_inbox_rate_limit(request: Request) -> None:
 async def _read_inbox_body(request: Request) -> bytes:
     """H-4: サイズ制限付きInboxボディ読み取り"""
     content_length = request.headers.get("content-length")
+    if content_length is not None and not content_length.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid Content-Length")
     if content_length and int(content_length) > MAX_INBOX_BODY_SIZE:
         raise HTTPException(status_code=413, detail="Request body too large")
-    body = await request.body()
-    if len(body) > MAX_INBOX_BODY_SIZE:
-        raise HTTPException(status_code=413, detail="Request body too large")
-    return body
+    # chunked 転送では Content-Length がないため、読みながら上限を確認する
+    chunks: list[bytes] = []
+    received = 0
+    async for chunk in request.stream():
+        received += len(chunk)
+        if received > MAX_INBOX_BODY_SIZE:
+            raise HTTPException(status_code=413, detail="Request body too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("/users/{username}/inbox")

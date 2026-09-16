@@ -83,6 +83,20 @@ async def get_current_user(
     return user
 
 
+def _require_admin_scope(request: Request) -> None:
+    """OAuth トークンで管理 API を呼ぶ場合は admin:read / admin:write スコープを要求する。
+
+    管理者が read だけを許可したアプリに管理操作まで許してしまわないようにするため。
+    セッション認証 (oauth_scopes 未設定) は対象外。
+    """
+    scopes = getattr(request.state, "oauth_scopes", None)
+    if scopes is None:
+        return
+    needed = "admin:read" if request.method in ("GET", "HEAD", "OPTIONS") else "admin:write"
+    if not any(s == needed or s.startswith(f"{needed}:") for s in scopes):
+        raise HTTPException(status_code=403, detail=f"Insufficient scope: {needed} required")
+
+
 async def get_staff_user(
     request: Request,
     db: AsyncSession = Depends(get_db),
@@ -90,6 +104,24 @@ async def get_staff_user(
     user = await get_current_user(request, db)
     if not user.is_staff:
         raise HTTPException(status_code=403, detail="Staff only")
+    _require_admin_scope(request)
+    return user
+
+
+async def get_moderation_staff(
+    request: Request,
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """管理者、またはいずれかのモデレーター権限を持つスタッフであることを確認する。
+
+    is_staff はロールが user 以外なら真になるため、権限を何も持たないカスタムロールを
+    除外するのに使う。
+    """
+    user = await get_staff_user(request, db)
+    from app.services.role_service import has_any_permission
+
+    if not await has_any_permission(db, user):
+        raise HTTPException(status_code=403, detail="Permission denied")
     return user
 
 
@@ -103,9 +135,11 @@ def get_permitted_staff(permission: str):
     ) -> User:
         user = await get_current_user(request, db)
         if user.is_admin:
+            _require_admin_scope(request)
             return user
         if not user.is_staff:
             raise HTTPException(status_code=403, detail="Staff access required")
+        _require_admin_scope(request)
         from app.services.role_service import has_permission
 
         if not await has_permission(db, user, permission):
@@ -122,6 +156,7 @@ async def get_admin_user(
     user = await get_current_user(request, db)
     if not user.is_admin:
         raise HTTPException(status_code=403, detail="Admin only")
+    _require_admin_scope(request)
     return user
 
 

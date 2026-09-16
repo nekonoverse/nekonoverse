@@ -120,7 +120,13 @@ async def authenticate_user(db: AsyncSession, username: str, password: str) -> U
     if user.is_system:
         await asyncio.to_thread(_bcrypt.checkpw, password.encode(), _dummy_hash)
         return None
-    valid = await asyncio.to_thread(_bcrypt.checkpw, password.encode(), user.password_hash.encode())
+    stored_hash = user.password_hash or ""
+    if not stored_hash.startswith("$2"):
+        # 削除済み ("!deleted") 等のログイン不可アカウント。bcrypt に渡すと例外になり、
+        # 応答時間や 500 で存在が分かってしまうため、存在しないユーザーと同じ扱いにする
+        await asyncio.to_thread(_bcrypt.checkpw, password.encode(), _dummy_hash)
+        return None
+    valid = await asyncio.to_thread(_bcrypt.checkpw, password.encode(), stored_hash.encode())
     if not valid:
         return None
     return user

@@ -69,6 +69,16 @@ async def test_nodeinfo_registration_closed(app_client, db):
     assert data["openRegistrations"] is False
 
 
+async def test_nodeinfo_registration_modes(app_client, db):
+    from app.services.server_settings_service import set_setting
+
+    for mode, expected in [("invite", False), ("approval", True), ("open", True)]:
+        await set_setting(db, "registration_mode", mode)
+        await db.commit()
+        resp = await app_client.get("/nodeinfo/2.0")
+        assert resp.json()["openRegistrations"] is expected, mode
+
+
 async def test_nodeinfo_metadata(app_client):
     resp = await app_client.get("/nodeinfo/2.0")
     data = resp.json()

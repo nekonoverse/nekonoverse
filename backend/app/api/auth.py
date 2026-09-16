@@ -1002,10 +1002,19 @@ async def totp_verify(
 
     from app.services.totp_service import (
         advance_last_totp_counter,
+        clear_totp_failures,
         current_time_step,
         decrypt_secret,
+        is_totp_locked,
+        record_totp_failure,
         verify_totp_code_with_counter,
     )
+
+    if await is_totp_locked(user.id):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many TOTP attempts. Please wait and try again.",
+        )
 
     secret = decrypt_secret(user.totp_secret)
     code = body.code.strip().replace("-", "")
@@ -1021,6 +1030,7 @@ async def totp_verify(
         if not advanced:
             await valkey.incr(attempts_key)
             await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
+            await record_totp_failure(user.id)
             raise HTTPException(status_code=401, detail="Invalid TOTP code")
         await db.commit()
     elif user.totp_recovery_codes:
@@ -1036,6 +1046,7 @@ async def totp_verify(
             # 失敗時に試行カウンターをインクリメント
             await valkey.incr(attempts_key)
             await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
+            await record_totp_failure(user.id)
             raise HTTPException(
                 status_code=401,
                 detail="Invalid TOTP code",
@@ -1049,10 +1060,12 @@ async def totp_verify(
         # 失敗時に試行カウンターをインクリメント
         await valkey.incr(attempts_key)
         await valkey.expire(attempts_key, TOTP_LOCKOUT_TTL)
+        await record_totp_failure(user.id)
         raise HTTPException(status_code=401, detail="Invalid TOTP code")
 
     # 検証成功 — 試行カウンターと保留中トークンをクリーンアップ
     await valkey.delete(attempts_key)
+    await clear_totp_failures(user.id)
     await valkey.delete(f"totp_pending:{body.totp_token}")
 
     from app.services.session_service import create_session_with_metadata, record_login

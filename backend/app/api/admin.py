@@ -8,7 +8,13 @@ from sqlalchemy import func, select, union
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.dependencies import get_admin_user, get_db, get_permitted_staff, get_staff_user
+from app.dependencies import (
+    get_admin_user,
+    get_db,
+    get_moderation_staff,
+    get_permitted_staff,
+    get_staff_user,
+)
 from app.models.actor import Actor
 from app.models.delivery import DeliveryJob
 from app.models.follow import Follow
@@ -695,9 +701,9 @@ async def force_note_sensitive(
 
 @router.get("/log", response_model=list[ModerationLogResponse])
 async def get_moderation_log(
-    user: User = Depends(get_staff_user),
+    user: User = Depends(get_moderation_staff),
     db: AsyncSession = Depends(get_db),
-    limit: int = Query(default=50, le=100),
+    limit: int = Query(default=50, ge=1, le=100),
 ):
     result = await db.execute(
         select(ModerationLog)

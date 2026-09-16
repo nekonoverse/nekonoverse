@@ -365,3 +365,35 @@ async def test_undo_emoji_react_without_ap_id(db, test_user, mock_valkey):
     assert result.scalar_one_or_none() is None
     await db.refresh(note)
     assert note.reactions_count == 0
+
+
+async def test_handle_like_invalid_misskey_reaction_falls_back(db, test_user, mock_valkey):
+    """絵文字でない / 長すぎる _misskey_reaction はそのまま保存しない。"""
+    from sqlalchemy import select
+
+    from app.activitypub.handlers.like import handle_like
+    from app.models.reaction import Reaction
+
+    note = await make_note(db, test_user.actor)
+    for i, reaction in enumerate(["x" * 600, f":{'a' * 600}:", "not an emoji", 123]):
+        remote = await make_remote_actor(db, username=f"bad{i}", domain=f"bad{i}.example")
+        await handle_like(db, {
+            "type": "Like",
+            "id": f"http://bad{i}.example/likes/1",
+            "actor": remote.ap_id,
+            "object": note.ap_id,
+            "_misskey_reaction": reaction,
+        })
+
+    rows = (await db.execute(select(Reaction).where(Reaction.note_id == note.id))).scalars()
+    assert sorted(r.emoji for r in rows) == ["⭐"] * 4
+
+
+async def test_inbox_rejects_non_numeric_content_length(app_client, mock_valkey):
+    resp = await app_client.post(
+        "/inbox",
+        content=b"{}",
+        headers={"Content-Type": "application/activity+json", "Content-Length": "abc"},
+    )
+    assert resp.status_code == 400
+    assert resp.json()["detail"] == "Invalid Content-Length"
