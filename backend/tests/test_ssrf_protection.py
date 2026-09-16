@@ -8,7 +8,6 @@ import pytest
 
 from app.utils.network import is_private_host, is_safe_url
 
-
 # --- Unit tests for shared SSRF utility ---
 
 
@@ -57,12 +56,12 @@ async def test_signed_get_allows_public_url(db):
     fake_resp = httpx.Response(200, json={"type": "Person"})
     mock_client = AsyncMock()
     mock_client.get = AsyncMock(return_value=fake_resp)
-    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-    mock_client.__aexit__ = AsyncMock(return_value=False)
 
     with (
         patch("app.utils.network.is_safe_url", return_value=True),
-        patch("app.utils.http_client.httpx.AsyncClient", return_value=mock_client),
+        patch(
+            "app.services.actor_service._get_shared_http_client", return_value=mock_client
+        ),
     ):
         result = await _signed_get(db, "https://remote.example.com/users/alice")
     assert result is not None

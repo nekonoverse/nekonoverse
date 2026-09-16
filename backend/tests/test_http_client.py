@@ -25,8 +25,15 @@ class TestGetProxyUrl:
             assert get_proxy_url() == "http://proxy:3128"
 
 
+_PROXY_ENV_VARS = ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY", "NO_PROXY")
+
+
 class TestMakeAsyncClient:
-    def test_no_proxy_when_not_configured(self):
+    def test_no_proxy_when_not_configured(self, monkeypatch):
+        # use_proxy=True では環境変数の NO_PROXY 等も httpx が読むため、テスト環境の影響を除く
+        for name in _PROXY_ENV_VARS:
+            monkeypatch.delenv(name, raising=False)
+            monkeypatch.delenv(name.lower(), raising=False)
         with patch("app.utils.http_client.settings") as mock:
             mock.https_proxy = None
             mock.http_proxy = None
@@ -80,6 +87,19 @@ class TestMakeAsyncClient:
             client = make_async_client(use_proxy=False, timeout=10.0)
             # proxy=None is passed, so _mounts should be empty
             assert len(client._mounts) == 0
+
+    def test_use_proxy_false_ignores_proxy_env(self, monkeypatch):
+        """環境変数にプロキシがあっても use_proxy=False では使わない。"""
+        monkeypatch.setenv("HTTP_PROXY", "http://env-proxy:3128")
+        monkeypatch.setenv("HTTPS_PROXY", "http://env-proxy:3128")
+        monkeypatch.setenv("NO_PROXY", "internal")
+        with patch("app.utils.http_client.settings") as mock:
+            mock.https_proxy = None
+            mock.http_proxy = None
+            client = make_async_client(use_proxy=False, timeout=10.0)
+            assert len(client._mounts) == 0
+            face = make_face_detect_client()
+            assert len(face._mounts) == 0
 
 
 class TestMakeFaceDetectClient:

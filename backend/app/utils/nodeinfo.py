@@ -75,11 +75,15 @@ async def _fetch_software(
 ) -> tuple[str | None, str | None, str | None]:
     """リモート nodeinfo からソフトウェア名、バージョン、インスタンス名を取得する。"""
     try:
-        from app.utils.http_client import USER_AGENT
+        from app.config import settings
+        from app.utils.http_client import make_async_client
         from app.utils.network import is_safe_url
-        async with httpx.AsyncClient(
-            timeout=5, follow_redirects=False, verify=False,
-            headers={"User-Agent": USER_AGENT},
+
+        async with make_async_client(
+            ssrf_guard=True,
+            timeout=5,
+            follow_redirects=False,
+            verify=not settings.skip_ssl_verify,
         ) as client:
             # ステップ 1: nodeinfo URL をディスカバリ
             wellknown_url = f"https://{domain}/.well-known/nodeinfo"
