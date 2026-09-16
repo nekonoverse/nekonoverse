@@ -234,10 +234,12 @@ async def login(
 
     user = await authenticate_user(db, body.username, body.password)
     if user is None:
+        # 失敗のたびに期限を延ばすと、少ない試行で特定ユーザーのロックを維持できてしまうため
+        # 最初の失敗から LOGIN_LOCKOUT_TTL の固定ウィンドウで数える
         await valkey.incr(attempts_key)
-        await valkey.expire(attempts_key, LOGIN_LOCKOUT_TTL)
+        await valkey.expire(attempts_key, LOGIN_LOCKOUT_TTL, nx=True)
         await valkey.incr(username_key)
-        await valkey.expire(username_key, LOGIN_LOCKOUT_TTL)
+        await valkey.expire(username_key, LOGIN_LOCKOUT_TTL, nx=True)
         raise HTTPException(
             status_code=401,
             detail="Invalid username or password",

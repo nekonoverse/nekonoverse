@@ -63,6 +63,10 @@ services:
     command: >
       sh -c "alembic upgrade head && python -m scripts.check_schema && uvicorn app.main:app --host 0.0.0.0 --port 8000 --workers 4"
     environment:
+      # app は内部ネットワークにのみ expose し、nginx が渡す X-Forwarded-For /
+      # X-Forwarded-Proto を信頼してクライアント IP とスキームを復元する。
+      # app のポートをホストや他ネットワークに公開する場合は nginx の IP に絞ること
+      FORWARDED_ALLOW_IPS: "*"
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
       VALKEY_URL: valkey://valkey:6379/0
       DOMAIN: ${DOMAIN}

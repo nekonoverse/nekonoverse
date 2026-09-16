@@ -72,6 +72,20 @@ async def test_login_wrong_password(app_client, test_user, mock_valkey):
     assert resp.status_code == 401
 
 
+async def test_login_failure_uses_fixed_lockout_window(app_client, test_user, mock_valkey):
+    """失敗時にロックアウト期限を延長しない (固定ウィンドウ) こと、IP ごとに数えること。"""
+    resp = await app_client.post("/api/v1/auth/login", json={
+        "username": "testuser", "password": "wrongpassword"
+    })
+    assert resp.status_code == 401
+    expire_calls = {
+        c.args[0]: c for c in mock_valkey.expire.call_args_list
+        if str(c.args[0]).startswith("login_attempts:")
+    }
+    assert set(expire_calls) == {"login_attempts:127.0.0.1", "login_attempts:user:testuser"}
+    assert all(c.kwargs.get("nx") is True for c in expire_calls.values())
+
+
 async def test_login_nonexistent_user(app_client, mock_valkey):
     resp = await app_client.post("/api/v1/auth/login", json={
         "username": "nobody", "password": "password1234"
