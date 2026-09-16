@@ -211,7 +211,7 @@ server {
         proxy_pass http://backend;
         proxy_set_header Host $host;
         proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-For $remote_addr;
         proxy_set_header X-Forwarded-Proto $scheme;
     }
 
@@ -252,6 +252,14 @@ server {
     }
 }
 ```
+
+!!! note "クライアント IP の受け渡し"
+    ログイン試行制限やセッション一覧の IP は、uvicorn が `X-Forwarded-For` から復元したクライアント IP を使います。
+    uvicorn は既定で `127.0.0.1` からの `X-Forwarded-For` だけを信頼し、その先頭の値を採用するため、nginx では
+    `$proxy_add_x_forwarded_for` ではなく `$remote_addr` を渡してください。nginx の前段に Cloudflare Tunnel 等の
+    プロキシがある場合は、`set_real_ip_from` (前段プロキシのアドレスのみ) と `real_ip_header X-Forwarded-For;`
+    `real_ip_recursive on;` で `$remote_addr` を実際のクライアント IP に置き換えます (`nginx/prod.conf` 参照)。
+    uvicorn を UDS で動かす場合は環境変数 `FORWARDED_ALLOW_IPS="*"` が必要です。
 
 ### systemd サービス例
 
