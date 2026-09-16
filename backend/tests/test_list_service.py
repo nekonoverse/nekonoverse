@@ -205,6 +205,43 @@ async def test_list_timeline_basic(db, test_user):
     assert notes[0].content == "Hello from list"
 
 
+async def test_list_timeline_followers_only_requires_follow(db, test_user):
+    """フォローしていないリストメンバーの followers 限定ノートは表示しない。"""
+    from datetime import datetime, timezone
+
+    lst = await create_list(db, test_user, "FO")
+    followed = _make_actor(username="followedposter")
+    stranger = _make_actor(username="strangerposter")
+    db.add_all([followed, stranger])
+    await db.commit()
+    await add_list_member(db, lst, followed)
+    await add_list_member(db, lst, stranger)
+    db.add(Follow(follower_id=test_user.actor_id, following_id=followed.id, accepted=True))
+
+    now = datetime.now(timezone.utc)
+    for actor, visibility, content in [
+        (followed, "followers", "followed-fo"),
+        (stranger, "followers", "stranger-fo"),
+        (stranger, "public", "stranger-public"),
+        (followed, "direct", "followed-dm"),
+    ]:
+        db.add(
+            Note(
+                id=uuid.uuid4(),
+                ap_id=f"https://localhost/notes/{uuid.uuid4()}",
+                actor_id=actor.id,
+                content=content,
+                visibility=visibility,
+                local=True,
+                published=now,
+            )
+        )
+    await db.commit()
+
+    notes = await get_list_timeline(db, lst, test_user, limit=20)
+    assert sorted(n.content for n in notes) == ["followed-fo", "stranger-public"]
+
+
 async def test_list_timeline_replies_policy_none(db, test_user):
     from datetime import datetime, timezone
 
@@ -344,8 +381,40 @@ async def test_get_list_ids_for_actor(db, test_user):
     await add_list_member(db, lst2, actor)
     await db.commit()
 
-    list_ids = await get_list_ids_for_actor(db, actor.id)
+    list_ids = await get_list_ids_for_actor(db, actor.id, "public")
     assert set(list_ids) == {lst1.id, lst2.id}
+
+
+async def test_get_list_ids_for_actor_followers_requires_follow(db, test_user, test_user_b):
+    """followers 限定ノートはリスト所有者がフォローしているリストにだけ配信する。"""
+    followed = await create_list(db, test_user, "Followed")
+    not_followed = await create_list(db, test_user_b, "NotFollowed")
+    actor = _make_actor(username="fomember")
+    db.add(actor)
+    await db.commit()
+    await add_list_member(db, followed, actor)
+    await add_list_member(db, not_followed, actor)
+    db.add(Follow(follower_id=test_user.actor_id, following_id=actor.id, accepted=True))
+    await db.commit()
+
+    assert await get_list_ids_for_actor(db, actor.id, "followers") == [followed.id]
+    assert await get_list_ids_for_actor(db, actor.id, "direct") == []
+    assert set(await get_list_ids_for_actor(db, actor.id, "unlisted")) == {
+        followed.id,
+        not_followed.id,
+    }
+
+
+async def test_get_list_ids_for_actor_pending_follow_excluded(db, test_user):
+    lst = await create_list(db, test_user, "Pending")
+    actor = _make_actor(username="pendingmem")
+    db.add(actor)
+    await db.commit()
+    await add_list_member(db, lst, actor)
+    db.add(Follow(follower_id=test_user.actor_id, following_id=actor.id, accepted=False))
+    await db.commit()
+
+    assert await get_list_ids_for_actor(db, actor.id, "followers") == []
 
 
 # -- get_user_lists_for_actor --

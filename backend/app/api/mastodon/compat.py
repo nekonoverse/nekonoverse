@@ -174,7 +174,11 @@ async def list_favourites(
     from app.api.mastodon.statuses import notes_to_responses
     from app.models.note import Note
     from app.models.reaction import Reaction
-    from app.services.note_service import _note_load_options, get_reaction_summaries
+    from app.services.note_service import (
+        _note_load_options,
+        filter_visible_notes,
+        get_reaction_summaries,
+    )
 
     result = await db.execute(
         select(Reaction.note_id)
@@ -194,6 +198,7 @@ async def list_favourites(
     notes_map = {n.id: n for n in notes_result.scalars().all()}
     # ID順序を維持
     notes = [notes_map[nid] for nid in note_ids if nid in notes_map]
+    notes = await filter_visible_notes(db, notes, user.actor_id)
 
     reactions_map = await get_reaction_summaries(db, [n.id for n in notes], user.actor_id)
     return await notes_to_responses(notes, reactions_map, db, actor_id=user.actor_id)

@@ -443,7 +443,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         )
 
         exclusive_user_ids = await get_exclusive_list_user_actor_ids(db, actor.id)
-        list_ids = await get_list_ids_for_actor(db, actor.id)
+        list_ids = await get_list_ids_for_actor(db, actor.id, visibility)
 
         pipe = valkey_client.pipeline()
         if visibility == "public":
