@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, patch
 from app.models.actor import Actor
 from app.models.follow import Follow
 from app.services.proxy_service import (
-    get_system_actor_ids,
     get_proxy_account,
+    get_system_actor_ids,
     has_real_local_follower,
     is_proxy_subscribed,
     proxy_subscribe,
@@ -234,19 +234,19 @@ async def test_has_real_local_follower_true_when_real_user(db):
 # -- get_system_actor_ids --
 
 
-async def test_get_system_actor_ids(db):
-    # Valkeyキャッシュをリセットしてテスト間の汚染を防止
-    from app.services.proxy_service import _SYSTEM_IDS_VALKEY_KEY
-    from app.valkey_client import valkey
-
-    await valkey.delete(_SYSTEM_IDS_VALKEY_KEY)
-
+async def test_get_system_actor_ids(db, mock_valkey):
+    """get_system_actor_ids は Valkey に「マルチワーカー間で共有」するキャッシュを
+    持つ (本番ではどのワーカーも同一 DB を見るため妥当)。だが pytest-xdist は
+    ワーカーごとに別々の Postgres DB を使う一方 Valkey は 1 台を共有するため、
+    実 Valkey に触ると他ワーカーが書いたキャッシュを読んでしまい結果が不安定になる。
+    mock_valkey でこのテストの DB だけを見るようにする。
+    """
     await ensure_system_accounts(db)
     ids = await get_system_actor_ids(db)
-    assert len(ids) >= 2  # instance.actor + system.proxy
 
     proxy_user = await get_proxy_actor(db)
-    assert proxy_user.actor.id in ids
+    instance_actor = await ensure_system_account(db, "instance.actor", "Instance Actor")
+    assert ids == {proxy_user.actor.id, instance_actor.actor.id}
 
 
 # -- create.py フィルタリング統合テスト --

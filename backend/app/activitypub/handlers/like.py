@@ -106,6 +106,17 @@ async def _save_reaction(
         logger.info("Note not found for reaction: %s", note_ap_id)
         return
 
+    # ノート作者 (ローカルの場合) が送信者をブロックしていれば記録しない。
+    # instance 全体ではなく、このノートの作者だけを対象に判定する。
+    if note.actor and note.actor.is_local:
+        from app.services.block_service import is_blocking
+
+        if await is_blocking(db, note.actor_id, actor.id):
+            logger.info(
+                "Dropped reaction from blocked actor %s on note %s", actor_ap_id, note_ap_id
+            )
+            return
+
     # 重複をチェック
     existing = await db.execute(
         select(Reaction).where(

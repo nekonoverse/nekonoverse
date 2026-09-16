@@ -168,6 +168,45 @@ class AppCreateRequest(BaseModel):
     website: str | None = None
 
 
+# admin:* はセルフサービス登録された OAuth クライアントには一切許可しない。
+# アプリ登録に審査がなく誰でも scopes="admin:write" を宣言できるため、
+# 制限しないと管理者アカウントに consent させるフィッシングで管理APIの
+# 書き込み権限まで奪えてしまう (通常の read/write スコープと違い user.is_admin
+# チェックの「後段」の防御にしかならず、正規の管理者自身が騙されると無力)。
+_RESTRICTED_SCOPE_PREFIXES = ("admin",)
+
+
+def _scope_tokens(scope_str: str | None) -> list[str]:
+    return (scope_str or "").split()
+
+
+def _has_restricted_scope(scope_str: str | None) -> bool:
+    return any(
+        token.split(":", 1)[0] in _RESTRICTED_SCOPE_PREFIXES
+        for token in _scope_tokens(scope_str)
+    )
+
+
+def _validate_requested_scope(app: OAuthApplication, requested_scope: str | None) -> None:
+    """authorize/token で要求された scope を検証する (RFC 6749 §3.3 invalid_scope)。
+
+    - admin:* はどのアプリに対しても常に拒否する。
+    - それ以外は、アプリ登録時に宣言した scopes の範囲内であることを要求する
+      (階層は require_oauth_scope と同じ: "write" は "write:statuses" 等を含む)。
+    """
+    tokens = _scope_tokens(requested_scope)
+    if not tokens:
+        raise HTTPException(status_code=400, detail="Invalid scope")
+    if _has_restricted_scope(requested_scope):
+        raise HTTPException(status_code=400, detail="Scope not grantable via OAuth")
+    granted = set(_scope_tokens(app.scopes))
+    for token in tokens:
+        prefix = token.split(":", 1)[0]
+        if token in granted or prefix in granted:
+            continue
+        raise HTTPException(status_code=400, detail=f"Invalid scope: {token}")
+
+
 async def _parse_app_create(request: Request) -> AppCreateRequest:
     """POST /api/v1/apps を JSON または form-urlencoded からパースする。"""
     data = await _parse_form_or_json(request)
@@ -190,6 +229,8 @@ async def create_app(
     """OAuth アプリケーションを登録する。"""
     await _check_oauth_rate_limit(request, "apps")
     body = await _parse_app_create(request)
+    if _has_restricted_scope(body.scopes):
+        raise HTTPException(status_code=422, detail="Scope not grantable via OAuth")
     # M-2: client_secretをハッシュ化して保存、プレーンテキストはレスポンスのみ
     raw_secret = secrets.token_urlsafe(64)
     app = OAuthApplication(
@@ -260,6 +301,9 @@ async def authorize_form(
     _blocked_schemes = {"javascript", "data", "vbscript", "blob"}
     if parsed_redirect.scheme in _blocked_schemes:
         raise HTTPException(status_code=400, detail="Invalid redirect_uri scheme")
+
+    # 要求スコープがアプリ登録スコープの範囲内であることを検証 (invalid_scope)
+    _validate_requested_scope(app, scope)
 
     # セッションからユーザーを取得 (prompt=login の場合はスキップ)
     user_id = None
@@ -354,6 +398,10 @@ async def authorize_submit(
         allowed_uris = [u.strip() for u in app.redirect_uris.split() if u.strip()]
         if redirect_uri not in allowed_uris:
             raise HTTPException(status_code=400, detail="Invalid redirect_uri")
+
+        # 要求スコープがアプリ登録スコープの範囲内であることを検証 (invalid_scope)。
+        # TOTP 再開時 (client_id なし) は初回リクエストで既に検証済みのため対象外。
+        _validate_requested_scope(app, scope)
 
     from app.valkey_client import valkey
 
@@ -1012,6 +1060,7 @@ async def token(
         }
 
     elif grant_type == "client_credentials":
+        _validate_requested_scope(app, scope or "read")
         access_token = secrets.token_urlsafe(64)
         token_obj = OAuthToken(
             access_token=_hash_token(access_token),

@@ -34,6 +34,21 @@ async def handle_follow(db: AsyncSession, activity: dict):
         logger.info("Follow target %s is not a local actor", target_ap_id)
         return
 
+    # ターゲットが送信者をブロックしている場合は Follow を保存せず Reject を返す。
+    # (instance 全体で活動を握りつぶすのではなく、宛先ローカルユーザー単位で判定する)
+    from app.services.block_service import is_blocking
+
+    if await is_blocking(db, target.id, follower.id):
+        from app.activitypub.renderer import render_reject_activity
+        from app.services.delivery_service import enqueue_delivery
+
+        reject_id = f"{settings.server_url}/activities/{uuid.uuid4()}"
+        target_actor_uri = f"{settings.server_url}/users/{target.username}"
+        reject = render_reject_activity(reject_id, target_actor_uri, activity)
+        await enqueue_delivery(db, target.id, follower.inbox_url, reject)
+        logger.info("Rejected follow from blocked actor %s to %s", actor_ap_id, target_ap_id)
+        return
+
     # 既存のフォローをチェック
     existing = await db.execute(
         select(Follow).where(

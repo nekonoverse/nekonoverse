@@ -1,5 +1,5 @@
-import hashlib
 import base64
+import hashlib
 import re
 import secrets
 from urllib.parse import parse_qs, urlparse
@@ -50,7 +50,8 @@ async def _authorize_via_consent(client, mock_valkey, *, client_id, redirect_uri
 
 async def test_create_app(app_client, mock_valkey):
     resp = await app_client.post("/api/v1/apps", json={
-        "client_name": "TestApp", "redirect_uris": "http://localhost/callback", "scopes": "read write"
+        "client_name": "TestApp", "redirect_uris": "http://localhost/callback",
+        "scopes": "read write",
     })
     assert resp.status_code == 200
     data = resp.json()
@@ -212,7 +213,8 @@ async def test_revoke_token(authed_client, mock_valkey):
 
 async def _register_app(client) -> dict:
     resp = await client.post("/api/v1/apps", json={
-        "client_name": "CsrfApp", "redirect_uris": "http://localhost/callback"
+        "client_name": "CsrfApp", "redirect_uris": "http://localhost/callback",
+        "scopes": "read write",
     })
     return resp.json()
 
@@ -274,7 +276,9 @@ async def test_authorize_credentials_take_precedence_over_session(
     }, follow_redirects=False)
     assert resp.status_code == 302
     code = parse_qs(urlparse(resp.headers["location"]).query)["code"][0]
-    row = await db.execute(select(OAuthAuthorizationCode).where(OAuthAuthorizationCode.code == code))
+    row = await db.execute(
+        select(OAuthAuthorizationCode).where(OAuthAuthorizationCode.code == code)
+    )
     assert row.scalar_one().user_id == test_user_b.id
 
 
@@ -294,3 +298,113 @@ async def test_authorization_code_single_use(authed_client, mock_valkey):
     assert first.json()["scope"] == "read"
     second = await authed_client.post("/oauth/token", data=form)
     assert second.status_code == 400
+
+
+# ── スコープ検証 (登録スコープの範囲外・admin:* の禁止) ─────────────────
+
+
+async def test_create_app_rejects_admin_scope(app_client, mock_valkey):
+    resp = await app_client.post("/api/v1/apps", json={
+        "client_name": "EvilApp", "redirect_uris": "http://localhost/callback",
+        "scopes": "read admin:write",
+    })
+    assert resp.status_code == 422
+
+
+async def test_authorize_get_rejects_scope_beyond_registration(app_client, mock_valkey):
+    """アプリ登録時に宣言していない scope での認可要求は invalid_scope で拒否する。"""
+    app_resp = await app_client.post("/api/v1/apps", json={
+        "client_name": "NarrowApp", "redirect_uris": "http://localhost/callback",
+        "scopes": "read",
+    })
+    client_id = app_resp.json()["client_id"]
+    resp = await app_client.get("/oauth/authorize", params={
+        "response_type": "code", "client_id": client_id,
+        "redirect_uri": "http://localhost/callback", "scope": "read write follow",
+    })
+    assert resp.status_code == 400
+
+
+async def test_authorize_get_rejects_admin_scope_even_if_declared(app_client, mock_valkey, db):
+    """create_app のチェックを迂回してアプリが admin:write を登録スコープに
+    持っていたとしても (defense in depth)、認可段階で必ず拒否する。"""
+    from app.models.oauth import OAuthApplication
+
+    app = OAuthApplication(
+        name="SneakyApp",
+        client_id="sneaky-client-id",
+        client_secret="x",
+        redirect_uris="http://localhost/callback",
+        scopes="admin:write",
+    )
+    db.add(app)
+    await db.flush()
+
+    resp = await app_client.get("/oauth/authorize", params={
+        "response_type": "code", "client_id": "sneaky-client-id",
+        "redirect_uri": "http://localhost/callback", "scope": "admin:write",
+    })
+    assert resp.status_code == 400
+
+
+async def test_authorize_post_rejects_scope_beyond_registration(authed_client, mock_valkey, db):
+    from sqlalchemy import func, select
+
+    from app.models.oauth import OAuthAuthorizationCode
+
+    app_resp = await authed_client.post("/api/v1/apps", json={
+        "client_name": "NarrowApp2", "redirect_uris": "http://localhost/callback",
+        "scopes": "read",
+    })
+    app_data = app_resp.json()
+    resp = await authed_client.post("/oauth/authorize", data={
+        "client_id": app_data["client_id"], "redirect_uri": "http://localhost/callback",
+        "scope": "read write", "response_type": "code",
+        "csrf_token": "dummy",
+    }, follow_redirects=False)
+    assert resp.status_code == 400
+    count = await db.scalar(select(func.count()).select_from(OAuthAuthorizationCode))
+    assert count == 0
+
+
+async def test_client_credentials_rejects_scope_beyond_registration(app_client, mock_valkey):
+    app_resp = await app_client.post("/api/v1/apps", json={
+        "client_name": "CCApp", "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
+        "scopes": "read",
+    })
+    app_data = app_resp.json()
+    resp = await app_client.post("/oauth/token", data={
+        "grant_type": "client_credentials",
+        "client_id": app_data["client_id"], "client_secret": app_data["client_secret"],
+        "scope": "read write",
+    })
+    assert resp.status_code == 400
+
+
+async def test_client_credentials_rejects_admin_scope(app_client, mock_valkey):
+    app_resp = await app_client.post("/api/v1/apps", json={
+        "client_name": "CCApp2", "redirect_uris": "urn:ietf:wg:oauth:2.0:oob",
+        "scopes": "read",
+    })
+    app_data = app_resp.json()
+    resp = await app_client.post("/oauth/token", data={
+        "grant_type": "client_credentials",
+        "client_id": app_data["client_id"], "client_secret": app_data["client_secret"],
+        "scope": "admin:write",
+    })
+    assert resp.status_code == 400
+
+
+async def test_authorize_scope_within_registration_still_works(authed_client, mock_valkey):
+    """回帰防止: 登録スコープの部分集合を要求する正常系は通ること。"""
+    app_resp = await authed_client.post("/api/v1/apps", json={
+        "client_name": "NormalApp", "redirect_uris": "http://localhost/callback",
+        "scopes": "read write follow",
+    })
+    app_data = app_resp.json()
+    code = await _authorize_via_consent(
+        authed_client, mock_valkey,
+        client_id=app_data["client_id"], redirect_uri="http://localhost/callback",
+        scope="read write",
+    )
+    assert code
