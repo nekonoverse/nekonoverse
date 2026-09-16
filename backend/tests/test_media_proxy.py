@@ -20,6 +20,21 @@ def test_proxy_url_server_url_passthrough():
     assert media_proxy_url(local) == local
 
 
+def test_proxy_url_lookalike_urls_are_proxied():
+    """自サーバーに見えるだけの URL はプロキシ経由にする。"""
+    from app.config import settings
+
+    for url in [
+        f"{settings.server_url}@evil.example/x.png",
+        f"{settings.server_url}.evil.example/x.png",
+        "//evil.example/x.png",
+        "/\\evil.example/x.png",
+    ]:
+        assert media_proxy_url(url).startswith(
+            f"{settings.server_url}/api/v1/media/proxy?url="
+        ), url
+
+
 def test_proxy_url_empty():
     assert media_proxy_url(None) == ""
     assert media_proxy_url("") == ""

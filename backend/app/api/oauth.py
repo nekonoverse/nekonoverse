@@ -1,5 +1,6 @@
 """OAuth 2.0 エンドポイント (Mastodon 互換)。"""
 
+import asyncio
 import hashlib
 import hmac
 import html as html_mod
@@ -12,7 +13,7 @@ from urllib.parse import urlencode, urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
@@ -371,10 +372,16 @@ async def authorize_submit(
 
         from app.services.totp_service import (
             advance_last_totp_counter,
+            clear_totp_failures,
             current_time_step,
             decrypt_secret,
+            is_totp_locked,
+            record_totp_failure,
             verify_totp_code_with_counter,
         )
+
+        if await is_totp_locked(user.id):
+            raise HTTPException(status_code=429, detail="Too many TOTP attempts")
 
         secret = decrypt_secret(user.totp_secret)
         code = totp_code.strip().replace("-", "")
@@ -394,8 +401,9 @@ async def authorize_submit(
         if not totp_valid and user.totp_recovery_codes:
             from app.services.totp_service import verify_recovery_code
 
-            valid, remaining = verify_recovery_code(
-                totp_code.strip(), user.totp_recovery_codes
+            # bcrypt 照合はイベントループを塞ぐためスレッドで実行する
+            valid, remaining = await asyncio.to_thread(
+                verify_recovery_code, totp_code.strip(), user.totp_recovery_codes
             )
             if valid:
                 user.totp_recovery_codes = remaining
@@ -405,6 +413,7 @@ async def authorize_submit(
                 totp_valid = True
 
         if not totp_valid:
+            await record_totp_failure(user.id)
             csrf_token = await _generate_csrf_token()
             return _render_totp_form(
                 totp_token=totp_token,
@@ -414,6 +423,7 @@ async def authorize_submit(
             )
 
         await valkey.delete(f"totp_pending_oauth:{totp_token}")
+        await clear_totp_failures(user.id)
 
         # ValkeyからOAuthパラメータを復元
         result = await db.execute(
@@ -476,8 +486,9 @@ async def authorize_submit(
             code_challenge_method=code_challenge_method,
         )
 
-    # セッションからユーザーを取得(既にログイン済みの場合)
-    user_id = await _get_session_user_id(request)
+    # 資格情報が送られた場合はそれを優先する (prompt=login のアカウント切り替え)。
+    # セッションだけで認可コードを発行する同意送信は、冒頭で CSRF トークンを検証済み。
+    user_id = None if is_login_submission else await _get_session_user_id(request)
 
     # セッションがなければフォームからログイン
     if not user_id:
@@ -965,26 +976,39 @@ async def token(
             if expected != auth_code.code_challenge:
                 raise HTTPException(status_code=400, detail="Invalid code_verifier")
 
+        granted_scopes = auth_code.scopes
+        granted_user_id = auth_code.user_id
+
+        # 使用済みコードを削除する。並行リクエストで同じコードから複数のトークンが
+        # 発行されないよう、自分が削除できた場合だけトークンを発行する
+        consumed = await db.execute(
+            delete(OAuthAuthorizationCode)
+            .where(OAuthAuthorizationCode.id == auth_code.id)
+            .returning(OAuthAuthorizationCode.id)
+        )
+        if consumed.scalar_one_or_none() is None:
+            await db.rollback()
+            raise HTTPException(status_code=400, detail="Invalid code")
+
         # アクセストークンを作成（ハッシュ化して保存、プレーンテキストはレスポンスのみ）
         access_token = secrets.token_urlsafe(64)
+        created_at = datetime.now(timezone.utc)
         token_obj = OAuthToken(
             access_token=_hash_token(access_token),
-            scopes=auth_code.scopes,
+            scopes=granted_scopes,
             application_id=app.id,
-            user_id=auth_code.user_id,
-            expires_at=datetime.now(timezone.utc) + TOKEN_LIFETIME,
+            user_id=granted_user_id,
+            created_at=created_at,
+            expires_at=created_at + TOKEN_LIFETIME,
         )
         db.add(token_obj)
-
-        # 使用済みコードを削除
-        await db.delete(auth_code)
         await db.commit()
 
         return {
             "access_token": access_token,
             "token_type": "Bearer",
-            "scope": auth_code.scopes,
-            "created_at": int(token_obj.created_at.timestamp()),
+            "scope": granted_scopes,
+            "created_at": int(created_at.timestamp()),
         }
 
     elif grant_type == "client_credentials":

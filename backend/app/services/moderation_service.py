@@ -32,6 +32,17 @@ async def log_action(
     return entry
 
 
+async def revoke_user_oauth_tokens(db: AsyncSession, user_id: uuid.UUID) -> None:
+    """指定ユーザーの有効な OAuth アクセストークンをすべて失効させる。"""
+    from app.models.oauth import OAuthToken
+
+    await db.execute(
+        update(OAuthToken)
+        .where(OAuthToken.user_id == user_id, OAuthToken.revoked_at.is_(None))
+        .values(revoked_at=datetime.now(timezone.utc))
+    )
+
+
 async def invalidate_user_sessions(user_id: uuid.UUID, exclude_session: str | None = None) -> int:
     """指定ユーザーに属するすべてのValkeyセッションを削除する。
 

@@ -270,3 +270,43 @@ async def test_actor_suspended(app_client, test_user, db, mock_valkey):
         "/users/testuser", headers={"Accept": "application/activity+json"},
     )
     assert resp.status_code == 410
+
+
+async def test_note_ap_remote_note_not_served(app_client, db, mock_valkey):
+    """リモートノートは /notes/{id} で返さない (以前はメンション形式の違いで 500 になっていた)。"""
+    from tests.conftest import make_note, make_remote_actor
+
+    remote = await make_remote_actor(db, username="apremote", domain="apremote.example")
+    note = await make_note(db, remote, content="remote", local=False)
+    note.mentions = [{"ap_id": "https://x.example/users/a", "name": "@a@x.example"}]
+    note.source = "remote"
+    await db.flush()
+
+    resp = await app_client.get(
+        f"/notes/{note.id}", headers={"Accept": "application/activity+json"}
+    )
+    assert resp.status_code == 404
+
+
+def test_render_note_with_remote_style_mentions():
+    from datetime import datetime, timezone
+    from types import SimpleNamespace
+
+    from app.activitypub.renderer import render_note
+
+    actor = SimpleNamespace(
+        ap_id="https://r.example/users/x", domain="r.example", username="x", local_user=None
+    )
+    note = SimpleNamespace(
+        id="1", ap_id="https://r.example/notes/1", actor=actor, content="<p>hi</p>",
+        published=datetime.now(timezone.utc), to=[], cc=[], updated_at=None, source=None, sensitive=False,
+        spoiler_text=None, in_reply_to_ap_id=None, quote_ap_id=None, attachments=[],
+        mentions=[
+            {"ap_id": "https://x.example/users/a", "name": "@a@x.example"},
+            {"ap_id": "https://x.example/users/b"},
+            {"ap_id": "https://l.example/users/c", "username": "c", "domain": None},
+        ],
+        is_poll=False,
+    )
+    tags = [t for t in render_note(note)["tag"] if t["type"] == "Mention"]
+    assert [t["name"] for t in tags] == ["@a@x.example", "https://x.example/users/b", "@c"]

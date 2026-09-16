@@ -115,6 +115,7 @@ async def get_accounts_batch(
 @router.get("/lookup")
 async def lookup_account(
     acct: str,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     """acct URI（user@domain）でアカウントを検索する。リモートアクターは WebFinger で解決する。"""
@@ -136,6 +137,8 @@ async def lookup_account(
 
     if not actor:
         raise HTTPException(status_code=404, detail="Account not found")
+    if actor.require_signin_to_view and not user:
+        return _actor_to_limited_account(actor)
 
     fc, fic = await get_follow_counts(db, actor.id)
     sc = await get_statuses_count(db, actor.id)
@@ -148,6 +151,7 @@ async def lookup_account(
 async def search_accounts(
     q: str,
     resolve: bool = False,
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     """アカウントを検索する。resolve=true かつ user@domain 形式の場合、WebFinger で解決する。"""
@@ -163,13 +167,16 @@ async def search_accounts(
 
     actor = await get_actor_by_username(db, username, domain)
 
-    if not actor and domain and resolve:
+    # Mastodon 同様、リモート解決はログインユーザーのみ
+    if not actor and domain and resolve and user:
         from app.services.actor_service import resolve_webfinger
 
         actor = await resolve_webfinger(db, username, domain)
 
     if not actor:
         return []
+    if actor.require_signin_to_view and not user:
+        return [_actor_to_limited_account(actor)]
 
     return [await _actor_to_account(actor, db=db)]
 
@@ -395,7 +402,7 @@ async def unmute_account(
 @router.get("/{actor_id}/statuses")
 async def get_account_statuses(
     actor_id: uuid.UUID,
-    limit: int = 20,
+    limit: int = Query(20, ge=1),
     max_id: uuid.UUID | None = None,
     user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
@@ -589,15 +596,20 @@ async def _batch_resolve_actor_emojis(
 @router.get("/{actor_id}/followers")
 async def list_followers(
     actor_id: uuid.UUID,
-    limit: int = 40,
+    limit: int = Query(40, ge=1),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     """指定アカウントをフォローしているアカウント一覧を返す。"""
     from app.services.follow_service import get_followers
 
     result = await db.execute(select(Actor).where(Actor.id == actor_id))
-    if not result.scalar_one_or_none():
+    target = result.scalar_one_or_none()
+    if not target:
         raise HTTPException(status_code=404, detail="Actor not found")
+    # Misskey の require_signin_to_view を尊重
+    if target.require_signin_to_view and not user:
+        return []
 
     actors = await get_followers(db, actor_id, min(limit, 80))
     emoji_map = await _batch_resolve_actor_emojis(db, actors)
@@ -614,15 +626,20 @@ async def list_followers(
 @router.get("/{actor_id}/following")
 async def list_following(
     actor_id: uuid.UUID,
-    limit: int = 40,
+    limit: int = Query(40, ge=1),
+    user: User | None = Depends(get_optional_user),
     db: AsyncSession = Depends(get_db),
 ):
     """指定アカウントがフォローしているアカウント一覧を返す。"""
     from app.services.follow_service import get_following
 
     result = await db.execute(select(Actor).where(Actor.id == actor_id))
-    if not result.scalar_one_or_none():
+    target = result.scalar_one_or_none()
+    if not target:
         raise HTTPException(status_code=404, detail="Actor not found")
+    # Misskey の require_signin_to_view を尊重
+    if target.require_signin_to_view and not user:
+        return []
 
     actors = await get_following(db, actor_id, min(limit, 80))
     emoji_map = await _batch_resolve_actor_emojis(db, actors)

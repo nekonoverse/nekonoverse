@@ -15,6 +15,13 @@ _CUSTOM_EMOJI_RE = re.compile(r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$")
 
 logger = logging.getLogger(__name__)
 
+# Reaction.emoji (String(512)) に収まり、現実的なショートコード長に収まる上限
+_MAX_CUSTOM_EMOJI_LENGTH = 256
+
+
+def _is_custom_emoji(text: str) -> bool:
+    return len(text) <= _MAX_CUSTOM_EMOJI_LENGTH and is_custom_emoji_shortcode(text)
+
 
 async def handle_like(db: AsyncSession, activity: dict):
     """Like activity を処理する -- Misskey 形式の _misskey_reaction を含む場合がある。"""
@@ -28,9 +35,12 @@ async def handle_like(db: AsyncSession, activity: dict):
     misskey_reaction = activity.get("_misskey_reaction")
     content = activity.get("content")
 
-    if misskey_reaction:
-        emoji = misskey_reaction
-    elif content and is_single_emoji(content):
+    # 絵文字として解釈できない値 (任意文字列や長大な文字列) はリアクションとして保存しない
+    if isinstance(misskey_reaction, str) and (
+        is_single_emoji(misskey_reaction) or _is_custom_emoji(misskey_reaction)
+    ):
+        emoji = misskey_reaction.strip()
+    elif isinstance(content, str) and is_single_emoji(content):
         emoji = content
     else:
         emoji = "\u2b50"  # ⭐ — 素の Like (例: Mastodon から) = お気に入り
@@ -52,8 +62,8 @@ async def handle_emoji_react(db: AsyncSession, activity: dict):
         return
 
     emoji = (
-        content
-        if content and (is_single_emoji(content) or is_custom_emoji_shortcode(content))
+        content.strip()
+        if isinstance(content, str) and (is_single_emoji(content) or _is_custom_emoji(content))
         else "\u2764"
     )
     if is_custom_emoji_shortcode(emoji):

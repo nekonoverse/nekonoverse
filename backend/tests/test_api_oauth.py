@@ -208,3 +208,89 @@ async def test_revoke_token(authed_client, mock_valkey):
         "token": token, "client_id": d["client_id"], "client_secret": d["client_secret"],
     })
     assert revoke_resp.status_code == 200
+
+
+async def _register_app(client) -> dict:
+    resp = await client.post("/api/v1/apps", json={
+        "client_name": "CsrfApp", "redirect_uris": "http://localhost/callback"
+    })
+    return resp.json()
+
+
+def _session_only_valkey(mock_valkey, user_id):
+    """セッションキーだけユーザーIDを返し、CSRF トークンは未発行扱いにする。"""
+    from unittest.mock import AsyncMock
+
+    async def get(key):
+        return str(user_id) if key.startswith("session:") else None
+
+    mock_valkey.get = AsyncMock(side_effect=get)
+
+
+async def test_authorize_session_consent_requires_csrf(authed_client, mock_valkey, test_user):
+    app_data = await _register_app(authed_client)
+    _session_only_valkey(mock_valkey, test_user.id)
+    resp = await authed_client.post("/oauth/authorize", data={
+        "client_id": app_data["client_id"], "redirect_uri": "http://localhost/callback",
+        "scope": "read", "response_type": "code",
+    }, follow_redirects=False)
+    assert resp.status_code == 403
+
+
+async def test_authorize_dummy_credentials_do_not_fall_back_to_session(
+    authed_client, mock_valkey, test_user, db
+):
+    """資格情報付きの送信 (CSRF 検証なし) でセッションのユーザーとして認可しない。"""
+    from sqlalchemy import func, select
+
+    from app.models.oauth import OAuthAuthorizationCode
+
+    app_data = await _register_app(authed_client)
+    _session_only_valkey(mock_valkey, test_user.id)
+    resp = await authed_client.post("/oauth/authorize", data={
+        "client_id": app_data["client_id"], "redirect_uri": "http://localhost/callback",
+        "scope": "read write", "response_type": "code",
+        "username": "x", "password": "y",
+    }, follow_redirects=False)
+    assert resp.status_code == 200
+    assert "Invalid username or password" in resp.text
+    count = await db.scalar(select(func.count()).select_from(OAuthAuthorizationCode))
+    assert count == 0
+
+
+async def test_authorize_credentials_take_precedence_over_session(
+    authed_client, mock_valkey, test_user, test_user_b, db
+):
+    from sqlalchemy import select
+
+    from app.models.oauth import OAuthAuthorizationCode
+
+    app_data = await _register_app(authed_client)
+    _session_only_valkey(mock_valkey, test_user.id)
+    resp = await authed_client.post("/oauth/authorize", data={
+        "client_id": app_data["client_id"], "redirect_uri": "http://localhost/callback",
+        "scope": "read", "response_type": "code",
+        "username": "testuser_b", "password": "password1234",
+    }, follow_redirects=False)
+    assert resp.status_code == 302
+    code = parse_qs(urlparse(resp.headers["location"]).query)["code"][0]
+    row = await db.execute(select(OAuthAuthorizationCode).where(OAuthAuthorizationCode.code == code))
+    assert row.scalar_one().user_id == test_user_b.id
+
+
+async def test_authorization_code_single_use(authed_client, mock_valkey):
+    app_data = await _register_app(authed_client)
+    code = await _authorize_via_consent(
+        authed_client, mock_valkey,
+        client_id=app_data["client_id"], redirect_uri="http://localhost/callback",
+    )
+    form = {
+        "grant_type": "authorization_code", "code": code,
+        "client_id": app_data["client_id"], "client_secret": app_data["client_secret"],
+        "redirect_uri": "http://localhost/callback",
+    }
+    first = await authed_client.post("/oauth/token", data=form)
+    assert first.status_code == 200
+    assert first.json()["scope"] == "read"
+    second = await authed_client.post("/oauth/token", data=form)
+    assert second.status_code == 400
