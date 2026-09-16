@@ -513,7 +513,10 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
     if activity_id:
         from app.valkey_client import valkey
 
-        already_seen = await valkey.set(f"seen_activity:{activity_id}", "1", nx=True, ex=86400)
+        # 他アクターが同じ ID を先に送って正規の活動を抑止できないよう、署名者ごとに分ける
+        already_seen = await valkey.set(
+            f"seen_activity:{actor_id_str}:{activity_id}", "1", nx=True, ex=86400
+        )
         if not already_seen:
             logger.info("Duplicate activity %s, skipping", activity_id)
             return

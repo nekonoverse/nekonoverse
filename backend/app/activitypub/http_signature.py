@@ -141,18 +141,28 @@ def verify_signature(
     if "signature" not in params or "headers" not in params or "keyId" not in params:
         return False
 
+    signed_headers = params["headers"].split()
+
+    # Mastodon と同様に署名対象ヘッダーを必須化する。date が署名されていないと
+    # 古いリクエストの再送を、digest が署名されていないと本文の差し替えを検出できない。
+    required_headers = {"(request-target)", "date"}
+    if method.upper() == "POST":
+        required_headers.add("digest")
+    if not required_headers.issubset(h.lower() for h in signed_headers):
+        return False
+
     # Date ヘッダーの鮮度チェック (Mastodon と同じく 12 時間のズレを許容)
-    if "date" in headers:
-        try:
-            request_date = parsedate_to_datetime(headers["date"])
-            now = datetime.now(timezone.utc)
-            if abs((now - request_date).total_seconds()) > 43200:
-                return False
-        except Exception:
+    if "date" not in headers:
+        return False
+    try:
+        request_date = parsedate_to_datetime(headers["date"])
+        now = datetime.now(timezone.utc)
+        if abs((now - request_date).total_seconds()) > 43200:
             return False
+    except Exception:
+        return False
 
     # 署名文字列を再構成
-    signed_headers = params["headers"].split()
     signed_parts = []
     for h in signed_headers:
         if h == "(request-target)":
