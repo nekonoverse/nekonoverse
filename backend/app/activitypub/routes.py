@@ -226,10 +226,14 @@ async def get_featured(username: str, db: AsyncSession = Depends(get_db)):
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
+    from app.services.note_service import filter_visible_notes
     from app.services.pinned_note_service import get_pinned_notes
 
     pins = await get_pinned_notes(db, actor.id)
-    items = [render_note(pin.note) for pin in pins if pin.note]
+    # followers/direct のノートもピン留めできるが、featured は署名なしで誰でも取得できるため
+    # 未認証の閲覧者から見えるノートだけを載せる
+    notes = [pin.note for pin in pins if pin.note and pin.note.deleted_at is None]
+    items = [render_note(note) for note in await filter_visible_notes(db, notes, None)]
 
     featured_url = f"{settings.server_url}/users/{username}/featured"
     collection = {

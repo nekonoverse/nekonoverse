@@ -141,7 +141,8 @@ async def create_note(
     quote_ap_id = None
     if quote_id:
         quoted = await get_note_by_id(db, quote_id)
-        if quoted:
+        # 閲覧権限のないノートを引用すると本文が引用ノート経由で公開されてしまう
+        if quoted and await check_note_visible(db, quoted, actor.id):
             quote_ap_id = quoted.ap_id
         else:
             quote_id = None
@@ -362,7 +363,7 @@ async def create_note(
             pipe.publish(f"timeline:home:{actor.id}", event)
 
         # リストタイムラインチャンネルに配信
-        list_ids = await get_list_ids_for_actor(db, actor.id)
+        list_ids = await get_list_ids_for_actor(db, actor.id, visibility)
         for lid in list_ids:
             pipe.publish(f"timeline:list:{lid}", event)
 
@@ -442,73 +443,102 @@ async def get_note_by_id(db: AsyncSession, note_id: uuid.UUID) -> Note | None:
     return result.scalar_one_or_none()
 
 
+def _visibility_requirements(
+    note: Note, current_actor_id: uuid.UUID | None
+) -> tuple[bool, bool] | None:
+    """ノート閲覧に必要な条件を (フォロー必須, メンション必須) で返す。None は閲覧不可。"""
+    # 作者は自分のノートを常に閲覧可能
+    if current_actor_id and note.actor_id == current_actor_id:
+        return (False, False)
+
+    actor = note.actor
+    need_follow = False
+    if note.published:
+        # Misskey: make_notes_hidden_before — このタイムスタンプより前のノートを全員から非表示
+        hidden_before = getattr(actor, "make_notes_hidden_before", None)
+        if hidden_before and note.published < datetime.fromtimestamp(
+            hidden_before / 1000.0, tz=timezone.utc
+        ):
+            return None
+        # Misskey: make_notes_followers_only_before — 古いノートをフォロワー限定として扱う
+        followers_only_before = getattr(actor, "make_notes_followers_only_before", None)
+        if followers_only_before and note.published < datetime.fromtimestamp(
+            followers_only_before / 1000.0, tz=timezone.utc
+        ):
+            need_follow = True
+
+    if note.visibility in ("public", "unlisted"):
+        return (need_follow, False)
+    if note.visibility == "followers":
+        return (True, False)
+    if note.visibility == "direct":
+        return (need_follow, True)
+    return None
+
+
+async def filter_visible_notes(
+    db: AsyncSession,
+    notes: list[Note],
+    current_actor_id: uuid.UUID | None = None,
+) -> list[Note]:
+    """閲覧可能なノートだけを順序を保って返す。
+
+    一覧APIでノートごとに check_note_visible を呼ぶとフォロー確認クエリが
+    ノート数だけ走るため、フォロー関係と閲覧者の ap_id をまとめて取得する。
+    """
+    staged: list[tuple[Note, bool, bool]] = []
+    follow_targets: set[uuid.UUID] = set()
+    need_ap_id = False
+    for note in notes:
+        req = _visibility_requirements(note, current_actor_id)
+        if req is None:
+            continue
+        need_follow, need_mention = req
+        if (need_follow or need_mention) and not current_actor_id:
+            continue
+        if need_follow:
+            follow_targets.add(note.actor_id)
+        need_ap_id = need_ap_id or need_mention
+        staged.append((note, need_follow, need_mention))
+
+    followed_ids: set[uuid.UUID] = set()
+    if follow_targets:
+        from app.models.follow import Follow
+
+        result = await db.execute(
+            select(Follow.following_id).where(
+                Follow.follower_id == current_actor_id,
+                Follow.following_id.in_(follow_targets),
+                Follow.accepted.is_(True),
+            )
+        )
+        followed_ids = set(result.scalars().all())
+
+    viewer_ap_id: str | None = None
+    if need_ap_id:
+        result = await db.execute(select(Actor.ap_id).where(Actor.id == current_actor_id))
+        viewer_ap_id = result.scalar_one_or_none()
+
+    visible: list[Note] = []
+    for note, need_follow, need_mention in staged:
+        if need_follow and note.actor_id not in followed_ids:
+            continue
+        if need_mention and not (
+            viewer_ap_id
+            and any(m.get("ap_id") == viewer_ap_id for m in (note.mentions or []))
+        ):
+            continue
+        visible.append(note)
+    return visible
+
+
 async def check_note_visible(
     db: AsyncSession,
     note: Note,
     current_actor_id: uuid.UUID | None = None,
 ) -> bool:
     """現在のユーザーがこのノートを閲覧可能かどうかを確認する。"""
-    # 作者は自分のノートを常に閲覧可能
-    if current_actor_id and note.actor_id == current_actor_id:
-        return True
-
-    actor = note.actor
-
-    # Misskey: make_notes_hidden_before — このタイムスタンプより前のノートを全員から非表示
-    if getattr(actor, "make_notes_hidden_before", None) and note.published:
-        threshold = datetime.fromtimestamp(actor.make_notes_hidden_before / 1000.0, tz=timezone.utc)
-        if note.published < threshold:
-            return False
-
-    # Misskey: make_notes_followers_only_before — 古いノートをフォロワー限定として扱う
-    if getattr(actor, "make_notes_followers_only_before", None) and note.published:
-        threshold = datetime.fromtimestamp(
-            actor.make_notes_followers_only_before / 1000.0,
-            tz=timezone.utc,
-        )
-        if note.published < threshold:
-            if not current_actor_id:
-                return False
-            from app.models.follow import Follow as FollowModel
-
-            result = await db.execute(
-                select(FollowModel.id)
-                .where(
-                    FollowModel.following_id == note.actor_id,
-                    FollowModel.follower_id == current_actor_id,
-                    FollowModel.accepted.is_(True),
-                )
-                .limit(1)
-            )
-            if result.scalar_one_or_none() is None:
-                return False
-
-    if note.visibility in ("public", "unlisted"):
-        return True
-    if not current_actor_id:
-        return False
-    if note.visibility == "followers":
-        from app.models.follow import Follow
-
-        result = await db.execute(
-            select(Follow.id)
-            .where(
-                Follow.following_id == note.actor_id,
-                Follow.follower_id == current_actor_id,
-                Follow.accepted.is_(True),
-            )
-            .limit(1)
-        )
-        return result.scalar_one_or_none() is not None
-    if note.visibility == "direct":
-        from app.models.actor import Actor
-
-        result = await db.execute(select(Actor.ap_id).where(Actor.id == current_actor_id))
-        actor_ap_id = result.scalar_one_or_none()
-        if not actor_ap_id:
-            return False
-        return any(m.get("ap_id") == actor_ap_id for m in (note.mentions or []))
-    return False
+    return bool(await filter_visible_notes(db, [note], current_actor_id))
 
 
 async def get_note_by_ap_id(db: AsyncSession, ap_id: str) -> Note | None:

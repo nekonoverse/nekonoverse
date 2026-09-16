@@ -31,6 +31,7 @@ from app.services.note_service import (
     _note_load_options,
     check_note_visible,
     create_note,
+    filter_visible_notes,
     get_note_by_id,
     get_reaction_summaries,
     get_reaction_summary,
@@ -162,6 +163,19 @@ def _attachment_to_media(att) -> NoteMediaAttachment:
     )
 
 
+async def _quote_to_response(quoted, *, db=None, actor_id=None, **kwargs) -> NoteResponse | None:
+    """引用先ノートを閲覧者が見られる場合のみレスポンス化する。
+
+    引用元が公開でも引用先が followers/direct だと、引用経由で本文が漏れるため。
+    """
+    if db is None:
+        if quoted.visibility not in ("public", "unlisted"):
+            return None
+    elif not await check_note_visible(db, quoted, actor_id):
+        return None
+    return await note_to_response(quoted, db=db, actor_id=actor_id, **kwargs)
+
+
 async def note_to_response(
     note,
     reactions: list[dict] | None = None,
@@ -231,10 +245,23 @@ async def note_to_response(
             media_attachments.append(_attachment_to_media(att))
 
     # 引用を構築
+    quoted_obj = getattr(note, "quoted_note", None)
+    # フォールバック: quoted_note が未ロードだが quote_id が設定されている場合
+    if not quoted_obj and db and note.quote_id:
+        quoted_obj = await get_note_by_id(db, note.quote_id)
+    # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
+    if not quoted_obj and db and note.quote_ap_id:
+        from app.services.note_service import fetch_remote_note
+
+        resolved_quote = await fetch_remote_note(db, note.quote_ap_id)
+        if resolved_quote:
+            note.quote_id = resolved_quote.id
+            await db.commit()
+            quoted_obj = await get_note_by_id(db, resolved_quote.id)
     quote = None
-    if hasattr(note, "quoted_note") and note.quoted_note:
-        quote = await note_to_response(
-            note.quoted_note,
+    if quoted_obj:
+        quote = await _quote_to_response(
+            quoted_obj,
             db=db,
             emoji_cache=emoji_cache,
             hashtags_cache=hashtags_cache,
@@ -244,41 +271,6 @@ async def note_to_response(
             cards_cache=cards_cache,
             poll_cache=poll_cache,
         )
-    # フォールバック: quoted_note が未ロードだが quote_id が設定されている場合
-    if not quote and db and note.quote_id:
-        loaded_quote = await get_note_by_id(db, note.quote_id)
-        if loaded_quote:
-            quote = await note_to_response(
-                loaded_quote,
-                db=db,
-                emoji_cache=emoji_cache,
-                actor_id=actor_id,
-                reactions_map=reactions_map,
-                software_cache=software_cache,
-                cards_cache=cards_cache,
-                poll_cache=poll_cache,
-            )
-    # 引用もリレーション未解決だがquote_ap_idがある場合、遅延解決
-    if not quote and db and note.quote_ap_id:
-        from app.services.note_service import fetch_remote_note
-
-        resolved_quote = await fetch_remote_note(db, note.quote_ap_id)
-        if resolved_quote:
-            note.quote_id = resolved_quote.id
-            await db.commit()
-            loaded_quote = await get_note_by_id(db, resolved_quote.id)
-            if loaded_quote:
-                quote = await note_to_response(
-                    loaded_quote,
-                    db=db,
-                    emoji_cache=emoji_cache,
-                    hashtags_cache=hashtags_cache,
-                    actor_id=actor_id,
-                    reactions_map=reactions_map,
-                    software_cache=software_cache,
-                    cards_cache=cards_cache,
-                    poll_cache=poll_cache,
-                )
 
     # content と display_name からカスタム絵文字を解決
     emojis: list[CustomEmojiInfo] = []
@@ -722,7 +714,7 @@ async def create_status(
     parent_note = None
     if body.in_reply_to_id:
         parent_note = await get_note_by_id(db, body.in_reply_to_id)
-        if not parent_note:
+        if not parent_note or not await check_note_visible(db, parent_note, user.actor_id):
             raise HTTPException(status_code=404, detail="Reply target not found")
         # リプライの公開範囲は親ノートより広くできない
         vis_rank = {"public": 0, "unlisted": 1, "followers": 2, "direct": 3}
@@ -897,45 +889,6 @@ async def get_status_history(
     return history
 
 
-async def _batch_filter_visible(
-    db: AsyncSession,
-    notes: list,
-    actor_id: uuid.UUID | None,
-) -> list:
-    """C-2: ノートリストの可視性をバッチチェックしてフィルタ。"""
-    if not notes or actor_id is None:
-        return [n for n in notes if n.visibility in ("public", "unlisted")]
-
-    # followers可視性のノートのactor_idを収集し、フォロー状態を一括チェック
-    followers_actor_ids = {
-        n.actor_id for n in notes if n.visibility == "followers" and n.actor_id != actor_id
-    }
-    followed_ids: set = set()
-    if followers_actor_ids:
-        from app.models.follow import Follow
-
-        follow_result = await db.execute(
-            select(Follow.following_id).where(
-                Follow.follower_id == actor_id,
-                Follow.following_id.in_(followers_actor_ids),
-                Follow.accepted.is_(True),
-            )
-        )
-        followed_ids = {row[0] for row in follow_result.all()}
-
-    visible = []
-    for n in notes:
-        if n.visibility in ("public", "unlisted"):
-            visible.append(n)
-        elif n.visibility == "followers":
-            if n.actor_id == actor_id or n.actor_id in followed_ids:
-                visible.append(n)
-        elif n.visibility == "direct":
-            if n.actor_id == actor_id:
-                visible.append(n)
-    return visible
-
-
 @router.get("/{note_id}/context", response_model=ContextResponse)
 async def get_status_context(
     note_id: uuid.UUID,
@@ -975,7 +928,7 @@ async def get_status_context(
         ancestor_map = {n.id: n for n in result.scalars().all()}
         ancestors = [ancestor_map[aid] for aid in ancestor_ids if aid in ancestor_map]
         # バッチ可視性チェック
-        ancestors = await _batch_filter_visible(db, ancestors, actor_id)
+        ancestors = await filter_visible_notes(db, ancestors, actor_id)
 
     # 子孫ノードをBFSで取得(深さ/件数制限付き)
     descendants = []
@@ -1004,7 +957,7 @@ async def get_status_context(
             queue.append(child.id)
 
     # C-2: 子孫の可視性をバッチチェック
-    descendants = await _batch_filter_visible(db, descendants, actor_id)
+    descendants = await filter_visible_notes(db, descendants, actor_id)
 
     # バッチで絵文字キャッシュを構築
     all_context_notes = ancestors + descendants
@@ -1038,7 +991,7 @@ async def react_to_note(
     from app.services.reaction_service import add_reaction
 
     note = await get_note_by_id(db, note_id)
-    if not note:
+    if not note or not await check_note_visible(db, note, user.actor_id):
         raise HTTPException(status_code=404, detail="Note not found")
 
     try:
@@ -1605,7 +1558,7 @@ async def bookmark_status(
     from app.services.bookmark_service import create_bookmark
 
     note = await get_note_by_id(db, note_id)
-    if not note:
+    if not note or not await check_note_visible(db, note, user.actor_id):
         raise HTTPException(status_code=404, detail="Note not found")
 
     try:

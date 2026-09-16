@@ -24,6 +24,11 @@ async def pin_note(db: AsyncSession, user: User, note_id: uuid.UUID) -> PinnedNo
         raise ValueError("Note not found")
     if note.actor_id != actor.id:
         raise ValueError("Can only pin your own notes")
+    # Mastodon 互換: DM とブーストはピン留め不可
+    if note.visibility == "direct":
+        raise ValueError("Cannot pin a direct post")
+    if note.renote_of_id is not None:
+        raise ValueError("Cannot pin a reblog")
 
     # 既にピン留め済みか確認
     existing = await db.execute(

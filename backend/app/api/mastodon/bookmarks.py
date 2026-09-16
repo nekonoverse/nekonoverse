@@ -21,9 +21,11 @@ async def get_bookmarks(
 ):
     from app.api.mastodon.statuses import notes_to_responses
     from app.services.bookmark_service import get_bookmarks as _get
-    from app.services.note_service import get_reaction_summaries
+    from app.services.note_service import filter_visible_notes, get_reaction_summaries
 
     notes = await _get(db, user.actor_id, limit=limit, max_id=max_id)
+    # ブックマーク後にフォロー解除された followers 限定ノート等を返さない
+    notes = await filter_visible_notes(db, notes, user.actor_id)
     note_ids = [n.id for n in notes]
     reactions_map = await get_reaction_summaries(
         db,
