@@ -1,5 +1,6 @@
 """OAuth 2.0 エンドポイント (Mastodon 互換)。"""
 
+import asyncio
 import hashlib
 import hmac
 import html as html_mod
@@ -12,7 +13,7 @@ from urllib.parse import urlencode, urlparse
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from pydantic import BaseModel
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.dependencies import get_db
@@ -167,6 +168,45 @@ class AppCreateRequest(BaseModel):
     website: str | None = None
 
 
+# admin:* はセルフサービス登録された OAuth クライアントには一切許可しない。
+# アプリ登録に審査がなく誰でも scopes="admin:write" を宣言できるため、
+# 制限しないと管理者アカウントに consent させるフィッシングで管理APIの
+# 書き込み権限まで奪えてしまう (通常の read/write スコープと違い user.is_admin
+# チェックの「後段」の防御にしかならず、正規の管理者自身が騙されると無力)。
+_RESTRICTED_SCOPE_PREFIXES = ("admin",)
+
+
+def _scope_tokens(scope_str: str | None) -> list[str]:
+    return (scope_str or "").split()
+
+
+def _has_restricted_scope(scope_str: str | None) -> bool:
+    return any(
+        token.split(":", 1)[0] in _RESTRICTED_SCOPE_PREFIXES
+        for token in _scope_tokens(scope_str)
+    )
+
+
+def _validate_requested_scope(app: OAuthApplication, requested_scope: str | None) -> None:
+    """authorize/token で要求された scope を検証する (RFC 6749 §3.3 invalid_scope)。
+
+    - admin:* はどのアプリに対しても常に拒否する。
+    - それ以外は、アプリ登録時に宣言した scopes の範囲内であることを要求する
+      (階層は require_oauth_scope と同じ: "write" は "write:statuses" 等を含む)。
+    """
+    tokens = _scope_tokens(requested_scope)
+    if not tokens:
+        raise HTTPException(status_code=400, detail="Invalid scope")
+    if _has_restricted_scope(requested_scope):
+        raise HTTPException(status_code=400, detail="Scope not grantable via OAuth")
+    granted = set(_scope_tokens(app.scopes))
+    for token in tokens:
+        prefix = token.split(":", 1)[0]
+        if token in granted or prefix in granted:
+            continue
+        raise HTTPException(status_code=400, detail=f"Invalid scope: {token}")
+
+
 async def _parse_app_create(request: Request) -> AppCreateRequest:
     """POST /api/v1/apps を JSON または form-urlencoded からパースする。"""
     data = await _parse_form_or_json(request)
@@ -189,6 +229,8 @@ async def create_app(
     """OAuth アプリケーションを登録する。"""
     await _check_oauth_rate_limit(request, "apps")
     body = await _parse_app_create(request)
+    if _has_restricted_scope(body.scopes):
+        raise HTTPException(status_code=422, detail="Scope not grantable via OAuth")
     # M-2: client_secretをハッシュ化して保存、プレーンテキストはレスポンスのみ
     raw_secret = secrets.token_urlsafe(64)
     app = OAuthApplication(
@@ -259,6 +301,9 @@ async def authorize_form(
     _blocked_schemes = {"javascript", "data", "vbscript", "blob"}
     if parsed_redirect.scheme in _blocked_schemes:
         raise HTTPException(status_code=400, detail="Invalid redirect_uri scheme")
+
+    # 要求スコープがアプリ登録スコープの範囲内であることを検証 (invalid_scope)
+    _validate_requested_scope(app, scope)
 
     # セッションからユーザーを取得 (prompt=login の場合はスキップ)
     user_id = None
@@ -354,6 +399,10 @@ async def authorize_submit(
         if redirect_uri not in allowed_uris:
             raise HTTPException(status_code=400, detail="Invalid redirect_uri")
 
+        # 要求スコープがアプリ登録スコープの範囲内であることを検証 (invalid_scope)。
+        # TOTP 再開時 (client_id なし) は初回リクエストで既に検証済みのため対象外。
+        _validate_requested_scope(app, scope)
+
     from app.valkey_client import valkey
 
     # ── TOTP検証パス ──
@@ -371,10 +420,16 @@ async def authorize_submit(
 
         from app.services.totp_service import (
             advance_last_totp_counter,
+            clear_totp_failures,
             current_time_step,
             decrypt_secret,
+            is_totp_locked,
+            record_totp_failure,
             verify_totp_code_with_counter,
         )
+
+        if await is_totp_locked(user.id):
+            raise HTTPException(status_code=429, detail="Too many TOTP attempts")
 
         secret = decrypt_secret(user.totp_secret)
         code = totp_code.strip().replace("-", "")
@@ -394,8 +449,9 @@ async def authorize_submit(
         if not totp_valid and user.totp_recovery_codes:
             from app.services.totp_service import verify_recovery_code
 
-            valid, remaining = verify_recovery_code(
-                totp_code.strip(), user.totp_recovery_codes
+            # bcrypt 照合はイベントループを塞ぐためスレッドで実行する
+            valid, remaining = await asyncio.to_thread(
+                verify_recovery_code, totp_code.strip(), user.totp_recovery_codes
             )
             if valid:
                 user.totp_recovery_codes = remaining
@@ -405,6 +461,7 @@ async def authorize_submit(
                 totp_valid = True
 
         if not totp_valid:
+            await record_totp_failure(user.id)
             csrf_token = await _generate_csrf_token()
             return _render_totp_form(
                 totp_token=totp_token,
@@ -414,6 +471,7 @@ async def authorize_submit(
             )
 
         await valkey.delete(f"totp_pending_oauth:{totp_token}")
+        await clear_totp_failures(user.id)
 
         # ValkeyからOAuthパラメータを復元
         result = await db.execute(
@@ -476,8 +534,9 @@ async def authorize_submit(
             code_challenge_method=code_challenge_method,
         )
 
-    # セッションからユーザーを取得(既にログイン済みの場合)
-    user_id = await _get_session_user_id(request)
+    # 資格情報が送られた場合はそれを優先する (prompt=login のアカウント切り替え)。
+    # セッションだけで認可コードを発行する同意送信は、冒頭で CSRF トークンを検証済み。
+    user_id = None if is_login_submission else await _get_session_user_id(request)
 
     # セッションがなければフォームからログイン
     if not user_id:
@@ -965,29 +1024,43 @@ async def token(
             if expected != auth_code.code_challenge:
                 raise HTTPException(status_code=400, detail="Invalid code_verifier")
 
+        granted_scopes = auth_code.scopes
+        granted_user_id = auth_code.user_id
+
+        # 使用済みコードを削除する。並行リクエストで同じコードから複数のトークンが
+        # 発行されないよう、自分が削除できた場合だけトークンを発行する
+        consumed = await db.execute(
+            delete(OAuthAuthorizationCode)
+            .where(OAuthAuthorizationCode.id == auth_code.id)
+            .returning(OAuthAuthorizationCode.id)
+        )
+        if consumed.scalar_one_or_none() is None:
+            await db.rollback()
+            raise HTTPException(status_code=400, detail="Invalid code")
+
         # アクセストークンを作成（ハッシュ化して保存、プレーンテキストはレスポンスのみ）
         access_token = secrets.token_urlsafe(64)
+        created_at = datetime.now(timezone.utc)
         token_obj = OAuthToken(
             access_token=_hash_token(access_token),
-            scopes=auth_code.scopes,
+            scopes=granted_scopes,
             application_id=app.id,
-            user_id=auth_code.user_id,
-            expires_at=datetime.now(timezone.utc) + TOKEN_LIFETIME,
+            user_id=granted_user_id,
+            created_at=created_at,
+            expires_at=created_at + TOKEN_LIFETIME,
         )
         db.add(token_obj)
-
-        # 使用済みコードを削除
-        await db.delete(auth_code)
         await db.commit()
 
         return {
             "access_token": access_token,
             "token_type": "Bearer",
-            "scope": auth_code.scopes,
-            "created_at": int(token_obj.created_at.timestamp()),
+            "scope": granted_scopes,
+            "created_at": int(created_at.timestamp()),
         }
 
     elif grant_type == "client_credentials":
+        _validate_requested_scope(app, scope or "read")
         access_token = secrets.token_urlsafe(64)
         token_obj = OAuthToken(
             access_token=_hash_token(access_token),

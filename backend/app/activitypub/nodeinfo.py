@@ -82,7 +82,8 @@ async def nodeinfo(db: AsyncSession = Depends(get_db)):
         s = await get_settings_batch(db, setting_keys)
         mode = s.get("registration_mode")
         if mode is not None:
-            open_registrations = mode != "closed"
+            # 招待制は誰でも登録できるわけではないため公開登録として扱わない
+            open_registrations = mode in ("open", "approval")
         else:
             reg = s.get("registration_open")
             if reg is not None:

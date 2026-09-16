@@ -16,6 +16,33 @@ from app.services.note_service import get_note_by_ap_id
 logger = logging.getLogger(__name__)
 
 
+def _ap_id_of(value: object) -> str | None:
+    """AP の参照 (文字列 or {"id": ...}) から ID を取り出す。"""
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and isinstance(value.get("id"), str):
+        return value["id"]
+    return None
+
+
+def _undo_actor(activity: dict, inner: dict) -> str | None:
+    """Undo を実行できるアクター (署名検証済みの activity.actor) を返す。
+
+    取り消し対象の inner.actor は送信側が自由に書けるため信用しない。
+    inner.actor が署名者と異なる場合は他者のアクティビティの取り消しとして拒否する。
+    """
+    signer = _ap_id_of(activity.get("actor"))
+    if not signer:
+        return None
+    inner_actor = inner.get("actor")
+    if inner_actor is not None and _ap_id_of(inner_actor) != signer:
+        logger.warning(
+            "Rejected Undo: inner actor %r does not match signer %s", inner_actor, signer
+        )
+        return None
+    return signer
+
+
 async def handle_undo(db: AsyncSession, activity: dict):
     inner = activity.get("object")
     if not isinstance(inner, dict):
@@ -35,8 +62,8 @@ async def handle_undo(db: AsyncSession, activity: dict):
 
 
 async def _undo_follow(db: AsyncSession, activity: dict, inner: dict):
-    actor_ap_id = inner.get("actor") or activity.get("actor")
-    target_ap_id = inner.get("object")
+    actor_ap_id = _undo_actor(activity, inner)
+    target_ap_id = _ap_id_of(inner.get("object"))
 
     if not actor_ap_id or not target_ap_id:
         return
@@ -61,8 +88,8 @@ async def _undo_follow(db: AsyncSession, activity: dict, inner: dict):
 
 
 async def _undo_reaction(db: AsyncSession, activity: dict, inner: dict):
-    actor_ap_id = inner.get("actor") or activity.get("actor")
-    note_ap_id = inner.get("object")
+    actor_ap_id = _undo_actor(activity, inner)
+    note_ap_id = _ap_id_of(inner.get("object"))
 
     if not actor_ap_id or not note_ap_id:
         return
@@ -78,7 +105,13 @@ async def _undo_reaction(db: AsyncSession, activity: dict, inner: dict):
     # ap_id または actor+note でリアクションを検索
     inner_id = inner.get("id")
     if inner_id:
-        result = await db.execute(select(Reaction).where(Reaction.ap_id == inner_id))
+        result = await db.execute(
+            select(Reaction).where(
+                Reaction.ap_id == inner_id,
+                Reaction.actor_id == actor.id,
+                Reaction.note_id == note.id,
+            )
+        )
     else:
         result = await db.execute(
             select(Reaction).where(
@@ -101,7 +134,7 @@ async def _undo_reaction(db: AsyncSession, activity: dict, inner: dict):
 
 
 async def _undo_announce(db: AsyncSession, activity: dict, inner: dict):
-    actor_ap_id = inner.get("actor") or activity.get("actor")
+    actor_ap_id = _undo_actor(activity, inner)
     if not actor_ap_id:
         return
 
@@ -133,8 +166,8 @@ async def _undo_announce(db: AsyncSession, activity: dict, inner: dict):
 
 
 async def _undo_block(db: AsyncSession, activity: dict, inner: dict):
-    actor_ap_id = inner.get("actor") or activity.get("actor")
-    target_ap_id = inner.get("object")
+    actor_ap_id = _undo_actor(activity, inner)
+    target_ap_id = _ap_id_of(inner.get("object"))
 
     if not actor_ap_id or not target_ap_id:
         return

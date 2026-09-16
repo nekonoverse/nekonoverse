@@ -677,3 +677,68 @@ async def test_lookup_remote_actor_case_insensitive(app_client, db, mock_valkey)
     )
     assert resp.status_code == 200
     assert resp.json()["username"] == "Alice"
+
+
+async def test_signin_required_actor_hidden_from_anonymous(app_client, db, mock_valkey, test_user):
+    """require_signin_to_view のアクターは未ログインでは一覧・検索で詳細を返さない。"""
+    from app.models.follow import Follow
+
+    hidden = await make_remote_actor(db, username="hidden", domain="private.example")
+    hidden.require_signin_to_view = True
+    hidden.summary = "secret bio"
+    db.add(Follow(follower_id=test_user.actor_id, following_id=hidden.id, accepted=True))
+    db.add(Follow(follower_id=hidden.id, following_id=test_user.actor_id, accepted=True))
+    await db.commit()
+
+    for path in (f"/api/v1/accounts/{hidden.id}/followers", f"/api/v1/accounts/{hidden.id}/following"):
+        resp = await app_client.get(path)
+        assert resp.status_code == 200
+        assert resp.json() == []
+
+    resp = await app_client.get(
+        "/api/v1/accounts/lookup", params={"acct": "hidden@private.example"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["note"] == ""
+
+    resp = await app_client.get(
+        "/api/v1/accounts/search", params={"q": "hidden@private.example"}
+    )
+    assert [a["note"] for a in resp.json()] == [""]
+
+
+async def test_signin_required_actor_visible_when_logged_in(
+    authed_client, db, mock_valkey, test_user
+):
+    from app.models.follow import Follow
+
+    hidden = await make_remote_actor(db, username="hidden2", domain="private2.example")
+    hidden.require_signin_to_view = True
+    db.add(Follow(follower_id=test_user.actor_id, following_id=hidden.id, accepted=True))
+    await db.commit()
+
+    resp = await authed_client.get(f"/api/v1/accounts/{hidden.id}/followers")
+    assert [a["id"] for a in resp.json()] == [str(test_user.actor_id)]
+
+
+async def test_search_resolve_requires_login(app_client, mock_valkey):
+    from unittest.mock import AsyncMock, patch
+
+    with patch(
+        "app.services.actor_service.resolve_webfinger", AsyncMock(return_value=None)
+    ) as resolver:
+        resp = await app_client.get(
+            "/api/v1/accounts/search",
+            params={"q": "someone@remote.example", "resolve": "true"},
+        )
+    assert resp.status_code == 200
+    assert resp.json() == []
+    resolver.assert_not_awaited()
+
+
+async def test_account_lists_reject_non_positive_limit(app_client, db, mock_valkey, test_user):
+    for path in ("followers", "following", "statuses"):
+        resp = await app_client.get(
+            f"/api/v1/accounts/{test_user.actor_id}/{path}", params={"limit": -1}
+        )
+        assert resp.status_code == 422, path

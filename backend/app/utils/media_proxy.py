@@ -1,6 +1,6 @@
 import hashlib
 import hmac as _hmac
-from urllib.parse import quote
+from urllib.parse import quote, urlparse
 
 from app.config import settings
 
@@ -9,6 +9,20 @@ def _media_proxy_signing_key() -> bytes:
     """メディアプロキシの HMAC 署名に使用する鍵を返す。"""
     key = settings.media_proxy_key or settings.derive_key("media-proxy")
     return key.encode()
+
+
+def _is_local_url(url: str) -> bool:
+    """自サーバーの URL か判定する。
+
+    単純な前方一致だと "//evil.example/..." (プロトコル相対) や
+    "https://<自ドメイン>@evil.example/..." が素通しになり、閲覧者の IP が外部に漏れる。
+    """
+    if url.startswith("/"):
+        # "//host" や "/\\host" はブラウザが別ホストとして解釈する
+        return not url.startswith(("//", "/\\"))
+    local = urlparse(settings.server_url)
+    parsed = urlparse(url)
+    return (parsed.scheme, parsed.netloc) == (local.scheme, local.netloc)
 
 
 def media_proxy_url(
@@ -26,7 +40,7 @@ def media_proxy_url(
     """
     if not original_url:
         return ""
-    if original_url.startswith("/") or original_url.startswith(settings.server_url):
+    if _is_local_url(original_url):
         return original_url
     h = _hmac.new(
         _media_proxy_signing_key(), original_url.encode(), hashlib.sha256,

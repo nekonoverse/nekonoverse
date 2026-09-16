@@ -397,8 +397,10 @@ async def test_totp_verify_invalid_code(app_client, test_user, db, mock_valkey):
     )
     assert resp.status_code == 401
     # Attempt counter should be incremented on failure
-    mock_valkey.incr.assert_called_with(f"totp_attempts:{totp_token}")
-    mock_valkey.expire.assert_called_with(f"totp_attempts:{totp_token}", 300)
+    mock_valkey.incr.assert_any_call(f"totp_attempts:{totp_token}")
+    mock_valkey.expire.assert_any_call(f"totp_attempts:{totp_token}", 300)
+    # ユーザー単位の失敗回数も記録される
+    mock_valkey.incr.assert_any_call(f"totp_failures:user:{test_user.id}")
 
 
 async def test_totp_verify_expired_token(app_client, mock_valkey):
@@ -561,8 +563,10 @@ async def test_totp_verify_failed_recovery_code_increments_counter(
         json={"totp_token": totp_token, "code": "wrong-code0"},
     )
     assert resp.status_code == 401
-    mock_valkey.incr.assert_called_with(f"totp_attempts:{totp_token}")
-    mock_valkey.expire.assert_called_with(f"totp_attempts:{totp_token}", 300)
+    mock_valkey.incr.assert_any_call(f"totp_attempts:{totp_token}")
+    mock_valkey.expire.assert_any_call(f"totp_attempts:{totp_token}", 300)
+    # ユーザー単位の失敗回数も記録される
+    mock_valkey.incr.assert_any_call(f"totp_failures:user:{test_user.id}")
 
 
 async def test_totp_status_enabled(authed_client, test_user, db):

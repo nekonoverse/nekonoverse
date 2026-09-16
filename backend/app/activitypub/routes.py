@@ -226,10 +226,14 @@ async def get_featured(username: str, db: AsyncSession = Depends(get_db)):
     if not actor:
         raise HTTPException(status_code=404, detail="Actor not found")
 
+    from app.services.note_service import filter_visible_notes
     from app.services.pinned_note_service import get_pinned_notes
 
     pins = await get_pinned_notes(db, actor.id)
-    items = [render_note(pin.note) for pin in pins if pin.note]
+    # followers/direct のノートもピン留めできるが、featured は署名なしで誰でも取得できるため
+    # 未認証の閲覧者から見えるノートだけを載せる
+    notes = [pin.note for pin in pins if pin.note and pin.note.deleted_at is None]
+    items = [render_note(note) for note in await filter_visible_notes(db, notes, None)]
 
     featured_url = f"{settings.server_url}/users/{username}/featured"
     collection = {
@@ -251,7 +255,8 @@ async def get_note_ap(note_id: uuid.UUID, request: Request, db: AsyncSession = D
     from app.services.note_service import get_note_by_id
 
     note = await get_note_by_id(db, note_id)
-    if not note or note.visibility not in ("public", "unlisted"):
+    # リモートノートの正本は元サーバーにあり、このオリジンで AP 表現を返すべきではない
+    if not note or not note.local or note.visibility not in ("public", "unlisted"):
         raise HTTPException(status_code=404, detail="Note not found")
 
     if not is_ap_request(request):
@@ -369,12 +374,19 @@ async def _check_inbox_rate_limit(request: Request) -> None:
 async def _read_inbox_body(request: Request) -> bytes:
     """H-4: サイズ制限付きInboxボディ読み取り"""
     content_length = request.headers.get("content-length")
+    if content_length is not None and not content_length.isdigit():
+        raise HTTPException(status_code=400, detail="Invalid Content-Length")
     if content_length and int(content_length) > MAX_INBOX_BODY_SIZE:
         raise HTTPException(status_code=413, detail="Request body too large")
-    body = await request.body()
-    if len(body) > MAX_INBOX_BODY_SIZE:
-        raise HTTPException(status_code=413, detail="Request body too large")
-    return body
+    # chunked 転送では Content-Length がないため、読みながら上限を確認する
+    chunks: list[bytes] = []
+    received = 0
+    async for chunk in request.stream():
+        received += len(chunk)
+        if received > MAX_INBOX_BODY_SIZE:
+            raise HTTPException(status_code=413, detail="Request body too large")
+        chunks.append(chunk)
+    return b"".join(chunks)
 
 
 @router.post("/users/{username}/inbox")
@@ -489,31 +501,24 @@ async def process_inbox_activity(db: AsyncSession, activity: dict):
             logger.info("Rejected activity from blocked domain: %s", domain)
             return
 
-    # M-15: ユーザーレベルのブロックチェック
-    if actor_id_str:
-        from app.services.actor_service import get_actor_by_ap_id
-
-        remote_actor = await get_actor_by_ap_id(db, actor_id_str)
-        if remote_actor:
-            from app.models.user_block import UserBlock
-
-            block_result = await db.execute(
-                select(UserBlock)
-                .where(
-                    UserBlock.target_id == remote_actor.id,
-                )
-                .limit(1)
-            )
-            if block_result.scalar_one_or_none():
-                logger.info("Rejected activity from user-blocked actor: %s", actor_id_str)
-                return
+    # M-15 (修正): ユーザーレベルのブロックはここでは判定しない。
+    # 以前はここで「誰か1人でもこの送信者をブロックしていれば」activity 全体を
+    # 握りつぶしていたが、shared inbox は複数のローカルユーザー宛の活動を一括で
+    # 受け取るため、無関係な他ユーザーへの Follow/Like/Announce/Create までもが
+    # インスタンス全体で届かなくなってしまっていた (ブロックは本来 1 対 1 の関係)。
+    # ブロックは実際の宛先が判明する各ハンドラー側 (follow.py の Reject 送信、
+    # like.py/announce.py での記録スキップ、notification_service の通知抑止) で
+    # 宛先ローカルアクター単位に判定する。
 
     # Valkey による冪等性チェック
     activity_id = activity.get("id")
     if activity_id:
         from app.valkey_client import valkey
 
-        already_seen = await valkey.set(f"seen_activity:{activity_id}", "1", nx=True, ex=86400)
+        # 他アクターが同じ ID を先に送って正規の活動を抑止できないよう、署名者ごとに分ける
+        already_seen = await valkey.set(
+            f"seen_activity:{actor_id_str}:{activity_id}", "1", nx=True, ex=86400
+        )
         if not already_seen:
             logger.info("Duplicate activity %s, skipping", activity_id)
             return

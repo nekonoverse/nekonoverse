@@ -119,6 +119,7 @@ async def _download_image(url: str) -> bytes | None:
     from app.utils.http_client import make_async_client
 
     async with make_async_client(
+        ssrf_guard=True,
         timeout=httpx.Timeout(15.0, connect=5.0),
         follow_redirects=False,
         verify=not settings.skip_ssl_verify,

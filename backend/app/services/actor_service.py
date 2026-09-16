@@ -36,6 +36,7 @@ def _get_shared_http_client() -> httpx.AsyncClient:
         from app.utils.http_client import make_async_client
 
         _shared_http_client = make_async_client(
+            ssrf_guard=True,
             timeout=10.0,
             verify=not settings.skip_ssl_verify,
             limits=httpx.Limits(max_connections=50, max_keepalive_connections=10),
@@ -148,30 +149,32 @@ async def _get_signing_key(db: AsyncSession) -> tuple[str, str] | None:
 
 async def _signed_get(db: AsyncSession, url: str) -> httpx.Response | None:
     """署名付き HTTP GET を実行する (Authorized Fetch / Secure Mode)。"""
-    from app.utils.network import is_safe_url
-
-    if not is_safe_url(url):
-        logger.debug("Blocked signed fetch to unsafe URL: %s", url)
-        return None
-
     from app.activitypub.http_signature import sign_request
+    from app.utils.network import UnsafeURLError, safe_get
 
     signing = await _get_signing_key(db)
-    headers = {"Accept": AP_ACCEPT}
 
-    if signing:
-        key_id, private_key_pem = signing
-        sig_headers = sign_request(
-            private_key_pem=private_key_pem,
-            key_id=key_id,
-            method="GET",
-            url=url,
-            body=None,
-        )
-        headers.update(sig_headers)
+    def headers_for(target_url: str) -> dict[str, str]:
+        # 署名は Host と request-target を含むため、リダイレクト先ごとに署名し直す
+        headers = {"Accept": AP_ACCEPT}
+        if signing:
+            key_id, private_key_pem = signing
+            headers.update(
+                sign_request(
+                    private_key_pem=private_key_pem,
+                    key_id=key_id,
+                    method="GET",
+                    url=target_url,
+                    body=None,
+                )
+            )
+        return headers
 
-    client = _get_shared_http_client()
-    return await client.get(url, headers=headers, follow_redirects=True)
+    try:
+        return await safe_get(_get_shared_http_client(), url, headers_for=headers_for)
+    except UnsafeURLError as exc:
+        logger.debug("Blocked signed fetch to unsafe URL: %s", exc)
+        return None
 
 
 async def fetch_remote_actor(db: AsyncSession, ap_id: str) -> Actor | None:
@@ -432,7 +435,7 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
     if existing:
         return existing
 
-    from app.utils.network import is_private_host
+    from app.utils.network import is_private_host, safe_get
 
     if is_private_host(domain):
         logger.debug("Blocked WebFinger to private host: %s", domain)
@@ -445,17 +448,15 @@ async def resolve_webfinger(db: AsyncSession, username: str, domain: str) -> Act
         # HTTPS → HTTPフォールバック (RFC 7033ではHTTPSが必須)
         # M-13: 本番環境ではHTTPフォールバックを無効化
         try:
-            resp = await client.get(
-                f"https://{domain}/.well-known/webfinger?resource={resource}",
-                follow_redirects=True,
+            resp = await safe_get(
+                client, f"https://{domain}/.well-known/webfinger?resource={resource}"
             )
         except Exception:
             pass
         if (resp is None or resp.status_code != 200) and settings.allow_private_networks:
             # テスト/開発環境のみHTTPフォールバック
-            resp = await client.get(
-                f"http://{domain}/.well-known/webfinger?resource={resource}",
-                follow_redirects=True,
+            resp = await safe_get(
+                client, f"http://{domain}/.well-known/webfinger?resource={resource}"
             )
         if resp.status_code != 200:
             logger.warning(

@@ -3,7 +3,7 @@
 import logging
 import uuid
 
-from sqlalchemy import exists, or_, select
+from sqlalchemy import ColumnElement, and_, exists, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -170,6 +170,27 @@ async def is_actor_in_any_list(db: AsyncSession, actor_id: uuid.UUID) -> bool:
 # ---------------------------------------------------------------------------
 
 
+def _visible_to_list_owner(user: User) -> ColumnElement[bool]:
+    """リスト所有者が閲覧できる公開範囲の条件。
+
+    リストにはフォローしていないアクターも追加できるため、followers 限定ノートは
+    所有者がその作者を承認済みフォローしている場合だけに絞る。
+    """
+    from app.models.follow import Follow
+
+    followed_by_owner = select(Follow.following_id).where(
+        Follow.follower_id == user.actor_id,
+        Follow.accepted.is_(True),
+    )
+    return or_(
+        Note.visibility.in_(["public", "unlisted"]),
+        and_(
+            Note.visibility == "followers",
+            or_(Note.actor_id == user.actor_id, Note.actor_id.in_(followed_by_owner)),
+        ),
+    )
+
+
 async def get_list_timeline(
     db: AsyncSession,
     lst: List,
@@ -189,7 +210,7 @@ async def get_list_timeline(
         .where(
             Note.actor_id.in_(member_ids),
             Note.deleted_at.is_(None),
-            Note.visibility.in_(["public", "unlisted", "followers"]),
+            _visible_to_list_owner(user),
         )
     )
 
@@ -249,9 +270,41 @@ async def get_exclusive_list_actor_ids(db: AsyncSession, user_id: uuid.UUID) -> 
     return set(result.scalars().all())
 
 
-async def get_list_ids_for_actor(db: AsyncSession, actor_id: uuid.UUID) -> list[uuid.UUID]:
-    """指定アクターが所属する全リストIDを取得（ストリーミング配信用）。"""
-    result = await db.execute(select(ListMember.list_id).where(ListMember.actor_id == actor_id))
+async def get_list_ids_for_actor(
+    db: AsyncSession, actor_id: uuid.UUID, visibility: str
+) -> list[uuid.UUID]:
+    """visibility のノートを配信すべきリストIDを取得（ストリーミング配信用）。
+
+    リストTLの表示条件 (_visible_to_list_owner) と揃え、所有者が見られないノートは配信しない。
+    """
+    if visibility in ("public", "unlisted"):
+        result = await db.execute(
+            select(ListMember.list_id).where(ListMember.actor_id == actor_id)
+        )
+        return list(result.scalars().all())
+    if visibility != "followers":
+        return []
+
+    from app.models.follow import Follow
+
+    owner_follows = (
+        select(Follow.id)
+        .where(
+            Follow.follower_id == User.actor_id,
+            Follow.following_id == actor_id,
+            Follow.accepted.is_(True),
+        )
+        .exists()
+    )
+    result = await db.execute(
+        select(ListMember.list_id)
+        .join(List, ListMember.list_id == List.id)
+        .join(User, List.user_id == User.id)
+        .where(
+            ListMember.actor_id == actor_id,
+            or_(User.actor_id == actor_id, owner_follows),
+        )
+    )
     return list(result.scalars().all())
 
 

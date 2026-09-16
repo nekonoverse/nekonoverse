@@ -37,6 +37,21 @@ async def handle_create(db: AsyncSession, activity: dict):
         logger.info("Unhandled Create object type: %s", obj_type)
 
 
+def _attributed_ids(attributed_to: object) -> set[str]:
+    """attributedTo (文字列 / オブジェクト / それらの配列) からアクターIDを集める。
+
+    PeerTube は Person と Group の配列を返すため配列にも対応する。
+    """
+    items = attributed_to if isinstance(attributed_to, list) else [attributed_to]
+    ids: set[str] = set()
+    for item in items:
+        if isinstance(item, str):
+            ids.add(item)
+        elif isinstance(item, dict) and isinstance(item.get("id"), str):
+            ids.add(item["id"])
+    return ids
+
+
 async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     ap_id = note_data.get("id")
     if not ap_id:
@@ -47,24 +62,17 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
     if existing:
         return
 
-    actor_ap_id = note_data.get("attributedTo") or activity.get("actor")
-    if not actor_ap_id:
+    # 投稿者は署名検証済みの activity.actor に限る。同一ドメインの別アカウントを
+    # attributedTo に書いたなりすましを防ぐため、attributedTo はその確認にだけ使う。
+    actor_ap_id = activity.get("actor")
+    if not isinstance(actor_ap_id, str) or not actor_ap_id:
         return
-
-    # M-1: attributedToとactivity actorのドメイン一致を検証
-    activity_actor = activity.get("actor", "")
-    if actor_ap_id and activity_actor:
-        from urllib.parse import urlparse as _urlparse
-
-        attr_domain = _urlparse(actor_ap_id).hostname
-        act_domain = _urlparse(activity_actor).hostname
-        if attr_domain and act_domain and attr_domain != act_domain:
-            logger.warning(
-                "attributedTo domain mismatch: attributedTo=%s actor=%s",
-                actor_ap_id,
-                activity_actor,
-            )
-            return
+    attributed_to = note_data.get("attributedTo")
+    if attributed_to is not None and actor_ap_id not in _attributed_ids(attributed_to):
+        logger.warning(
+            "attributedTo mismatch: attributedTo=%r actor=%s", attributed_to, actor_ap_id
+        )
+        return
 
     # アクターを解決
     actor = await get_actor_by_ap_id(db, actor_ap_id)
@@ -443,7 +451,7 @@ async def handle_create_note(db: AsyncSession, activity: dict, note_data: dict):
         )
 
         exclusive_user_ids = await get_exclusive_list_user_actor_ids(db, actor.id)
-        list_ids = await get_list_ids_for_actor(db, actor.id)
+        list_ids = await get_list_ids_for_actor(db, actor.id, visibility)
 
         pipe = valkey_client.pipeline()
         if visibility == "public":
@@ -550,9 +558,17 @@ async def _handle_poll_vote(db: AsyncSession, activity: dict, obj: dict):
         logger.debug("Poll vote option '%s' not found in poll %s", option_name, in_reply_to)
         return
 
-    # 投票者アクターを解決
-    voter_ap_id = obj.get("attributedTo") or activity.get("actor")
-    if not voter_ap_id:
+    # 投票者は署名検証済みの activity.actor に限る (他人名義の投票を防ぐ)
+    voter_ap_id = activity.get("actor")
+    if not isinstance(voter_ap_id, str) or not voter_ap_id:
+        return
+    attributed_to = obj.get("attributedTo")
+    if attributed_to is not None and voter_ap_id not in _attributed_ids(attributed_to):
+        logger.warning(
+            "Poll vote attributedTo mismatch: attributedTo=%r actor=%s",
+            attributed_to,
+            voter_ap_id,
+        )
         return
 
     voter = await get_actor_by_ap_id(db, voter_ap_id)

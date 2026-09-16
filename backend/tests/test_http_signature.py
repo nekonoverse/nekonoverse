@@ -167,7 +167,8 @@ def test_hs2019_algorithm_dispatches_by_key_type():
     # Ed25519 鍵で sign したヘッダの algorithm を 'hs2019' に書き換えて受信側へ渡す
     ed_priv, ed_pub_mb = generate_ed25519_keypair()
     headers = sign_request(
-        ed_priv, "key-id", "POST", "https://remote.example/inbox", algorithm="ed25519"
+        ed_priv, "key-id", "POST", "https://remote.example/inbox",
+        body=b"{}", algorithm="ed25519",
     )
     rewritten = headers["Signature"].replace('algorithm="ed25519"', 'algorithm="hs2019"')
     verify_headers = {k.lower(): v for k, v in headers.items()}
@@ -185,7 +186,8 @@ def test_empty_algorithm_with_ed25519_key_accepted():
     """
     ed_priv, ed_pub_mb = generate_ed25519_keypair()
     headers = sign_request(
-        ed_priv, "key-id", "POST", "https://remote.example/inbox", algorithm="ed25519"
+        ed_priv, "key-id", "POST", "https://remote.example/inbox",
+        body=b"{}", algorithm="ed25519",
     )
     # algorithm パラメータを除去 (空状態をシミュレート)
     stripped = re.sub(r',?algorithm="[^"]*"', "", headers["Signature"])
@@ -225,3 +227,62 @@ def test_sign_ed25519_algorithm_with_rsa_key_raises():
             "https://remote.example/inbox",
             algorithm="ed25519",
         )
+
+
+# ── 署名対象ヘッダーの必須化 ────────────────────────────────────────────────
+
+
+def _resign_with_headers(priv: str, headers_to_sign: list[str], values: dict[str, str]) -> str:
+    """指定したヘッダーだけを署名した Signature ヘッダーを作る。"""
+    import base64
+
+    from cryptography.hazmat.primitives import hashes, serialization
+    from cryptography.hazmat.primitives.asymmetric import padding
+
+    parts = []
+    for h in headers_to_sign:
+        if h == "(request-target)":
+            parts.append("(request-target): post /inbox")
+        else:
+            parts.append(f"{h}: {values[h]}")
+    key = serialization.load_pem_private_key(priv.encode(), password=None)
+    sig = key.sign("\n".join(parts).encode(), padding.PKCS1v15(), hashes.SHA256())
+    return (
+        f'keyId="key-id",algorithm="rsa-sha256",headers="{" ".join(headers_to_sign)}",'
+        f'signature="{base64.b64encode(sig).decode()}"'
+    )
+
+
+def test_verify_post_requires_signed_digest():
+    priv, pub = generate_rsa_keypair()
+    headers = sign_request(priv, "key-id", "POST", "https://remote.example/inbox", body=b"{}")
+    values = {k.lower(): v for k, v in headers.items()}
+    sig = _resign_with_headers(priv, ["(request-target)", "host", "date"], values)
+    assert verify_signature(pub, sig, "POST", "/inbox", values) is False
+
+    sig = _resign_with_headers(priv, ["(request-target)", "host", "date", "digest"], values)
+    assert verify_signature(pub, sig, "POST", "/inbox", values) is True
+
+
+def test_verify_requires_signed_date():
+    priv, pub = generate_rsa_keypair()
+    headers = sign_request(priv, "key-id", "POST", "https://remote.example/inbox", body=b"{}")
+    values = {k.lower(): v for k, v in headers.items()}
+    sig = _resign_with_headers(priv, ["(request-target)", "host", "digest"], values)
+    assert verify_signature(pub, sig, "POST", "/inbox", values) is False
+
+
+def test_verify_requires_signed_request_target():
+    priv, pub = generate_rsa_keypair()
+    headers = sign_request(priv, "key-id", "POST", "https://remote.example/inbox", body=b"{}")
+    values = {k.lower(): v for k, v in headers.items()}
+    sig = _resign_with_headers(priv, ["host", "date", "digest"], values)
+    assert verify_signature(pub, sig, "POST", "/inbox", values) is False
+
+
+def test_verify_rejects_missing_date_header():
+    priv, pub = generate_rsa_keypair()
+    headers = sign_request(priv, "key-id", "POST", "https://remote.example/inbox", body=b"{}")
+    values = {k.lower(): v for k, v in headers.items()}
+    del values["date"]
+    assert verify_signature(pub, headers["Signature"], "POST", "/inbox", values) is False
