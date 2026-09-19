@@ -100,9 +100,12 @@ services:
               sleep 3
             done &&
             python -m scripts.check_schema &&
-            umask 0111 && uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers 4
+            umask 0111 && uvicorn app.main:app --uds /var/run/nekonoverse-app/uvicorn.sock --workers $$UVICORN_WORKERS
           '
     environment:
+      # uvicorn worker はプロセスごとに全依存をフルロードするため、台数がそのまま
+      # メモリ使用量に直結する。インスタンスの規模に応じて .env で上書きすること。
+      UVICORN_WORKERS: ${UVICORN_WORKERS:-2}
       DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
       VALKEY_URL: unix:///var/run/valkey/valkey.sock?db=0
       DOMAIN: ${DOMAIN}

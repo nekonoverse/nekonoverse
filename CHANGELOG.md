@@ -1,3 +1,15 @@
+## [20260919-1](https://github.com/nekonoverse/nekonoverse/releases/tag/20260919-1) — 2026-09-19
+
+### セキュリティ
+
+- **anyio・click の脆弱性を修正** — `uv.lock` 上で固定されていた anyio 4.12.1 に、国際化ドメイン名 (IDN) に対する TLS 証明書検証を IDNA 2003 と 2008 の不一致により誤ったホストと照合しうる脆弱性 (CVE-2026-63374) と、process-pool worker が stderr パイプをドレインせず攻撃者制御下のデータ書き込みでデッドロックしうる脆弱性 (CVE-2026-64847) があり、4.14.2 に更新した。あわせて uvicorn の transitive dependency である click 8.3.1 の `click.edit()` コマンドインジェクション (PYSEC-2026-2132) を 8.3.3 系へ更新した (本アプリは `click.edit()` を呼んでいないため実害は限定的)
+
+### パフォーマンス
+
+- **バックエンドのメモリ使用量を削減** — uvicorn の `--workers` はプロセスごとに FastAPI/SQLAlchemy/cryptography/Pillow 等の全依存をロードするためメモリの主要因になっていた。`UVICORN_WORKERS` 環境変数で外出しし、デフォルトを 4→2 に削減。あわせて glibc malloc のアリーナ断片化による長時間稼働時の RSS 肥大化を抑えるため `MALLOC_ARENA_MAX=2` を設定した
+
+---
+
 ## [20260916-2](https://github.com/nekonoverse/nekonoverse/releases/tag/20260916-2) — 2026-09-16
 
 ### セキュリティ
