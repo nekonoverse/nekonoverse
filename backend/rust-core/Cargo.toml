@@ -1,0 +1,9 @@
+[package]
+name = "nekonoverse-core"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+unicode-general-category.workspace = true
+ammonia.workspace = true
+thiserror.workspace = true

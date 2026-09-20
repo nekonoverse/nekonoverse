@@ -1,0 +1,12 @@
+[workspace]
+resolver = "2"
+members = ["rust-core", "native"]
+
+[workspace.package]
+edition = "2021"
+version = "0.1.0"
+
+[workspace.dependencies]
+unicode-general-category = "0.6"
+ammonia = "4"
+thiserror = "2"

@@ -1,7 +1,7 @@
 [package]
 name = "nekonoverse-native"
-version = "0.1.0"
-edition = "2021"
+version.workspace = true
+edition.workspace = true
 
 [lib]
 name = "nekonoverse_native"
@@ -9,5 +9,4 @@ crate-type = ["cdylib"]
 
 [dependencies]
 pyo3 = { version = "0.29", features = ["extension-module"] }
-unicode-general-category = "0.6"
-ammonia = "4"
+nekonoverse-core = { path = "../rust-core" }
