@@ -12,6 +12,10 @@ venv/
 node_modules/
 frontend/dist/
 
+# Rust
+target/
+*.whl
+
 # Environment
 .env
 .env.cloudflared
