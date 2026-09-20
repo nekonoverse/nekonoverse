@@ -57,8 +57,13 @@ jobs:
 
       - name: Build Rust native extension (via Docker, no local Rust toolchain)
         run: |
-          docker run --rm -v "$PWD/backend/native:/io" ghcr.io/pyo3/maturin build \
-            --release -o /io/dist -i /opt/python/cp312-cp312/bin/python3.12
+          docker run --rm \
+            -v "$PWD/backend/Cargo.toml:/workspace/Cargo.toml" \
+            -v "$PWD/backend/rust-core:/workspace/rust-core" \
+            -v "$PWD/backend/native:/workspace/native" \
+            -v "$PWD/backend/native/dist:/wheels" \
+            ghcr.io/pyo3/maturin build \
+            --release --manifest-path /workspace/native/Cargo.toml -o /wheels -i /opt/python/cp312-cp312/bin/python3.12
 
       - name: Install dependencies
         working-directory: backend
