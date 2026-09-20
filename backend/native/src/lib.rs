@@ -1,6 +1,7 @@
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
+mod crypto;
 mod emoji;
 mod sanitize;
 
@@ -48,5 +49,8 @@ fn nekonoverse_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(focal_from_detections, m)?)?;
     m.add_function(wrap_pyfunction!(emoji::is_single_emoji, m)?)?;
     m.add_function(wrap_pyfunction!(sanitize::sanitize_html, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::base58btc_encode, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::base58btc_decode, m)?)?;
+    m.add_function(wrap_pyfunction!(crypto::ed25519_multibase_to_public_bytes, m)?)?;
     Ok(())
 }

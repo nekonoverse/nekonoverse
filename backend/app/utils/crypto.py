@@ -1,6 +1,8 @@
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric import ed25519, rsa
 
+from app.utils._native import NATIVE_AVAILABLE, native
+
 # FEP-521a Multikey の Ed25519 multicodec プレフィックス (varint: 0xED 0x01)
 _ED25519_MULTICODEC_PREFIX = b"\xed\x01"
 
@@ -33,8 +35,8 @@ def generate_rsa_keypair() -> tuple[str, str]:
     return private_pem, public_pem
 
 
-def _base58btc_encode(data: bytes) -> str:
-    """base58btc エンコード (Bitcoin alphabet 固定)。leading zero は '1' で表現。"""
+def _base58btc_encode_py(data: bytes) -> str:
+    """base58btc エンコード (純 Python フォールバック実装)。leading zero は '1' で表現。"""
     n = int.from_bytes(data, "big")
     out = ""
     while n > 0:
@@ -48,8 +50,15 @@ def _base58btc_encode(data: bytes) -> str:
     return out
 
 
-def _base58btc_decode(text: str) -> bytes:
-    """base58btc デコード。不正な文字は ValueError。"""
+def _base58btc_encode(data: bytes) -> str:
+    """base58btc エンコード (Bitcoin alphabet 固定)。leading zero は '1' で表現。"""
+    if NATIVE_AVAILABLE:
+        return native.base58btc_encode(data)
+    return _base58btc_encode_py(data)
+
+
+def _base58btc_decode_py(text: str) -> bytes:
+    """base58btc デコード (純 Python フォールバック実装)。不正な文字は ValueError。"""
     n = 0
     for ch in text:
         idx = _BASE58_ALPHABET.find(ch)
@@ -66,6 +75,13 @@ def _base58btc_decode(text: str) -> bytes:
         else:
             break
     return b"\x00" * leading_zeros + body
+
+
+def _base58btc_decode(text: str) -> bytes:
+    """base58btc デコード。不正な文字は ValueError。"""
+    if NATIVE_AVAILABLE:
+        return bytes(native.base58btc_decode(text))
+    return _base58btc_decode_py(text)
 
 
 def generate_ed25519_keypair() -> tuple[str, str]:
@@ -91,17 +107,27 @@ def generate_ed25519_keypair() -> tuple[str, str]:
     return private_pem, public_multibase
 
 
-def ed25519_multibase_to_public_bytes(multibase: str) -> bytes:
+def _ed25519_multibase_to_public_bytes_py(multibase: str) -> bytes:
     """Multikey 形式 (`z6Mk...`) から Ed25519 公開鍵 32 byte を抽出する。
 
-    `z` 以外のプレフィックスや multicodec 不一致は ValueError。
+    純 Python フォールバック実装。`z` 以外のプレフィックスや multicodec 不一致は ValueError。
     """
     if not multibase.startswith("z"):
         raise ValueError("Multikey must start with 'z' (base58btc)")
-    decoded = _base58btc_decode(multibase[1:])
+    decoded = _base58btc_decode_py(multibase[1:])
     if not decoded.startswith(_ED25519_MULTICODEC_PREFIX):
         raise ValueError("Multikey does not have Ed25519 multicodec prefix (0xED 0x01)")
     raw = decoded[len(_ED25519_MULTICODEC_PREFIX) :]
     if len(raw) != 32:
         raise ValueError(f"Ed25519 public key must be 32 bytes, got {len(raw)}")
     return raw
+
+
+def ed25519_multibase_to_public_bytes(multibase: str) -> bytes:
+    """Multikey 形式 (`z6Mk...`) から Ed25519 公開鍵 32 byte を抽出する。
+
+    `z` 以外のプレフィックスや multicodec 不一致は ValueError。
+    """
+    if NATIVE_AVAILABLE:
+        return bytes(native.ed25519_multibase_to_public_bytes(multibase))
+    return _ed25519_multibase_to_public_bytes_py(multibase)
