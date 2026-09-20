@@ -1,7 +1,9 @@
 pub mod config;
 pub mod db;
 pub mod error;
+pub mod hmac_sig;
 pub mod routes;
+pub mod ssrf;
 pub mod state;
 pub mod valkey;
 
@@ -16,5 +18,6 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::health::router())
         .merge(routes::webfinger::router())
         .merge(routes::nodeinfo::router())
+        .merge(routes::media_proxy::router())
         .with_state(state)
 }
