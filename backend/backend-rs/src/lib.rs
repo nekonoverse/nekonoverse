@@ -12,9 +12,9 @@ use state::AppState;
 /// `tests/` の `tower::ServiceExt::oneshot` パターンからも同じ関数を使う
 /// (Python 側の `httpx.ASGITransport(app=app)` と同じ役割)。
 pub fn build_router(state: AppState) -> Router {
-    // nodeinfo は Stage 1 の後続PRで追加する。
     Router::new()
         .merge(routes::health::router())
         .merge(routes::webfinger::router())
+        .merge(routes::nodeinfo::router())
         .with_state(state)
 }
