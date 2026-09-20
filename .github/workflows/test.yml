@@ -128,6 +128,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Apply database migrations (alembic)
+        # スキーマは Alembic が唯一の DDL 権限を持つ (Issue #1139)。backend-rs の
+        # 結合テストは webfinger 等で実テーブルを読み書きするため、cargo test の
+        # 前に本番と同じ経路でスキーマを構築しておく。
+        working-directory: backend
+        env:
+          DATABASE_URL: postgresql+asyncpg://nekonoverse:testpass@localhost:5432/nekonoverse_rs_test
+          DOMAIN: localhost
+          SECRET_KEY: test-secret-key
+        run: |
+          pip install -e ".[dev]"
+          PYTHONPATH=. alembic upgrade head
+
       - name: cargo fmt --check
         run: |
           docker run --rm -v "$PWD/backend:/workspace" -w /workspace \
