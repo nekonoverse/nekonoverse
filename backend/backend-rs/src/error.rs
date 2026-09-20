@@ -1,4 +1,4 @@
-use axum::http::StatusCode;
+use axum::http::{HeaderName, HeaderValue, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::Json;
 use serde_json::json;
@@ -7,6 +7,8 @@ use serde_json::json;
 pub struct AppError {
     pub status: StatusCode,
     pub detail: String,
+    /// `HTTPException(..., headers={...})` 相当 (例: `X-Deletion-Pending: true`)。
+    pub headers: Vec<(HeaderName, HeaderValue)>,
 }
 
 impl AppError {
@@ -14,6 +16,7 @@ impl AppError {
         Self {
             status,
             detail: detail.into(),
+            headers: Vec::new(),
         }
     }
 
@@ -24,11 +27,20 @@ impl AppError {
     pub fn bad_request(detail: impl Into<String>) -> Self {
         Self::new(StatusCode::BAD_REQUEST, detail)
     }
+
+    pub fn with_header(mut self, name: HeaderName, value: HeaderValue) -> Self {
+        self.headers.push((name, value));
+        self
+    }
 }
 
 impl IntoResponse for AppError {
     fn into_response(self) -> Response {
-        (self.status, Json(json!({ "detail": self.detail }))).into_response()
+        let mut response = (self.status, Json(json!({ "detail": self.detail }))).into_response();
+        for (name, value) in self.headers {
+            response.headers_mut().insert(name, value);
+        }
+        response
     }
 }
 

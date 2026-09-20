@@ -1,7 +1,9 @@
+pub mod auth;
 pub mod config;
 pub mod db;
 pub mod error;
 pub mod hmac_sig;
+pub mod note_visibility;
 pub mod routes;
 pub mod ssrf;
 pub mod state;
@@ -19,5 +21,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::webfinger::router())
         .merge(routes::nodeinfo::router())
         .merge(routes::media_proxy::router())
+        .merge(routes::authorized_apps::router())
+        .merge(routes::statuses::router())
         .with_state(state)
 }
