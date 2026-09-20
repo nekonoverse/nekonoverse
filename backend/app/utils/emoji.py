@@ -1,6 +1,8 @@
 import re
 import unicodedata
 
+from app.utils._native import NATIVE_AVAILABLE, native
+
 CUSTOM_EMOJI_PATTERN = re.compile(r"^:([a-zA-Z0-9_]+)(?:@([a-zA-Z0-9.-]+))?:$")
 
 # 単一の絵文字文字にマッチする (ZWJ を含む合成絵文字を含む)
@@ -73,8 +75,11 @@ def _is_single_emoji_sequence(text: str) -> bool:
     return count == 1
 
 
-def is_single_emoji(text: str) -> bool:
-    """文字列が単一の絵文字 (ZWJ による合成を含む) かチェックする。"""
+def _is_single_emoji_py(text: str) -> bool:
+    """文字列が単一の絵文字 (ZWJ による合成を含む) かチェックする。
+
+    純 Python フォールバック実装。
+    """
     if not text or len(text) > 20:
         return False
 
@@ -93,6 +98,17 @@ def is_single_emoji(text: str) -> bool:
             return False
 
     return len(text) > 0 and _is_single_emoji_sequence(text)
+
+
+def is_single_emoji(text: str) -> bool:
+    """文字列が単一の絵文字 (ZWJ による合成を含む) かチェックする。
+
+    ビルド済みの Rust ネイティブ拡張 (`nekonoverse_native`) が利用可能な場合はそちらを、
+    そうでなければ純 Python 実装 (`_is_single_emoji_py`) にフォールバックする。
+    """
+    if NATIVE_AVAILABLE:
+        return native.is_single_emoji(text)
+    return _is_single_emoji_py(text)
 
 
 def is_custom_emoji_shortcode(text: str) -> bool:
