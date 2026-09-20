@@ -1,6 +1,8 @@
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
+mod emoji;
+
 /// Mirrors `app.utils.focal.focal_from_detections` (Python) exactly:
 /// union bounding box of all detections, Y biased to the top third of the
 /// box (avoids cropping heads/hair when multiple faces are present).
@@ -43,5 +45,6 @@ fn focal_from_detections(
 #[pymodule]
 fn nekonoverse_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(focal_from_detections, m)?)?;
+    m.add_function(wrap_pyfunction!(emoji::is_single_emoji, m)?)?;
     Ok(())
 }
