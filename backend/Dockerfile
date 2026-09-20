@@ -4,8 +4,10 @@
 # このビルドステージの中だけで完結させる。最終イメージにはビルド済み wheel
 # だけをコピーし、Rust ツールチェーン自体は持ち込まない。
 FROM ghcr.io/pyo3/maturin AS rust-builder
-COPY native /native
-RUN maturin build --release --manifest-path /native/Cargo.toml -o /wheels -i /opt/python/cp312-cp312/bin/python3.12
+COPY Cargo.toml /workspace/Cargo.toml
+COPY rust-core /workspace/rust-core
+COPY native /workspace/native
+RUN maturin build --release --manifest-path /workspace/native/Cargo.toml -o /wheels -i /opt/python/cp312-cp312/bin/python3.12
 
 FROM python:3.12-slim AS base
 
