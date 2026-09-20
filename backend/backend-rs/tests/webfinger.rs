@@ -1,42 +1,11 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use serde_json::Value;
-use sqlx::PgPool;
 use tower::ServiceExt;
 use uuid::Uuid;
 
 mod common;
-
-/// `actors` テーブル (id/ap_id/username 等に `server_default` が無いため
-/// 明示生成が必須) にテスト用のローカルアクターを1件投入する。
-/// `backend/tests/conftest.py` の `test_user` フィクスチャに対応する
-/// 最小限のシード。
-async fn seed_local_actor(db: &PgPool, username: &str) -> Uuid {
-    let id = Uuid::new_v4();
-    let ap_id = format!("https://localhost/users/{username}");
-    let inbox_url = format!("{ap_id}/inbox");
-    sqlx::query(
-        r#"
-        INSERT INTO actors (
-            id, ap_id, type, username, domain, inbox_url, public_key_pem,
-            is_cat, manually_approves_followers, discoverable, is_bot,
-            require_signin_to_view, created_at, updated_at
-        ) VALUES (
-            $1, $2, 'Person', $3, NULL, $4, 'dummy-pem',
-            false, false, true, false,
-            false, now(), now()
-        )
-        "#,
-    )
-    .bind(id)
-    .bind(&ap_id)
-    .bind(username)
-    .bind(&inbox_url)
-    .execute(db)
-    .await
-    .expect("failed to seed test actor");
-    id
-}
+use common::seed_local_actor;
 
 async fn get(app: axum::Router, uri: &str) -> (StatusCode, Value) {
     let response = app

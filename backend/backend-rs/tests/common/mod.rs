@@ -1,4 +1,7 @@
+use chrono::{DateTime, Utc};
 use nekonoverse_backend_rs::{build_router, config::Config, db, state::AppState, valkey};
+use sqlx::PgPool;
+use uuid::Uuid;
 
 /// テスト用の `Router` を組み立てる。DATABASE_URL/VALKEY_URL は CI/ローカルの
 /// テスト用 Postgres・Valkey コンテナを指す環境変数から読む
@@ -32,4 +35,62 @@ pub async fn test_app_with_db() -> (axum::Router, sqlx::PgPool) {
         config,
     };
     (build_router(state), db_pool)
+}
+
+/// `actors` テーブル (id/ap_id/username 等に `server_default` が無いため
+/// 明示生成が必須) にテスト用のローカルアクターを1件投入する。
+/// `backend/tests/conftest.py` の `test_user` フィクスチャに対応する最小限のシード。
+#[allow(dead_code)]
+pub async fn seed_local_actor(db: &PgPool, username: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    let ap_id = format!("https://localhost/users/{username}");
+    let inbox_url = format!("{ap_id}/inbox");
+    sqlx::query(
+        r#"
+        INSERT INTO actors (
+            id, ap_id, type, username, domain, inbox_url, public_key_pem,
+            is_cat, manually_approves_followers, discoverable, is_bot,
+            require_signin_to_view, created_at, updated_at
+        ) VALUES (
+            $1, $2, 'Person', $3, NULL, $4, 'dummy-pem',
+            false, false, true, false,
+            false, now(), now()
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(&ap_id)
+    .bind(username)
+    .bind(&inbox_url)
+    .execute(db)
+    .await
+    .expect("failed to seed test actor");
+    id
+}
+
+/// `notes` テーブルにテスト用のローカル投稿を1件投入する。
+/// `backend/tests/conftest.py` の `make_note` に対応する最小限のシード。
+#[allow(dead_code)]
+pub async fn seed_note(db: &PgPool, actor_id: Uuid, published: DateTime<Utc>) -> Uuid {
+    let id = Uuid::new_v4();
+    let ap_id = format!("https://localhost/notes/{id}");
+    sqlx::query(
+        r#"
+        INSERT INTO notes (
+            id, ap_id, actor_id, content, visibility, sensitive, "to", cc, published,
+            replies_count, reactions_count, renotes_count, local, is_poll, poll_multiple, is_talk
+        ) VALUES (
+            $1, $2, $3, 'test note', 'public', false, '[]'::jsonb, '[]'::jsonb, $4,
+            0, 0, 0, true, false, false, false
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(&ap_id)
+    .bind(actor_id)
+    .bind(published)
+    .execute(db)
+    .await
+    .expect("failed to seed test note");
+    id
 }

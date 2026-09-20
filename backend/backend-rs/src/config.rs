@@ -11,6 +11,10 @@ pub struct Config {
     pub valkey_url: String,
     pub domain: String,
     pub use_https: bool,
+    /// `app.config.Settings.registration_open` のデフォルト値。
+    /// `server_settings` の `registration_mode`/`registration_open` が
+    /// 未設定の場合のフォールバックとして nodeinfo から参照する。
+    pub registration_open: bool,
     /// 指定時は Unix Domain Socket でこのパスに bind する (本番想定)。
     /// 未指定時は `bind_addr` で TCP bind する (開発/テスト想定)。
     pub bind_uds: Option<String>,
@@ -35,6 +39,9 @@ impl Config {
             use_https: env::var("USE_HTTPS")
                 .map(|v| v != "false" && v != "0")
                 .unwrap_or(true),
+            registration_open: env::var("REGISTRATION_OPEN")
+                .map(|v| v == "true" || v == "1")
+                .unwrap_or(false),
             bind_uds: env::var("BIND_UDS").ok(),
             bind_addr: env::var("BIND_ADDR").unwrap_or_else(|_| "0.0.0.0:8000".into()),
         }
