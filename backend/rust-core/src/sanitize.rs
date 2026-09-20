@@ -72,7 +72,10 @@ pub fn sanitize_html(html: &str) -> String {
     tags.extend(BLOCK_SEPARATOR_TAGS);
 
     let mut attrs: HashMap<&str, HashSet<&str>> = HashMap::new();
-    attrs.insert("a", ["href", "rel", "class", "target"].into_iter().collect());
+    attrs.insert(
+        "a",
+        ["href", "rel", "class", "target"].into_iter().collect(),
+    );
     attrs.insert("span", ["class"].into_iter().collect());
 
     let url_schemes: HashSet<&str> = ["http", "https", "mailto"].into_iter().collect();

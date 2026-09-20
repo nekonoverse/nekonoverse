@@ -1,4 +1,6 @@
-use nekonoverse_core::focal::{focal_from_detections as core_focal_from_detections, BBox, Detection};
+use nekonoverse_core::focal::{
+    focal_from_detections as core_focal_from_detections, BBox, Detection,
+};
 use pyo3::prelude::*;
 use pyo3::types::PyAny;
 
@@ -39,6 +41,9 @@ fn nekonoverse_native(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sanitize::sanitize_html, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::base58btc_encode, m)?)?;
     m.add_function(wrap_pyfunction!(crypto::base58btc_decode, m)?)?;
-    m.add_function(wrap_pyfunction!(crypto::ed25519_multibase_to_public_bytes, m)?)?;
+    m.add_function(wrap_pyfunction!(
+        crypto::ed25519_multibase_to_public_bytes,
+        m
+    )?)?;
     Ok(())
 }

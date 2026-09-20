@@ -59,11 +59,17 @@ jobs:
         run: |
           docker run --rm \
             -v "$PWD/backend/Cargo.toml:/workspace/Cargo.toml" \
+            -v "$PWD/backend/Cargo.lock:/workspace/Cargo.lock" \
             -v "$PWD/backend/rust-core:/workspace/rust-core" \
             -v "$PWD/backend/native:/workspace/native" \
+            -v "$PWD/backend/backend-rs/Cargo.toml:/workspace/backend-rs/Cargo.toml" \
             -v "$PWD/backend/native/dist:/wheels" \
-            ghcr.io/pyo3/maturin build \
-            --release --manifest-path /workspace/native/Cargo.toml -o /wheels -i /opt/python/cp312-cp312/bin/python3.12
+            --entrypoint sh ghcr.io/pyo3/maturin -c '
+              mkdir -p /workspace/backend-rs/src &&
+              echo "fn main() {}" > /workspace/backend-rs/src/main.rs &&
+              echo "" > /workspace/backend-rs/src/lib.rs &&
+              maturin build --release --manifest-path /workspace/native/Cargo.toml -o /wheels -i /opt/python/cp312-cp312/bin/python3.12
+            '
 
       - name: Install dependencies
         working-directory: backend
@@ -85,6 +91,58 @@ jobs:
           DEBUG: "true"
           REGISTRATION_OPEN: "true"
         run: python -m pytest tests/ -v -n auto --shard-id=${{ matrix.shard }} --num-shards=4
+
+  backend-rs-test:
+    # 完全Rust化ロードマップ (strangler fig) の backend-rs (axum サービス) 用。
+    # native (PyO3 拡張) は Python インタプリタが無いとビルドスクリプトすら
+    # 実行できないため、workspace から明示的に除外する
+    # (native 自体の検証は backend-test ジョブの pytest 側で行われる)。
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: nekonoverse
+          POSTGRES_PASSWORD: testpass
+          POSTGRES_DB: nekonoverse_rs_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      valkey:
+        image: valkey/valkey:8
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "valkey-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://nekonoverse:testpass@localhost:5432/nekonoverse_rs_test
+      VALKEY_URL: redis://localhost:6379/0
+      DOMAIN: localhost
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: cargo fmt --check
+        run: |
+          docker run --rm -v "$PWD/backend:/workspace" -w /workspace \
+            rust:1-slim sh -c "rustup component add rustfmt && cargo fmt --check --package nekonoverse-core --package nekonoverse-backend-rs"
+
+      - name: cargo clippy
+        run: |
+          docker run --rm -v "$PWD/backend:/workspace" -w /workspace \
+            rust:1-slim sh -c "rustup component add clippy && cargo clippy --workspace --exclude nekonoverse-native --all-targets -- -D warnings"
+
+      - name: cargo test
+        run: |
+          docker run --rm --network host -v "$PWD/backend:/workspace" -w /workspace \
+            -e DATABASE_URL -e VALKEY_URL -e DOMAIN \
+            rust:1-slim cargo test --workspace --exclude nekonoverse-native
 
   alembic-migration:
     # 実 PostgreSQL に対して `alembic upgrade head` → `downgrade base` → `upgrade head`

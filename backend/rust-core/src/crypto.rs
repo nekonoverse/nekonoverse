@@ -80,7 +80,10 @@ pub fn base58btc_decode(text: &str) -> Result<Vec<u8>, CryptoError> {
     };
 
     // leading '1' を 0x00 byte に戻す
-    let leading_zeros = text.chars().take_while(|&c| c == BASE58_ALPHABET[0] as char).count();
+    let leading_zeros = text
+        .chars()
+        .take_while(|&c| c == BASE58_ALPHABET[0] as char)
+        .count();
 
     let mut result = vec![0u8; leading_zeros];
     result.extend(body);
