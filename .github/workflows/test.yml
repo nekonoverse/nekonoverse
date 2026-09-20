@@ -131,7 +131,7 @@ jobs:
       - name: cargo fmt --check
         run: |
           docker run --rm -v "$PWD/backend:/workspace" -w /workspace \
-            rust:1-slim cargo fmt --check --package nekonoverse-core --package nekonoverse-backend-rs
+            rust:1-slim sh -c "rustup component add rustfmt && cargo fmt --check --package nekonoverse-core --package nekonoverse-backend-rs"
 
       - name: cargo clippy
         run: |
