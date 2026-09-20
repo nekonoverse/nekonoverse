@@ -2,6 +2,8 @@ import re
 
 import bleach
 
+from app.utils._native import NATIVE_AVAILABLE, native
+
 ALLOWED_TAGS = ["a", "br", "p", "span", "em", "strong", "code", "pre", "blockquote"]
 ALLOWED_ATTRIBUTES = {"a": ["href", "rel", "class", "target"], "span": ["class"]}
 
@@ -68,9 +70,8 @@ def text_to_html(text: str) -> str:
 ALLOWED_PROTOCOLS = ["http", "https", "mailto"]
 
 
-def sanitize_html(html: str) -> str:
-    """リモートソースからの HTML をサニタイズする。"""
-    html = EMOJI_IMG_RE.sub(r"\1", html)
+def _sanitize_html_py(html: str) -> str:
+    """許可リストに基づいて HTML をサニタイズする (純 Python フォールバック実装)。"""
     return bleach.clean(
         html,
         tags=ALLOWED_TAGS,
@@ -78,3 +79,20 @@ def sanitize_html(html: str) -> str:
         protocols=ALLOWED_PROTOCOLS,
         strip=True,
     )
+
+
+def sanitize_html(html: str) -> str:
+    """リモートソースからの HTML をサニタイズする。
+
+    ビルド済みの Rust ネイティブ拡張 (`nekonoverse_native`) が利用可能な場合はそちらを、
+    そうでなければ純 Python 実装 (`_sanitize_html_py`) にフォールバックする。
+
+    既知の差異 (安全側にのみ倒れる): Rust 実装 (ammonia ベース) は `<script>`/`<style>`
+    タグを内容ごと完全に除去するが、Python 実装 (bleach) はタグのみ除去し内容をテキスト
+    として残す。それ以外の挙動 (属性フィルタリング・プロトコル検証・不正な入れ子構造の
+    修復等) は完全に一致することを確認済み。
+    """
+    html = EMOJI_IMG_RE.sub(r"\1", html)
+    if NATIVE_AVAILABLE:
+        return native.sanitize_html(html)
+    return _sanitize_html_py(html)
