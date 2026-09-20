@@ -55,9 +55,16 @@ jobs:
         with:
           python-version: "3.12"
 
+      - name: Build Rust native extension (via Docker, no local Rust toolchain)
+        run: |
+          docker run --rm -v "$PWD/backend/native:/io" ghcr.io/pyo3/maturin build \
+            --release -o /io/dist -i /opt/python/cp312-cp312/bin/python3.12
+
       - name: Install dependencies
         working-directory: backend
-        run: pip install -e ".[dev]"
+        run: |
+          pip install -e ".[dev]"
+          pip install native/dist/*.whl
 
       - name: Lint (ruff)
         working-directory: backend

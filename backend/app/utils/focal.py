@@ -1,7 +1,10 @@
-def focal_from_detections(
+from app.utils._native import NATIVE_AVAILABLE, native
+
+
+def _focal_from_detections_py(
     results: list[dict], width: int, height: int
 ) -> tuple[float, float] | None:
-    """顔検出結果からフォーカルポイントを計算する。
+    """顔検出結果からフォーカルポイントを計算する (純 Python フォールバック実装)。
 
     すべてのバウンディングボックスの和集合を使用し、
     複数の顔がある画像では1つだけでなく全検出顔の中心にフォーカルポイントを設定する。
@@ -21,3 +24,19 @@ def focal_from_detections(
     focal_x = max(-1.0, min(1.0, (cx / width) * 2 - 1))
     focal_y = max(-1.0, min(1.0, 1 - (cy / height) * 2))
     return (focal_x, focal_y)
+
+
+def focal_from_detections(
+    results: list[dict], width: int, height: int
+) -> tuple[float, float] | None:
+    """顔検出結果からフォーカルポイントを計算する。
+
+    すべてのバウンディングボックスの和集合を使用し、
+    複数の顔がある画像では1つだけでなく全検出顔の中心にフォーカルポイントを設定する。
+
+    ビルド済みの Rust ネイティブ拡張 (`nekonoverse_native`) が利用可能な場合はそちらを、
+    そうでなければ純 Python 実装 (`_focal_from_detections_py`) にフォールバックする。
+    """
+    if NATIVE_AVAILABLE:
+        return native.focal_from_detections(results, width, height)
+    return _focal_from_detections_py(results, width, height)

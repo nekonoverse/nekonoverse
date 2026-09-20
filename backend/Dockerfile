@@ -1,3 +1,12 @@
+# --- Rust ネイティブ拡張のビルドステージ ---
+# 段階的ネイティブ化 (Issue: Python バックエンドの段階的ネイティブ化) 用の
+# PyO3/maturin 拡張。ホストに Rust ツールチェーンは一切インストールせず、
+# このビルドステージの中だけで完結させる。最終イメージにはビルド済み wheel
+# だけをコピーし、Rust ツールチェーン自体は持ち込まない。
+FROM ghcr.io/pyo3/maturin AS rust-builder
+COPY native /native
+RUN maturin build --release --manifest-path /native/Cargo.toml -o /wheels -i /opt/python/cp312-cp312/bin/python3.12
+
 FROM python:3.12-slim AS base
 
 WORKDIR /app
@@ -10,11 +19,13 @@ ENV MALLOC_ARENA_MAX=2
 RUN pip install --no-cache-dir uv
 
 COPY pyproject.toml .
+COPY --from=rust-builder /wheels /wheels
 
 # --- Development stage ---
 FROM base AS dev
 RUN apt-get update && apt-get install -y --no-install-recommends git && rm -rf /var/lib/apt/lists/*
 RUN uv pip install --system -e ".[dev]" 2>/dev/null || true
+RUN uv pip install --system /wheels/*.whl
 COPY . .
 EXPOSE 8000
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
@@ -24,6 +35,7 @@ FROM base AS production
 ARG GIT_HASH=""
 ARG GIT_BRANCH=""
 RUN uv pip install --system -e "." 2>/dev/null || true
+RUN uv pip install --system /wheels/*.whl
 COPY . .
 RUN if [ -n "$GIT_HASH" ]; then echo "${GIT_BRANCH}:${GIT_HASH}" > /app/GIT_VERSION; fi
 EXPOSE 8000
