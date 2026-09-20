@@ -167,6 +167,34 @@ services:
       nekono3s:
         condition: service_healthy
 
+  # 完全Rust化ロードマップ (strangler fig) Stage 1。nginx が特定パス
+  # (現状 /api/v1/health のみ) だけをこちらへルーティングする。app (Python)
+  # と同じ Postgres/Valkey に UDS 経由で相乗りする。
+  app-rs:
+    image: ghcr.io/nekonoverse/nekonoverse-backend-rs:latest
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 128M
+    user: "853:853"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@/nekonoverse?host=/var/run/postgresql
+      RS_DB_POOL_SIZE: ${RS_DB_POOL_SIZE:-5}
+      VALKEY_URL: unix:///var/run/valkey/valkey.sock?db=0
+      DOMAIN: ${DOMAIN}
+      BIND_UDS: /var/run/nekonoverse-app-rs/app-rs.sock
+      RUST_LOG: ${RUST_LOG:-info}
+    volumes:
+      - app_rs_sock:/var/run/nekonoverse-app-rs
+      - pg_sock:/var/run/postgresql
+      - valkey_sock:/var/run/valkey
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
   worker:
     image: ghcr.io/nekonoverse/nekonoverse-backend:latest
     restart: unless-stopped
@@ -242,6 +270,7 @@ services:
       - ./nginx/prod.conf:/etc/nginx/nginx.conf:ro
       - s3proxy_sock:/var/run/s3proxy-deliverer
       - app_sock:/var/run/nekonoverse-app
+      - app_rs_sock:/var/run/nekonoverse-app-rs
       - frontend_dist:/var/www/frontend:ro
     # Cloudflare Tunnel 使用時は ports を削除し networks: [internal] のみにして
     # nginx を外部ネットワークから隔離する
@@ -433,6 +462,7 @@ volumes:
   valkey_sock:
   s3proxy_sock:
   app_sock:
+  app_rs_sock:
   frontend_dist:
   # face-detect UDS 使用時はコメント解除
   # face_detect_sock:

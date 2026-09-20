@@ -4,9 +4,15 @@
 # このビルドステージの中だけで完結させる。最終イメージにはビルド済み wheel
 # だけをコピーし、Rust ツールチェーン自体は持ち込まない。
 FROM ghcr.io/pyo3/maturin AS rust-builder
-COPY Cargo.toml /workspace/Cargo.toml
+COPY Cargo.toml Cargo.lock /workspace/
 COPY rust-core /workspace/rust-core
 COPY native /workspace/native
+# backend-rs (axum サービス) は workspace メンバーとして manifest 解決に
+# 必要だが、native のビルドには使わない。
+COPY backend-rs/Cargo.toml /workspace/backend-rs/Cargo.toml
+RUN mkdir -p /workspace/backend-rs/src \
+    && echo "fn main() {}" > /workspace/backend-rs/src/main.rs \
+    && echo "" > /workspace/backend-rs/src/lib.rs
 RUN maturin build --release --manifest-path /workspace/native/Cargo.toml -o /wheels -i /opt/python/cp312-cp312/bin/python3.12
 
 FROM python:3.12-slim AS base

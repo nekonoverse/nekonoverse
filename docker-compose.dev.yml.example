@@ -116,6 +116,27 @@ services:
       nekono3s:
         condition: service_healthy
 
+  # 完全Rust化ロードマップ (strangler fig) Stage 1。
+  app-rs:
+    build:
+      context: ./backend
+      dockerfile: backend-rs/Dockerfile
+      target: production
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
+      VALKEY_URL: valkey://valkey:6379/0
+      DOMAIN: ${DOMAIN:-localhost}
+      BIND_ADDR: 0.0.0.0:8000
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "8001:8000"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
   worker:
     build:
       context: ./backend

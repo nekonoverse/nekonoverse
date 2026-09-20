@@ -115,6 +115,25 @@ services:
       nekono3s:
         condition: service_healthy
 
+  # 完全Rust化ロードマップ (strangler fig) Stage 1。nginx が特定パス
+  # (現状 /api/v1/health のみ) だけをこちらへルーティングする。
+  app-rs:
+    image: ghcr.io/nekonoverse/nekonoverse-backend-rs:latest
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql+asyncpg://nekonoverse:${DB_PASSWORD}@postgresql:5432/nekonoverse
+      VALKEY_URL: redis://valkey:6379/0
+      DOMAIN: ${DOMAIN}
+      BIND_ADDR: 0.0.0.0:8000
+      RUST_LOG: ${RUST_LOG:-info}
+    expose:
+      - "8000"
+    depends_on:
+      postgresql:
+        condition: service_healthy
+      valkey:
+        condition: service_healthy
+
   worker:
     # image: ghcr.io/nekonoverse/nekonoverse-backend:unstable
     image: ghcr.io/nekonoverse/nekonoverse-backend:latest
@@ -180,6 +199,7 @@ services:
       - "80:80"
     depends_on:
       - app
+      - app-rs
       - frontend
       - s3proxy-deliverer
 
