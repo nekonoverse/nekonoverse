@@ -10,7 +10,8 @@ use crate::config::Config;
 
 type HmacSha256 = Hmac<Sha256>;
 
-fn to_hex(bytes: &[u8]) -> String {
+/// OAuth トークンのハッシュ化 (`auth` モジュール) でも使う小さな共通ヘルパー。
+pub(crate) fn to_hex(bytes: &[u8]) -> String {
     use std::fmt::Write;
     let mut s = String::with_capacity(bytes.len() * 2);
     for b in bytes {

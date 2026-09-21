@@ -1,5 +1,7 @@
 use chrono::{DateTime, Utc};
 use nekonoverse_backend_rs::{build_router, config::Config, db, state::AppState, valkey};
+use redis::AsyncCommands;
+use sha2::{Digest, Sha256};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -93,4 +95,157 @@ pub async fn seed_note(db: &PgPool, actor_id: Uuid, published: DateTime<Utc>) ->
     .await
     .expect("failed to seed test note");
     id
+}
+
+/// `visibility` を指定できる `seed_note` のバリエーション。
+#[allow(dead_code)]
+pub async fn seed_note_with_visibility(
+    db: &PgPool,
+    actor_id: Uuid,
+    visibility: &str,
+    published: DateTime<Utc>,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    let ap_id = format!("https://localhost/notes/{id}");
+    sqlx::query(
+        r#"
+        INSERT INTO notes (
+            id, ap_id, actor_id, content, visibility, sensitive, "to", cc, published,
+            replies_count, reactions_count, renotes_count, local, is_poll, poll_multiple, is_talk
+        ) VALUES (
+            $1, $2, $3, 'test note', $4, false, '[]'::jsonb, '[]'::jsonb, $5,
+            0, 0, 0, true, false, false, false
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(&ap_id)
+    .bind(actor_id)
+    .bind(visibility)
+    .bind(published)
+    .execute(db)
+    .await
+    .expect("failed to seed test note");
+    id
+}
+
+/// `users` テーブル (id/actor_id/private_key_pem 等に `server_default` が
+/// 無いため明示生成が必須) にテスト用のローカルユーザーを1件投入する。
+/// 事前に `seed_local_actor` で作った actor に紐付ける。
+#[allow(dead_code)]
+pub async fn seed_user(db: &PgPool, actor_id: Uuid, email: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO users (
+            id, email, password_hash, actor_id, role, is_active, is_system,
+            private_key_pem, approval_status, created_at
+        ) VALUES (
+            $1, $2, 'dummy-hash', $3, 'user', true, false,
+            'dummy-pem', 'approved', now()
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(email)
+    .bind(actor_id)
+    .execute(db)
+    .await
+    .expect("failed to seed test user");
+    id
+}
+
+/// `test_app_with_db` とは別に Valkey へ直接シードするための接続を張る。
+#[allow(dead_code)]
+pub async fn connect_redis() -> redis::aio::ConnectionManager {
+    valkey::connect(&Config::from_env())
+        .await
+        .expect("failed to connect to test valkey")
+}
+
+/// `followers` テーブルに承認済みのフォロー関係を1件投入する。
+#[allow(dead_code)]
+pub async fn seed_follow(db: &PgPool, follower_id: Uuid, following_id: Uuid) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO followers (id, follower_id, following_id, accepted, created_at)
+        VALUES ($1, $2, $3, true, now())
+        "#,
+    )
+    .bind(id)
+    .bind(follower_id)
+    .bind(following_id)
+    .execute(db)
+    .await
+    .expect("failed to seed test follow");
+    id
+}
+
+/// Valkey に `session:{id}` -> user_id のセッションを1件投入し、
+/// axum テストリクエストの `Cookie` ヘッダーにそのまま使えるセッションIDを返す。
+#[allow(dead_code)]
+pub async fn seed_session(redis: &redis::aio::ConnectionManager, user_id: Uuid) -> String {
+    let mut conn = redis.clone();
+    let session_id = Uuid::new_v4().to_string();
+    let _: () = conn
+        .set(format!("session:{session_id}"), user_id.to_string())
+        .await
+        .expect("failed to seed test session");
+    session_id
+}
+
+/// `oauth_applications` にテスト用アプリを1件投入する。
+#[allow(dead_code)]
+pub async fn seed_oauth_application(db: &PgPool, scopes: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO oauth_applications (
+            id, name, client_id, client_secret, redirect_uris, scopes, created_at
+        ) VALUES ($1, 'Test App', $2, 'secret', 'http://localhost/callback', $3, now())
+        "#,
+    )
+    .bind(id)
+    .bind(format!("client-{id}"))
+    .bind(scopes)
+    .execute(db)
+    .await
+    .expect("failed to seed test oauth application");
+    id
+}
+
+/// `oauth_tokens` にテスト用トークンを1件投入し、平文トークン (Authorization
+/// ヘッダーにそのまま使える値) を返す。`access_token` 列にはハッシュ化した
+/// 値を保存する (`app.dependencies.get_oauth_user` の新方式と同じ)。
+#[allow(dead_code)]
+pub async fn seed_oauth_token(
+    db: &PgPool,
+    application_id: Uuid,
+    user_id: Uuid,
+    scopes: &str,
+    revoked_at: Option<DateTime<Utc>>,
+    expires_at: Option<DateTime<Utc>>,
+) -> String {
+    let plain_token = Uuid::new_v4().to_string();
+    let token_hash = format!("{:x}", Sha256::digest(plain_token.as_bytes()));
+    sqlx::query(
+        r#"
+        INSERT INTO oauth_tokens (
+            id, access_token, token_type, scopes, application_id, user_id,
+            created_at, expires_at, revoked_at
+        ) VALUES ($1, $2, 'Bearer', $3, $4, $5, now(), $6, $7)
+        "#,
+    )
+    .bind(Uuid::new_v4())
+    .bind(&token_hash)
+    .bind(scopes)
+    .bind(application_id)
+    .bind(user_id)
+    .bind(expires_at)
+    .bind(revoked_at)
+    .execute(db)
+    .await
+    .expect("failed to seed test oauth token");
+    plain_token
 }
