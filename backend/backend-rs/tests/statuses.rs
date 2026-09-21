@@ -7,8 +7,9 @@ use uuid::Uuid;
 
 mod common;
 use common::{
-    connect_redis, seed_follow, seed_local_actor, seed_note_with_visibility,
-    seed_oauth_application, seed_oauth_token, seed_session, seed_user,
+    connect_redis, seed_domain_block, seed_follow, seed_local_actor, seed_note_with_visibility,
+    seed_oauth_application, seed_oauth_token, seed_remote_actor, seed_renote_note, seed_session,
+    seed_user,
 };
 
 async fn post(
@@ -305,4 +306,378 @@ async fn bearer_read_only_scope_cannot_bookmark() {
         .as_str()
         .unwrap()
         .contains("write access required"));
+}
+
+#[tokio::test]
+async fn pin_own_public_note_succeeds_and_creates_pinned_row() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p1").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/pin"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let position: i32 = sqlx::query_scalar(
+        "SELECT position FROM pinned_notes WHERE actor_id = $1 AND note_id = $2",
+    )
+    .bind(actor_id)
+    .bind(note_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(position, 0);
+}
+
+#[tokio::test]
+async fn pin_and_unpin_roundtrip_delivers_add_then_remove_to_follower() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p2").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+    let domain = format!("remote-p2-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "follower-p2", &domain).await;
+    seed_follow(&db, follower_id, actor_id).await;
+
+    let (status, _json) = post(
+        app.clone(),
+        &format!("/api/v1/statuses/{note_id}/pin"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let add_row: (String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type' FROM delivery_queue \
+         WHERE actor_id = $1 AND payload->>'object' = (SELECT ap_id FROM notes WHERE id = $2) \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .bind(note_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(add_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(add_row.1, "Add");
+
+    let job_id: Uuid = sqlx::query_scalar(
+        "SELECT id FROM delivery_queue WHERE actor_id = $1 AND payload->>'type' = 'Add' \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    let mut redis_conn = redis.clone();
+    let queued: Vec<String> =
+        redis::AsyncCommands::lrange(&mut redis_conn, "delivery:queue", 0, -1)
+            .await
+            .unwrap();
+    assert!(queued.contains(&job_id.to_string()));
+
+    let (status2, _json2) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/unpin"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status2, StatusCode::OK);
+
+    let pinned_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pinned_notes WHERE actor_id = $1 AND note_id = $2",
+    )
+    .bind(actor_id)
+    .bind(note_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(pinned_count, 0);
+
+    let remove_type: String = sqlx::query_scalar(
+        "SELECT payload->>'type' FROM delivery_queue WHERE actor_id = $1 \
+         ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(remove_type, "Remove");
+}
+
+#[tokio::test]
+async fn pin_up_to_max_pins_succeeds_with_sequential_positions() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p3").await;
+
+    for expected_position in 0..5 {
+        let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+        let (status, _json) = post(
+            app.clone(),
+            &format!("/api/v1/statuses/{note_id}/pin"),
+            Some(&session),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+
+        let position: i32 = sqlx::query_scalar(
+            "SELECT position FROM pinned_notes WHERE actor_id = $1 AND note_id = $2",
+        )
+        .bind(actor_id)
+        .bind(note_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+        assert_eq!(position, expected_position);
+    }
+}
+
+#[tokio::test]
+async fn pin_nonexistent_note_returns_422_not_404() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "p4").await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{}/pin", Uuid::new_v4()),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn pin_other_users_note_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_a, _actor_a, session_a) = seed_user_with_session(&db, &redis, "p5a").await;
+    let (_user_b, actor_b, _session_b) = seed_user_with_session(&db, &redis, "p5b").await;
+    let note_id = seed_note_with_visibility(&db, actor_b, "public", Utc::now()).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/pin"),
+        Some(&session_a),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Can only pin your own notes");
+}
+
+#[tokio::test]
+async fn pin_direct_note_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p6").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "direct", Utc::now()).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/pin"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Cannot pin a direct post");
+}
+
+#[tokio::test]
+async fn pin_reblog_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p7").await;
+    let original_note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+    let renote_id = seed_renote_note(&db, actor_id, original_note_id).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{renote_id}/pin"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Cannot pin a reblog");
+}
+
+#[tokio::test]
+async fn pin_already_pinned_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p8").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let uri = format!("/api/v1/statuses/{note_id}/pin");
+    let (status1, _) = post(app.clone(), &uri, Some(&session), None).await;
+    assert_eq!(status1, StatusCode::OK);
+
+    let (status2, json2) = post(app, &uri, Some(&session), None).await;
+    assert_eq!(status2, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json2["detail"], "Already pinned");
+}
+
+#[tokio::test]
+async fn pin_exceeds_max_pins_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p9").await;
+
+    for _ in 0..5 {
+        let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+        let (status, _) = post(
+            app.clone(),
+            &format!("/api/v1/statuses/{note_id}/pin"),
+            Some(&session),
+            None,
+        )
+        .await;
+        assert_eq!(status, StatusCode::OK);
+    }
+
+    let sixth_note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{sixth_note_id}/pin"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Maximum 5 pinned notes allowed");
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM pinned_notes WHERE actor_id = $1")
+        .bind(actor_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(count, 5);
+}
+
+#[tokio::test]
+async fn unpin_nonexistent_note_returns_404() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "p10").await;
+
+    let (status, _json) = post(
+        app,
+        &format!("/api/v1/statuses/{}/unpin", Uuid::new_v4()),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn unpin_not_pinned_note_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p11").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/unpin"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Not pinned");
+}
+
+#[tokio::test]
+async fn pin_skips_delivery_to_blocked_domain_but_pin_still_succeeds() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_user_id, actor_id, session) = seed_user_with_session(&db, &redis, "p12").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+    let blocked_domain = format!("blocked-p12-{}.example", Uuid::new_v4().simple());
+    let blocked_follower_id = seed_remote_actor(&db, "eve-p12", &blocked_domain).await;
+    seed_follow(&db, blocked_follower_id, actor_id).await;
+    seed_domain_block(&db, &blocked_domain).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/pin"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let pinned_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM pinned_notes WHERE actor_id = $1 AND note_id = $2",
+    )
+    .bind(actor_id)
+    .bind(note_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(pinned_count, 1);
+
+    let delivery_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM delivery_queue WHERE target_inbox_url LIKE '%' || $1 || '%'",
+    )
+    .bind(&blocked_domain)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(delivery_count, 0);
+}
+
+#[tokio::test]
+async fn pin_unauthenticated_returns_401() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, _json) = post(
+        app,
+        &format!("/api/v1/statuses/{}/pin", Uuid::new_v4()),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn pin_requires_write_statuses_scope_not_bookmarks_scope() {
+    let (app, db) = common::test_app_with_db().await;
+    let actor_id = seed_local_actor(&db, &format!("pintest1{}", Uuid::new_v4().simple())).await;
+    let user_id = seed_user(
+        &db,
+        actor_id,
+        &format!("pin1{}@example.com", Uuid::new_v4().simple()),
+    )
+    .await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let client_app = seed_oauth_application(&db, "write:bookmarks").await;
+    let token = seed_oauth_token(&db, client_app, user_id, "write:bookmarks", None, None).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/pin"),
+        None,
+        Some(&token),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert!(json["detail"].as_str().unwrap().contains("write:statuses"));
 }

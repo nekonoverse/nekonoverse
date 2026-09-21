@@ -163,6 +163,82 @@ pub async fn connect_redis() -> redis::aio::ConnectionManager {
         .expect("failed to connect to test valkey")
 }
 
+/// `actors` テーブルにテスト用のリモートアクターを1件投入する
+/// (`domain` を指定ドメインにする点が `seed_local_actor` と異なる)。
+/// pin/unpin の配送先(`shared_inbox_url`)テストに使う。
+#[allow(dead_code)]
+pub async fn seed_remote_actor(db: &PgPool, username: &str, domain: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    let ap_id = format!("https://{domain}/users/{username}");
+    let inbox_url = format!("{ap_id}/inbox");
+    let shared_inbox_url = format!("https://{domain}/inbox");
+    sqlx::query(
+        r#"
+        INSERT INTO actors (
+            id, ap_id, type, username, domain, inbox_url, shared_inbox_url, public_key_pem,
+            is_cat, manually_approves_followers, discoverable, is_bot,
+            require_signin_to_view, created_at, updated_at
+        ) VALUES (
+            $1, $2, 'Person', $3, $4, $5, $6, 'dummy-pem',
+            false, false, true, false,
+            false, now(), now()
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(&ap_id)
+    .bind(username)
+    .bind(domain)
+    .bind(&inbox_url)
+    .bind(&shared_inbox_url)
+    .execute(db)
+    .await
+    .expect("failed to seed test remote actor");
+    id
+}
+
+/// `renote_of_id` を設定した(リブログの)ノートを1件投入する。
+/// pin対象としては拒否されるべきケースのテストに使う。
+#[allow(dead_code)]
+pub async fn seed_renote_note(db: &PgPool, actor_id: Uuid, renote_of_id: Uuid) -> Uuid {
+    let id = Uuid::new_v4();
+    let ap_id = format!("https://localhost/notes/{id}");
+    sqlx::query(
+        r#"
+        INSERT INTO notes (
+            id, ap_id, actor_id, content, visibility, sensitive, "to", cc, published,
+            replies_count, reactions_count, renotes_count, local, is_poll, poll_multiple,
+            is_talk, renote_of_id
+        ) VALUES (
+            $1, $2, $3, '', 'public', false, '[]'::jsonb, '[]'::jsonb, now(),
+            0, 0, 0, true, false, false,
+            false, $4
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(&ap_id)
+    .bind(actor_id)
+    .bind(renote_of_id)
+    .execute(db)
+    .await
+    .expect("failed to seed test renote");
+    id
+}
+
+/// `domain_blocks` にテスト用のドメインブロックを1件投入する。
+#[allow(dead_code)]
+pub async fn seed_domain_block(db: &PgPool, domain: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query("INSERT INTO domain_blocks (id, domain) VALUES ($1, $2)")
+        .bind(id)
+        .bind(domain)
+        .execute(db)
+        .await
+        .expect("failed to seed test domain block");
+    id
+}
+
 /// `followers` テーブルに承認済みのフォロー関係を1件投入する。
 #[allow(dead_code)]
 pub async fn seed_follow(db: &PgPool, follower_id: Uuid, following_id: Uuid) -> Uuid {
