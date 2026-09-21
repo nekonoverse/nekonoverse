@@ -13,6 +13,7 @@ pub mod mastodon_time;
 pub mod note_response;
 pub mod note_visibility;
 pub mod notification;
+pub mod remote_actor;
 pub mod routes;
 pub mod session;
 pub mod shortcode;

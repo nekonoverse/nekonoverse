@@ -84,7 +84,7 @@ fn detect_image_type(head: &[u8]) -> Option<&'static str> {
 /// 指定ホストが SSRF 保護でブロック対象かを判定する。
 /// `app/utils/network.py` の `is_private_host` を移植したもの
 /// (DNS解決不可も含め、レンジに一致すればブロック)。
-async fn is_host_blocked(host: &str) -> bool {
+pub(crate) async fn is_host_blocked(host: &str) -> bool {
     match tokio::net::lookup_host((host, 0)).await {
         Ok(addrs) => addrs.map(|a| a.ip()).any(ssrf::is_blocked_ip),
         Err(_) => true,
@@ -95,7 +95,10 @@ async fn is_host_blocked(host: &str) -> bool {
 /// ホスト名を事前に解決・検証し、検証済みの IP へ直接接続するよう
 /// `resolve()` で強制する (DNS リバインディング対策。
 /// `app/utils/http_client.py` の `_SSRFGuardBackend` に相当)。
-async fn build_client_for(url: &Url, allow_private_networks: bool) -> Result<reqwest::Client, ()> {
+pub(crate) async fn build_client_for(
+    url: &Url,
+    allow_private_networks: bool,
+) -> Result<reqwest::Client, ()> {
     let mut builder = reqwest::Client::builder()
         .connect_timeout(CONNECT_TIMEOUT)
         .timeout(REQUEST_TIMEOUT)
