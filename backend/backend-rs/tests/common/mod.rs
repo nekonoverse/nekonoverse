@@ -493,3 +493,75 @@ pub async fn seed_oauth_token(
     .expect("failed to seed test oauth token");
     plain_token
 }
+
+/// `reactions` にテスト用のリアクションを1件投入する。
+#[allow(dead_code)]
+pub async fn seed_reaction(db: &PgPool, note_id: Uuid, actor_id: Uuid, emoji: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO reactions (id, actor_id, note_id, emoji, created_at) \
+         VALUES ($1, $2, $3, $4, now())",
+    )
+    .bind(id)
+    .bind(actor_id)
+    .bind(note_id)
+    .bind(emoji)
+    .execute(db)
+    .await
+    .expect("failed to seed test reaction");
+    id
+}
+
+/// `hashtags`/`note_hashtags` にテスト用のハッシュタグ紐付けを1件投入する。
+#[allow(dead_code)]
+pub async fn seed_hashtag_for_note(db: &PgPool, note_id: Uuid, name: &str) -> Uuid {
+    let hashtag_id: Uuid =
+        sqlx::query_scalar("INSERT INTO hashtags (name) VALUES ($1) RETURNING id")
+            .bind(name)
+            .fetch_one(db)
+            .await
+            .expect("failed to seed test hashtag");
+    sqlx::query("INSERT INTO note_hashtags (note_id, hashtag_id) VALUES ($1, $2)")
+        .bind(note_id)
+        .bind(hashtag_id)
+        .execute(db)
+        .await
+        .expect("failed to seed test note_hashtag");
+    hashtag_id
+}
+
+/// `preview_cards` にテスト用のプレビューカードを1件投入する。
+#[allow(dead_code)]
+pub async fn seed_preview_card(db: &PgPool, note_id: Uuid, url: &str, title: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO preview_cards (id, note_id, url, title, card_type, created_at) \
+         VALUES ($1, $2, $3, $4, 'link', now())",
+    )
+    .bind(id)
+    .bind(note_id)
+    .bind(url)
+    .bind(title)
+    .execute(db)
+    .await
+    .expect("failed to seed test preview card");
+    id
+}
+
+/// `poll_votes` にテスト用の投票を1件投入する。
+#[allow(dead_code)]
+pub async fn seed_poll_vote(db: &PgPool, note_id: Uuid, actor_id: Uuid, choice_index: i32) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO poll_votes (id, note_id, actor_id, choice_index, created_at) \
+         VALUES ($1, $2, $3, $4, now())",
+    )
+    .bind(id)
+    .bind(note_id)
+    .bind(actor_id)
+    .bind(choice_index)
+    .execute(db)
+    .await
+    .expect("failed to seed test poll vote");
+    id
+}
