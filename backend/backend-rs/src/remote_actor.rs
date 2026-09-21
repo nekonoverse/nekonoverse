@@ -113,7 +113,7 @@ async fn signed_get(state: &AppState, start_url: &str) -> Option<(u16, String)> 
             .await
             .ok()?;
 
-        let mut request = client.get(parsed.clone()).header("Accept", AP_ACCEPT);
+        let mut request = client.get(current.as_str()).header("Accept", AP_ACCEPT);
         if let Some((key_id, private_key_pem)) = &signing {
             if let Some(headers) =
                 sign_request(private_key_pem, key_id, "GET", current.as_str(), None)
