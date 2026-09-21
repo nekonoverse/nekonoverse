@@ -407,6 +407,33 @@ pub async fn seed_drive_file(db: &PgPool, s3_key: &str, mime_type: &str) -> Uuid
     id
 }
 
+/// `owner_id` (users.id) を指定できる `seed_drive_file` のバリエーション。
+/// `create_status` の media_ids 所有権チェックのテストに使う。
+#[allow(dead_code)]
+pub async fn seed_drive_file_owned(
+    db: &PgPool,
+    owner_id: Uuid,
+    s3_key: &str,
+    mime_type: &str,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO drive_files (
+            id, owner_id, s3_key, filename, mime_type, size_bytes, server_file, created_at
+        ) VALUES ($1, $2, $3, 'test.bin', $4, 1024, false, now())
+        "#,
+    )
+    .bind(id)
+    .bind(owner_id)
+    .bind(s3_key)
+    .bind(mime_type)
+    .execute(db)
+    .await
+    .expect("failed to seed test drive file");
+    id
+}
+
 /// `note_attachments` に drive_file 参照の添付を1件投入する。
 #[allow(dead_code)]
 pub async fn seed_note_attachment(

@@ -198,6 +198,36 @@ pub struct NoteAttachmentData {
     pub duration: Option<f64>,
 }
 
+/// `app/activitypub/renderer.py` の `render_note` が `note._hashtag_names` から
+/// 組み立てる `Hashtag` タグ1件分。`href` は呼び出し側が
+/// `{server_url}/tags/{name}` の形で組み立て済みのものを渡す
+/// (`render_note` 自体は `server_url` を知らない設計を保つため)。
+#[derive(Debug, Clone)]
+pub struct HashtagTagData {
+    pub name: String,
+    pub href: String,
+}
+
+/// `app/activitypub/renderer.py` の `render_note` が `note._emoji_tags` から
+/// 組み立てる `Emoji` タグ1件分。`id` は呼び出し側が
+/// `{server_url}/emojis/{shortcode}` の形で組み立て済みのものを渡す。
+/// Python版の `category` フィールドはAPタグ描画に使われないため、
+/// この構造体にも含めない。
+#[derive(Debug, Clone)]
+pub struct EmojiTagData {
+    pub id: String,
+    pub shortcode: String,
+    pub url: String,
+    pub aliases: Option<Value>,
+    pub license: Option<String>,
+    pub is_sensitive: bool,
+    pub author: Option<String>,
+    pub description: Option<String>,
+    pub copy_permission: Option<String>,
+    pub usage_info: Option<String>,
+    pub is_based_on: Option<String>,
+}
+
 /// `app/activitypub/renderer.py` の `render_note` が必要とする、
 /// DB行(actor/attachments込み)から呼び出し側が解決済みのノートデータ。
 /// `get_outbox`/`get_featured` はいずれもレンダリング対象ノートが単一の
@@ -205,7 +235,8 @@ pub struct NoteAttachmentData {
 /// 必要がない)、`attributed_to`/`note_url`は文字列として渡す設計にしている。
 /// ハッシュタグ・カスタム絵文字タグは Python版でもこの2エンドポイントでは
 /// 動的属性 (`_hashtag_names`/`_emoji_tags`) が未設定のため描画されない
-/// (`get_note_ap` だけがバッチロードして設定する) — この構造体にも意図的に含めない。
+/// (`get_note_ap`/`create_status` だけがこれらを設定する) — 該当フィールドは
+/// 空の `Vec` を渡す。
 pub struct NoteRenderData {
     pub ap_id: String,
     pub is_poll: bool,
@@ -229,6 +260,8 @@ pub struct NoteRenderData {
     pub poll_expires_at: Option<DateTime<Utc>>,
     pub poll_multiple: bool,
     pub is_talk: bool,
+    pub hashtags: Vec<HashtagTagData>,
+    pub emoji_tags: Vec<EmojiTagData>,
 }
 
 /// `app/activitypub/renderer.py` の `render_note` を移植したもの。
@@ -305,7 +338,7 @@ pub fn render_note(note: &NoteRenderData) -> Value {
         data["attachment"] = json!(attachment_list);
     }
 
-    // タグ (メンションのみ — ハッシュタグ/カスタム絵文字はこの2エンドポイントでは未描画)。
+    // タグ (メンション + ハッシュタグ + カスタム絵文字)。
     let mut tag: Vec<Value> = Vec::new();
     if let Some(mentions) = note.mentions.as_ref().and_then(|v| v.as_array()) {
         for m in mentions {
@@ -337,6 +370,68 @@ pub fn render_note(note: &NoteRenderData) -> Value {
             }));
         }
     }
+
+    for ht in &note.hashtags {
+        tag.push(json!({
+            "type": "Hashtag",
+            "href": ht.href,
+            "name": format!("#{}", ht.name),
+        }));
+    }
+
+    for e in &note.emoji_tags {
+        let ext = e
+            .url
+            .rsplit_once('.')
+            .map(|(_, ext)| ext.to_lowercase())
+            .unwrap_or_else(|| "png".to_string());
+        let media_type = match ext.as_str() {
+            "png" => "image/png",
+            "jpg" | "jpeg" => "image/jpeg",
+            "gif" => "image/gif",
+            "webp" => "image/webp",
+            "avif" => "image/avif",
+            "svg" => "image/svg+xml",
+            _ => "image/png",
+        };
+        let mut emoji_tag = json!({
+            "id": e.id,
+            "type": "Emoji",
+            "name": format!(":{}:", e.shortcode),
+            "icon": { "type": "Image", "mediaType": media_type, "url": e.url },
+        });
+        if let Some(license) = &e.license {
+            emoji_tag["_misskey_license"] = json!({ "freeText": license });
+            emoji_tag["license"] = json!(license);
+        }
+        if let Some(aliases) = e
+            .aliases
+            .as_ref()
+            .filter(|v| v.as_array().is_some_and(|a| !a.is_empty()))
+        {
+            emoji_tag["keywords"] = aliases.clone();
+        }
+        if e.is_sensitive {
+            emoji_tag["isSensitive"] = json!(true);
+        }
+        if let Some(author) = &e.author {
+            emoji_tag["author"] = json!(author);
+        }
+        if let Some(description) = &e.description {
+            emoji_tag["description"] = json!(description);
+        }
+        if let Some(copy_permission) = &e.copy_permission {
+            emoji_tag["copyPermission"] = json!(copy_permission);
+        }
+        if let Some(usage_info) = &e.usage_info {
+            emoji_tag["usageInfo"] = json!(usage_info);
+        }
+        if let Some(is_based_on) = &e.is_based_on {
+            emoji_tag["isBasedOn"] = json!(is_based_on);
+        }
+        tag.push(emoji_tag);
+    }
+
     if !tag.is_empty() {
         data["tag"] = json!(tag);
     }
@@ -560,6 +655,8 @@ mod tests {
             poll_expires_at: None,
             poll_multiple: false,
             is_talk: false,
+            hashtags: Vec::new(),
+            emoji_tags: Vec::new(),
         }
     }
 
