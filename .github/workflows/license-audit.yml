@@ -1,0 +1,69 @@
+name: License Audit
+
+# backend/ の Rust workspace (rust-core/native/backend-rs) の依存クレートの
+# ライセンスを cargo-about で監査する。backend/about.toml に列挙されていない
+# ライセンスが1つでも依存関係グラフに含まれると失敗する。あわせて
+# backend/THIRD-PARTY-LICENSES.html (Dockerイメージに同梱、backend-rs/Dockerfile
+# 参照) が最新の Cargo.lock と乖離していないかも検査する。
+
+on:
+  push:
+    branches: [develop, main]
+    paths:
+      - 'backend/Cargo.lock'
+      - 'backend/Cargo.toml'
+      - 'backend/*/Cargo.toml'
+      - 'backend/about.toml'
+      - 'backend/about.hbs'
+  pull_request:
+    branches: [develop, main]
+    paths:
+      - 'backend/Cargo.lock'
+      - 'backend/Cargo.toml'
+      - 'backend/*/Cargo.toml'
+      - 'backend/about.toml'
+      - 'backend/about.hbs'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  license-audit:
+    runs-on: ubuntu-latest
+    env:
+      CARGO_ABOUT_VERSION: "0.9.2"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Cache cargo-about binary
+        id: cache-cargo-about
+        uses: actions/cache@v4
+        with:
+          path: ~/.cargo/bin/cargo-about
+          key: cargo-about-${{ env.CARGO_ABOUT_VERSION }}-${{ runner.os }}
+
+      - name: Install cargo-about
+        if: steps.cache-cargo-about.outputs.cache-hit != 'true'
+        run: cargo install "cargo-about@${{ env.CARGO_ABOUT_VERSION }}" --locked --features cli
+
+      - name: Generate THIRD-PARTY-LICENSES.html
+        working-directory: backend
+        # ライセンス条件を満たさない依存が1つでもあれば `cargo about generate`
+        # 自体が非ゼロ終了する (accepted リストの更新が必要、about.toml参照)。
+        run: cargo about generate about.hbs -o THIRD-PARTY-LICENSES.generated.html
+
+      - name: Check committed THIRD-PARTY-LICENSES.html is up to date
+        working-directory: backend
+        run: |
+          if ! diff -u THIRD-PARTY-LICENSES.html THIRD-PARTY-LICENSES.generated.html; then
+            echo "::error::backend/THIRD-PARTY-LICENSES.html is out of date. Run ./scripts/cargo-about.sh and commit the result."
+            exit 1
+          fi
+
+      - name: Upload regenerated file
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: THIRD-PARTY-LICENSES.generated.html
+          path: backend/THIRD-PARTY-LICENSES.generated.html

@@ -1,0 +1,20 @@
+# 完全Rust化ロードマップ (Strangler Fig, #1139) の一環。CI (`.github/workflows/license-audit.yml`)
+# は `cargo about generate` でこのファイルに列挙されていないライセンスが1つでも
+# 依存関係グラフに含まれていると失敗する。新しい依存クレートを追加してここに
+# 引っかかった場合は、そのライセンスの条件を確認した上で追加すること。
+#
+# 2026-09時点の監査結果: GPL/AGPL/LGPL 系のコピーレフトライセンスは含まれない。
+# MPL-2.0 のみ準コピーレフト(ファイル単位、該当ファイル自体を改変して配布する
+# 場合にのみソース開示義務を負う)だが、いずれも改変せずライブラリとして
+# 利用するのみのため問題ない。
+accepted = [
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-3-Clause",
+    "CDLA-Permissive-2.0",
+    "ISC",
+    "MIT",
+    "MPL-2.0",
+    "Unicode-3.0",
+    "Zlib",
+]
