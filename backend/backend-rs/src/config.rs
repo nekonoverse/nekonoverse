@@ -32,6 +32,21 @@ pub struct Config {
     /// `app/api/mastodon/media_proxy.py` の `_TOTAL_TIMEOUT` 相当。
     /// テストで短縮できるよう環境変数から読む (本番デフォルトは30秒)。
     pub media_proxy_total_timeout_secs: u64,
+    /// `bcrypt.gensalt()` のデフォルト(コスト12)と同じ値がデフォルト。
+    /// TOTPリカバリーコードのハッシュ化(`totp::hash_recovery_codes`、8件を
+    /// 都度生成)はコスト12だと結合テストで無視できない実行時間になるため、
+    /// `media_proxy_total_timeout_secs`と同じ方針でテストから短縮できるように
+    /// 環境変数化する(本番の実際のセキュリティパラメータには影響しない)。
+    pub bcrypt_cost: u32,
+    /// `app.services.totp_service`のFernetキー導出(PBKDF2-HMAC-SHA256)の
+    /// イテレーション回数。デフォルトはPython版と同一の60万回。RustCrypto系の
+    /// PBKDF2実装はデバッグビルドだと最適化ビルドの10倍以上遅く、`cargo test`
+    /// (デバッグビルド)でTOTP関連の結合テストを何度も実行すると無視できない
+    /// 時間になるため、`bcrypt_cost`と同じ方針で環境変数から短縮できるように
+    /// してある(本番の実際のセキュリティパラメータには影響しない — 本番で
+    /// この値を下げると既存の暗号化済みsecretと導出鍵が一致しなくなるため
+    /// 変更してはならない)。
+    pub totp_pbkdf2_iterations: u32,
 }
 
 impl Config {
@@ -70,6 +85,14 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(30),
+            bcrypt_cost: env::var("BCRYPT_COST")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(bcrypt::DEFAULT_COST),
+            totp_pbkdf2_iterations: env::var("TOTP_PBKDF2_ITERATIONS")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(crate::totp::PBKDF2_ITERATIONS_DEFAULT),
         }
     }
 
