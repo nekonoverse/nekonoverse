@@ -21,6 +21,7 @@ use state::AppState;
 /// (Python 側の `httpx.ASGITransport(app=app)` と同じ役割)。
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        .merge(routes::actor::router())
         .merge(routes::health::router())
         .merge(routes::webfinger::router())
         .merge(routes::nodeinfo::router())
