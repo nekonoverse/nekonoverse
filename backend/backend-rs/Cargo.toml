@@ -33,8 +33,12 @@ hmac = "0.12"
 sha2 = "0.10"
 async-trait = "0.1"
 url = "2"
+rsa = { version = "0.9", features = ["sha2"] }
+ed25519-dalek = "2"
+base64 = "0.22"
 
 [dev-dependencies]
 http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 futures-util = "0.3"
+rand = "0.8"
