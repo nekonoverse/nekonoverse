@@ -506,6 +506,37 @@ async fn resolve_reaction_emoji_url(
     Ok((proxied_url, importable, import_domain))
 }
 
+/// `app.services.note_service.get_statuses_count` を移植したもの。
+/// Valkey に5分間キャッシュされる。`follows::get_follow_counts` と同じく、
+/// キャッシュの読み書き失敗はDB計算にフォールバックし無視する。
+pub async fn get_statuses_count(
+    db: &PgPool,
+    redis: &redis::aio::ConnectionManager,
+    actor_id: Uuid,
+) -> Result<i64, AppError> {
+    let cache_key = format!("perf:statuses_count:{actor_id}");
+    let mut conn = redis.clone();
+    if let Ok(Some(cached)) = conn.get::<_, Option<String>>(&cache_key).await {
+        if let Ok(count) = serde_json::from_str::<i64>(&cached) {
+            return Ok(count);
+        }
+    }
+
+    let count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM notes WHERE actor_id = $1 \
+         AND visibility IN ('public', 'unlisted') AND deleted_at IS NULL",
+    )
+    .bind(actor_id)
+    .fetch_one(db)
+    .await?;
+
+    if let Ok(payload) = serde_json::to_string(&count) {
+        let _: Result<(), _> = conn.set_ex(&cache_key, payload, 300).await;
+    }
+
+    Ok(count)
+}
+
 /// `app.services.note_service.get_reaction_summary` を移植したもの。
 pub async fn get_reaction_summary(
     db: &PgPool,
