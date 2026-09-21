@@ -2,8 +2,12 @@
 //! (`check_note_visible` / 内部の `_visibility_requirements`) を移植したもの。
 //!
 //! 一覧APIの `filter_visible_notes`(複数ノートをまとめてフォロー確認する
-//! バッチ版)はここでは移植しない。書き込み系エンドポイント(bookmark等)が
-//! 対象ノート1件だけを都度チェックする用途に限定している。
+//! バッチ版、ログイン済み閲覧者向け)はここでは移植しない。書き込み系
+//! エンドポイント(bookmark等)が対象ノート1件だけを都度チェックする用途に
+//! 限定している。ただし `get_featured` は閲覧者が常に匿名(`current_actor_id
+//! = None`)であるため、`filter_visible_notes` の匿名専用の分岐だけを
+//! `is_visible_to_anonymous` として切り出して移植した(フォロー確認クエリが
+//! 一切不要になるため、フォロー関係を都度引く汎用バッチ版より単純)。
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
@@ -122,4 +126,99 @@ pub async fn check_note_visible(
     }
 
     Ok(true)
+}
+
+/// `app.services.note_service.filter_visible_notes` を匿名閲覧者
+/// (`current_actor_id = None`) に特化して移植したもの。匿名は
+/// `need_follow`/`need_mention` のどちらも満たせない(常にスキップされる)
+/// ため、Python版の `_visibility_requirements` から該当分岐だけを残した:
+/// `visibility` が `public`/`unlisted` であり、かつ
+/// `make_notes_hidden_before`/`make_notes_followers_only_before` のいずれの
+/// しきい値にも掛からないノートだけが見える。
+pub fn is_visible_to_anonymous(
+    visibility: &str,
+    published: DateTime<Utc>,
+    make_notes_hidden_before: Option<i64>,
+    make_notes_followers_only_before: Option<i64>,
+) -> bool {
+    if !matches!(visibility, "public" | "unlisted") {
+        return false;
+    }
+    if let Some(hidden_before) = make_notes_hidden_before {
+        if let Some(threshold) = DateTime::<Utc>::from_timestamp_millis(hidden_before) {
+            if published < threshold {
+                return false;
+            }
+        }
+    }
+    if let Some(followers_only_before) = make_notes_followers_only_before {
+        if let Some(threshold) = DateTime::<Utc>::from_timestamp_millis(followers_only_before) {
+            if published < threshold {
+                return false;
+            }
+        }
+    }
+    true
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn dt(s: &str) -> DateTime<Utc> {
+        DateTime::parse_from_rfc3339(s).unwrap().with_timezone(&Utc)
+    }
+
+    #[test]
+    fn anonymous_can_see_public_and_unlisted() {
+        let published = dt("2026-01-01T00:00:00Z");
+        assert!(is_visible_to_anonymous("public", published, None, None));
+        assert!(is_visible_to_anonymous("unlisted", published, None, None));
+    }
+
+    #[test]
+    fn anonymous_cannot_see_followers_or_direct() {
+        let published = dt("2026-01-01T00:00:00Z");
+        assert!(!is_visible_to_anonymous("followers", published, None, None));
+        assert!(!is_visible_to_anonymous("direct", published, None, None));
+    }
+
+    #[test]
+    fn anonymous_cannot_see_notes_hidden_before_threshold() {
+        // make_notes_hidden_before はミリ秒epoch。2026-01-02T00:00:00Zより前を非表示。
+        let hidden_before = dt("2026-01-02T00:00:00Z").timestamp_millis();
+        let old_note = dt("2026-01-01T00:00:00Z");
+        let new_note = dt("2026-01-03T00:00:00Z");
+        assert!(!is_visible_to_anonymous(
+            "public",
+            old_note,
+            Some(hidden_before),
+            None
+        ));
+        assert!(is_visible_to_anonymous(
+            "public",
+            new_note,
+            Some(hidden_before),
+            None
+        ));
+    }
+
+    #[test]
+    fn anonymous_cannot_see_notes_followers_only_before_threshold() {
+        let followers_only_before = dt("2026-01-02T00:00:00Z").timestamp_millis();
+        let old_note = dt("2026-01-01T00:00:00Z");
+        let new_note = dt("2026-01-03T00:00:00Z");
+        assert!(!is_visible_to_anonymous(
+            "unlisted",
+            old_note,
+            None,
+            Some(followers_only_before)
+        ));
+        assert!(is_visible_to_anonymous(
+            "unlisted",
+            new_note,
+            None,
+            Some(followers_only_before)
+        ));
+    }
 }

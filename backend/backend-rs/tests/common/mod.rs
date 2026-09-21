@@ -258,6 +258,93 @@ pub async fn seed_follow(db: &PgPool, follower_id: Uuid, following_id: Uuid) -> 
     id
 }
 
+/// `pinned_notes` にテスト用のピン留めを1件投入する。
+#[allow(dead_code)]
+pub async fn seed_pinned_note(db: &PgPool, actor_id: Uuid, note_id: Uuid, position: i32) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO pinned_notes (id, actor_id, note_id, position, created_at) \
+         VALUES ($1, $2, $3, $4, now())",
+    )
+    .bind(id)
+    .bind(actor_id)
+    .bind(note_id)
+    .bind(position)
+    .execute(db)
+    .await
+    .expect("failed to seed test pinned note");
+    id
+}
+
+/// `drive_files` にテスト用のファイルを1件投入する。
+/// get_outbox/get_featured の添付ファイルレンダリングのテストに使う。
+#[allow(dead_code)]
+pub async fn seed_drive_file(db: &PgPool, s3_key: &str, mime_type: &str) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO drive_files (
+            id, s3_key, filename, mime_type, size_bytes, server_file, created_at
+        ) VALUES ($1, $2, 'test.bin', $3, 1024, false, now())
+        "#,
+    )
+    .bind(id)
+    .bind(s3_key)
+    .bind(mime_type)
+    .execute(db)
+    .await
+    .expect("failed to seed test drive file");
+    id
+}
+
+/// `note_attachments` に drive_file 参照の添付を1件投入する。
+#[allow(dead_code)]
+pub async fn seed_note_attachment(
+    db: &PgPool,
+    note_id: Uuid,
+    drive_file_id: Uuid,
+    position: i32,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO note_attachments (id, note_id, drive_file_id, position) \
+         VALUES ($1, $2, $3, $4)",
+    )
+    .bind(id)
+    .bind(note_id)
+    .bind(drive_file_id)
+    .bind(position)
+    .execute(db)
+    .await
+    .expect("failed to seed test note attachment");
+    id
+}
+
+/// `note_attachments` にファイルをダウンロードしない remote 添付を1件投入する。
+#[allow(dead_code)]
+pub async fn seed_remote_note_attachment(
+    db: &PgPool,
+    note_id: Uuid,
+    remote_url: &str,
+    remote_mime_type: &str,
+    position: i32,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO note_attachments (id, note_id, remote_url, remote_mime_type, position) \
+         VALUES ($1, $2, $3, $4, $5)",
+    )
+    .bind(id)
+    .bind(note_id)
+    .bind(remote_url)
+    .bind(remote_mime_type)
+    .bind(position)
+    .execute(db)
+    .await
+    .expect("failed to seed test remote note attachment");
+    id
+}
+
 /// Valkey に `session:{id}` -> user_id のセッションを1件投入し、
 /// axum テストリクエストの `Cookie` ヘッダーにそのまま使えるセッションIDを返す。
 #[allow(dead_code)]

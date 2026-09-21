@@ -1,9 +1,10 @@
-//! `app/activitypub/renderer.py` のうち Add/Remove アクティビティの
-//! レンダリングに必要な部分のみを移植したもの。`AP_CONTEXT` は JSON-LD の
-//! 意味を保つため一字一句 Python 側と同一に保つこと。Create/Announce/Undo
-//! 等の他のアクティビティは、それらを必要とするエンドポイントを移植する
-//! 際に追加する(今は不要な先取り実装をしない)。
+//! `app/activitypub/renderer.py` のうち Add/Remove アクティビティ、および
+//! get_outbox/get_featured が必要とする Create/Note のレンダリングを
+//! 移植したもの。`AP_CONTEXT` は JSON-LD の意味を保つため一字一句 Python
+//! 側と同一に保つこと。Announce/Undo 等の他のアクティビティは、それらを
+//! 必要とするエンドポイントを移植する際に追加する(今は不要な先取り実装をしない)。
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::LazyLock;
@@ -110,6 +111,246 @@ pub fn render_ordered_collection_page(
     })
 }
 
+/// `app/activitypub/renderer.py` の `_iso_z` を移植したもの
+/// (マイクロ秒6桁 + 末尾 `Z`、タイムゾーンオフセット表記は使わない)。
+pub fn iso_z(dt: DateTime<Utc>) -> String {
+    dt.format("%Y-%m-%dT%H:%M:%S%.6fZ").to_string()
+}
+
+/// `app.activitypub.resolve_source_media_type` を移植したもの。
+pub fn resolve_source_media_type(source: &str, preferences: Option<&Value>) -> &'static str {
+    let pref = preferences
+        .and_then(|p| p.get("source_media_type"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("auto");
+    match pref {
+        "mfm" => "text/x.misskeymarkdown",
+        "plain" => "text/plain",
+        _ if source.contains("$[") => "text/x.misskeymarkdown",
+        _ => "text/plain",
+    }
+}
+
+/// 空文字列を「未設定」として扱う (Python の文字列truthy判定を再現するヘルパー)。
+pub fn truthy_string(s: Option<String>) -> Option<String> {
+    s.filter(|v| !v.is_empty())
+}
+
+/// `app/activitypub/renderer.py` の `render_note` が `note.attachments` から
+/// 組み立てる `Document` タグ1件分。`NoteAttachment`(drive_file/remote の
+/// 2系統)を呼び出し側で解決した後の共通表現。
+#[derive(Debug, Clone, Default)]
+pub struct NoteAttachmentData {
+    pub media_type: String,
+    pub url: String,
+    pub name: String,
+    pub width: Option<i32>,
+    pub height: Option<i32>,
+    pub blurhash: Option<String>,
+    pub focal_point: Option<[f64; 2]>,
+    /// 動画サムネイル (`att.drive_file.thumbnail_s3_key`)。Python版は
+    /// remote添付では参照しないため、drive_file系のみで埋まる。
+    pub icon: Option<(String, String)>,
+    pub duration: Option<f64>,
+}
+
+/// `app/activitypub/renderer.py` の `render_note` が必要とする、
+/// DB行(actor/attachments込み)から呼び出し側が解決済みのノートデータ。
+/// `get_outbox`/`get_featured` はいずれもレンダリング対象ノートが単一の
+/// ローカルactorに属することが確定しているため(`note.actor`を都度引く
+/// 必要がない)、`attributed_to`/`note_url`は文字列として渡す設計にしている。
+/// ハッシュタグ・カスタム絵文字タグは Python版でもこの2エンドポイントでは
+/// 動的属性 (`_hashtag_names`/`_emoji_tags`) が未設定のため描画されない
+/// (`get_note_ap` だけがバッチロードして設定する) — この構造体にも意図的に含めない。
+pub struct NoteRenderData {
+    pub ap_id: String,
+    pub is_poll: bool,
+    pub attributed_to: String,
+    pub content: String,
+    pub published: DateTime<Utc>,
+    pub to: Value,
+    pub cc: Value,
+    pub note_url: String,
+    pub updated_at: Option<DateTime<Utc>>,
+    pub source: Option<String>,
+    /// `source` が `Some` の場合のみ意味を持つ、事前解決済みの `resolve_source_media_type` 結果。
+    pub source_media_type: Option<String>,
+    pub sensitive: bool,
+    pub spoiler_text: Option<String>,
+    pub in_reply_to_ap_id: Option<String>,
+    pub quote_ap_id: Option<String>,
+    pub mentions: Option<Value>,
+    pub attachments: Vec<NoteAttachmentData>,
+    pub poll_options: Option<Value>,
+    pub poll_expires_at: Option<DateTime<Utc>>,
+    pub poll_multiple: bool,
+    pub is_talk: bool,
+}
+
+/// `app/activitypub/renderer.py` の `render_note` を移植したもの。
+pub fn render_note(note: &NoteRenderData) -> Value {
+    let note_type = if note.is_poll { "Question" } else { "Note" };
+    let mut data = json!({
+        "@context": AP_CONTEXT.clone(),
+        "id": note.ap_id,
+        "type": note_type,
+        "attributedTo": note.attributed_to,
+        "content": note.content,
+        "published": iso_z(note.published),
+        "to": note.to,
+        "cc": note.cc,
+        "url": note.note_url,
+    });
+
+    if let Some(updated_at) = note.updated_at {
+        data["updated"] = json!(iso_z(updated_at));
+    }
+    if let Some(source) = note.source.as_deref().filter(|s| !s.is_empty()) {
+        let media_type = note.source_media_type.as_deref().unwrap_or("text/plain");
+        data["source"] = json!({ "content": source, "mediaType": media_type });
+        data["_misskey_content"] = json!(source);
+    }
+    if note.sensitive {
+        data["sensitive"] = json!(true);
+    }
+    if let Some(spoiler) = note.spoiler_text.as_deref().filter(|s| !s.is_empty()) {
+        data["summary"] = json!(spoiler);
+    }
+    if let Some(in_reply_to) = note.in_reply_to_ap_id.as_deref().filter(|s| !s.is_empty()) {
+        data["inReplyTo"] = json!(in_reply_to);
+    }
+    if let Some(quote) = note.quote_ap_id.as_deref().filter(|s| !s.is_empty()) {
+        data["_misskey_quote"] = json!(quote);
+        data["quoteUrl"] = json!(quote);
+    }
+
+    if !note.attachments.is_empty() {
+        let attachment_list: Vec<Value> = note
+            .attachments
+            .iter()
+            .map(|att| {
+                let mut doc = json!({
+                    "type": "Document",
+                    "mediaType": att.media_type,
+                    "url": att.url,
+                    "name": att.name,
+                });
+                if let (Some(width), Some(height)) = (att.width, att.height) {
+                    doc["width"] = json!(width);
+                    doc["height"] = json!(height);
+                }
+                if let Some(blurhash) = &att.blurhash {
+                    doc["blurhash"] = json!(blurhash);
+                }
+                if let Some([x, y]) = att.focal_point {
+                    doc["focalPoint"] = json!([x, y]);
+                }
+                if let Some((icon_media_type, icon_url)) = &att.icon {
+                    doc["icon"] = json!({
+                        "type": "Image",
+                        "mediaType": icon_media_type,
+                        "url": icon_url,
+                    });
+                }
+                if let Some(duration) = att.duration {
+                    doc["duration"] = json!(format!("PT{duration:.1}S"));
+                }
+                doc
+            })
+            .collect();
+        data["attachment"] = json!(attachment_list);
+    }
+
+    // タグ (メンションのみ — ハッシュタグ/カスタム絵文字はこの2エンドポイントでは未描画)。
+    let mut tag: Vec<Value> = Vec::new();
+    if let Some(mentions) = note.mentions.as_ref().and_then(|v| v.as_array()) {
+        for m in mentions {
+            let username = m
+                .get("username")
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.is_empty());
+            let name = if let Some(username) = username {
+                match m
+                    .get("domain")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                {
+                    Some(domain) => format!("@{username}@{domain}"),
+                    None => format!("@{username}"),
+                }
+            } else {
+                m.get("name")
+                    .and_then(|v| v.as_str())
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| m.get("ap_id").and_then(|v| v.as_str()))
+                    .unwrap_or("")
+                    .to_string()
+            };
+            tag.push(json!({
+                "type": "Mention",
+                "href": m.get("ap_id").and_then(|v| v.as_str()).unwrap_or(""),
+                "name": name,
+            }));
+        }
+    }
+    if !tag.is_empty() {
+        data["tag"] = json!(tag);
+    }
+
+    if note.is_poll {
+        if let Some(options) = note
+            .poll_options
+            .as_ref()
+            .and_then(|v| v.as_array())
+            .filter(|opts| !opts.is_empty())
+        {
+            let choices_key = if note.poll_multiple { "anyOf" } else { "oneOf" };
+            let choices: Vec<Value> = options
+                .iter()
+                .map(|opt| {
+                    json!({
+                        "type": "Note",
+                        "name": opt.get("title").and_then(|v| v.as_str()).unwrap_or(""),
+                        "replies": {
+                            "type": "Collection",
+                            "totalItems": opt.get("votes_count").and_then(|v| v.as_i64()).unwrap_or(0),
+                        },
+                    })
+                })
+                .collect();
+            data[choices_key] = json!(choices);
+            if let Some(expires_at) = note.poll_expires_at {
+                data["endTime"] = json!(iso_z(expires_at));
+            }
+            let total_votes: i64 = options
+                .iter()
+                .map(|opt| opt.get("votes_count").and_then(|v| v.as_i64()).unwrap_or(0))
+                .sum();
+            data["votersCount"] = json!(total_votes);
+        }
+    }
+
+    if note.is_talk {
+        data["_misskey_talk"] = json!(true);
+    }
+
+    data
+}
+
+/// `app/activitypub/renderer.py` の `render_create_activity` を移植したもの。
+pub fn render_create_activity(note: &NoteRenderData) -> Value {
+    json!({
+        "@context": AP_CONTEXT.clone(),
+        "id": format!("{}/activity", note.ap_id),
+        "type": "Create",
+        "actor": note.attributed_to,
+        "object": render_note(note),
+        "to": note.to,
+        "cc": note.cc,
+        "published": iso_z(note.published),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -196,5 +437,202 @@ mod tests {
         assert_eq!(page["type"], "OrderedCollectionPage");
         assert_eq!(page["orderedItems"][0], "https://remote.example/users/bob");
         assert!(page.get("next").is_none());
+    }
+
+    fn minimal_note() -> NoteRenderData {
+        NoteRenderData {
+            ap_id: "https://localhost/notes/1".into(),
+            is_poll: false,
+            attributed_to: "https://localhost/users/alice".into(),
+            content: "<p>hello</p>".into(),
+            published: DateTime::parse_from_rfc3339("2026-01-01T00:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+            to: json!(["https://www.w3.org/ns/activitystreams#Public"]),
+            cc: json!([]),
+            note_url: "https://localhost/notes/1".into(),
+            updated_at: None,
+            source: None,
+            source_media_type: None,
+            sensitive: false,
+            spoiler_text: None,
+            in_reply_to_ap_id: None,
+            quote_ap_id: None,
+            mentions: None,
+            attachments: Vec::new(),
+            poll_options: None,
+            poll_expires_at: None,
+            poll_multiple: false,
+            is_talk: false,
+        }
+    }
+
+    #[test]
+    fn render_note_minimal_matches_python_shape() {
+        let note = minimal_note();
+        let data = render_note(&note);
+        assert_eq!(data["type"], "Note");
+        assert_eq!(data["id"], "https://localhost/notes/1");
+        assert_eq!(data["attributedTo"], "https://localhost/users/alice");
+        assert_eq!(data["content"], "<p>hello</p>");
+        assert!(data.get("source").is_none());
+        assert!(data.get("sensitive").is_none());
+        assert!(data.get("attachment").is_none());
+        assert!(data.get("tag").is_none());
+    }
+
+    #[test]
+    fn render_note_is_poll_uses_question_type() {
+        let mut note = minimal_note();
+        note.is_poll = true;
+        let data = render_note(&note);
+        assert_eq!(data["type"], "Question");
+    }
+
+    #[test]
+    fn render_note_empty_optional_strings_are_omitted() {
+        let mut note = minimal_note();
+        note.spoiler_text = Some(String::new());
+        note.in_reply_to_ap_id = Some(String::new());
+        note.quote_ap_id = Some(String::new());
+        note.source = Some(String::new());
+        let data = render_note(&note);
+        assert!(data.get("summary").is_none());
+        assert!(data.get("inReplyTo").is_none());
+        assert!(data.get("quoteUrl").is_none());
+        assert!(data.get("source").is_none());
+    }
+
+    #[test]
+    fn render_note_includes_source_and_misskey_content() {
+        let mut note = minimal_note();
+        note.source = Some("plain text".into());
+        note.source_media_type = Some("text/plain".into());
+        let data = render_note(&note);
+        assert_eq!(data["source"]["content"], "plain text");
+        assert_eq!(data["source"]["mediaType"], "text/plain");
+        assert_eq!(data["_misskey_content"], "plain text");
+    }
+
+    #[test]
+    fn render_note_quote_sets_both_misskey_quote_and_quote_url() {
+        let mut note = minimal_note();
+        note.quote_ap_id = Some("https://localhost/notes/2".into());
+        let data = render_note(&note);
+        assert_eq!(data["_misskey_quote"], "https://localhost/notes/2");
+        assert_eq!(data["quoteUrl"], "https://localhost/notes/2");
+    }
+
+    #[test]
+    fn render_note_mention_with_domain_renders_full_handle() {
+        let mut note = minimal_note();
+        note.mentions = Some(json!([
+            {"ap_id": "https://remote.example/users/bob", "username": "bob", "domain": "remote.example"}
+        ]));
+        let data = render_note(&note);
+        assert_eq!(data["tag"][0]["type"], "Mention");
+        assert_eq!(data["tag"][0]["href"], "https://remote.example/users/bob");
+        assert_eq!(data["tag"][0]["name"], "@bob@remote.example");
+    }
+
+    #[test]
+    fn render_note_mention_without_username_falls_back_to_name_or_ap_id() {
+        let mut note = minimal_note();
+        note.mentions = Some(json!([
+            {"ap_id": "https://remote.example/users/carol", "name": "Carol"}
+        ]));
+        let data = render_note(&note);
+        assert_eq!(data["tag"][0]["name"], "Carol");
+
+        note.mentions = Some(json!([{"ap_id": "https://remote.example/users/dave"}]));
+        let data = render_note(&note);
+        assert_eq!(data["tag"][0]["name"], "https://remote.example/users/dave");
+    }
+
+    #[test]
+    fn render_note_attachment_includes_drive_file_fields() {
+        let mut note = minimal_note();
+        note.attachments = vec![NoteAttachmentData {
+            media_type: "image/png".into(),
+            url: "https://localhost/media/abc.png".into(),
+            name: "a cat".into(),
+            width: Some(100),
+            height: Some(200),
+            blurhash: Some("LKO2?U%2Tw=w".into()),
+            focal_point: Some([0.1, -0.2]),
+            icon: Some((
+                "image/webp".into(),
+                "https://localhost/media/thumb.webp".into(),
+            )),
+            duration: Some(12.5),
+        }];
+        let data = render_note(&note);
+        let doc = &data["attachment"][0];
+        assert_eq!(doc["type"], "Document");
+        assert_eq!(doc["mediaType"], "image/png");
+        assert_eq!(doc["width"], 100);
+        assert_eq!(doc["height"], 200);
+        assert_eq!(doc["blurhash"], "LKO2?U%2Tw=w");
+        assert_eq!(doc["focalPoint"], json!([0.1, -0.2]));
+        assert_eq!(doc["icon"]["mediaType"], "image/webp");
+        assert_eq!(doc["duration"], "PT12.5S");
+    }
+
+    #[test]
+    fn render_note_poll_renders_one_of_and_voters_count() {
+        let mut note = minimal_note();
+        note.is_poll = true;
+        note.poll_options = Some(json!([
+            {"title": "cat", "votes_count": 3},
+            {"title": "dog", "votes_count": 2},
+        ]));
+        let data = render_note(&note);
+        assert_eq!(data["oneOf"][0]["name"], "cat");
+        assert_eq!(data["oneOf"][0]["replies"]["totalItems"], 3);
+        assert_eq!(data["votersCount"], 5);
+        assert!(data.get("anyOf").is_none());
+    }
+
+    #[test]
+    fn render_note_poll_multiple_renders_any_of() {
+        let mut note = minimal_note();
+        note.is_poll = true;
+        note.poll_multiple = true;
+        note.poll_options = Some(json!([{"title": "cat", "votes_count": 1}]));
+        let data = render_note(&note);
+        assert!(data.get("oneOf").is_none());
+        assert_eq!(data["anyOf"][0]["name"], "cat");
+    }
+
+    #[test]
+    fn render_create_activity_wraps_note_in_create() {
+        let note = minimal_note();
+        let activity = render_create_activity(&note);
+        assert_eq!(activity["type"], "Create");
+        assert_eq!(activity["id"], "https://localhost/notes/1/activity");
+        assert_eq!(activity["actor"], "https://localhost/users/alice");
+        assert_eq!(activity["object"]["type"], "Note");
+        assert_eq!(activity["to"], note.to);
+    }
+
+    #[test]
+    fn resolve_source_media_type_respects_explicit_preference() {
+        assert_eq!(
+            resolve_source_media_type("plain $[x]", Some(&json!({"source_media_type": "plain"}))),
+            "text/plain"
+        );
+        assert_eq!(
+            resolve_source_media_type("no mfm syntax", Some(&json!({"source_media_type": "mfm"}))),
+            "text/x.misskeymarkdown"
+        );
+    }
+
+    #[test]
+    fn resolve_source_media_type_auto_detects_mfm_syntax() {
+        assert_eq!(
+            resolve_source_media_type("$[tada hi]", None),
+            "text/x.misskeymarkdown"
+        );
+        assert_eq!(resolve_source_media_type("plain text", None), "text/plain");
     }
 }
