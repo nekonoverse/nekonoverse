@@ -4,6 +4,7 @@
 //! 等の他のアクティビティは、それらを必要とするエンドポイントを移植する
 //! 際に追加する(今は不要な先取り実装をしない)。
 
+use serde::Serialize;
 use serde_json::{json, Value};
 use std::sync::LazyLock;
 
@@ -75,6 +76,40 @@ pub fn render_remove_activity(
     })
 }
 
+/// `render_ordered_collection`/`render_ordered_collection_page` が使う
+/// `@context`。`AP_CONTEXT`(security/multikey拡張込み)とは異なり、
+/// Python版もここでは素の文字列を使っている。
+const PLAIN_AS_CONTEXT: &str = "https://www.w3.org/ns/activitystreams";
+
+/// `app.activitypub.renderer.render_ordered_collection` を移植したもの。
+pub fn render_ordered_collection(collection_id: &str, total_items: i64, first_page: &str) -> Value {
+    json!({
+        "@context": PLAIN_AS_CONTEXT,
+        "id": collection_id,
+        "type": "OrderedCollection",
+        "totalItems": total_items,
+        "first": first_page,
+    })
+}
+
+/// `app.activitypub.renderer.render_ordered_collection_page` を移植したもの。
+/// Python版の呼び出し元(outbox/followers/following)はいずれも`next_page`を
+/// 渡していない(2ページ目以降のページネーションが実質未実装)ため、
+/// このRust版でもその挙動をそのまま踏襲し`next`引数は設けない。
+pub fn render_ordered_collection_page(
+    page_id: &str,
+    part_of: &str,
+    items: impl Serialize,
+) -> Value {
+    json!({
+        "@context": PLAIN_AS_CONTEXT,
+        "id": page_id,
+        "type": "OrderedCollectionPage",
+        "partOf": part_of,
+        "orderedItems": items,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -133,5 +168,33 @@ mod tests {
             "https://example.com/users/alice/featured"
         );
         assert_eq!(activity["@context"], *AP_CONTEXT);
+    }
+
+    #[test]
+    fn render_ordered_collection_matches_python_shape() {
+        let collection = render_ordered_collection(
+            "https://example.com/users/alice/followers",
+            3,
+            "https://example.com/users/alice/followers?page=true",
+        );
+        assert_eq!(collection["@context"], PLAIN_AS_CONTEXT);
+        assert_eq!(collection["type"], "OrderedCollection");
+        assert_eq!(collection["totalItems"], 3);
+        assert_eq!(
+            collection["first"],
+            "https://example.com/users/alice/followers?page=true"
+        );
+    }
+
+    #[test]
+    fn render_ordered_collection_page_matches_python_shape_and_has_no_next() {
+        let page = render_ordered_collection_page(
+            "https://example.com/users/alice/followers?page=true",
+            "https://example.com/users/alice/followers",
+            vec!["https://remote.example/users/bob"],
+        );
+        assert_eq!(page["type"], "OrderedCollectionPage");
+        assert_eq!(page["orderedItems"][0], "https://remote.example/users/bob");
+        assert!(page.get("next").is_none());
     }
 }

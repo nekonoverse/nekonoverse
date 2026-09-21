@@ -5,7 +5,7 @@ use tower::ServiceExt;
 use uuid::Uuid;
 
 mod common;
-use common::seed_local_actor;
+use common::{seed_follow, seed_local_actor, seed_remote_actor};
 
 const AP_ACCEPT: &str = "application/activity+json";
 
@@ -193,4 +193,121 @@ async fn get_actor_includes_fields_as_attachment() {
     assert_eq!(json["attachment"][0]["type"], "PropertyValue");
     assert_eq!(json["attachment"][0]["name"], "Website");
     assert_eq!(json["attachment"][0]["value"], "https://example.com");
+}
+
+#[tokio::test]
+async fn get_followers_collection_without_page_returns_count_only() {
+    let (app, db) = common::test_app_with_db().await;
+    let username = format!("followerstest1{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let domain = format!("remote-ft1-{}.example", Uuid::new_v4().simple());
+    let remote_id = seed_remote_actor(&db, "remote-ft1", &domain).await;
+    seed_follow(&db, remote_id, actor_id).await;
+
+    let (status, headers, json, _raw) =
+        get(app, &format!("/users/{username}/followers"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(
+        headers.get(header::CONTENT_TYPE).unwrap(),
+        "application/activity+json; charset=utf-8"
+    );
+    assert_eq!(json["type"], "OrderedCollection");
+    assert_eq!(json["totalItems"], 1);
+    assert_eq!(
+        json["first"],
+        format!("https://localhost/users/{username}/followers?page=true")
+    );
+    assert!(json.get("orderedItems").is_none());
+}
+
+#[tokio::test]
+async fn get_followers_collection_page_returns_follower_ap_ids() {
+    let (app, db) = common::test_app_with_db().await;
+    let username = format!("followerstest2{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let domain = format!("remote-ft2-{}.example", Uuid::new_v4().simple());
+    let remote_id = seed_remote_actor(&db, "remote-ft2", &domain).await;
+    seed_follow(&db, remote_id, actor_id).await;
+
+    let (status, _headers, json, _raw) =
+        get(app, &format!("/users/{username}/followers?page=true"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["type"], "OrderedCollectionPage");
+    assert_eq!(
+        json["orderedItems"][0],
+        format!("https://{domain}/users/remote-ft2")
+    );
+    assert!(json.get("next").is_none());
+}
+
+#[tokio::test]
+async fn get_followers_collection_excludes_unaccepted_follow() {
+    let (app, db) = common::test_app_with_db().await;
+    let username = format!("followerstest3{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let domain = format!("remote-ft3-{}.example", Uuid::new_v4().simple());
+    let remote_id = seed_remote_actor(&db, "remote-ft3", &domain).await;
+    sqlx::query(
+        "INSERT INTO followers (id, follower_id, following_id, accepted, created_at) \
+         VALUES ($1, $2, $3, false, now())",
+    )
+    .bind(Uuid::new_v4())
+    .bind(remote_id)
+    .bind(actor_id)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let (status, _headers, json, _raw) =
+        get(app, &format!("/users/{username}/followers?page=true"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["orderedItems"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn get_followers_collection_not_found_actor_returns_404() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, _headers, json, _raw) = get(
+        app,
+        &format!("/users/nonexistent-{}/followers", Uuid::new_v4().simple()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Actor not found");
+}
+
+#[tokio::test]
+async fn get_following_collection_page_returns_following_ap_ids() {
+    let (app, db) = common::test_app_with_db().await;
+    let username = format!("followingtest1{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let domain = format!("remote-gt1-{}.example", Uuid::new_v4().simple());
+    let remote_id = seed_remote_actor(&db, "remote-gt1", &domain).await;
+    seed_follow(&db, actor_id, remote_id).await;
+
+    let (status, _headers, json, _raw) =
+        get(app, &format!("/users/{username}/following?page=true"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["type"], "OrderedCollectionPage");
+    assert_eq!(
+        json["orderedItems"][0],
+        format!("https://{domain}/users/remote-gt1")
+    );
+}
+
+#[tokio::test]
+async fn get_following_collection_without_page_returns_count_only() {
+    let (app, db) = common::test_app_with_db().await;
+    let username = format!("followingtest2{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let domain = format!("remote-gt2-{}.example", Uuid::new_v4().simple());
+    let remote_id = seed_remote_actor(&db, "remote-gt2", &domain).await;
+    seed_follow(&db, actor_id, remote_id).await;
+
+    let (status, _headers, json, _raw) =
+        get(app, &format!("/users/{username}/following"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["type"], "OrderedCollection");
+    assert_eq!(json["totalItems"], 1);
 }
