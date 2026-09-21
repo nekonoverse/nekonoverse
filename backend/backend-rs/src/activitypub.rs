@@ -121,6 +121,17 @@ pub fn render_undo_activity(activity_id: &str, actor_ap_id: &str, inner_activity
     })
 }
 
+/// `app.activitypub.renderer.render_update_activity` を移植したもの。
+pub fn render_update_activity(activity_id: &str, actor_ap_id: &str, object_data: &Value) -> Value {
+    json!({
+        "@context": AP_CONTEXT.clone(),
+        "id": activity_id,
+        "type": "Update",
+        "actor": actor_ap_id,
+        "object": object_data,
+    })
+}
+
 /// `render_ordered_collection`/`render_ordered_collection_page` が使う
 /// `@context`。`AP_CONTEXT`(security/multikey拡張込み)とは異なり、
 /// Python版もここでは素の文字列を使っている。
@@ -599,6 +610,24 @@ mod tests {
         assert_eq!(activity["id"], "https://example.com/notes/2/undo");
         assert_eq!(activity["actor"], "https://example.com/users/alice");
         assert_eq!(activity["object"], inner);
+        assert_eq!(activity["@context"], *AP_CONTEXT);
+    }
+
+    #[test]
+    fn render_update_activity_wraps_object_data() {
+        let object_data = json!({ "type": "Note", "id": "https://example.com/notes/1" });
+        let activity = render_update_activity(
+            "https://example.com/notes/1/update/1234567890",
+            "https://example.com/users/alice",
+            &object_data,
+        );
+        assert_eq!(activity["type"], "Update");
+        assert_eq!(
+            activity["id"],
+            "https://example.com/notes/1/update/1234567890"
+        );
+        assert_eq!(activity["actor"], "https://example.com/users/alice");
+        assert_eq!(activity["object"], object_data);
         assert_eq!(activity["@context"], *AP_CONTEXT);
     }
 

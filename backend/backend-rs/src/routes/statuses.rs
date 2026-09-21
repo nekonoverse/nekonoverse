@@ -2,9 +2,18 @@
 //! 書き込みパス (`bookmark`/`unbookmark`)、Stage 4 で追加したpin/unpin、
 //! `get_status` (`GET /api/v1/statuses/{id}`、NoteResponse直列化パイプライン
 //! の最初のルート配線)、`delete_status`/`unreblog_status`/`reblog_status`/
-//! `create_status` を切り出したもの。同じパスのPUT(`edit_status`)は
-//! 未移植(nginx側でメソッド別にPython/Rustへ振り分ける、`nginx/*.conf`
-//! 参照)。`reblog_status`/`create_status`は元ノート著者・返信先・メンション先
+//! `create_status`/`edit_status`/`get_status_history` を切り出したもの。
+//! `edit_status`はPython版がcontent/source/spoiler_textの更新+編集履歴保存+
+//! フォロワーへのAP Update配送のみを行い、メンション/ハッシュタグの再抽出・
+//! 通知作成・realtime pub/subを一切行わない(Python版`edit_status`本体に
+//! これらの呼び出しが無いことを確認済み)ため、そのままの薄さで移植している。
+//! また`render_note`はPythonの動的属性`_hashtag_names`/`_emoji_tags`が
+//! 立っている場合のみタグに反映する仕組みだが、`edit_status`は`create_note`と
+//! 違って新規に取得したノートオブジェクトに対してこれらを一切設定しないため、
+//! 編集後のAP Updateアクティビティは常にハッシュタグ/カスタム絵文字タグを
+//! 含まない(投稿時点の内容に基づくCreateアクティビティとは異なる、Python版の
+//! 既知の挙動)。Rust版もこれをそのまま再現する(`hashtags`/`emoji_tags`は
+//! 常に空)。`reblog_status`/`create_status`は元ノート著者・返信先・メンション先
 //! への通知作成(`create_notification`)経由でWeb Push/Discord Webhook配送に
 //! 依存するように見えるが、Python版でもこの2つは個別のtry/exceptで囲われ
 //! 失敗を握りつぶす契約になっているため、`notification.rs`側でそれらを移植せず
@@ -34,15 +43,15 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 use uuid::Uuid;
 
 use crate::activitypub::{
     render_add_activity, render_announce_activity, render_create_activity, render_delete_activity,
-    render_remove_activity, render_undo_activity, truthy_string, EmojiTagData, HashtagTagData,
-    NoteRenderData,
+    render_note, render_remove_activity, render_undo_activity, render_update_activity,
+    truthy_string, EmojiTagData, HashtagTagData, NoteRenderData,
 };
 use crate::auth::{CurrentUser, OptionalUser};
 use crate::db;
@@ -50,7 +59,7 @@ use crate::delivery::enqueue_delivery;
 use crate::error::AppError;
 use crate::follows::{get_follower_ids, get_follower_inboxes};
 use crate::hashtag::{extract_hashtags, upsert_hashtags};
-use crate::mastodon_time::to_mastodon_datetime;
+use crate::mastodon_time::{to_mastodon_datetime, to_pydantic_isoformat};
 use crate::note_response::{
     fetch_note_render_row, get_reaction_summary, note_to_response_json_recursive,
 };
@@ -79,9 +88,10 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/statuses/:note_id/unpin", post(unpin_status))
         .route("/api/v1/statuses/:note_id/unreblog", post(unreblog_status))
         .route("/api/v1/statuses/:note_id/reblog", post(reblog_status))
+        .route("/api/v1/statuses/:note_id/history", get(get_status_history))
         .route(
             "/api/v1/statuses/:note_id",
-            get(get_status).delete(delete_status),
+            get(get_status).delete(delete_status).put(edit_status),
         )
 }
 
@@ -432,6 +442,285 @@ async fn delete_status(
     }
 
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+#[derive(Deserialize)]
+struct NoteEditRequest {
+    content: String,
+    #[serde(default)]
+    spoiler_text: Option<String>,
+}
+
+/// `app/schemas/note.py` の `NoteEditRequest` の `Field(min_length=1, max_length=5000)`/
+/// `Field(default=None, max_length=500)` を移植したもの。
+fn validate_edit_request(body: &NoteEditRequest) -> Result<(), AppError> {
+    let content_len = body.content.chars().count();
+    if !(1..=5000).contains(&content_len) {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "content must be between 1 and 5000 characters",
+        ));
+    }
+    if let Some(spoiler) = &body.spoiler_text {
+        if spoiler.chars().count() > 500 {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "spoiler_text must be 500 characters or fewer",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `render_note` の呼び出しに必要な、編集前の現在値一式。
+#[derive(sqlx::FromRow)]
+struct EditNoteRow {
+    actor_id: Uuid,
+    ap_id: String,
+    is_poll: bool,
+    content: String,
+    source: Option<String>,
+    spoiler_text: Option<String>,
+    sensitive: bool,
+    in_reply_to_ap_id: Option<String>,
+    quote_ap_id: Option<String>,
+    published: DateTime<Utc>,
+    #[sqlx(rename = "to")]
+    to_field: Value,
+    cc: Value,
+    mentions: Option<Value>,
+    poll_options: Option<Value>,
+    poll_expires_at: Option<DateTime<Utc>>,
+    poll_multiple: bool,
+    is_talk: bool,
+}
+
+async fn fetch_note_for_edit(
+    db: &sqlx::PgPool,
+    note_id: Uuid,
+) -> Result<Option<EditNoteRow>, AppError> {
+    let row = sqlx::query_as::<_, EditNoteRow>(
+        r#"
+        SELECT actor_id, ap_id, is_poll, content, source, spoiler_text, sensitive,
+               in_reply_to_ap_id, quote_ap_id, published, "to", cc, mentions,
+               poll_options, poll_expires_at, poll_multiple, is_talk
+        FROM notes WHERE id = $1 AND deleted_at IS NULL
+        "#,
+    )
+    .bind(note_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row)
+}
+
+/// `app/api/mastodon/statuses.py` の `edit_status` を移植したもの。Python版は
+/// メンション/ハッシュタグの再抽出、通知作成、realtime pub/subを一切行わない
+/// (モジュール冒頭のコメント参照)ため、Rust版もcontent/source/spoiler_textの
+/// 更新+編集履歴保存+フォロワーへのAP Update配送のみを行う。
+async fn edit_status(
+    State(state): State<AppState>,
+    current_user: CurrentUser,
+    Path(note_id): Path<Uuid>,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    current_user.require_scope("write:statuses")?;
+
+    let payload: NoteEditRequest = serde_json::from_slice(&body).map_err(|e| {
+        AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Invalid request body: {e}"),
+        )
+    })?;
+    validate_edit_request(&payload)?;
+
+    let note = fetch_note_for_edit(&state.db, note_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Note not found"))?;
+    if note.actor_id != current_user.actor_id {
+        return Err(AppError::new(StatusCode::FORBIDDEN, "Not your note"));
+    }
+
+    // 現在の状態を編集履歴として保存
+    sqlx::query(
+        "INSERT INTO note_edits (id, note_id, content, source, spoiler_text, created_at) \
+         VALUES ($1, $2, $3, $4, $5, $6)",
+    )
+    .bind(db::new_id())
+    .bind(note_id)
+    .bind(&note.content)
+    .bind(&note.source)
+    .bind(note.spoiler_text.clone().unwrap_or_default())
+    .bind(db::now())
+    .execute(&state.db)
+    .await?;
+
+    // ノートを更新
+    let html_content = text_to_html(&payload.content, &state.config.server_url());
+    let updated_at = db::now();
+    sqlx::query(
+        r#"UPDATE notes SET content = $1, source = $2, spoiler_text = $3, updated_at = $4 WHERE id = $5"#,
+    )
+    .bind(&html_content)
+    .bind(&payload.content)
+    .bind(&payload.spoiler_text)
+    .bind(updated_at)
+    .bind(note_id)
+    .execute(&state.db)
+    .await?;
+
+    // フォロワーに AP Update を配送
+    let username = fetch_local_actor_username(&state.db, current_user.actor_id).await?;
+    let actor_uri = format!("{}/users/{username}", state.config.server_url());
+    let note_url = format!("{}/notes/{note_id}", state.config.server_url());
+    let attachments = fetch_attachments_by_note(&state.db, &[note_id], &state.config.media_url())
+        .await?
+        .remove(&note_id)
+        .unwrap_or_default();
+    let preferences: Option<Value> =
+        sqlx::query_scalar("SELECT preferences FROM users WHERE id = $1")
+            .bind(current_user.id)
+            .fetch_optional(&state.db)
+            .await?
+            .flatten();
+    let source_media_type = (!payload.content.is_empty()).then(|| {
+        crate::activitypub::resolve_source_media_type(&payload.content, preferences.as_ref())
+            .to_string()
+    });
+
+    let render_data = NoteRenderData {
+        ap_id: note.ap_id.clone(),
+        is_poll: note.is_poll,
+        attributed_to: actor_uri.clone(),
+        content: html_content,
+        published: note.published,
+        to: note.to_field,
+        cc: note.cc,
+        note_url,
+        updated_at: Some(updated_at),
+        source: Some(payload.content.clone()),
+        source_media_type,
+        sensitive: note.sensitive,
+        spoiler_text: payload.spoiler_text.clone(),
+        in_reply_to_ap_id: note.in_reply_to_ap_id,
+        quote_ap_id: note.quote_ap_id,
+        mentions: note.mentions,
+        attachments,
+        poll_options: note.poll_options,
+        poll_expires_at: note.poll_expires_at,
+        poll_multiple: note.poll_multiple,
+        is_talk: note.is_talk,
+        // `render_note` はPythonの動的属性`_hashtag_names`/`_emoji_tags`が
+        // 立っている場合のみタグを反映するが、`edit_status`はそれらを設定
+        // しないノートオブジェクトに対して呼ばれるため常に空 (モジュール
+        // 冒頭のコメント参照)。
+        hashtags: Vec::new(),
+        emoji_tags: Vec::new(),
+    };
+    let note_data = render_note(&render_data);
+    let update_activity = render_update_activity(
+        &format!("{}/update/{}", note.ap_id, updated_at.timestamp()),
+        &actor_uri,
+        &note_data,
+    );
+    for inbox_url in get_follower_inboxes(&state.db, current_user.actor_id).await? {
+        enqueue_delivery(&state, current_user.actor_id, &inbox_url, &update_activity).await?;
+    }
+
+    // レスポンス用にノートを再読み込み。Python版の `edit_status` 最後の
+    // `note_to_response(note, db=db)` 呼び出しは `reactions`/`actor_id` を
+    // 一切渡さない(両方ともデフォルトの `None`)ため、`get_status` とは異なり
+    // reactions は常に空、poll等の「自分の」状態判定もviewer_actor_id=Noneの
+    // 匿名扱いになる(引用ノートの可視性判定も同様に匿名ルールで評価される)。
+    // これはPython版の実際の契約であり、意図的にそのまま再現する。
+    let render_row = fetch_note_render_row(&state.db, note_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Note not found"))?;
+    let resp = note_to_response_json_recursive(
+        &state.db,
+        &state.config,
+        &state.redis,
+        &render_row,
+        Vec::new(),
+        None,
+        false,
+        false,
+    )
+    .await?;
+
+    Ok(Json(resp).into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct NoteEditHistoryRow {
+    content: String,
+    source: Option<String>,
+    spoiler_text: Option<String>,
+    created_at: DateTime<Utc>,
+}
+
+#[derive(sqlx::FromRow)]
+struct NoteCurrentVersionRow {
+    content: String,
+    source: Option<String>,
+    spoiler_text: Option<String>,
+    published: DateTime<Utc>,
+    updated_at: Option<DateTime<Utc>>,
+}
+
+#[derive(Serialize)]
+struct NoteEditHistoryEntry {
+    content: String,
+    source: Option<String>,
+    spoiler_text: Option<String>,
+    created_at: String,
+}
+
+/// `app/api/mastodon/statuses.py` の `get_status_history` を移植したもの。
+async fn get_status_history(
+    State(state): State<AppState>,
+    Path(note_id): Path<Uuid>,
+    OptionalUser(user): OptionalUser,
+) -> Result<Response, AppError> {
+    let visibility_row = fetch_note_for_visibility(&state.db, note_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Note not found"))?;
+    let viewer_actor_id = user.as_ref().map(|u| u.actor_id);
+    if !check_note_visible_optional(&state.db, &visibility_row, viewer_actor_id).await? {
+        return Err(AppError::not_found("Note not found"));
+    }
+
+    let current = sqlx::query_as::<_, NoteCurrentVersionRow>(
+        "SELECT content, source, spoiler_text, published, updated_at FROM notes WHERE id = $1",
+    )
+    .bind(note_id)
+    .fetch_one(&state.db)
+    .await?;
+
+    let edits = sqlx::query_as::<_, NoteEditHistoryRow>(
+        "SELECT content, source, spoiler_text, created_at FROM note_edits \
+         WHERE note_id = $1 ORDER BY created_at ASC",
+    )
+    .bind(note_id)
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut history: Vec<NoteEditHistoryEntry> = edits
+        .into_iter()
+        .map(|e| NoteEditHistoryEntry {
+            content: e.content,
+            source: e.source,
+            spoiler_text: e.spoiler_text,
+            created_at: to_pydantic_isoformat(e.created_at),
+        })
+        .collect();
+    history.push(NoteEditHistoryEntry {
+        content: current.content,
+        source: current.source,
+        spoiler_text: Some(current.spoiler_text.unwrap_or_default()),
+        created_at: to_pydantic_isoformat(current.updated_at.unwrap_or(current.published)),
+    });
+
+    Ok(Json(history).into_response())
 }
 
 #[derive(sqlx::FromRow)]

@@ -9,7 +9,7 @@ mod common;
 use common::{
     connect_redis, seed_domain_block, seed_drive_file_owned, seed_follow, seed_local_actor,
     seed_note_with_visibility, seed_oauth_application, seed_oauth_token, seed_quote_note,
-    seed_remote_actor, seed_renote_note, seed_session, seed_user,
+    seed_reaction, seed_remote_actor, seed_renote_note, seed_session, seed_user,
 };
 
 async fn post(
@@ -37,6 +37,36 @@ async fn post_json(
 ) -> (StatusCode, Value) {
     let mut builder = Request::builder()
         .method("POST")
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(session_id) = cookie {
+        builder = builder.header(header::COOKIE, format!("nekonoverse_session={session_id}"));
+    }
+    let response = app
+        .oneshot(builder.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let json: Value = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).unwrap_or(Value::Null)
+    };
+    (status, json)
+}
+
+async fn put_json(
+    app: axum::Router,
+    uri: &str,
+    cookie: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method("PUT")
         .uri(uri)
         .header(header::CONTENT_TYPE, "application/json");
     if let Some(session_id) = cookie {
@@ -1879,4 +1909,253 @@ async fn create_status_skips_delivery_to_blocked_domain() {
             .await
             .unwrap();
     assert_eq!(delivery_count, 0);
+}
+
+#[tokio::test]
+async fn edit_status_updates_content_and_records_history() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "edit1").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, json) = put_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}"),
+        Some(&session),
+        serde_json::json!({ "content": "edited content", "spoiler_text": "cw" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(json["content"].as_str().unwrap().contains("edited content"));
+    assert_eq!(json["spoiler_text"], "cw");
+    assert!(json["edited_at"].as_str().is_some());
+
+    let (source, spoiler_text): (Option<String>, Option<String>) =
+        sqlx::query_as("SELECT source, spoiler_text FROM notes WHERE id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(source.as_deref(), Some("edited content"));
+    assert_eq!(spoiler_text.as_deref(), Some("cw"));
+
+    let (old_content, old_source, old_spoiler): (String, Option<String>, Option<String>) =
+        sqlx::query_as("SELECT content, source, spoiler_text FROM note_edits WHERE note_id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(old_content, "test note");
+    assert_eq!(old_source, None);
+    assert_eq!(old_spoiler.as_deref(), Some(""));
+}
+
+#[tokio::test]
+async fn edit_status_response_has_empty_reactions_and_reblogged_false() {
+    // Python版の `edit_status` は最後の `note_to_response(note, db=db)` 呼び出しで
+    // `reactions`/`actor_id` を渡さない契約になっているため、実際のリアクション/
+    // リブログ状態に関わらずレスポンスは常に空/falseになる(モジュール冒頭の
+    // コメント参照)。この既知の挙動をそのまま検証する。
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "edit2").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+    seed_reaction(&db, note_id, actor_id, "\u{2b50}").await;
+
+    let (status, json) = put_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}"),
+        Some(&session),
+        serde_json::json!({ "content": "edited" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["reactions"], serde_json::json!([]));
+    assert_eq!(json["favourited"], false);
+    assert_eq!(json["reblogged"], false);
+}
+
+#[tokio::test]
+async fn edit_status_unauthenticated_returns_401() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, _session) = seed_user_with_session(&db, &redis, "edit3").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, _json) = put_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}"),
+        None,
+        serde_json::json!({ "content": "edited" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn edit_status_returns_404_for_missing_note() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "edit4").await;
+
+    let (status, json) = put_json(
+        app,
+        &format!("/api/v1/statuses/{}", Uuid::new_v4()),
+        Some(&session),
+        serde_json::json!({ "content": "edited" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn edit_status_forbidden_for_other_users_note() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid_a, _actor_a, session_a) = seed_user_with_session(&db, &redis, "edit5a").await;
+    let (_uid_b, actor_b, _session_b) = seed_user_with_session(&db, &redis, "edit5b").await;
+    let note_id = seed_note_with_visibility(&db, actor_b, "public", Utc::now()).await;
+
+    let (status, json) = put_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}"),
+        Some(&session_a),
+        serde_json::json!({ "content": "edited" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(json["detail"], "Not your note");
+}
+
+#[tokio::test]
+async fn edit_status_empty_content_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "edit6").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, _json) = put_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}"),
+        Some(&session),
+        serde_json::json!({ "content": "" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn edit_status_content_too_long_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "edit7").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, _json) = put_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}"),
+        Some(&session),
+        serde_json::json!({ "content": "a".repeat(5001) }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn edit_status_delivers_update_activity_to_follower() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "edit8").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+    let domain = format!("remote-edit8-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "follower-edit8", &domain).await;
+    seed_follow(&db, follower_id, actor_id).await;
+
+    let (status, _json) = put_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}"),
+        Some(&session),
+        serde_json::json!({ "content": "edited for delivery" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let update_row: (String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type' FROM delivery_queue \
+         WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(update_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(update_row.1, "Update");
+}
+
+#[tokio::test]
+async fn get_status_history_returns_current_version_when_no_edits() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, _session) = seed_user_with_session(&db, &redis, "hist1").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{note_id}/history"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["content"], "test note");
+}
+
+#[tokio::test]
+async fn get_status_history_returns_past_and_current_versions_in_order() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "hist2").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, _json) = put_json(
+        app.clone(),
+        &format!("/api/v1/statuses/{note_id}"),
+        Some(&session),
+        serde_json::json!({ "content": "second version" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status2, json) = get(app, &format!("/api/v1/statuses/{note_id}/history"), None).await;
+    assert_eq!(status2, StatusCode::OK);
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert_eq!(entries[0]["content"], "test note");
+    assert!(entries[1]["content"]
+        .as_str()
+        .unwrap()
+        .contains("second version"));
+}
+
+#[tokio::test]
+async fn get_status_history_returns_404_for_missing_note() {
+    let (app, _db) = common::test_app_with_db().await;
+
+    let (status, json) = get(
+        app,
+        &format!("/api/v1/statuses/{}/history", Uuid::new_v4()),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn get_status_history_hides_invisible_note_from_anonymous() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, _session) = seed_user_with_session(&db, &redis, "hist4").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "direct", Utc::now()).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{note_id}/history"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
 }
