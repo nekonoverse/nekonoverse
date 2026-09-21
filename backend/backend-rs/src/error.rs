@@ -4,6 +4,7 @@ use axum::Json;
 use serde_json::json;
 
 /// FastAPI の `HTTPException` が返す `{"detail": "..."}` 形式のエラー応答を再現する。
+#[derive(Debug)]
 pub struct AppError {
     pub status: StatusCode,
     pub detail: String,

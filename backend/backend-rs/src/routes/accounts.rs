@@ -29,6 +29,7 @@ use crate::config::Config;
 use crate::error::AppError;
 use crate::hmac_sig::media_proxy_url;
 use crate::mastodon_time::to_mastodon_datetime;
+use crate::shortcode::find_shortcodes;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -188,29 +189,6 @@ fn emoji_json(config: &Config, e: &EmojiRow) -> Value {
         _ => media_proxy_url(config, Some(&e.url), Some("emoji"), true),
     };
     json!({ "shortcode": e.shortcode, "url": url, "static_url": static_url })
-}
-
-/// `:([a-zA-Z0-9_]+):` の非重複マッチを Python の `re.findall` と同じ規則
-/// (貪欲・前の一致の直後から再走査)で抽出する。正規表現クレートを増やす
-/// ほどの複雑さではないため手書きする。
-fn find_shortcodes(text: &str, out: &mut HashSet<String>) {
-    let bytes = text.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b':' {
-            let start = i + 1;
-            let mut j = start;
-            while j < bytes.len() && (bytes[j].is_ascii_alphanumeric() || bytes[j] == b'_') {
-                j += 1;
-            }
-            if j > start && j < bytes.len() && bytes[j] == b':' {
-                out.insert(text[start..j].to_string());
-                i = j + 1;
-                continue;
-            }
-        }
-        i += 1;
-    }
 }
 
 fn collect_actor_shortcodes(actor: &AccountActorRow) -> HashSet<String> {
