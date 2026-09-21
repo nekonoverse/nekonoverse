@@ -226,6 +226,35 @@ pub async fn seed_renote_note(db: &PgPool, actor_id: Uuid, renote_of_id: Uuid) -
     id
 }
 
+/// `quote_id` を設定した(引用の)ノートを1件投入する。`get_status` の
+/// reblog/quote 再帰解決テストに使う。
+#[allow(dead_code)]
+pub async fn seed_quote_note(db: &PgPool, actor_id: Uuid, quote_id: Uuid) -> Uuid {
+    let id = Uuid::new_v4();
+    let ap_id = format!("https://localhost/notes/{id}");
+    sqlx::query(
+        r#"
+        INSERT INTO notes (
+            id, ap_id, actor_id, content, visibility, sensitive, "to", cc, published,
+            replies_count, reactions_count, renotes_count, local, is_poll, poll_multiple,
+            is_talk, quote_id
+        ) VALUES (
+            $1, $2, $3, 'quoting', 'public', false, '[]'::jsonb, '[]'::jsonb, now(),
+            0, 0, 0, true, false, false,
+            false, $4
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(&ap_id)
+    .bind(actor_id)
+    .bind(quote_id)
+    .execute(db)
+    .await
+    .expect("failed to seed test quote note");
+    id
+}
+
 /// `domain_blocks` にテスト用のドメインブロックを1件投入する。
 #[allow(dead_code)]
 pub async fn seed_domain_block(db: &PgPool, domain: &str) -> Uuid {

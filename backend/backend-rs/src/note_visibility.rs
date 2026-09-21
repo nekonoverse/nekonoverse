@@ -161,6 +161,28 @@ pub fn is_visible_to_anonymous(
     true
 }
 
+/// `app.services.note_service.check_note_visible` を、閲覧者が未認証
+/// (`current_actor_id = None`) の場合も扱えるよう拡張したもの。認証済みは
+/// 既存の `check_note_visible` (フォロー確認クエリを伴う) に委譲し、匿名は
+/// `is_visible_to_anonymous` (クエリ不要) に委譲する。`GET /api/v1/statuses/
+/// {id}` の `user: User | None = Depends(get_optional_user)` のように、
+/// 閲覧者がいてもいなくても呼べるエンドポイント向け。
+pub async fn check_note_visible_optional(
+    db: &PgPool,
+    note: &NoteVisibilityRow,
+    viewer_actor_id: Option<Uuid>,
+) -> Result<bool, AppError> {
+    match viewer_actor_id {
+        Some(id) => check_note_visible(db, note, id).await,
+        None => Ok(is_visible_to_anonymous(
+            &note.visibility,
+            note.published,
+            note.make_notes_hidden_before,
+            note.make_notes_followers_only_before,
+        )),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

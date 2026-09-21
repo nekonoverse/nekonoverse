@@ -8,8 +8,8 @@ use uuid::Uuid;
 mod common;
 use common::{
     connect_redis, seed_domain_block, seed_follow, seed_local_actor, seed_note_with_visibility,
-    seed_oauth_application, seed_oauth_token, seed_remote_actor, seed_renote_note, seed_session,
-    seed_user,
+    seed_oauth_application, seed_oauth_token, seed_quote_note, seed_remote_actor, seed_renote_note,
+    seed_session, seed_user,
 };
 
 async fn post(
@@ -18,7 +18,21 @@ async fn post(
     cookie: Option<&str>,
     bearer: Option<&str>,
 ) -> (StatusCode, Value) {
-    let mut builder = Request::builder().method("POST").uri(uri);
+    request(app, "POST", uri, cookie, bearer).await
+}
+
+async fn get(app: axum::Router, uri: &str, cookie: Option<&str>) -> (StatusCode, Value) {
+    request(app, "GET", uri, cookie, None).await
+}
+
+async fn request(
+    app: axum::Router,
+    method: &str,
+    uri: &str,
+    cookie: Option<&str>,
+    bearer: Option<&str>,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder().method(method).uri(uri);
     if let Some(session_id) = cookie {
         builder = builder.header(header::COOKIE, format!("nekonoverse_session={session_id}"));
     }
@@ -680,4 +694,160 @@ async fn pin_requires_write_statuses_scope_not_bookmarks_scope() {
     .await;
     assert_eq!(status, StatusCode::FORBIDDEN);
     assert!(json["detail"].as_str().unwrap().contains("write:statuses"));
+}
+
+#[tokio::test]
+async fn get_status_returns_public_note_anonymously() {
+    let (app, db) = common::test_app_with_db().await;
+    let username = format!("getstatus1{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{note_id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["id"], note_id.to_string());
+    assert_eq!(json["actor"]["username"], username);
+    assert_eq!(json["reblog"], Value::Null);
+    assert_eq!(json["quote"], Value::Null);
+}
+
+#[tokio::test]
+async fn get_status_returns_404_for_missing_note() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, json) = get(app, &format!("/api/v1/statuses/{}", Uuid::new_v4()), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn get_status_hides_direct_note_from_anonymous() {
+    let (app, db) = common::test_app_with_db().await;
+    let actor_id = seed_local_actor(&db, &format!("getstatus2{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "direct", Utc::now()).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{note_id}"), None).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn get_status_direct_note_visible_to_author() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "getstatus3").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "direct", Utc::now()).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{note_id}"), Some(&session)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["id"], note_id.to_string());
+    assert_eq!(json["visibility"], "direct");
+}
+
+#[tokio::test]
+async fn get_status_hides_followers_only_note_from_non_follower() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let actor_id = seed_local_actor(&db, &format!("getstatus4{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "followers", Utc::now()).await;
+    let (_uid, _viewer_actor, session) = seed_user_with_session(&db, &redis, "getstatus4v").await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{note_id}"), Some(&session)).await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn get_status_shows_followers_only_note_to_follower() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let author_id = seed_local_actor(&db, &format!("getstatus5{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, author_id, "followers", Utc::now()).await;
+    let (_uid, follower_actor, session) = seed_user_with_session(&db, &redis, "getstatus5v").await;
+    seed_follow(&db, follower_actor, author_id).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{note_id}"), Some(&session)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["id"], note_id.to_string());
+}
+
+#[tokio::test]
+async fn get_status_renders_reblog_recursively() {
+    let (app, db) = common::test_app_with_db().await;
+    let original_username = format!("getstatus6orig{}", Uuid::new_v4().simple());
+    let original_actor = seed_local_actor(&db, &original_username).await;
+    let original_note = seed_note_with_visibility(&db, original_actor, "public", Utc::now()).await;
+
+    let rebloggerer =
+        seed_local_actor(&db, &format!("getstatus6boost{}", Uuid::new_v4().simple())).await;
+    let renote_id = seed_renote_note(&db, rebloggerer, original_note).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{renote_id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["id"], renote_id.to_string());
+    assert_ne!(json["reblog"], Value::Null);
+    assert_eq!(json["reblog"]["id"], original_note.to_string());
+    assert_eq!(json["reblog"]["actor"]["username"], original_username);
+    // ネストしたreblogオブジェクト自身は常にreblogged=false/pinned=falseになる
+    // (Python版の再帰呼び出しがreblogged_set/pinnedを渡さないのと同じ)。
+    assert_eq!(json["reblog"]["reblogged"], false);
+    assert_eq!(json["reblog"]["pinned"], false);
+}
+
+#[tokio::test]
+async fn get_status_reblog_of_deleted_note_renders_null_reblog() {
+    let (app, db) = common::test_app_with_db().await;
+    let original_actor =
+        seed_local_actor(&db, &format!("getstatus7orig{}", Uuid::new_v4().simple())).await;
+    let original_note = seed_note_with_visibility(&db, original_actor, "public", Utc::now()).await;
+    sqlx::query("UPDATE notes SET deleted_at = now() WHERE id = $1")
+        .bind(original_note)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let rebloggerer =
+        seed_local_actor(&db, &format!("getstatus7boost{}", Uuid::new_v4().simple())).await;
+    let renote_id = seed_renote_note(&db, rebloggerer, original_note).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{renote_id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["reblog"], Value::Null);
+}
+
+#[tokio::test]
+async fn get_status_renders_quote_when_target_is_visible() {
+    let (app, db) = common::test_app_with_db().await;
+    let quoted_username = format!("getstatus8quoted{}", Uuid::new_v4().simple());
+    let quoted_actor = seed_local_actor(&db, &quoted_username).await;
+    let quoted_note = seed_note_with_visibility(&db, quoted_actor, "public", Utc::now()).await;
+
+    let quoter =
+        seed_local_actor(&db, &format!("getstatus8quoter{}", Uuid::new_v4().simple())).await;
+    let quote_note_id = seed_quote_note(&db, quoter, quoted_note).await;
+
+    let (status, json) = get(app, &format!("/api/v1/statuses/{quote_note_id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_ne!(json["quote"], Value::Null);
+    assert_eq!(json["quote"]["id"], quoted_note.to_string());
+    assert_eq!(json["quote"]["actor"]["username"], quoted_username);
+}
+
+#[tokio::test]
+async fn get_status_hides_quote_when_target_not_visible_to_viewer() {
+    let (app, db) = common::test_app_with_db().await;
+    let quoted_actor =
+        seed_local_actor(&db, &format!("getstatus9quoted{}", Uuid::new_v4().simple())).await;
+    let quoted_note = seed_note_with_visibility(&db, quoted_actor, "followers", Utc::now()).await;
+
+    let quoter =
+        seed_local_actor(&db, &format!("getstatus9quoter{}", Uuid::new_v4().simple())).await;
+    let quote_note_id = seed_quote_note(&db, quoter, quoted_note).await;
+
+    // quote_note_id 自体は public なので閲覧可能だが、引用先が followers-only
+    // で匿名からは見えないため quote フィールドだけ null になる
+    // (ステータス全体は404にならない)。
+    let (status, json) = get(app, &format!("/api/v1/statuses/{quote_note_id}"), None).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["id"], quote_note_id.to_string());
+    assert_eq!(json["quote"], Value::Null);
 }

@@ -1,22 +1,30 @@
-//! `app/api/mastodon/statuses.py` のうち、Stage 3 でRust化するブックマーク
-//! 書き込みパス (`bookmark`/`unbookmark`) のみを切り出したもの。
-//! 投稿本体のCRUD・リアクション・リノート等の巨大な残りの面は Stage 4 以降。
+//! `app/api/mastodon/statuses.py` のうち、Stage 3 でRust化したブックマーク
+//! 書き込みパス (`bookmark`/`unbookmark`)、Stage 4 で追加したpin/unpinと
+//! `get_status` (`GET /api/v1/statuses/{id}`、NoteResponse直列化パイプライン
+//! の最初のルート配線) を切り出したもの。同じパスのPUT(`edit_status`)/
+//! DELETE(`delete_status`)、投稿作成・リアクション・リノート等は未移植
+//! (nginx側でメソッド別にPython/Rustへ振り分ける、`nginx/*.conf` 参照)。
 
 use axum::extract::{Path, State};
 use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
-use axum::routing::post;
+use axum::routing::{get, post};
 use axum::{Json, Router};
 use serde_json::json;
 use uuid::Uuid;
 
 use crate::activitypub::{render_add_activity, render_remove_activity};
-use crate::auth::CurrentUser;
+use crate::auth::{CurrentUser, OptionalUser};
 use crate::db;
 use crate::delivery::enqueue_delivery;
 use crate::error::AppError;
 use crate::follows::get_follower_inboxes;
-use crate::note_visibility::{check_note_visible, fetch_note_for_visibility};
+use crate::note_response::{
+    fetch_note_render_row, get_reaction_summary, note_to_response_json_recursive,
+};
+use crate::note_visibility::{
+    check_note_visible, check_note_visible_optional, fetch_note_for_visibility,
+};
 use crate::state::AppState;
 
 /// `app.services.pinned_note_service.MAX_PINS` と同一。
@@ -31,6 +39,42 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/v1/statuses/:note_id/pin", post(pin_status))
         .route("/api/v1/statuses/:note_id/unpin", post(unpin_status))
+        .route("/api/v1/statuses/:note_id", get(get_status))
+}
+
+/// `app/api/mastodon/statuses.py` の `get_status` を移植したもの。
+async fn get_status(
+    State(state): State<AppState>,
+    Path(note_id): Path<Uuid>,
+    OptionalUser(user): OptionalUser,
+) -> Result<Response, AppError> {
+    let visibility_row = fetch_note_for_visibility(&state.db, note_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Note not found"))?;
+    let viewer_actor_id = user.as_ref().map(|u| u.actor_id);
+    if !check_note_visible_optional(&state.db, &visibility_row, viewer_actor_id).await? {
+        return Err(AppError::not_found("Note not found"));
+    }
+
+    let note = fetch_note_render_row(&state.db, note_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Note not found"))?;
+    let reactions =
+        get_reaction_summary(&state.db, &state.config, note_id, viewer_actor_id).await?;
+
+    let resp = note_to_response_json_recursive(
+        &state.db,
+        &state.config,
+        &state.redis,
+        &note,
+        reactions,
+        viewer_actor_id,
+        false,
+        false,
+    )
+    .await?;
+
+    Ok(Json(resp).into_response())
 }
 
 /// `app/api/mastodon/statuses.py` の `bookmark_status` を移植したもの。

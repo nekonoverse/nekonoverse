@@ -1,32 +1,27 @@
 //! `app/api/mastodon/statuses.py` の `note_to_response`(Note→Mastodon互換
-//! JSON 変換)を構成するヘルパー群を移植したもの。Issue #1139 Stage 4の
-//! 「NoteResponse直列化パイプライン」着手の第一弾。
+//! JSON 変換)を構成するヘルパー群、および `reblog`/`quote` の再帰解決を
+//! 移植したもの。Issue #1139 Stage 4の「NoteResponse直列化パイプライン」。
 //!
-//! **このモジュールはまだどの axum ルートにも配線しない。** `note_to_response`
-//! 自体は `reblog`/`quote` の解決を関数内部の先頭で行う(`renote_of`/
-//! `quoted_note` を辿って再帰的に自分自身を呼ぶ)が、この再帰と実際の
-//! `GET /api/v1/statuses/{id}` ルート配線は次のPRに送る。ここでは
-//! reblog/quote が既に解決済み(呼び出し側が `Option<Value>` として渡す)
-//! という前提の「末端」変換ロジック本体 — 添付ファイル・カスタム絵文字・
-//! ハッシュタグ・リアクション集計・投票・返信先メンション・プレビュー
-//! カード・アクター描画 — だけを切り出して先に固める。理由:
-//! `note_to_response` は柔軟な巨大関数で、`get_note_by_id` (FKが未解決な
-//! 場合は `fetch_remote_note` による署名付きHTTP遅延フェッチへフォール
-//! バックする)を経由した無制限の再帰を許すため、再帰境界の設計だけでも
-//! 独立した検討が要る。過剰にコミットしないという Stage 4 の方針
-//! (#1139) に従い、まず再帰非依存の部分を確定させる。
+//! `note_to_response` は `get_note_by_id` (FKである `renote_of_id`/
+//! `quote_id` が未解決で `renote_of_ap_id`/`quote_ap_id` のみ設定されている
+//! 場合、`fetch_remote_note` による署名付きHTTP遅延フェッチへフォール
+//! バックする)を経由した無制限の再帰を許す。この遅延フェッチ分岐は
+//! `resolve_webfinger`/`fetch_remote_actor`と同種の新たな対外通信能力が
+//! 要るため未移植 — FK(`_id`)が既に解決済みのローカルDBだけで完結する
+//! 再帰(`note_to_response_json_recursive`)のみ対応する。実務上、ローカルに
+//! 保存済みのノートは作成/受信時点でFKが解決されているため、この対象は
+//! 「まだどのローカルノートからも参照されたことのない、掃除前のリモート
+//! ノート」に限られる。
 //!
-//! punt した(未移植の)Python側の分岐:
-//! - `note.renote_of_ap_id`/`note.quote_ap_id` のみ設定されFK(`_id`)が
-//!   未解決な場合の `fetch_remote_note` 遅延フェッチ(署名付きHTTPで
-//!   未知のリモートノートを取り込む)。`resolve_webfinger`/
-//!   `fetch_remote_actor` と同種の新たな対外通信能力が要るため。
+//! その他 punt した(未移植の)Python側の分岐:
 //! - `get_domain_software_info` の Valkey キャッシュミス時の生フェッチ
 //!   (`_fetch_software`)。キャッシュヒットのみ読み、ミス時は
 //!   `(None, None, None)` を返す(Python側の他エンドポイントが同じ
 //!   Valkeyキーを埋めるため自己修復的)。
 
 use std::collections::{HashMap, HashSet};
+use std::future::Future;
+use std::pin::Pin;
 
 use chrono::{DateTime, Utc};
 use redis::AsyncCommands;
@@ -38,6 +33,7 @@ use crate::config::Config;
 use crate::error::AppError;
 use crate::hmac_sig::media_proxy_url;
 use crate::mastodon_time::to_mastodon_datetime;
+use crate::note_visibility::{check_note_visible_optional, fetch_note_for_visibility};
 use crate::shortcode::find_shortcodes;
 
 /// `note_to_response` の呼び出し元が持つべき Note + 著者Actor の結合行。
@@ -58,6 +54,8 @@ pub struct NoteRenderRow {
     pub reactions_count: i32,
     pub renotes_count: i32,
     pub in_reply_to_id: Option<Uuid>,
+    pub renote_of_id: Option<Uuid>,
+    pub quote_id: Option<Uuid>,
     pub is_poll: bool,
     pub poll_options: Option<Value>,
     pub poll_expires_at: Option<DateTime<Utc>>,
@@ -81,8 +79,8 @@ pub struct NoteRenderRow {
 
 const NOTE_RENDER_COLUMNS: &str = "n.id, n.ap_id, n.content, n.source, n.visibility, n.sensitive, \
     n.spoiler_text, n.published, n.updated_at, n.replies_count, n.reactions_count, \
-    n.renotes_count, n.in_reply_to_id, n.is_poll, n.poll_options, n.poll_expires_at, \
-    n.poll_multiple, n.local, \
+    n.renotes_count, n.in_reply_to_id, n.renote_of_id, n.quote_id, n.is_poll, n.poll_options, \
+    n.poll_expires_at, n.poll_multiple, n.local, \
     a.id AS actor_id, a.username AS actor_username, a.display_name AS actor_display_name, \
     a.avatar_url AS actor_avatar_url, a.header_url AS actor_header_url, \
     a.ap_id AS actor_ap_id, a.domain AS actor_domain, a.is_cat AS actor_is_cat, \
@@ -963,6 +961,104 @@ pub async fn note_to_response_json(
         "application": Value::Null,
         "language": Value::Null,
     }))
+}
+
+/// `note_to_response` の `reblog`/`quote` 解決(再帰)部分を移植したもの。
+/// モジュール冒頭のコメントの通り、FK(`renote_of_id`/`quote_id`)が
+/// ローカルDBで解決済みの場合のみ対応する(未解決な場合は
+/// Python版の遅延フェッチが失敗した場合と同様、単に`None`になる)。
+///
+/// リノート元には可視性チェックを行わない(Python版と同じ — Boost/Renote
+/// Activityが見える時点でブースト元も見えるべき、という前提)。引用先は
+/// `_quote_to_response` と同じく、引用元が公開でも引用先が非公開だと本文が
+/// 漏れるため `check_note_visible_optional` で個別に確認する。
+///
+/// async関数は自身を直接再帰呼び出しできない(Future の型が無限サイズに
+/// なる)ため、`Pin<Box<dyn Future>>` で手動ボックス化している。
+#[allow(clippy::too_many_arguments)]
+pub fn note_to_response_json_recursive<'a>(
+    db: &'a PgPool,
+    config: &'a Config,
+    redis: &'a redis::aio::ConnectionManager,
+    note: &'a NoteRenderRow,
+    reactions: Vec<Value>,
+    viewer_actor_id: Option<Uuid>,
+    reblogged: bool,
+    pinned: bool,
+) -> Pin<Box<dyn Future<Output = Result<Value, AppError>> + Send + 'a>> {
+    Box::pin(async move {
+        let reblog = if let Some(renote_of_id) = note.renote_of_id {
+            if let Some(reblog_row) = fetch_note_render_row(db, renote_of_id).await? {
+                let reblog_reactions =
+                    get_reaction_summary(db, config, reblog_row.id, viewer_actor_id).await?;
+                Some(
+                    note_to_response_json_recursive(
+                        db,
+                        config,
+                        redis,
+                        &reblog_row,
+                        reblog_reactions,
+                        viewer_actor_id,
+                        false,
+                        false,
+                    )
+                    .await?,
+                )
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let quote = if let Some(quote_id) = note.quote_id {
+            let visible = match fetch_note_for_visibility(db, quote_id).await? {
+                Some(visibility_row) => {
+                    check_note_visible_optional(db, &visibility_row, viewer_actor_id).await?
+                }
+                None => false,
+            };
+            if visible {
+                if let Some(quote_row) = fetch_note_render_row(db, quote_id).await? {
+                    let quote_reactions =
+                        get_reaction_summary(db, config, quote_row.id, viewer_actor_id).await?;
+                    Some(
+                        note_to_response_json_recursive(
+                            db,
+                            config,
+                            redis,
+                            &quote_row,
+                            quote_reactions,
+                            viewer_actor_id,
+                            false,
+                            false,
+                        )
+                        .await?,
+                    )
+                } else {
+                    None
+                }
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        note_to_response_json(
+            db,
+            config,
+            redis,
+            note,
+            &reactions,
+            viewer_actor_id,
+            reblog,
+            quote,
+            reblogged,
+            pinned,
+        )
+        .await
+    })
 }
 
 #[cfg(test)]
