@@ -1,26 +1,48 @@
-//! `app/activitypub/routes.py` の `get_actor` (`GET /users/{username}`) の
-//! みを移植したもの。`get_actor_by_username(db, username, domain=None)` は
-//! ローカルアクターしか返さないため、`render_actor` のリモートアクター分岐
-//! (保存済みURL列をそのまま使う側)は不要 — このエンドポイントに関する限り
-//! アクターは常にローカルである。outbox/followers/following/featured の
-//! 実体を返すエンドポイントは別PRで扱う(このPRはActor本体のみ)。
+//! `app/activitypub/routes.py` の `get_actor`/`get_followers_collection`/
+//! `get_following_collection` を移植したもの。`get_actor_by_username(db,
+//! username, domain=None)` はローカルアクターしか返さないため、`render_actor`
+//! のリモートアクター分岐(保存済みURL列をそのまま使う側)は不要 — これらの
+//! エンドポイントに関する限りアクターは常にローカルである。`get_outbox`/
+//! `get_featured`(いずれも`render_note`が必要で難易度が上がる)は別PRで扱う。
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::get;
 use axum::Router;
 use chrono::{DateTime, NaiveDate, Utc};
+use serde::Deserialize;
 use serde_json::{json, Value};
+use uuid::Uuid;
 
-use crate::activitypub::AP_CONTEXT;
+use crate::activitypub::{render_ordered_collection, render_ordered_collection_page, AP_CONTEXT};
 use crate::error::AppError;
 use crate::state::AppState;
 
 const AP_CONTENT_TYPE: &str = "application/activity+json; charset=utf-8";
 
 pub fn router() -> Router<AppState> {
-    Router::new().route("/users/:username", get(get_actor))
+    Router::new()
+        .route("/users/:username", get(get_actor))
+        .route("/users/:username/followers", get(get_followers_collection))
+        .route("/users/:username/following", get(get_following_collection))
+}
+
+/// `page: bool = False` (FastAPI) を移植したクエリパラメータ。
+#[derive(Deserialize)]
+struct PageQuery {
+    #[serde(default)]
+    page: bool,
+}
+
+/// `get_actor_by_username(db, username, domain=None)` のうち、Collection系
+/// エンドポイントが必要とするactor idのみを取得する軽量版。
+async fn fetch_local_actor_id(db: &sqlx::PgPool, username: &str) -> Result<Uuid, AppError> {
+    sqlx::query_scalar("SELECT id FROM actors WHERE username = $1 AND domain IS NULL")
+        .bind(username.to_lowercase())
+        .fetch_optional(db)
+        .await?
+        .ok_or_else(|| AppError::not_found("Actor not found"))
 }
 
 #[derive(sqlx::FromRow)]
@@ -215,4 +237,98 @@ fn render_local_actor(state: &AppState, row: &ActorRow) -> Value {
     }
 
     data
+}
+
+/// `app/activitypub/routes.py` の `get_followers_collection` を移植したもの。
+/// Content Negotiationはせず常にAP JSONを返す(Python版もis_ap_request判定なし)。
+async fn get_followers_collection(
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+    Query(query): Query<PageQuery>,
+) -> Result<Response, AppError> {
+    let actor_id = fetch_local_actor_id(&state.db, &username).await?;
+    let collection_url = format!("{}/users/{username}/followers", state.config.server_url());
+
+    if !query.page {
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM followers WHERE following_id = $1 AND accepted = true",
+        )
+        .bind(actor_id)
+        .fetch_one(&state.db)
+        .await?;
+        let body = render_ordered_collection(
+            &collection_url,
+            total,
+            &format!("{collection_url}?page=true"),
+        );
+        return Ok(ap_json_response(StatusCode::OK, &body));
+    }
+
+    // M-10 (Python版コメント): 40件ずつのページネーション。`next`は接続されて
+    // いない(Python版の既知の制約、このRust版でもそのまま踏襲)。
+    let items: Vec<String> = sqlx::query_scalar(
+        r#"
+        SELECT a.ap_id
+        FROM actors a
+        JOIN followers f ON f.follower_id = a.id
+        WHERE f.following_id = $1 AND f.accepted = true
+        ORDER BY f.created_at DESC
+        LIMIT 40
+        "#,
+    )
+    .bind(actor_id)
+    .fetch_all(&state.db)
+    .await?;
+    let body = render_ordered_collection_page(
+        &format!("{collection_url}?page=true"),
+        &collection_url,
+        items,
+    );
+    Ok(ap_json_response(StatusCode::OK, &body))
+}
+
+/// `app/activitypub/routes.py` の `get_following_collection` を移植したもの。
+/// `get_followers_collection`と対称(follower_id/following_idを入れ替えるのみ)。
+async fn get_following_collection(
+    State(state): State<AppState>,
+    Path(username): Path<String>,
+    Query(query): Query<PageQuery>,
+) -> Result<Response, AppError> {
+    let actor_id = fetch_local_actor_id(&state.db, &username).await?;
+    let collection_url = format!("{}/users/{username}/following", state.config.server_url());
+
+    if !query.page {
+        let total: i64 = sqlx::query_scalar(
+            "SELECT COUNT(*) FROM followers WHERE follower_id = $1 AND accepted = true",
+        )
+        .bind(actor_id)
+        .fetch_one(&state.db)
+        .await?;
+        let body = render_ordered_collection(
+            &collection_url,
+            total,
+            &format!("{collection_url}?page=true"),
+        );
+        return Ok(ap_json_response(StatusCode::OK, &body));
+    }
+
+    let items: Vec<String> = sqlx::query_scalar(
+        r#"
+        SELECT a.ap_id
+        FROM actors a
+        JOIN followers f ON f.following_id = a.id
+        WHERE f.follower_id = $1 AND f.accepted = true
+        ORDER BY f.created_at DESC
+        LIMIT 40
+        "#,
+    )
+    .bind(actor_id)
+    .fetch_all(&state.db)
+    .await?;
+    let body = render_ordered_collection_page(
+        &format!("{collection_url}?page=true"),
+        &collection_url,
+        items,
+    );
+    Ok(ap_json_response(StatusCode::OK, &body))
 }
