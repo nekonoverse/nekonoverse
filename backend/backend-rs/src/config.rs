@@ -79,6 +79,12 @@ impl Config {
         format!("{scheme}://{}", self.domain)
     }
 
+    /// `app.config.Settings.media_url` と同じ組み立て規則
+    /// (`file_to_url`/`get_public_url` が返す公開URLのプレフィックス)。
+    pub fn media_url(&self) -> String {
+        format!("{}/media", self.server_url())
+    }
+
     /// `app.config.Settings.media_proxy_transform_enabled` の TCP 経路相当。
     /// UDS (`MEDIA_PROXY_TRANSFORM_UDS`) は現状未対応。
     pub fn media_proxy_transform_enabled(&self) -> bool {
