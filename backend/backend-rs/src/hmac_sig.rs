@@ -1,7 +1,9 @@
 //! `app/utils/media_proxy.py` の HMAC 署名検証部分を移植したもの。
-//! (`media_proxy_url` によるプロキシ URL 生成側は Python にまだ残っている
-//! ルート — `statuses.py`/`accounts.py` 等 — からのみ呼ばれるため、
-//! こちらでは検証 (`verify`) のみを実装する。`sign` はテスト用。)
+//! `verify`(検証)に加え、`media_proxy_url`(生成)も
+//! `accounts.py` のアカウント関係性系エンドポイント移植 (Stage 4) で
+//! 必要になったためこちらに実装する。Python側の `statuses.py`/`accounts.py`
+//! の未移植部分は引き続き独自に生成するため、両実装が同じ鍵導出・署名規則
+//! (`sign`) に従う必要がある。
 
 use hmac::{Hmac, Mac};
 use sha2::Sha256;
@@ -57,13 +59,78 @@ pub fn verify(config: &Config, url: &str, h: &str) -> bool {
     constant_time_eq(&expected.as_bytes()[..32], h.as_bytes())
 }
 
-/// テスト・開発用: 有効な `h` パラメータを生成する
-/// (`app.utils.media_proxy.media_proxy_url` の署名部分のみを切り出したもの)。
+/// `app.utils.media_proxy.media_proxy_url` の署名部分のみを切り出したもの
+/// (テストからも `media_proxy_url` からも使う)。
 pub fn sign(config: &Config, url: &str) -> String {
     let key = signing_key(config);
     let mut mac = HmacSha256::new_from_slice(&key).expect("HMAC accepts a key of any length");
     mac.update(url.as_bytes());
     to_hex(&mac.finalize().into_bytes())[..32].to_string()
+}
+
+/// `app.utils.media_proxy._is_local_url` を移植したもの。
+/// 自サーバーの URL (相対パス、または scheme+host が一致する絶対URL) か判定する。
+fn is_local_media_url(config: &Config, url: &str) -> bool {
+    if url.starts_with('/') {
+        // "//host" や "/\\host" はブラウザが別ホストとして解釈するため除外する。
+        return !url.starts_with("//") && !url.starts_with("/\\");
+    }
+    let (Ok(local), Ok(parsed)) = (
+        reqwest::Url::parse(&config.server_url()),
+        reqwest::Url::parse(url),
+    ) else {
+        return false;
+    };
+    local.scheme() == parsed.scheme()
+        && local.host_str() == parsed.host_str()
+        && local.port() == parsed.port()
+}
+
+/// `urllib.parse.quote(url, safe='')` を移植したもの
+/// (RFC 3986 の unreserved 文字以外を全て `%XX` にエンコードする)。
+fn percent_encode_quote_safe_empty(input: &str) -> String {
+    let mut out = String::with_capacity(input.len());
+    for byte in input.bytes() {
+        match byte {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'_' | b'.' | b'-' | b'~' => {
+                out.push(byte as char)
+            }
+            _ => out.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    out
+}
+
+/// `app.utils.media_proxy.media_proxy_url` を移植したもの。
+/// リモート URL を HMAC 署名付きプロキシ URL に変換する。ローカル URL は
+/// そのまま返す。`variant` は Misskey 互換プリセット (`"avatar"`/`"emoji"`等)。
+pub fn media_proxy_url(
+    config: &Config,
+    original_url: Option<&str>,
+    variant: Option<&str>,
+    static_: bool,
+) -> String {
+    let Some(original_url) = original_url.filter(|s| !s.is_empty()) else {
+        return String::new();
+    };
+    if is_local_media_url(config, original_url) {
+        return original_url.to_string();
+    }
+    let h = sign(config, original_url);
+    let mut url = format!(
+        "{}/api/v1/media/proxy?url={}&h={h}",
+        config.server_url(),
+        percent_encode_quote_safe_empty(original_url),
+    );
+    if let Some(variant) = variant {
+        url.push('&');
+        url.push_str(variant);
+        url.push_str("=1");
+    }
+    if static_ {
+        url.push_str("&static=1");
+    }
+    url
 }
 
 #[cfg(test)]
@@ -128,5 +195,52 @@ mod tests {
         // python3.12 -c 'import hmac,hashlib; key=hmac.new(b"oracle-secret-key", b"media-proxy", hashlib.sha256).hexdigest().encode(); print(hmac.new(key, b"https://remote.example/oracle.png", hashlib.sha256).hexdigest()[:32])'
         let expected = "b8cfd67df770518d2fcbed1a503bb0eb";
         assert_eq!(sign(&config, url), expected);
+    }
+
+    #[test]
+    fn media_proxy_url_empty_for_none_or_empty_input() {
+        let config = test_config();
+        assert_eq!(media_proxy_url(&config, None, None, false), "");
+        assert_eq!(media_proxy_url(&config, Some(""), None, false), "");
+    }
+
+    #[test]
+    fn media_proxy_url_passes_through_local_relative_path() {
+        let config = test_config();
+        assert_eq!(
+            media_proxy_url(&config, Some("/media/foo.png"), None, false),
+            "/media/foo.png"
+        );
+    }
+
+    #[test]
+    fn media_proxy_url_passes_through_local_absolute_url() {
+        let config = test_config();
+        let local = format!("{}/media/foo.png", config.server_url());
+        assert_eq!(media_proxy_url(&config, Some(&local), None, false), local);
+    }
+
+    #[test]
+    fn media_proxy_url_rejects_protocol_relative_path() {
+        let config = test_config();
+        // "//evil.example/x" はブラウザが別ホストとして解釈するためプロキシ対象。
+        let result = media_proxy_url(&config, Some("//evil.example/x"), None, false);
+        assert!(result.starts_with(&format!("{}/api/v1/media/proxy?", config.server_url())));
+    }
+
+    #[test]
+    fn media_proxy_url_signs_and_encodes_remote_url() {
+        let config = test_config();
+        let remote = "https://remote.example/a b.png?x=1&y=2";
+        let result = media_proxy_url(&config, Some(remote), Some("avatar"), true);
+        let expected_h = sign(&config, remote);
+        assert_eq!(
+            result,
+            format!(
+                "{}/api/v1/media/proxy?url=https%3A%2F%2Fremote.example%2Fa%20b.png%3Fx%3D1%26y%3D2&h={expected_h}&avatar=1&static=1",
+                config.server_url()
+            )
+        );
+        assert!(verify(&config, remote, &expected_h));
     }
 }

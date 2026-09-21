@@ -81,6 +81,75 @@ impl FromRequestParts<AppState> for CurrentUser {
     }
 }
 
+/// `app.dependencies.get_optional_user` を移植したもの。未認証時は `None`。
+/// Bearer 経路は `authenticate_bearer` を再利用しエラーを全て `None` に潰す
+/// (Python版の `except HTTPException: return None` と同じ)。セッション経路は
+/// 専用の `authenticate_session_optional` を使う — `get_current_user` にしか
+/// 無い「削除猶予中は特別扱いしてセッションを残す」分岐が `get_optional_user`
+/// には存在せず、停止済みアクターは猶予中かどうかに関わらず一律でセッション
+/// 削除・`None` を返すため、`authenticate_session` をそのまま流用すると
+/// この一点で挙動が変わってしまう。
+pub struct OptionalUser(pub Option<CurrentUser>);
+
+#[async_trait::async_trait]
+impl FromRequestParts<AppState> for OptionalUser {
+    type Rejection = std::convert::Infallible;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let auth_header = parts
+            .headers
+            .get(header::AUTHORIZATION)
+            .and_then(|v| v.to_str().ok());
+
+        if let Some(token) = auth_header.and_then(|h| h.strip_prefix("Bearer ")) {
+            let user = authenticate_bearer(state, token, &parts.method).await.ok();
+            return Ok(OptionalUser(user));
+        }
+
+        let session_id = parts
+            .headers
+            .get(header::COOKIE)
+            .and_then(|v| v.to_str().ok())
+            .and_then(|c| parse_cookie(c, "nekonoverse_session"));
+
+        let Some(session_id) = session_id else {
+            return Ok(OptionalUser(None));
+        };
+
+        Ok(OptionalUser(
+            authenticate_session_optional(state, &session_id).await,
+        ))
+    }
+}
+
+/// `get_optional_user` のセッション Cookie 経路を移植したもの。
+async fn authenticate_session_optional(state: &AppState, session_id: &str) -> Option<CurrentUser> {
+    let mut redis = state.redis.clone();
+    let key = format!("session:{session_id}");
+    let user_id_str: Option<String> = redis.get(&key).await.ok().flatten();
+    let user_id = Uuid::parse_str(&user_id_str?).ok()?;
+
+    let row = fetch_user_actor(state, user_id).await.ok().flatten()?;
+
+    if row.is_system
+        || row.deleted_at.is_some()
+        || row.suspended_at.is_some()
+        || row.approval_status == "pending"
+    {
+        let _: Result<(), _> = redis.del(&key).await;
+        return None;
+    }
+
+    Some(CurrentUser {
+        id: row.id,
+        actor_id: row.actor_id,
+        oauth_scopes: None,
+    })
+}
+
 fn parse_cookie(header_value: &str, name: &str) -> Option<String> {
     header_value.split(';').find_map(|kv| {
         let (k, v) = kv.trim().split_once('=')?;

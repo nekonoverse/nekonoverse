@@ -10,6 +10,7 @@ use uuid::Uuid;
 
 use crate::auth::CurrentUser;
 use crate::error::AppError;
+use crate::mastodon_time::to_mastodon_datetime;
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -19,15 +20,6 @@ pub fn router() -> Router<AppState> {
             "/api/v1/authorized_apps/:app_id",
             delete(revoke_authorized_app),
         )
-}
-
-/// `app/api/mastodon/statuses.py` の `_to_mastodon_datetime` と同一。
-fn to_mastodon_datetime(dt: DateTime<Utc>) -> String {
-    format!(
-        "{}.{:03}Z",
-        dt.format("%Y-%m-%dT%H:%M:%S"),
-        dt.timestamp_subsec_millis()
-    )
 }
 
 #[derive(sqlx::FromRow)]
