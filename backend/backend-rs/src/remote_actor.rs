@@ -55,9 +55,16 @@ struct SigningKeyRow {
 /// 署名用途)を返す。Python版はプロセス内キャッシュを持つが、Rust版は
 /// コネクションプール上の軽いクエリのため素直に毎回引く(挙動に差はない)。
 async fn get_signing_key(state: &AppState) -> Result<Option<(String, String)>, AppError> {
+    // Python版は`.limit(1)`のみ(順序未指定、DB実装依存の任意の1件)だが、
+    // `private_key_pem LIKE '-----BEGIN%'`の絞り込みを追加している。本番では
+    // 全ローカルユーザーが実際のPEM形式の鍵を持つため無害な絞り込みだが、
+    // Rust結合テストが共有テストDB上の他テストファイルが投入した
+    // (署名鍵として使えない)'dummy-pem'行を拾ってしまい、この関数が使われる
+    // 度に結果が不定になる問題を防ぐ。
     let row: Option<SigningKeyRow> = sqlx::query_as(
         "SELECT u.private_key_pem, a.username FROM users u \
-         JOIN actors a ON a.id = u.actor_id LIMIT 1",
+         JOIN actors a ON a.id = u.actor_id \
+         WHERE u.private_key_pem LIKE '-----BEGIN%' LIMIT 1",
     )
     .fetch_optional(&state.db)
     .await?;
@@ -69,6 +76,17 @@ async fn get_signing_key(state: &AppState) -> Result<Option<(String, String)>, A
         );
         (key_id, r.private_key_pem)
     }))
+}
+
+/// `app.utils.network.is_safe_url`はhttp/httpsを無条件に両方許容するが、
+/// ここではHTTP Signature(private keyそのものではないが、身元を証明する
+/// 署名材料)を平文HTTPで送信してしまう経路を本番で塞ぐ、Python版より
+/// 安全側の意図的な差分にする(CodeQLの"cleartext transmission of sensitive
+/// information"指摘への対応、かつ`resolve_webfinger`の
+/// "M-13: 本番環境ではHTTPフォールバックを無効化"と同じ既存方針の適用)。
+/// `allow_private_networks`(テスト/開発環境)では従来通りHTTPも許容する。
+fn is_acceptable_fetch_scheme(scheme: &str, allow_private_networks: bool) -> bool {
+    scheme == "https" || (allow_private_networks && scheme == "http")
 }
 
 /// `app.services.actor_service._signed_get` を移植したもの。リダイレクトを
@@ -83,7 +101,7 @@ async fn signed_get(state: &AppState, start_url: &str) -> Option<(u16, String)> 
     let mut current = start_url.to_string();
     for _ in 0..=MAX_REDIRECTS {
         let parsed = reqwest::Url::parse(&current).ok()?;
-        if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        if !is_acceptable_fetch_scheme(parsed.scheme(), state.config.allow_private_networks) {
             return None;
         }
         let host = parsed.host_str()?;
@@ -121,7 +139,7 @@ async fn signed_get(state: &AppState, start_url: &str) -> Option<(u16, String)> 
                 .to_str()
                 .ok()?;
             let resolved = parsed.join(location).ok()?;
-            if resolved.scheme() != "http" && resolved.scheme() != "https" {
+            if !is_acceptable_fetch_scheme(resolved.scheme(), state.config.allow_private_networks) {
                 return None;
             }
             current = resolved.to_string();
