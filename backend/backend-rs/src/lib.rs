@@ -27,6 +27,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .merge(routes::accounts::router())
         .merge(routes::actor::router())
+        .merge(routes::auth::router())
         .merge(routes::health::router())
         .merge(routes::webfinger::router())
         .merge(routes::nodeinfo::router())

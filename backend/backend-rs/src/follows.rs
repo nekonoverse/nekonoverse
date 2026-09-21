@@ -1,8 +1,9 @@
-//! `app/services/follow_service.py` の `get_follower_inboxes` のみを
-//! 移植したもの。
+//! `app/services/follow_service.py` の `get_follower_inboxes`/
+//! `get_follow_counts` を移植したもの。
 
 use std::collections::HashSet;
 
+use redis::AsyncCommands;
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -35,4 +36,44 @@ pub async fn get_follower_inboxes(db: &PgPool, actor_id: Uuid) -> Result<Vec<Str
         .map(|row| row.shared_inbox_url.unwrap_or(row.inbox_url))
         .collect();
     Ok(inboxes.into_iter().collect())
+}
+
+/// `app.services.follow_service.get_follow_counts` を移植したもの。
+/// Valkey に5分間キャッシュされる。読み書きいずれのキャッシュ失敗も
+/// (Python版の `try/except Exception: pass` と同じく) 無視してDB計算に
+/// フォールバックする — このキャッシュは純粋な高速化目的で、Valkey障害が
+/// このエンドポイント自体を落とすべきではないため。
+pub async fn get_follow_counts(
+    db: &PgPool,
+    redis: &redis::aio::ConnectionManager,
+    actor_id: Uuid,
+) -> Result<(i64, i64), AppError> {
+    let cache_key = format!("perf:follow_counts:{actor_id}");
+    let mut conn = redis.clone();
+    if let Ok(Some(cached)) = conn.get::<_, Option<String>>(&cache_key).await {
+        if let Ok(parsed) = serde_json::from_str::<Vec<i64>>(&cached) {
+            if let [followers, following] = parsed[..] {
+                return Ok((followers, following));
+            }
+        }
+    }
+
+    let followers: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM followers WHERE following_id = $1 AND accepted = true",
+    )
+    .bind(actor_id)
+    .fetch_one(db)
+    .await?;
+    let following: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM followers WHERE follower_id = $1 AND accepted = true",
+    )
+    .bind(actor_id)
+    .fetch_one(db)
+    .await?;
+
+    if let Ok(payload) = serde_json::to_string(&[followers, following]) {
+        let _: Result<(), _> = conn.set_ex(&cache_key, payload, 300).await;
+    }
+
+    Ok((followers, following))
 }
