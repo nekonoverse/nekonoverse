@@ -7,9 +7,9 @@ use uuid::Uuid;
 
 mod common;
 use common::{
-    connect_redis, seed_domain_block, seed_follow, seed_local_actor, seed_note_with_visibility,
-    seed_oauth_application, seed_oauth_token, seed_quote_note, seed_remote_actor, seed_renote_note,
-    seed_session, seed_user,
+    connect_redis, seed_domain_block, seed_drive_file_owned, seed_follow, seed_local_actor,
+    seed_note_with_visibility, seed_oauth_application, seed_oauth_token, seed_quote_note,
+    seed_remote_actor, seed_renote_note, seed_session, seed_user,
 };
 
 async fn post(
@@ -1389,4 +1389,494 @@ async fn reblog_status_no_self_notification() {
             .await
             .unwrap();
     assert_eq!(notif_count, 0);
+}
+
+// --- create_status ---
+
+#[tokio::test]
+async fn create_status_returns_201_and_note() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "create1").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "Hello from test!", "visibility": "public" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(json["content"].as_str().unwrap().starts_with("<p>"));
+    assert_eq!(json["visibility"], "public");
+    assert_eq!(json["account"]["id"], actor_id.to_string());
+}
+
+#[tokio::test]
+async fn create_status_unauthenticated_returns_401() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/statuses",
+        None,
+        serde_json::json!({ "content": "Hello!" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn create_status_status_alias_is_accepted() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create2").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "status": "via status alias" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(json["content"]
+        .as_str()
+        .unwrap()
+        .contains("via status alias"));
+}
+
+#[tokio::test]
+async fn create_status_empty_content_and_no_media_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create3").await;
+
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "   " }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn create_status_private_visibility_stored_as_followers_and_returned_as_private() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create4").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "Private post", "visibility": "private" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(json["visibility"], "private");
+
+    let note_id: Uuid = json["id"].as_str().unwrap().parse().unwrap();
+    let (stored_visibility,): (String,) =
+        sqlx::query_as("SELECT visibility FROM notes WHERE id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(stored_visibility, "followers");
+}
+
+#[tokio::test]
+async fn create_status_direct_visibility_returned_as_direct() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create5").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "Direct post", "visibility": "direct" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(json["visibility"], "direct");
+}
+
+#[tokio::test]
+async fn create_status_spoiler_text_marks_sensitive() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create6").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "CW test", "spoiler_text": "cw" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(json["sensitive"], true);
+    assert_eq!(json["spoiler_text"], "cw");
+}
+
+#[tokio::test]
+async fn create_status_reply_narrows_visibility_and_increments_replies_count() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "create7").await;
+    let parent_id = seed_note_with_visibility(&db, actor_id, "followers", Utc::now()).await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({
+            "content": "Reply",
+            "visibility": "public",
+            "in_reply_to_id": parent_id.to_string(),
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    // 親がfollowers限定のため、publicを要求しても親と同じ可視性に狭められる
+    // (followers -> レスポンス上は"private")。
+    assert_eq!(json["visibility"], "private");
+    assert_eq!(json["in_reply_to_id"], parent_id.to_string());
+
+    let (replies_count,): (i32,) = sqlx::query_as("SELECT replies_count FROM notes WHERE id = $1")
+        .bind(parent_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(replies_count, 1);
+}
+
+#[tokio::test]
+async fn create_status_reply_to_invisible_note_returns_404() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create8").await;
+    let other_actor =
+        seed_local_actor(&db, &format!("create8other{}", Uuid::new_v4().simple())).await;
+    let parent_id = seed_note_with_visibility(&db, other_actor, "followers", Utc::now()).await;
+
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "Reply", "in_reply_to_id": parent_id.to_string() }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn create_status_local_mention_creates_notification() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "create9").await;
+    let mentioned_username = format!("create9target{}", Uuid::new_v4().simple());
+    let mentioned_actor = seed_local_actor(&db, &mentioned_username).await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": format!("hi @{mentioned_username}!") }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(json["content"].as_str().unwrap().contains("u-url mention"));
+
+    let notif_row: (String, Uuid, Uuid) = sqlx::query_as(
+        "SELECT type, recipient_id, sender_id FROM notifications \
+         WHERE recipient_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(mentioned_actor)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(notif_row.0, "mention");
+    assert_eq!(notif_row.1, mentioned_actor);
+    assert_eq!(notif_row.2, actor_id);
+}
+
+#[tokio::test]
+async fn create_status_remote_mention_delivers_to_inbox() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "create10").await;
+    let domain = format!("remote-create10-{}.example", Uuid::new_v4().simple());
+    seed_remote_actor(&db, "create10target", &domain).await;
+
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": format!("hi @create10target@{domain}!") }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let delivery_row: (String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type' FROM delivery_queue \
+         WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(delivery_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(delivery_row.1, "Create");
+}
+
+#[tokio::test]
+async fn create_status_with_quote_includes_quote_and_notifies_author() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create11").await;
+    let quoted_author =
+        seed_local_actor(&db, &format!("create11quoted{}", Uuid::new_v4().simple())).await;
+    let quoted_note = seed_note_with_visibility(&db, quoted_author, "public", Utc::now()).await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "quoting", "quote_id": quoted_note.to_string() }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(json["quote"]["id"], quoted_note.to_string());
+
+    let notif_row: (String,) = sqlx::query_as(
+        "SELECT type FROM notifications WHERE recipient_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(quoted_author)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(notif_row.0, "quote");
+}
+
+#[tokio::test]
+async fn create_status_with_invalid_quote_id_is_silently_ignored() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create12").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "bad quote", "quote_id": Uuid::new_v4().to_string() }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert!(json["quote"].is_null());
+}
+
+#[tokio::test]
+async fn create_status_with_owned_media_attaches_it() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "create13").await;
+    let drive_file_id = seed_drive_file_owned(
+        &db,
+        user_id,
+        &format!("u/create13/{}.png", Uuid::new_v4()),
+        "image/png",
+    )
+    .await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({
+            "status": "",
+            "visibility": "public",
+            "media_ids": [drive_file_id.to_string()],
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(json["content"], "");
+    assert_eq!(json["media_attachments"].as_array().unwrap().len(), 1);
+    assert_eq!(json["media_attachments"][0]["type"], "image");
+}
+
+#[tokio::test]
+async fn create_status_with_media_owned_by_another_user_is_ignored() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create14").await;
+    let (other_user_id, _other_actor, _other_session) =
+        seed_user_with_session(&db, &redis, "create14other").await;
+    let drive_file_id = seed_drive_file_owned(
+        &db,
+        other_user_id,
+        &format!("u/create14/{}.png", Uuid::new_v4()),
+        "image/png",
+    )
+    .await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "not yours", "media_ids": [drive_file_id.to_string()] }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    assert_eq!(json["media_attachments"].as_array().unwrap().len(), 0);
+}
+
+#[tokio::test]
+async fn create_status_more_than_four_media_ids_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create15").await;
+
+    let ids: Vec<String> = (0..5).map(|_| Uuid::new_v4().to_string()).collect();
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "too many", "media_ids": ids }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn create_status_with_poll_persists_options() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create16").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({
+            "content": "pick one",
+            "poll": { "options": ["A", "B"], "expires_in": 3600 },
+        }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let note_id: Uuid = json["id"].as_str().unwrap().parse().unwrap();
+    let (is_poll, poll_options): (bool, serde_json::Value) =
+        sqlx::query_as("SELECT is_poll, poll_options FROM notes WHERE id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(is_poll);
+    assert_eq!(poll_options.as_array().unwrap().len(), 2);
+}
+
+#[tokio::test]
+async fn create_status_poll_with_one_option_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create17").await;
+
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "bad poll", "poll": { "options": ["only one"] } }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn create_status_hashtag_is_extracted_and_upserted() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "create18").await;
+    let tag = format!("create18tag{}", Uuid::new_v4().simple());
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": format!("post about #{tag}") }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+    let tags = json["tags"].as_array().unwrap();
+    assert!(tags.iter().any(|t| t["name"] == tag));
+
+    let (usage_count,): (i32,) = sqlx::query_as("SELECT usage_count FROM hashtags WHERE name = $1")
+        .bind(&tag)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(usage_count, 1);
+}
+
+#[tokio::test]
+async fn create_status_delivers_create_activity_to_followers() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "create19").await;
+    let domain = format!("remote-create19-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "create19follower", &domain).await;
+    seed_follow(&db, follower_id, actor_id).await;
+
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "hello followers" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let delivery_row: (String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type' FROM delivery_queue \
+         WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(delivery_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(delivery_row.1, "Create");
+}
+
+#[tokio::test]
+async fn create_status_skips_delivery_to_blocked_domain() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "create20").await;
+    let domain = format!("blocked-create20-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "create20follower", &domain).await;
+    seed_follow(&db, follower_id, actor_id).await;
+    seed_domain_block(&db, &domain).await;
+
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/statuses",
+        Some(&session),
+        serde_json::json!({ "content": "hello blocked" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let delivery_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM delivery_queue WHERE actor_id = $1")
+            .bind(actor_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(delivery_count, 0);
 }

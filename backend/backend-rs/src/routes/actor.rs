@@ -396,7 +396,9 @@ struct AttachmentRow {
 
 /// `app/activitypub/renderer.py` の `render_note` 内、`note.attachments` ループを
 /// 移植したもの。ノートIDごとに `NoteAttachmentData` へ変換して返す。
-async fn fetch_attachments_by_note(
+/// `create_status`(添付ファイルをAP Create配送用にレンダリングする際)からも
+/// 再利用するため `pub`。
+pub async fn fetch_attachments_by_note(
     db: &PgPool,
     note_ids: &[Uuid],
     media_url: &str,
@@ -530,6 +532,8 @@ async fn build_note_render_data(
                 poll_expires_at: n.poll_expires_at,
                 poll_multiple: n.poll_multiple,
                 is_talk: n.is_talk,
+                hashtags: Vec::new(),
+                emoji_tags: Vec::new(),
             }
         })
         .collect();

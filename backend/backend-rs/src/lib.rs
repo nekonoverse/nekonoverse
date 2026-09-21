@@ -6,6 +6,7 @@ pub mod delivery;
 pub mod domain_block;
 pub mod error;
 pub mod follows;
+pub mod hashtag;
 pub mod hmac_sig;
 pub mod http_signature;
 pub mod mastodon_time;
@@ -16,6 +17,7 @@ pub mod routes;
 pub mod shortcode;
 pub mod ssrf;
 pub mod state;
+pub mod text_html;
 pub mod valkey;
 
 use axum::Router;
