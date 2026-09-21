@@ -20,5 +20,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates
     && groupadd --system --gid 853 nekonoverse-rs \
     && useradd --system --no-create-home --uid 853 --gid 853 nekonoverse-rs
 COPY --from=builder /workspace/target/release/nekonoverse-backend-rs /usr/local/bin/nekonoverse-backend-rs
+# 依存クレートのライセンス通知 (`.github/workflows/license-audit.yml` が
+# `backend/Cargo.lock` との乖離を検知する、`scripts/cargo-about.sh` で再生成)。
+COPY THIRD-PARTY-LICENSES.html /usr/share/doc/nekonoverse-backend-rs/THIRD-PARTY-LICENSES.html
 USER 853:853
 ENTRYPOINT ["/usr/local/bin/nekonoverse-backend-rs"]
