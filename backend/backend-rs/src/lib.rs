@@ -11,6 +11,7 @@ pub mod http_signature;
 pub mod mastodon_time;
 pub mod note_response;
 pub mod note_visibility;
+pub mod notification;
 pub mod routes;
 pub mod shortcode;
 pub mod ssrf;
