@@ -1,8 +1,9 @@
-//! `app/activitypub/renderer.py` のうち Add/Remove アクティビティ、および
-//! get_outbox/get_featured が必要とする Create/Note のレンダリングを
-//! 移植したもの。`AP_CONTEXT` は JSON-LD の意味を保つため一字一句 Python
-//! 側と同一に保つこと。Announce/Undo 等の他のアクティビティは、それらを
-//! 必要とするエンドポイントを移植する際に追加する(今は不要な先取り実装をしない)。
+//! `app/activitypub/renderer.py` のうち Add/Remove/Delete/Announce/Undo
+//! アクティビティ、および get_outbox/get_featured が必要とする Create/Note
+//! のレンダリングを移植したもの。`AP_CONTEXT` は JSON-LD の意味を保つため
+//! 一字一句 Python 側と同一に保つこと。他のアクティビティ(Update等)は、
+//! それらを必要とするエンドポイントを移植する際に追加する(今は不要な
+//! 先取り実装をしない)。
 
 use chrono::{DateTime, Utc};
 use serde::Serialize;
@@ -74,6 +75,49 @@ pub fn render_remove_activity(
         "actor": actor_ap_id,
         "object": object_id,
         "target": target,
+    })
+}
+
+/// `app.activitypub.renderer.render_delete_activity` を移植したもの。
+pub fn render_delete_activity(activity_id: &str, actor_ap_id: &str, object_id: &str) -> Value {
+    json!({
+        "@context": AP_CONTEXT.clone(),
+        "id": activity_id,
+        "type": "Delete",
+        "actor": actor_ap_id,
+        "object": { "id": object_id, "type": "Tombstone" },
+    })
+}
+
+/// `app.activitypub.renderer.render_announce_activity` を移植したもの。
+pub fn render_announce_activity(
+    activity_id: &str,
+    actor_ap_id: &str,
+    note_ap_id: &str,
+    to: &Value,
+    cc: &Value,
+    published: &str,
+) -> Value {
+    json!({
+        "@context": AP_CONTEXT.clone(),
+        "id": activity_id,
+        "type": "Announce",
+        "actor": actor_ap_id,
+        "object": note_ap_id,
+        "to": to,
+        "cc": cc,
+        "published": published,
+    })
+}
+
+/// `app.activitypub.renderer.render_undo_activity` を移植したもの。
+pub fn render_undo_activity(activity_id: &str, actor_ap_id: &str, inner_activity: &Value) -> Value {
+    json!({
+        "@context": AP_CONTEXT.clone(),
+        "id": activity_id,
+        "type": "Undo",
+        "actor": actor_ap_id,
+        "object": inner_activity,
     })
 }
 
@@ -408,6 +452,58 @@ mod tests {
             activity["target"],
             "https://example.com/users/alice/featured"
         );
+        assert_eq!(activity["@context"], *AP_CONTEXT);
+    }
+
+    #[test]
+    fn render_delete_activity_wraps_object_in_tombstone() {
+        let activity = render_delete_activity(
+            "https://example.com/notes/1/delete",
+            "https://example.com/users/alice",
+            "https://example.com/notes/1",
+        );
+        assert_eq!(activity["type"], "Delete");
+        assert_eq!(activity["id"], "https://example.com/notes/1/delete");
+        assert_eq!(activity["actor"], "https://example.com/users/alice");
+        assert_eq!(activity["object"]["id"], "https://example.com/notes/1");
+        assert_eq!(activity["object"]["type"], "Tombstone");
+        assert_eq!(activity["@context"], *AP_CONTEXT);
+    }
+
+    #[test]
+    fn render_announce_activity_matches_python_shape() {
+        let to = json!(["https://www.w3.org/ns/activitystreams#Public"]);
+        let cc = json!(["https://example.com/users/alice/followers"]);
+        let activity = render_announce_activity(
+            "https://example.com/notes/2",
+            "https://example.com/users/alice",
+            "https://example.com/notes/1",
+            &to,
+            &cc,
+            "2026-01-01T00:00:00.000Z",
+        );
+        assert_eq!(activity["type"], "Announce");
+        assert_eq!(activity["id"], "https://example.com/notes/2");
+        assert_eq!(activity["actor"], "https://example.com/users/alice");
+        assert_eq!(activity["object"], "https://example.com/notes/1");
+        assert_eq!(activity["to"], to);
+        assert_eq!(activity["cc"], cc);
+        assert_eq!(activity["published"], "2026-01-01T00:00:00.000Z");
+        assert_eq!(activity["@context"], *AP_CONTEXT);
+    }
+
+    #[test]
+    fn render_undo_activity_wraps_inner_activity() {
+        let inner = json!({ "type": "Announce", "id": "https://example.com/notes/2" });
+        let activity = render_undo_activity(
+            "https://example.com/notes/2/undo",
+            "https://example.com/users/alice",
+            &inner,
+        );
+        assert_eq!(activity["type"], "Undo");
+        assert_eq!(activity["id"], "https://example.com/notes/2/undo");
+        assert_eq!(activity["actor"], "https://example.com/users/alice");
+        assert_eq!(activity["object"], inner);
         assert_eq!(activity["@context"], *AP_CONTEXT);
     }
 

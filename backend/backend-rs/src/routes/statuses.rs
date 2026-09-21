@@ -1,8 +1,10 @@
 //! `app/api/mastodon/statuses.py` のうち、Stage 3 でRust化したブックマーク
-//! 書き込みパス (`bookmark`/`unbookmark`)、Stage 4 で追加したpin/unpinと
+//! 書き込みパス (`bookmark`/`unbookmark`)、Stage 4 で追加したpin/unpin、
 //! `get_status` (`GET /api/v1/statuses/{id}`、NoteResponse直列化パイプライン
-//! の最初のルート配線) を切り出したもの。同じパスのPUT(`edit_status`)/
-//! DELETE(`delete_status`)、投稿作成・リアクション・リノート等は未移植
+//! の最初のルート配線)、`delete_status`/`unreblog_status` を切り出したもの。
+//! 同じパスのPUT(`edit_status`)、投稿作成(`create_status`)・リアクション・
+//! リブログ本体(`reblog_status`、JSONB更新+`note_to_response`呼び出しを
+//! 伴う書き込みで、この2つのUndo系より複雑なため別PR)は未移植
 //! (nginx側でメソッド別にPython/Rustへ振り分ける、`nginx/*.conf` 参照)。
 
 use axum::extract::{Path, State};
@@ -10,15 +12,20 @@ use axum::http::StatusCode;
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Json, Router};
-use serde_json::json;
+use chrono::{DateTime, Utc};
+use serde_json::{json, Value};
 use uuid::Uuid;
 
-use crate::activitypub::{render_add_activity, render_remove_activity};
+use crate::activitypub::{
+    render_add_activity, render_announce_activity, render_delete_activity, render_remove_activity,
+    render_undo_activity,
+};
 use crate::auth::{CurrentUser, OptionalUser};
 use crate::db;
 use crate::delivery::enqueue_delivery;
 use crate::error::AppError;
 use crate::follows::get_follower_inboxes;
+use crate::mastodon_time::to_mastodon_datetime;
 use crate::note_response::{
     fetch_note_render_row, get_reaction_summary, note_to_response_json_recursive,
 };
@@ -39,7 +46,11 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/v1/statuses/:note_id/pin", post(pin_status))
         .route("/api/v1/statuses/:note_id/unpin", post(unpin_status))
-        .route("/api/v1/statuses/:note_id", get(get_status))
+        .route("/api/v1/statuses/:note_id/unreblog", post(unreblog_status))
+        .route(
+            "/api/v1/statuses/:note_id",
+            get(get_status).delete(delete_status),
+        )
 }
 
 /// `app/api/mastodon/statuses.py` の `get_status` を移植したもの。
@@ -335,6 +346,135 @@ async fn unpin_status(
         render_remove_activity,
     )
     .await?;
+
+    Ok(Json(json!({ "ok": true })).into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct DeleteNoteRow {
+    actor_id: Uuid,
+    ap_id: String,
+}
+
+async fn fetch_note_for_delete(
+    db: &sqlx::PgPool,
+    note_id: Uuid,
+) -> Result<Option<DeleteNoteRow>, AppError> {
+    let row = sqlx::query_as::<_, DeleteNoteRow>(
+        "SELECT actor_id, ap_id FROM notes WHERE id = $1 AND deleted_at IS NULL",
+    )
+    .bind(note_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row)
+}
+
+/// `app/api/mastodon/statuses.py` の `delete_status` を移植したもの。
+/// neko-search索引からの削除連携(`enqueue_delete`)は、neko-search統合
+/// 自体がIssue #1139の「スコープ外」節で明示されている対象のため移植しない。
+async fn delete_status(
+    State(state): State<AppState>,
+    current_user: CurrentUser,
+    Path(note_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    current_user.require_scope("write:statuses")?;
+
+    let note = fetch_note_for_delete(&state.db, note_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Note not found"))?;
+    if note.actor_id != current_user.actor_id {
+        return Err(AppError::new(StatusCode::FORBIDDEN, "Not your note"));
+    }
+
+    sqlx::query("UPDATE notes SET deleted_at = now() WHERE id = $1")
+        .bind(note_id)
+        .execute(&state.db)
+        .await?;
+
+    let username = fetch_local_actor_username(&state.db, current_user.actor_id).await?;
+    let actor_uri = format!("{}/users/{username}", state.config.server_url());
+    let delete_activity =
+        render_delete_activity(&format!("{}/delete", note.ap_id), &actor_uri, &note.ap_id);
+    for inbox_url in get_follower_inboxes(&state.db, current_user.actor_id).await? {
+        enqueue_delivery(&state, current_user.actor_id, &inbox_url, &delete_activity).await?;
+    }
+
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct ReblogNoteRow {
+    id: Uuid,
+    ap_id: String,
+    to: Value,
+    cc: Value,
+    published: DateTime<Utc>,
+}
+
+/// 指定アクター自身による、指定ノートへのリブログ(まだ削除されていないもの)
+/// を取得する。
+async fn fetch_own_reblog_note(
+    db: &sqlx::PgPool,
+    actor_id: Uuid,
+    original_id: Uuid,
+) -> Result<Option<ReblogNoteRow>, AppError> {
+    let row = sqlx::query_as::<_, ReblogNoteRow>(
+        r#"SELECT id, ap_id, "to", cc, published FROM notes
+           WHERE actor_id = $1 AND renote_of_id = $2 AND deleted_at IS NULL"#,
+    )
+    .bind(actor_id)
+    .bind(original_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row)
+}
+
+/// `app/api/mastodon/statuses.py` の `unreblog_status` を移植したもの。
+async fn unreblog_status(
+    State(state): State<AppState>,
+    current_user: CurrentUser,
+    Path(note_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    current_user.require_scope("write:statuses")?;
+
+    let original_ap_id: Option<String> =
+        sqlx::query_scalar("SELECT ap_id FROM notes WHERE id = $1 AND deleted_at IS NULL")
+            .bind(note_id)
+            .fetch_optional(&state.db)
+            .await?;
+    let original_ap_id = original_ap_id.ok_or_else(|| AppError::not_found("Note not found"))?;
+
+    let reblog_note = fetch_own_reblog_note(&state.db, current_user.actor_id, note_id)
+        .await?
+        .ok_or_else(|| AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Not reblogged"))?;
+
+    sqlx::query("UPDATE notes SET deleted_at = now() WHERE id = $1")
+        .bind(reblog_note.id)
+        .execute(&state.db)
+        .await?;
+    sqlx::query("UPDATE notes SET renotes_count = GREATEST(renotes_count - 1, 0) WHERE id = $1")
+        .bind(note_id)
+        .execute(&state.db)
+        .await?;
+
+    let username = fetch_local_actor_username(&state.db, current_user.actor_id).await?;
+    let actor_uri = format!("{}/users/{username}", state.config.server_url());
+    let announce_activity = render_announce_activity(
+        &reblog_note.ap_id,
+        &actor_uri,
+        &original_ap_id,
+        &reblog_note.to,
+        &reblog_note.cc,
+        &to_mastodon_datetime(reblog_note.published),
+    );
+    let undo_activity = render_undo_activity(
+        &format!("{}/undo", reblog_note.ap_id),
+        &actor_uri,
+        &announce_activity,
+    );
+    for inbox_url in get_follower_inboxes(&state.db, current_user.actor_id).await? {
+        enqueue_delivery(&state, current_user.actor_id, &inbox_url, &undo_activity).await?;
+    }
 
     Ok(Json(json!({ "ok": true })).into_response())
 }

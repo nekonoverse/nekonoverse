@@ -25,6 +25,10 @@ async fn get(app: axum::Router, uri: &str, cookie: Option<&str>) -> (StatusCode,
     request(app, "GET", uri, cookie, None).await
 }
 
+async fn delete_req(app: axum::Router, uri: &str, cookie: Option<&str>) -> (StatusCode, Value) {
+    request(app, "DELETE", uri, cookie, None).await
+}
+
 async fn request(
     app: axum::Router,
     method: &str,
@@ -850,4 +854,228 @@ async fn get_status_hides_quote_when_target_not_visible_to_viewer() {
     assert_eq!(status, StatusCode::OK);
     assert_eq!(json["id"], quote_note_id.to_string());
     assert_eq!(json["quote"], Value::Null);
+}
+
+#[tokio::test]
+async fn delete_status_soft_deletes_and_delivers_to_follower() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "del1").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+    let domain = format!("remote-del1-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "follower-del1", &domain).await;
+    seed_follow(&db, follower_id, actor_id).await;
+
+    let (status, _json) =
+        delete_req(app, &format!("/api/v1/statuses/{note_id}"), Some(&session)).await;
+    assert_eq!(status, StatusCode::NO_CONTENT);
+
+    let deleted_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT deleted_at FROM notes WHERE id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(deleted_at.is_some());
+
+    let delete_row: (String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type' FROM delivery_queue \
+         WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(delete_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(delete_row.1, "Delete");
+}
+
+#[tokio::test]
+async fn delete_status_returns_404_for_missing_note() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "del2").await;
+
+    let (status, json) = delete_req(
+        app,
+        &format!("/api/v1/statuses/{}", Uuid::new_v4()),
+        Some(&session),
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn delete_status_forbidden_for_other_users_note() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid_a, _actor_a, session_a) = seed_user_with_session(&db, &redis, "del3a").await;
+    let (_uid_b, actor_b, _session_b) = seed_user_with_session(&db, &redis, "del3b").await;
+    let note_id = seed_note_with_visibility(&db, actor_b, "public", Utc::now()).await;
+
+    let (status, json) = delete_req(
+        app,
+        &format!("/api/v1/statuses/{note_id}"),
+        Some(&session_a),
+    )
+    .await;
+    assert_eq!(status, StatusCode::FORBIDDEN);
+    assert_eq!(json["detail"], "Not your note");
+
+    let deleted_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT deleted_at FROM notes WHERE id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(deleted_at.is_none());
+}
+
+#[tokio::test]
+async fn delete_status_unauthenticated_returns_401() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, _json) =
+        delete_req(app, &format!("/api/v1/statuses/{}", Uuid::new_v4()), None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn unreblog_status_roundtrip_delivers_undo_announce() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "unre1").await;
+    let original_actor =
+        seed_local_actor(&db, &format!("unre1orig{}", Uuid::new_v4().simple())).await;
+    let original_note = seed_note_with_visibility(&db, original_actor, "public", Utc::now()).await;
+    sqlx::query("UPDATE notes SET renotes_count = 1 WHERE id = $1")
+        .bind(original_note)
+        .execute(&db)
+        .await
+        .unwrap();
+    seed_renote_note(&db, actor_id, original_note).await;
+
+    let domain = format!("remote-unre1-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "follower-unre1", &domain).await;
+    seed_follow(&db, follower_id, actor_id).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{original_note}/unreblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let renotes_count: i32 = sqlx::query_scalar("SELECT renotes_count FROM notes WHERE id = $1")
+        .bind(original_note)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(renotes_count, 0);
+
+    let reblog_deleted_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM notes WHERE actor_id = $1 AND renote_of_id = $2 \
+         AND deleted_at IS NOT NULL",
+    )
+    .bind(actor_id)
+    .bind(original_note)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(reblog_deleted_count, 1);
+
+    let undo_row: (String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type' FROM delivery_queue \
+         WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(undo_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(undo_row.1, "Undo");
+}
+
+#[tokio::test]
+async fn unreblog_status_renotes_count_does_not_go_below_zero() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "unre2").await;
+    let original_actor =
+        seed_local_actor(&db, &format!("unre2orig{}", Uuid::new_v4().simple())).await;
+    let original_note = seed_note_with_visibility(&db, original_actor, "public", Utc::now()).await;
+    seed_renote_note(&db, actor_id, original_note).await;
+
+    let (status, _json) = post(
+        app,
+        &format!("/api/v1/statuses/{original_note}/unreblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let renotes_count: i32 = sqlx::query_scalar("SELECT renotes_count FROM notes WHERE id = $1")
+        .bind(original_note)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(renotes_count, 0);
+}
+
+#[tokio::test]
+async fn unreblog_status_not_reblogged_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "unre3").await;
+    let note_id = seed_note_with_visibility(
+        &db,
+        seed_local_actor(&db, &format!("unre3orig{}", Uuid::new_v4().simple())).await,
+        "public",
+        Utc::now(),
+    )
+    .await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/unreblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Not reblogged");
+}
+
+#[tokio::test]
+async fn unreblog_status_original_not_found_returns_404() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "unre4").await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{}/unreblog", Uuid::new_v4()),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn unreblog_status_unauthenticated_returns_401() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, _json) = post(
+        app,
+        &format!("/api/v1/statuses/{}/unreblog", Uuid::new_v4()),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
