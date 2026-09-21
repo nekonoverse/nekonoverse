@@ -1,15 +1,36 @@
 //! `app/api/auth.py` のうち `GET /api/v1/accounts/verify_credentials`
-//! (`verify_credentials`/`_credential_account_response`) のみを切り出した
-//! もの。認証状態にある本人自身の情報を返すだけの単純な読み取り専用
-//! エンドポイントで、ノートの可視性判定や連合配送を伴わないため、
-//! Issue #1139 Stage 4 の他の項目(NoteResponse直列化パイプライン等)とは
+//! (`verify_credentials`/`_credential_account_response`) と TOTP 二要素認証系
+//! (`/auth/totp/setup`/`enable`/`disable`/`verify`/`status`) を切り出したもの。
+//! 前者は認証状態にある本人自身の情報を返すだけの単純な読み取り専用エンドポイント
+//! で、Issue #1139 Stage 4 の他の項目(NoteResponse直列化パイプライン等)とは
 //! 独立に進められる。`response_model` が指定されていないPython版と同じく、
 //! 生の JSON オブジェクトをそのまま返す。
+//!
+//! TOTP系は `app/services/totp_service.py`(`totp.rs`)に依存する。Python版の
+//! secretは PBKDF2-HMAC-SHA256(60万回)から導出したFernetキーで暗号化して
+//! 保存されており、Rust側もPython生成のオラクル値を使ったテストで互換性を
+//! 検証済み(`totp.rs`参照)。`totp_verify`のみ未認証(ログイン処理の後半で
+//! 発行される`totp_pending:{token}`を経由する2段階目)で、成功時に
+//! `session.rs`(新設)でセッションCookieを発行する。`POST /auth/login`
+//! 本体(1段階目、TOTP非対象ユーザーの通常ログイン)は未移植のまま
+//! Python側に残るが、Valkeyのセッション/保留トークンは両サービスで共有
+//! しているため、Python側のログインが発行した`totp_pending`トークンを
+//! Rust側の`totp_verify`が消費する形で問題なく連携する。
+//! クライアントIP解決: Python版は`request.client.host`(uvicornの生TCP peer、
+//! `--proxy-headers`未使用のため実運用ではnginxコンテナのIPか、本番のUDS
+//! バインドでは`None`→"unknown"になる、実質機能していない値)をそのまま
+//! 記録するが、Rust版はnginxが全リクエストに付与済みの`X-Real-IP`ヘッダーを
+//! 読む安全側の改善とする(`totp_secret`のCSPRNG生成と同じ判断: 新規に記録する
+//! 監査ログの値であり、既存データとの互換性やテストオラクルとの比較対象では
+//! ないため)。
 
+use axum::body::Bytes;
+use axum::http::{HeaderMap, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::get;
+use axum::routing::{get, post};
 use axum::{extract::State, Json, Router};
 use chrono::{DateTime, Utc};
+use serde::Deserialize;
 use serde_json::{json, Value};
 use uuid::Uuid;
 
@@ -20,14 +41,22 @@ use crate::follows::get_follow_counts;
 use crate::hmac_sig::media_proxy_url;
 use crate::mastodon_time::to_mastodon_datetime;
 use crate::note_response::get_statuses_count;
+use crate::session::{create_session_with_metadata, record_login};
 use crate::shortcode::find_shortcodes;
 use crate::state::AppState;
+use crate::totp;
 
 pub fn router() -> Router<AppState> {
-    Router::new().route(
-        "/api/v1/accounts/verify_credentials",
-        get(verify_credentials),
-    )
+    Router::new()
+        .route(
+            "/api/v1/accounts/verify_credentials",
+            get(verify_credentials),
+        )
+        .route("/api/v1/auth/totp/setup", post(totp_setup))
+        .route("/api/v1/auth/totp/enable", post(totp_enable))
+        .route("/api/v1/auth/totp/disable", post(totp_disable))
+        .route("/api/v1/auth/totp/verify", post(totp_verify))
+        .route("/api/v1/auth/totp/status", get(totp_status))
 }
 
 /// `MODERATOR_PERMISSIONS`(`app/services/role_service.py`)と同一。
@@ -360,4 +389,374 @@ async fn verify_credentials(
     });
 
     Ok(Json(data).into_response())
+}
+
+fn parse_json_body<T: serde::de::DeserializeOwned>(body: &Bytes) -> Result<T, AppError> {
+    serde_json::from_slice(body).map_err(|e| {
+        AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Invalid request body: {e}"),
+        )
+    })
+}
+
+/// bcryptはCPUバウンドの同期処理のため、Python版が`asyncio.to_thread`で
+/// イベントループのブロックを避けているのと同じ意図で、axumのワーカー
+/// スレッドを塞がないよう`spawn_blocking`に逃がす。
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static) -> T {
+    tokio::task::spawn_blocking(f)
+        .await
+        .expect("blocking task panicked")
+}
+
+#[derive(Deserialize)]
+struct TotpSetupRequest {
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct TotpEnableRequest {
+    code: String,
+}
+
+#[derive(Deserialize)]
+struct TotpDisableRequest {
+    password: String,
+}
+
+#[derive(Deserialize)]
+struct TotpVerifyRequest {
+    totp_token: String,
+    code: String,
+}
+
+/// `app.api.auth.totp_setup` を移植したもの。
+async fn totp_setup(
+    State(state): State<AppState>,
+    current_user: CurrentUser,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let payload: TotpSetupRequest = parse_json_body(&body)?;
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        totp_enabled: bool,
+        password_hash: String,
+    }
+    let row: Row = sqlx::query_as("SELECT totp_enabled, password_hash FROM users WHERE id = $1")
+        .bind(current_user.id)
+        .fetch_one(&state.db)
+        .await?;
+
+    if row.totp_enabled {
+        return Err(AppError::new(
+            StatusCode::BAD_REQUEST,
+            "TOTP is already enabled",
+        ));
+    }
+    let password = payload.password.clone();
+    let password_hash = row.password_hash.clone();
+    let valid = blocking(move || bcrypt::verify(&password, &password_hash).unwrap_or(false)).await;
+    if !valid {
+        return Err(AppError::new(StatusCode::UNAUTHORIZED, "Invalid password"));
+    }
+
+    let secret = totp::generate_totp_secret();
+    let secret_key = state.config.secret_key.clone();
+    let secret_for_encrypt = secret.clone();
+    let iterations = state.config.totp_pbkdf2_iterations;
+    let encrypted =
+        blocking(move || totp::encrypt_secret(&secret_key, &secret_for_encrypt, iterations))
+            .await?;
+    sqlx::query("UPDATE users SET totp_secret = $1 WHERE id = $2")
+        .bind(&encrypted)
+        .bind(current_user.id)
+        .execute(&state.db)
+        .await?;
+
+    let username: String = sqlx::query_scalar("SELECT username FROM actors WHERE id = $1")
+        .bind(current_user.actor_id)
+        .fetch_one(&state.db)
+        .await?;
+    let issuer = format!("Nekonoverse ({})", state.config.domain);
+    let uri = totp::generate_provisioning_uri(&secret, &username, &issuer);
+
+    Ok(Json(json!({ "secret": secret, "provisioning_uri": uri })).into_response())
+}
+
+/// `app.api.auth.totp_enable` を移植したもの。
+async fn totp_enable(
+    State(state): State<AppState>,
+    current_user: CurrentUser,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let payload: TotpEnableRequest = parse_json_body(&body)?;
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        totp_enabled: bool,
+        totp_secret: Option<String>,
+        last_totp_counter: Option<i64>,
+    }
+    let row: Row = sqlx::query_as(
+        "SELECT totp_enabled, totp_secret, last_totp_counter FROM users WHERE id = $1",
+    )
+    .bind(current_user.id)
+    .fetch_one(&state.db)
+    .await?;
+
+    if row.totp_enabled {
+        return Err(AppError::new(
+            StatusCode::BAD_REQUEST,
+            "TOTP is already enabled",
+        ));
+    }
+    let Some(encrypted_secret) = row.totp_secret else {
+        return Err(AppError::new(
+            StatusCode::BAD_REQUEST,
+            "Call /auth/totp/setup first",
+        ));
+    };
+
+    let secret_key = state.config.secret_key.clone();
+    let iterations = state.config.totp_pbkdf2_iterations;
+    let secret =
+        blocking(move || totp::decrypt_secret(&secret_key, &encrypted_secret, iterations)).await?;
+    let Some(matched_counter) =
+        totp::verify_totp_code_with_counter(&secret, &payload.code, row.last_totp_counter, None)
+    else {
+        return Err(AppError::new(StatusCode::BAD_REQUEST, "Invalid TOTP code"));
+    };
+    if !totp::advance_last_totp_counter(&state.db, current_user.id, matched_counter).await? {
+        // 並列リクエストが先に同じカウンタを記録 — リプレイとして拒否。
+        return Err(AppError::new(StatusCode::BAD_REQUEST, "Invalid TOTP code"));
+    }
+
+    let recovery_codes = totp::generate_recovery_codes();
+    let codes_to_hash = recovery_codes.clone();
+    let cost = state.config.bcrypt_cost;
+    let hashed = blocking(move || totp::hash_recovery_codes(&codes_to_hash, cost)).await?;
+
+    sqlx::query("UPDATE users SET totp_enabled = true, totp_recovery_codes = $1 WHERE id = $2")
+        .bind(sqlx::types::Json(&hashed))
+        .bind(current_user.id)
+        .execute(&state.db)
+        .await?;
+
+    Ok(Json(json!({ "recovery_codes": recovery_codes })).into_response())
+}
+
+/// `app.api.auth.totp_disable` を移植したもの。
+async fn totp_disable(
+    State(state): State<AppState>,
+    current_user: CurrentUser,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    let payload: TotpDisableRequest = parse_json_body(&body)?;
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        totp_enabled: bool,
+        password_hash: String,
+    }
+    let row: Row = sqlx::query_as("SELECT totp_enabled, password_hash FROM users WHERE id = $1")
+        .bind(current_user.id)
+        .fetch_one(&state.db)
+        .await?;
+
+    if !row.totp_enabled {
+        return Err(AppError::new(
+            StatusCode::BAD_REQUEST,
+            "TOTP is not enabled",
+        ));
+    }
+    // Python版はここでのみ無効パスワードを400で返す (setup/loginは401)。非対称
+    // だがPython版の実際の契約であり、そのまま再現する。
+    let password = payload.password.clone();
+    let password_hash = row.password_hash.clone();
+    let valid = blocking(move || bcrypt::verify(&password, &password_hash).unwrap_or(false)).await;
+    if !valid {
+        return Err(AppError::new(StatusCode::BAD_REQUEST, "Invalid password"));
+    }
+
+    sqlx::query(
+        "UPDATE users SET totp_enabled = false, totp_secret = NULL, totp_recovery_codes = NULL \
+         WHERE id = $1",
+    )
+    .bind(current_user.id)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(json!({ "ok": true })).into_response())
+}
+
+/// `app.api.auth.totp_status` を移植したもの。
+async fn totp_status(
+    State(state): State<AppState>,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    let totp_enabled: bool = sqlx::query_scalar("SELECT totp_enabled FROM users WHERE id = $1")
+        .bind(current_user.id)
+        .fetch_one(&state.db)
+        .await?;
+    Ok(Json(json!({ "totp_enabled": totp_enabled })).into_response())
+}
+
+const TOTP_MAX_ATTEMPTS: i64 = 5;
+const TOTP_LOCKOUT_TTL: i64 = 300;
+
+/// トークン単位のブルートフォース失敗を記録して401を返す
+/// (`totp_verify`の3つの失敗経路 — 無効コード/無効カウンタ再利用/
+/// 無効リカバリーコード — で共通に呼ぶ)。
+async fn reject_totp_verify(
+    state: &AppState,
+    attempts_key: &str,
+    user_id: Uuid,
+) -> Result<Response, AppError> {
+    use redis::AsyncCommands;
+    let mut redis = state.redis.clone();
+    let _: i64 = redis.incr(attempts_key, 1).await?;
+    let _: () = redis.expire(attempts_key, TOTP_LOCKOUT_TTL).await?;
+    totp::record_totp_failure(&state.redis, user_id).await?;
+    Err(AppError::new(StatusCode::UNAUTHORIZED, "Invalid TOTP code"))
+}
+
+/// `app.api.auth.totp_verify` を移植したもの。ログイン1段階目(未移植、
+/// Python側に残る`/auth/login`)が発行した保留トークンを消費し、成功時に
+/// セッションCookieを発行する(モジュール冒頭のコメント参照)。
+async fn totp_verify(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    use redis::AsyncCommands;
+
+    let payload: TotpVerifyRequest = parse_json_body(&body)?;
+    let mut redis = state.redis.clone();
+
+    let attempts_key = format!("totp_attempts:{}", payload.totp_token);
+    let attempts: Option<i64> = redis.get(&attempts_key).await?;
+    if attempts.is_some_and(|a| a >= TOTP_MAX_ATTEMPTS) {
+        return Err(AppError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many TOTP attempts. Please wait 5 minutes and try again.",
+        ));
+    }
+
+    let pending_key = format!("totp_pending:{}", payload.totp_token);
+    let user_id_str: Option<String> = redis.get(&pending_key).await?;
+    let Some(user_id_str) = user_id_str else {
+        return Err(AppError::new(
+            StatusCode::UNAUTHORIZED,
+            "Invalid or expired TOTP token",
+        ));
+    };
+    let user_id = Uuid::parse_str(&user_id_str)
+        .map_err(|_| AppError::new(StatusCode::UNAUTHORIZED, "Invalid or expired TOTP token"))?;
+
+    #[derive(sqlx::FromRow)]
+    struct Row {
+        totp_secret: Option<String>,
+        totp_recovery_codes: Option<sqlx::types::Json<Vec<String>>>,
+        last_totp_counter: Option<i64>,
+    }
+    let row: Option<Row> = sqlx::query_as(
+        "SELECT totp_secret, totp_recovery_codes, last_totp_counter FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(row) = row else {
+        return Err(AppError::new(StatusCode::UNAUTHORIZED, "User not found"));
+    };
+
+    if totp::is_totp_locked(&state.redis, user_id).await? {
+        return Err(AppError::new(
+            StatusCode::TOO_MANY_REQUESTS,
+            "Too many TOTP attempts. Please wait and try again.",
+        ));
+    }
+
+    let Some(encrypted_secret) = row.totp_secret else {
+        return reject_totp_verify(&state, &attempts_key, user_id).await;
+    };
+    let secret_key = state.config.secret_key.clone();
+    let iterations = state.config.totp_pbkdf2_iterations;
+    let secret =
+        blocking(move || totp::decrypt_secret(&secret_key, &encrypted_secret, iterations)).await?;
+    let totp_code: String = payload.code.trim().chars().filter(|c| *c != '-').collect();
+
+    let matched_counter =
+        totp::verify_totp_code_with_counter(&secret, &totp_code, row.last_totp_counter, None);
+    if let Some(matched_counter) = matched_counter {
+        if !totp::advance_last_totp_counter(&state.db, user_id, matched_counter).await? {
+            return reject_totp_verify(&state, &attempts_key, user_id).await;
+        }
+    } else if let Some(sqlx::types::Json(recovery_codes)) = &row.totp_recovery_codes {
+        if recovery_codes.is_empty() {
+            return reject_totp_verify(&state, &attempts_key, user_id).await;
+        }
+        let candidate = payload.code.trim().to_string();
+        let codes_to_check = recovery_codes.clone();
+        let (valid, remaining) =
+            blocking(move || totp::verify_recovery_code(&candidate, &codes_to_check)).await;
+        if !valid {
+            return reject_totp_verify(&state, &attempts_key, user_id).await;
+        }
+        sqlx::query("UPDATE users SET totp_recovery_codes = $1 WHERE id = $2")
+            .bind(sqlx::types::Json(&remaining))
+            .bind(user_id)
+            .execute(&state.db)
+            .await?;
+        // Defense-in-depth: リカバリー認証成功時も TOTP カウンタを現在ステップまで
+        // 進めておく (戻り値は無視 — Python版と同じくベストエフォート)。
+        let _ = totp::advance_last_totp_counter(&state.db, user_id, totp::current_time_step(None))
+            .await;
+    } else {
+        return reject_totp_verify(&state, &attempts_key, user_id).await;
+    }
+
+    let _: i64 = redis.del(&attempts_key).await?;
+    totp::clear_totp_failures(&state.redis, user_id).await?;
+    let _: i64 = redis.del(&pending_key).await?;
+
+    let client_ip = headers
+        .get("x-real-ip")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("unknown");
+    let user_agent = headers
+        .get(axum::http::header::USER_AGENT)
+        .and_then(|v| v.to_str().ok());
+
+    let session_id = generate_session_id();
+    create_session_with_metadata(&state.redis, user_id, &session_id, client_ip, user_agent).await?;
+    record_login(&state.db, user_id, client_ip, user_agent, "totp").await?;
+
+    let secure_attr = if state.config.use_https {
+        "; Secure"
+    } else {
+        ""
+    };
+    let cookie = format!(
+        "nekonoverse_session={session_id}; HttpOnly; Max-Age=2592000; Path=/; SameSite=lax{secure_attr}"
+    );
+
+    let mut response = Json(json!({ "ok": true })).into_response();
+    response.headers_mut().insert(
+        axum::http::header::SET_COOKIE,
+        axum::http::HeaderValue::from_str(&cookie).map_err(|_| {
+            AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+        })?,
+    );
+    Ok(response)
+}
+
+/// `secrets.token_urlsafe(32)` 相当 (32ランダムバイトをURLセーフBase64、パディングなし)。
+fn generate_session_id() -> String {
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::Engine;
+    use rand::RngCore;
+    let mut bytes = [0u8; 32];
+    rand::thread_rng().fill_bytes(&mut bytes);
+    URL_SAFE_NO_PAD.encode(bytes)
 }

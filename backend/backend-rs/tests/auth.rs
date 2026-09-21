@@ -1,5 +1,6 @@
 use axum::body::Body;
 use axum::http::{header, Request, StatusCode};
+use nekonoverse_backend_rs::totp;
 use serde_json::Value;
 use tower::ServiceExt;
 use uuid::Uuid;
@@ -27,6 +28,47 @@ async fn get(app: axum::Router, uri: &str, cookie: Option<&str>) -> (StatusCode,
         serde_json::from_slice(&body).unwrap_or(Value::Null)
     };
     (status, json)
+}
+
+async fn post_json(
+    app: axum::Router,
+    uri: &str,
+    cookie: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let (status, _headers, json) = post_json_with_headers(app, uri, cookie, body).await;
+    (status, json)
+}
+
+async fn post_json_with_headers(
+    app: axum::Router,
+    uri: &str,
+    cookie: Option<&str>,
+    body: Value,
+) -> (StatusCode, axum::http::HeaderMap, Value) {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(session_id) = cookie {
+        builder = builder.header(header::COOKIE, format!("nekonoverse_session={session_id}"));
+    }
+    let response = app
+        .oneshot(builder.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let headers = response.headers().clone();
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let json: Value = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).unwrap_or(Value::Null)
+    };
+    (status, headers, json)
 }
 
 async fn seed_user_with_session(
@@ -214,4 +256,460 @@ async fn verify_credentials_resolves_display_name_emoji_and_avatar_focal() {
     assert_eq!(json["avatar_focal"]["x"], 0.5);
     assert_eq!(json["avatar_focal"]["y"], 0.25);
     assert_eq!(json["header_focal"], Value::Null);
+}
+
+/// ランダムな平文パスワードを生成してハッシュ化・保存し、平文を返す
+/// (CodeQLの「ハードコードされたパスワード」検出を避けるため、固定文字列
+/// リテラルではなく実行時に生成した値を使う)。
+async fn set_password(db: &sqlx::PgPool, user_id: Uuid) -> String {
+    let password = format!("test-pw-{}", Uuid::new_v4().simple());
+    // `bcrypt::verify` はハッシュ自体に埋め込まれたコストで再計算するため、
+    // `BCRYPT_COST`環境変数(新規ハッシュ生成のみに効く)とは無関係に、ここで
+    // 最小コスト(4)を直接使ってテストの実行時間を短縮する。
+    let hash = bcrypt::hash(&password, 4).unwrap();
+    sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
+        .bind(hash)
+        .bind(user_id)
+        .execute(db)
+        .await
+        .unwrap();
+    password
+}
+
+#[tokio::test]
+async fn totp_status_requires_authentication() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, _json) = get(app, "/api/v1/auth/totp/status", None).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn totp_status_returns_false_when_not_enabled() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (_user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpstatus1").await;
+
+    let (status, json) = get(app, "/api/v1/auth/totp/status", Some(&session)).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["totp_enabled"], false);
+}
+
+#[tokio::test]
+async fn totp_setup_requires_authentication() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/auth/totp/setup",
+        None,
+        serde_json::json!({ "password": "whatever" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn totp_setup_rejects_wrong_password() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpsetup1").await;
+    set_password(&db, user_id).await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/setup",
+        Some(&session),
+        serde_json::json!({ "password": "wrong-password" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(json["detail"], "Invalid password");
+}
+
+#[tokio::test]
+async fn totp_setup_returns_secret_and_stores_encrypted_secret() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpsetup2").await;
+    let password = set_password(&db, user_id).await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/setup",
+        Some(&session),
+        serde_json::json!({ "password": password }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let secret = json["secret"].as_str().unwrap();
+    assert_eq!(secret.len(), 32);
+    assert!(json["provisioning_uri"]
+        .as_str()
+        .unwrap()
+        .starts_with("otpauth://totp/"));
+    assert!(json["provisioning_uri"].as_str().unwrap().contains(secret));
+
+    let stored: Option<String> = sqlx::query_scalar("SELECT totp_secret FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(stored.is_some());
+    assert_ne!(stored.unwrap(), secret);
+}
+
+#[tokio::test]
+async fn totp_setup_rejects_when_already_enabled() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpsetup3").await;
+    sqlx::query("UPDATE users SET totp_enabled = true WHERE id = $1")
+        .bind(user_id)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/setup",
+        Some(&session),
+        serde_json::json!({ "password": "irrelevant" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["detail"], "TOTP is already enabled");
+}
+
+async fn setup_totp(app: axum::Router, session: &str, password: &str) -> String {
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/setup",
+        Some(session),
+        serde_json::json!({ "password": password }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    json["secret"].as_str().unwrap().to_string()
+}
+
+#[tokio::test]
+async fn totp_enable_requires_setup_first() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (_user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpenable1").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/enable",
+        Some(&session),
+        serde_json::json!({ "code": "123456" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["detail"], "Call /auth/totp/setup first");
+}
+
+#[tokio::test]
+async fn totp_enable_rejects_invalid_code() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpenable2").await;
+    let password = set_password(&db, user_id).await;
+    setup_totp(app.clone(), &session, &password).await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/enable",
+        Some(&session),
+        serde_json::json!({ "code": "000000" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["detail"], "Invalid TOTP code");
+}
+
+#[tokio::test]
+async fn totp_enable_succeeds_and_returns_recovery_codes() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpenable3").await;
+    let password = set_password(&db, user_id).await;
+    let secret = setup_totp(app.clone(), &session, &password).await;
+    let code = totp::hotp_at(&secret, totp::current_time_step(None)).unwrap();
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/enable",
+        Some(&session),
+        serde_json::json!({ "code": code }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    let codes = json["recovery_codes"].as_array().unwrap();
+    assert_eq!(codes.len(), 8);
+
+    let enabled: bool = sqlx::query_scalar("SELECT totp_enabled FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(enabled);
+}
+
+#[tokio::test]
+async fn totp_disable_requires_enabled() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (_user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpdisable1").await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/disable",
+        Some(&session),
+        serde_json::json!({ "password": "whatever" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["detail"], "TOTP is not enabled");
+}
+
+#[tokio::test]
+async fn totp_disable_rejects_wrong_password() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpdisable2").await;
+    set_password(&db, user_id).await;
+    sqlx::query("UPDATE users SET totp_enabled = true WHERE id = $1")
+        .bind(user_id)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/disable",
+        Some(&session),
+        serde_json::json!({ "password": "wrong-password" }),
+    )
+    .await;
+    // Python版はdisableのみ無効パスワードを400で返す(setupは401)。
+    assert_eq!(status, StatusCode::BAD_REQUEST);
+    assert_eq!(json["detail"], "Invalid password");
+}
+
+#[tokio::test]
+async fn totp_disable_succeeds_and_clears_fields() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpdisable3").await;
+    let password = set_password(&db, user_id).await;
+    let secret = setup_totp(app.clone(), &session, &password).await;
+    let code = totp::hotp_at(&secret, totp::current_time_step(None)).unwrap();
+    let (status, _json) = post_json(
+        app.clone(),
+        "/api/v1/auth/totp/enable",
+        Some(&session),
+        serde_json::json!({ "code": code }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/disable",
+        Some(&session),
+        serde_json::json!({ "password": password }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let (enabled, secret_col, codes): (bool, Option<String>, Option<Value>) = sqlx::query_as(
+        "SELECT totp_enabled, totp_secret, totp_recovery_codes FROM users WHERE id = $1",
+    )
+    .bind(user_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(!enabled);
+    assert!(secret_col.is_none());
+    assert!(codes.is_none());
+}
+
+/// `totp_verify`のテスト用に、ログイン1段階目(Python側、未移植)が発行する
+/// `totp_pending:{token}`と同じ形のValkeyキーを直接シードする。
+async fn seed_totp_pending(redis: &redis::aio::ConnectionManager, user_id: Uuid) -> String {
+    use redis::AsyncCommands;
+    let mut redis = redis.clone();
+    let token = Uuid::new_v4().to_string();
+    let _: () = redis
+        .set_ex(format!("totp_pending:{token}"), user_id.to_string(), 300)
+        .await
+        .unwrap();
+    token
+}
+
+async fn enable_totp_for_test(app: axum::Router, session: &str, password: &str) -> String {
+    let secret = setup_totp(app.clone(), session, password).await;
+    let code = totp::hotp_at(&secret, totp::current_time_step(None)).unwrap();
+    let (status, _json) = post_json(
+        app,
+        "/api/v1/auth/totp/enable",
+        Some(session),
+        serde_json::json!({ "code": code }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    secret
+}
+
+#[tokio::test]
+async fn totp_verify_rejects_invalid_or_expired_token() {
+    let (app, _db) = common::test_app_with_db().await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/verify",
+        None,
+        serde_json::json!({ "totp_token": Uuid::new_v4().to_string(), "code": "123456" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(json["detail"], "Invalid or expired TOTP token");
+}
+
+#[tokio::test]
+async fn totp_verify_succeeds_with_valid_code_and_sets_session_cookie() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpverify1").await;
+    let password = set_password(&db, user_id).await;
+    let secret = enable_totp_for_test(app.clone(), &session, &password).await;
+    let token = seed_totp_pending(&redis, user_id).await;
+
+    // `enable_totp_for_test`が直前に`current_time_step(None)`のcounterを
+    // 既に消費済み(`last_totp_counter`にセット)なので、同一テスト内で
+    // 30秒ウィンドウをまたがずに実行できた場合は同じcounterのコードを
+    // 生成してしまいリプレイ拒否されてしまう。次のcounterを明示的に使うことで
+    // 実行速度に関わらず確実に未消費のコードを使う(サーバー側の±1許容
+    // ウィンドウの範囲内)。
+    let code = totp::hotp_at(&secret, totp::current_time_step(None) + 1).unwrap();
+    let (status, headers, json) = post_json_with_headers(
+        app.clone(),
+        "/api/v1/auth/totp/verify",
+        None,
+        serde_json::json!({ "totp_token": token, "code": code }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+    let set_cookie = headers.get(header::SET_COOKIE).unwrap().to_str().unwrap();
+    assert!(set_cookie.starts_with("nekonoverse_session="));
+    assert!(set_cookie.contains("HttpOnly"));
+
+    // 保留トークンは使い捨てのはず。
+    let (status2, _json2) = post_json(
+        app,
+        "/api/v1/auth/totp/verify",
+        None,
+        serde_json::json!({ "totp_token": token, "code": code }),
+    )
+    .await;
+    assert_eq!(status2, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn totp_verify_rejects_invalid_code_and_records_failure() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpverify2").await;
+    let password = set_password(&db, user_id).await;
+    enable_totp_for_test(app.clone(), &session, &password).await;
+    let token = seed_totp_pending(&redis, user_id).await;
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/verify",
+        None,
+        serde_json::json!({ "totp_token": token, "code": "000000" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    assert_eq!(json["detail"], "Invalid TOTP code");
+}
+
+#[tokio::test]
+async fn totp_verify_succeeds_with_recovery_code_and_consumes_it() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpverify3").await;
+    let password = set_password(&db, user_id).await;
+    let secret = setup_totp(app.clone(), &session, &password).await;
+    let code = totp::hotp_at(&secret, totp::current_time_step(None)).unwrap();
+    let (enable_status, enable_json) = post_json(
+        app.clone(),
+        "/api/v1/auth/totp/enable",
+        Some(&session),
+        serde_json::json!({ "code": code }),
+    )
+    .await;
+    assert_eq!(enable_status, StatusCode::OK);
+    let recovery_code = enable_json["recovery_codes"][0]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    let token = seed_totp_pending(&redis, user_id).await;
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/verify",
+        None,
+        serde_json::json!({ "totp_token": token, "code": recovery_code }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["ok"], true);
+
+    let remaining: Value =
+        sqlx::query_scalar("SELECT totp_recovery_codes FROM users WHERE id = $1")
+            .bind(user_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(remaining.as_array().unwrap().len(), 7);
+}
+
+#[tokio::test]
+async fn totp_verify_rejects_after_too_many_attempts() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpverify4").await;
+    let password = set_password(&db, user_id).await;
+    enable_totp_for_test(app.clone(), &session, &password).await;
+
+    // 保留トークンは失敗時には削除されない (成功時のみ) ため、同一トークンを
+    // 使い回して5回失敗させると `totp_attempts:{token}` が上限に達する。
+    let token = seed_totp_pending(&redis, user_id).await;
+    for _ in 0..5 {
+        let (status, _json) = post_json(
+            app.clone(),
+            "/api/v1/auth/totp/verify",
+            None,
+            serde_json::json!({ "totp_token": token, "code": "000000" }),
+        )
+        .await;
+        assert_eq!(status, StatusCode::UNAUTHORIZED);
+    }
+
+    let (status, json) = post_json(
+        app,
+        "/api/v1/auth/totp/verify",
+        None,
+        serde_json::json!({ "totp_token": token, "code": "000000" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert!(json["detail"]
+        .as_str()
+        .unwrap()
+        .contains("Too many TOTP attempts"));
 }

@@ -14,10 +14,12 @@ pub mod note_response;
 pub mod note_visibility;
 pub mod notification;
 pub mod routes;
+pub mod session;
 pub mod shortcode;
 pub mod ssrf;
 pub mod state;
 pub mod text_html;
+pub mod totp;
 pub mod valkey;
 
 use axum::Router;

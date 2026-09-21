@@ -125,6 +125,17 @@ jobs:
       DATABASE_URL: postgresql://nekonoverse:testpass@localhost:5432/nekonoverse_rs_test
       VALKEY_URL: redis://localhost:6379/0
       DOMAIN: localhost
+      # TOTPリカバリーコードのbcryptハッシュ化(8件、本番はコスト12)を結合テストで
+      # 都度行うと無視できない実行時間になるため、CIでは最小コストに短縮する
+      # (`backend-rs/src/config.rs`の`bcrypt_cost`、本番の実際のセキュリティ
+      # パラメータには影響しない)。
+      BCRYPT_COST: "4"
+      # TOTP secretのFernetキー導出(PBKDF2-HMAC-SHA256、本番は60万回)。
+      # RustCrypto系の実装はデバッグビルド(`cargo test`はデフォルトでデバッグ
+      # ビルド)だと最適化ビルドの10倍以上遅く、結合テストで都度実行すると
+      # 無視できない実行時間になるため短縮する(`totp_pbkdf2_iterations`、
+      # 本番の実際のセキュリティパラメータには影響しない)。
+      TOTP_PBKDF2_ITERATIONS: "1000"
     steps:
       - uses: actions/checkout@v4
 
@@ -158,7 +169,7 @@ jobs:
       - name: cargo test
         run: |
           docker run --rm --network host -v "$PWD/backend:/workspace" -w /workspace \
-            -e DATABASE_URL -e VALKEY_URL -e DOMAIN \
+            -e DATABASE_URL -e VALKEY_URL -e DOMAIN -e BCRYPT_COST -e TOTP_PBKDF2_ITERATIONS \
             rust:1-slim cargo test --workspace --exclude nekonoverse-native
 
   alembic-migration:
