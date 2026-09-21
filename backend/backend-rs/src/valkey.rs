@@ -54,3 +54,18 @@ pub struct Envelope<T: serde::Serialize> {
     pub event: &'static str,
     pub payload: T,
 }
+
+/// 指定チャンネルへ `Envelope` をJSONでパブリッシュする。Python版の
+/// Pub/Sub発行箇所と同じく、失敗しても呼び出し元の操作全体を失敗させない
+/// (エラーは無視する) ベストエフォートの通知経路。
+pub async fn publish_envelope<T: serde::Serialize>(
+    redis: &ConnectionManager,
+    channel: &str,
+    envelope: &Envelope<T>,
+) {
+    let Ok(payload) = serde_json::to_string(envelope) else {
+        return;
+    };
+    let mut conn = redis.clone();
+    let _: Result<(), _> = redis::AsyncCommands::publish(&mut conn, channel, payload).await;
+}

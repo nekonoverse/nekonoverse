@@ -1,5 +1,5 @@
 //! `app/services/follow_service.py` の `get_follower_inboxes`/
-//! `get_follow_counts` を移植したもの。
+//! `get_follow_counts`/`get_follower_ids` を移植したもの。
 
 use std::collections::HashSet;
 
@@ -36,6 +36,17 @@ pub async fn get_follower_inboxes(db: &PgPool, actor_id: Uuid) -> Result<Vec<Str
         .map(|row| row.shared_inbox_url.unwrap_or(row.inbox_url))
         .collect();
     Ok(inboxes.into_iter().collect())
+}
+
+/// `app.services.follow_service.get_follower_ids` を移植したもの。
+pub async fn get_follower_ids(db: &PgPool, actor_id: Uuid) -> Result<Vec<Uuid>, AppError> {
+    let ids: Vec<Uuid> = sqlx::query_scalar(
+        "SELECT follower_id FROM followers WHERE following_id = $1 AND accepted = true",
+    )
+    .bind(actor_id)
+    .fetch_all(db)
+    .await?;
+    Ok(ids)
 }
 
 /// `app.services.follow_service.get_follow_counts` を移植したもの。

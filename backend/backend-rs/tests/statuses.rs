@@ -29,6 +29,36 @@ async fn delete_req(app: axum::Router, uri: &str, cookie: Option<&str>) -> (Stat
     request(app, "DELETE", uri, cookie, None).await
 }
 
+async fn post_json(
+    app: axum::Router,
+    uri: &str,
+    cookie: Option<&str>,
+    body: Value,
+) -> (StatusCode, Value) {
+    let mut builder = Request::builder()
+        .method("POST")
+        .uri(uri)
+        .header(header::CONTENT_TYPE, "application/json");
+    if let Some(session_id) = cookie {
+        builder = builder.header(header::COOKIE, format!("nekonoverse_session={session_id}"));
+    }
+    let response = app
+        .oneshot(builder.body(Body::from(body.to_string())).unwrap())
+        .await
+        .unwrap();
+    let status = response.status();
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    let json: Value = if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).unwrap_or(Value::Null)
+    };
+    (status, json)
+}
+
 async fn request(
     app: axum::Router,
     method: &str,
@@ -1078,4 +1108,285 @@ async fn unreblog_status_unauthenticated_returns_401() {
     )
     .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn reblog_status_creates_note_and_delivers_announce() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "reblog1").await;
+    let original_username = format!("reblog1orig{}", Uuid::new_v4().simple());
+    let original_actor = seed_local_actor(&db, &original_username).await;
+    let original_note = seed_note_with_visibility(&db, original_actor, "public", Utc::now()).await;
+    let domain = format!("remote-reblog1-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "follower-reblog1", &domain).await;
+    seed_follow(&db, follower_id, actor_id).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{original_note}/reblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_ne!(json["id"], original_note.to_string());
+    assert_eq!(json["reblog"]["id"], original_note.to_string());
+    assert_eq!(json["reblog"]["actor"]["username"], original_username);
+    assert_eq!(json["visibility"], "public");
+
+    let renotes_count: i32 = sqlx::query_scalar("SELECT renotes_count FROM notes WHERE id = $1")
+        .bind(original_note)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(renotes_count, 1);
+
+    let announce_row: (String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type' FROM delivery_queue \
+         WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(actor_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(announce_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(announce_row.1, "Announce");
+}
+
+#[tokio::test]
+async fn reblog_status_returns_404_for_missing_note() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "reblog2").await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{}/reblog", Uuid::new_v4()),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::NOT_FOUND);
+    assert_eq!(json["detail"], "Note not found");
+}
+
+#[tokio::test]
+async fn reblog_status_direct_post_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "reblog3").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "direct", Utc::now()).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Cannot reblog a direct post");
+}
+
+#[tokio::test]
+async fn reblog_status_others_followers_post_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "reblog4").await;
+    let author = seed_local_actor(&db, &format!("reblog4author{}", Uuid::new_v4().simple())).await;
+    seed_follow(&db, actor_id, author).await;
+    let note_id = seed_note_with_visibility(&db, author, "followers", Utc::now()).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Cannot reblog a private post");
+}
+
+#[tokio::test]
+async fn reblog_status_own_followers_post_with_wider_visibility_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "reblog5").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "followers", Utc::now()).await;
+
+    let (status, json) = post_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        serde_json::json!({ "visibility": "public" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(
+        json["detail"],
+        "Cannot reblog with wider visibility than the original"
+    );
+}
+
+#[tokio::test]
+async fn reblog_status_own_followers_post_with_default_visibility_succeeds() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "reblog6").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "followers", Utc::now()).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["visibility"], "private");
+}
+
+#[tokio::test]
+async fn reblog_status_private_body_visibility_maps_to_followers() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "reblog7").await;
+    let original = seed_local_actor(&db, &format!("reblog7orig{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, original, "public", Utc::now()).await;
+
+    let (status, json) = post_json(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        serde_json::json!({ "visibility": "private" }),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(json["visibility"], "private");
+
+    let stored_visibility: String =
+        sqlx::query_scalar("SELECT visibility FROM notes WHERE id = $1")
+            .bind(Uuid::parse_str(json["id"].as_str().unwrap()).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(stored_visibility, "followers");
+}
+
+#[tokio::test]
+async fn reblog_status_already_reblogged_returns_422() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "reblog8").await;
+    let original = seed_local_actor(&db, &format!("reblog8orig{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, original, "public", Utc::now()).await;
+    seed_renote_note(&db, actor_id, note_id).await;
+
+    let (status, json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNPROCESSABLE_ENTITY);
+    assert_eq!(json["detail"], "Already reblogged");
+}
+
+#[tokio::test]
+async fn reblog_status_unauthenticated_returns_401() {
+    let (app, _db) = common::test_app_with_db().await;
+    let (status, _json) = post(
+        app,
+        &format!("/api/v1/statuses/{}/reblog", Uuid::new_v4()),
+        None,
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn reblog_status_creates_notification_for_local_author() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "reblog9").await;
+    let original_actor =
+        seed_local_actor(&db, &format!("reblog9orig{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, original_actor, "public", Utc::now()).await;
+
+    let (status, _json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let notif_row: (String, Uuid, Uuid) = sqlx::query_as(
+        "SELECT type, recipient_id, sender_id FROM notifications \
+         WHERE recipient_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(original_actor)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(notif_row.0, "renote");
+    assert_eq!(notif_row.1, original_actor);
+    assert_eq!(notif_row.2, actor_id);
+}
+
+#[tokio::test]
+async fn reblog_status_no_notification_for_remote_author() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, _actor_id, session) = seed_user_with_session(&db, &redis, "reblog10").await;
+    let domain = format!("remote-reblog10-{}.example", Uuid::new_v4().simple());
+    let original_actor = seed_remote_actor(&db, "reblog10author", &domain).await;
+    let note_id = seed_note_with_visibility(&db, original_actor, "public", Utc::now()).await;
+
+    let (status, _json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let notif_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id = $1")
+            .bind(original_actor)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(notif_count, 0);
+}
+
+#[tokio::test]
+async fn reblog_status_no_self_notification() {
+    let (app, db) = common::test_app_with_db().await;
+    let redis = connect_redis().await;
+    let (_uid, actor_id, session) = seed_user_with_session(&db, &redis, "reblog11").await;
+    let note_id = seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (status, _json) = post(
+        app,
+        &format!("/api/v1/statuses/{note_id}/reblog"),
+        Some(&session),
+        None,
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+
+    let notif_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM notifications WHERE recipient_id = $1")
+            .bind(actor_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(notif_count, 0);
 }
