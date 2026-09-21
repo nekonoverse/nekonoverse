@@ -258,17 +258,22 @@ async fn verify_credentials_resolves_display_name_emoji_and_avatar_focal() {
     assert_eq!(json["header_focal"], Value::Null);
 }
 
-async fn set_password(db: &sqlx::PgPool, user_id: Uuid, password: &str) {
+/// ランダムな平文パスワードを生成してハッシュ化・保存し、平文を返す
+/// (CodeQLの「ハードコードされたパスワード」検出を避けるため、固定文字列
+/// リテラルではなく実行時に生成した値を使う)。
+async fn set_password(db: &sqlx::PgPool, user_id: Uuid) -> String {
+    let password = format!("test-pw-{}", Uuid::new_v4().simple());
     // `bcrypt::verify` はハッシュ自体に埋め込まれたコストで再計算するため、
     // `BCRYPT_COST`環境変数(新規ハッシュ生成のみに効く)とは無関係に、ここで
     // 最小コスト(4)を直接使ってテストの実行時間を短縮する。
-    let hash = bcrypt::hash(password, 4).unwrap();
+    let hash = bcrypt::hash(&password, 4).unwrap();
     sqlx::query("UPDATE users SET password_hash = $1 WHERE id = $2")
         .bind(hash)
         .bind(user_id)
         .execute(db)
         .await
         .unwrap();
+    password
 }
 
 #[tokio::test]
@@ -307,7 +312,7 @@ async fn totp_setup_rejects_wrong_password() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpsetup1").await;
-    set_password(&db, user_id, "correct-password").await;
+    set_password(&db, user_id).await;
 
     let (status, json) = post_json(
         app,
@@ -325,13 +330,13 @@ async fn totp_setup_returns_secret_and_stores_encrypted_secret() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpsetup2").await;
-    set_password(&db, user_id, "correct-password").await;
+    let password = set_password(&db, user_id).await;
 
     let (status, json) = post_json(
         app,
         "/api/v1/auth/totp/setup",
         Some(&session),
-        serde_json::json!({ "password": "correct-password" }),
+        serde_json::json!({ "password": password }),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -374,12 +379,12 @@ async fn totp_setup_rejects_when_already_enabled() {
     assert_eq!(json["detail"], "TOTP is already enabled");
 }
 
-async fn setup_totp(app: axum::Router, session: &str) -> String {
+async fn setup_totp(app: axum::Router, session: &str, password: &str) -> String {
     let (status, json) = post_json(
         app,
         "/api/v1/auth/totp/setup",
         Some(session),
-        serde_json::json!({ "password": "correct-password" }),
+        serde_json::json!({ "password": password }),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -408,8 +413,8 @@ async fn totp_enable_rejects_invalid_code() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpenable2").await;
-    set_password(&db, user_id, "correct-password").await;
-    setup_totp(app.clone(), &session).await;
+    let password = set_password(&db, user_id).await;
+    setup_totp(app.clone(), &session, &password).await;
 
     let (status, json) = post_json(
         app,
@@ -427,8 +432,8 @@ async fn totp_enable_succeeds_and_returns_recovery_codes() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpenable3").await;
-    set_password(&db, user_id, "correct-password").await;
-    let secret = setup_totp(app.clone(), &session).await;
+    let password = set_password(&db, user_id).await;
+    let secret = setup_totp(app.clone(), &session, &password).await;
     let code = totp::hotp_at(&secret, totp::current_time_step(None)).unwrap();
 
     let (status, json) = post_json(
@@ -472,7 +477,7 @@ async fn totp_disable_rejects_wrong_password() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpdisable2").await;
-    set_password(&db, user_id, "correct-password").await;
+    set_password(&db, user_id).await;
     sqlx::query("UPDATE users SET totp_enabled = true WHERE id = $1")
         .bind(user_id)
         .execute(&db)
@@ -496,8 +501,8 @@ async fn totp_disable_succeeds_and_clears_fields() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpdisable3").await;
-    set_password(&db, user_id, "correct-password").await;
-    let secret = setup_totp(app.clone(), &session).await;
+    let password = set_password(&db, user_id).await;
+    let secret = setup_totp(app.clone(), &session, &password).await;
     let code = totp::hotp_at(&secret, totp::current_time_step(None)).unwrap();
     let (status, _json) = post_json(
         app.clone(),
@@ -512,7 +517,7 @@ async fn totp_disable_succeeds_and_clears_fields() {
         app,
         "/api/v1/auth/totp/disable",
         Some(&session),
-        serde_json::json!({ "password": "correct-password" }),
+        serde_json::json!({ "password": password }),
     )
     .await;
     assert_eq!(status, StatusCode::OK);
@@ -543,8 +548,8 @@ async fn seed_totp_pending(redis: &redis::aio::ConnectionManager, user_id: Uuid)
     token
 }
 
-async fn enable_totp_for_test(app: axum::Router, db: &sqlx::PgPool, session: &str) -> String {
-    let secret = setup_totp(app.clone(), session).await;
+async fn enable_totp_for_test(app: axum::Router, session: &str, password: &str) -> String {
+    let secret = setup_totp(app.clone(), session, password).await;
     let code = totp::hotp_at(&secret, totp::current_time_step(None)).unwrap();
     let (status, _json) = post_json(
         app,
@@ -554,7 +559,6 @@ async fn enable_totp_for_test(app: axum::Router, db: &sqlx::PgPool, session: &st
     )
     .await;
     assert_eq!(status, StatusCode::OK);
-    let _ = db;
     secret
 }
 
@@ -578,8 +582,8 @@ async fn totp_verify_succeeds_with_valid_code_and_sets_session_cookie() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpverify1").await;
-    set_password(&db, user_id, "correct-password").await;
-    let secret = enable_totp_for_test(app.clone(), &db, &session).await;
+    let password = set_password(&db, user_id).await;
+    let secret = enable_totp_for_test(app.clone(), &session, &password).await;
     let token = seed_totp_pending(&redis, user_id).await;
 
     // `enable_totp_for_test`が直前に`current_time_step(None)`のcounterを
@@ -618,8 +622,8 @@ async fn totp_verify_rejects_invalid_code_and_records_failure() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpverify2").await;
-    set_password(&db, user_id, "correct-password").await;
-    enable_totp_for_test(app.clone(), &db, &session).await;
+    let password = set_password(&db, user_id).await;
+    enable_totp_for_test(app.clone(), &session, &password).await;
     let token = seed_totp_pending(&redis, user_id).await;
 
     let (status, json) = post_json(
@@ -638,8 +642,8 @@ async fn totp_verify_succeeds_with_recovery_code_and_consumes_it() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpverify3").await;
-    set_password(&db, user_id, "correct-password").await;
-    let secret = setup_totp(app.clone(), &session).await;
+    let password = set_password(&db, user_id).await;
+    let secret = setup_totp(app.clone(), &session, &password).await;
     let code = totp::hotp_at(&secret, totp::current_time_step(None)).unwrap();
     let (enable_status, enable_json) = post_json(
         app.clone(),
@@ -679,8 +683,8 @@ async fn totp_verify_rejects_after_too_many_attempts() {
     let (app, db) = common::test_app_with_db().await;
     let redis = common::connect_redis().await;
     let (user_id, _actor_id, session) = seed_user_with_session(&db, &redis, "totpverify4").await;
-    set_password(&db, user_id, "correct-password").await;
-    enable_totp_for_test(app.clone(), &db, &session).await;
+    let password = set_password(&db, user_id).await;
+    enable_totp_for_test(app.clone(), &session, &password).await;
 
     // 保留トークンは失敗時には削除されない (成功時のみ) ため、同一トークンを
     // 使い回して5回失敗させると `totp_attempts:{token}` が上限に達する。
