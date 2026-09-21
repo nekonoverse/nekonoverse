@@ -258,6 +258,87 @@ pub async fn seed_follow(db: &PgPool, follower_id: Uuid, following_id: Uuid) -> 
     id
 }
 
+/// `followers` テーブルに未承認 (フォローリクエスト中) のフォロー関係を1件投入する。
+#[allow(dead_code)]
+pub async fn seed_follow_pending(db: &PgPool, follower_id: Uuid, following_id: Uuid) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        r#"
+        INSERT INTO followers (id, follower_id, following_id, accepted, created_at)
+        VALUES ($1, $2, $3, false, now())
+        "#,
+    )
+    .bind(id)
+    .bind(follower_id)
+    .bind(following_id)
+    .execute(db)
+    .await
+    .expect("failed to seed test pending follow");
+    id
+}
+
+/// `user_blocks` にテスト用のブロックを1件投入する。
+#[allow(dead_code)]
+pub async fn seed_user_block(db: &PgPool, actor_id: Uuid, target_id: Uuid) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO user_blocks (id, actor_id, target_id, created_at) VALUES ($1, $2, $3, now())",
+    )
+    .bind(id)
+    .bind(actor_id)
+    .bind(target_id)
+    .execute(db)
+    .await
+    .expect("failed to seed test user block");
+    id
+}
+
+/// `user_mutes` にテスト用のミュートを1件投入する。`expires_at` は任意。
+#[allow(dead_code)]
+pub async fn seed_user_mute(
+    db: &PgPool,
+    actor_id: Uuid,
+    target_id: Uuid,
+    expires_at: Option<DateTime<Utc>>,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO user_mutes (id, actor_id, target_id, expires_at, created_at) \
+         VALUES ($1, $2, $3, $4, now())",
+    )
+    .bind(id)
+    .bind(actor_id)
+    .bind(target_id)
+    .bind(expires_at)
+    .execute(db)
+    .await
+    .expect("failed to seed test user mute");
+    id
+}
+
+/// `custom_emojis` にテスト用の絵文字を1件投入する。`domain` が `None` ならローカル。
+#[allow(dead_code)]
+pub async fn seed_custom_emoji(
+    db: &PgPool,
+    shortcode: &str,
+    domain: Option<&str>,
+    url: &str,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO custom_emojis (id, shortcode, domain, url, visible_in_picker) \
+         VALUES ($1, $2, $3, $4, true)",
+    )
+    .bind(id)
+    .bind(shortcode)
+    .bind(domain)
+    .bind(url)
+    .execute(db)
+    .await
+    .expect("failed to seed test custom emoji");
+    id
+}
+
 /// `pinned_notes` にテスト用のピン留めを1件投入する。
 #[allow(dead_code)]
 pub async fn seed_pinned_note(db: &PgPool, actor_id: Uuid, note_id: Uuid, position: i32) -> Uuid {

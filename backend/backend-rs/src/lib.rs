@@ -7,6 +7,7 @@ pub mod domain_block;
 pub mod error;
 pub mod follows;
 pub mod hmac_sig;
+pub mod mastodon_time;
 pub mod note_visibility;
 pub mod routes;
 pub mod ssrf;
@@ -21,6 +22,7 @@ use state::AppState;
 /// (Python 側の `httpx.ASGITransport(app=app)` と同じ役割)。
 pub fn build_router(state: AppState) -> Router {
     Router::new()
+        .merge(routes::accounts::router())
         .merge(routes::actor::router())
         .merge(routes::health::router())
         .merge(routes::webfinger::router())
