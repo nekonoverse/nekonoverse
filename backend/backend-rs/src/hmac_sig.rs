@@ -39,7 +39,7 @@ fn signing_key(config: &Config) -> Vec<u8> {
     to_hex(&mac.finalize().into_bytes()).into_bytes()
 }
 
-fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
+pub(crate) fn constant_time_eq(a: &[u8], b: &[u8]) -> bool {
     if a.len() != b.len() {
         return false;
     }

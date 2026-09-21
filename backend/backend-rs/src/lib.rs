@@ -7,6 +7,7 @@ pub mod domain_block;
 pub mod error;
 pub mod follows;
 pub mod hmac_sig;
+pub mod http_signature;
 pub mod mastodon_time;
 pub mod note_visibility;
 pub mod routes;
