@@ -19,7 +19,7 @@ use uuid::Uuid;
 
 mod common;
 use common::{
-    seed_delivery_job, seed_follow, seed_local_actor, seed_note_with_visibility,
+    seed_delivery_job, seed_drive_file, seed_follow, seed_local_actor, seed_note_with_visibility,
     seed_oauth_application, seed_oauth_token, seed_remote_actor, seed_report, seed_session,
     seed_user, test_app_with_db,
 };
@@ -4627,4 +4627,254 @@ async fn admin_delete_emoji_removes_s3_object_and_drive_file_row() {
             .await
             .unwrap();
     assert!(remaining_drive_file.is_none());
+}
+
+// --- サーバーファイル管理 (server-files, S3アップロードを伴う) ---
+
+#[tokio::test]
+async fn admin_server_files_list_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/server-files")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_server_files_list_plain_user_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("plainsf{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/server-files")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+/// このテストバイナリ内の全テストが1つの共有DBを使う(#1139方針上、`tower::
+/// ServiceExt::oneshot`が実DBに対して動く結合テストのため、テストごとの
+/// トランザクションロールバックは無い)ため、一覧が本当に空であることは
+/// 検証できない。代わりに`ORDER BY created_at DESC`(新しいものが先頭)を検証する。
+#[tokio::test]
+async fn admin_server_files_list_orders_newest_first() {
+    common::ensure_test_s3_bucket().await;
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let upload = |app: axum::Router, session_id: String, name: &'static str| async move {
+        let (content_type, body) =
+            build_multipart_body(&[], Some(("file", name, "image/png", PNG_1X1)));
+        let req = Request::builder()
+            .method("POST")
+            .uri("/api/v1/admin/server-files")
+            .header("cookie", cookie_header(&session_id))
+            .header("content-type", content_type)
+            .body(Body::from(body))
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        body_json(resp).await["id"].as_str().unwrap().to_string()
+    };
+
+    let first_id = upload(app.clone(), session_id.clone(), "first.png").await;
+    tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+    let second_id = upload(app.clone(), session_id.clone(), "second.png").await;
+
+    let list_req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/server-files")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let list_resp = app.oneshot(list_req).await.unwrap();
+    assert_eq!(list_resp.status(), StatusCode::OK);
+    let list = body_json(list_resp).await;
+    let ids: Vec<String> = list
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["id"].as_str().unwrap().to_string())
+        .collect();
+    let pos_first = ids.iter().position(|id| *id == first_id).unwrap();
+    let pos_second = ids.iter().position(|id| *id == second_id).unwrap();
+    assert!(
+        pos_second < pos_first,
+        "newest upload should be listed before the older one"
+    );
+}
+
+// `custom_emojis`に紐づかない点以外はadd_emoji/delete_emojiと同じ`drive::upload_drive_file`/
+// `drive::delete_drive_file`(#1175)経由のため、S3を伴う経路自体はそちらのテストで検証済み。
+// ここでは`custom_emojis`テーブルを介さずレスポンス整形する差分部分のみ確認する。
+#[tokio::test]
+async fn admin_upload_server_file_creates_drive_file_row_and_appears_in_list() {
+    common::ensure_test_s3_bucket().await;
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (content_type, body) =
+        build_multipart_body(&[], Some(("file", "server-icon.png", "image/png", PNG_1X1)));
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/server-files")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let file_id = json["id"].as_str().unwrap().to_string();
+    assert_eq!(json["filename"], "server-icon.png");
+    assert_eq!(json["mime_type"], "image/png");
+    assert_eq!(json["size_bytes"], PNG_1X1.len() as i64);
+    assert!(json["url"].as_str().unwrap().contains("/media/server/"));
+
+    let (server_file, size_bytes): (bool, i64) =
+        sqlx::query_as("SELECT server_file, size_bytes FROM drive_files WHERE id = $1")
+            .bind(Uuid::parse_str(&file_id).unwrap())
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(server_file);
+    assert_eq!(size_bytes, PNG_1X1.len() as i64);
+
+    let list_req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/server-files")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let list_resp = app.oneshot(list_req).await.unwrap();
+    let list_json = body_json(list_resp).await;
+    let ids: Vec<&str> = list_json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|f| f["id"].as_str().unwrap())
+        .collect();
+    assert!(ids.contains(&file_id.as_str()));
+}
+
+#[tokio::test]
+async fn admin_upload_server_file_missing_file_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (content_type, body) = build_multipart_body(&[], None);
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/server-files")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_delete_server_file_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/server-files/{}", Uuid::new_v4()))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_delete_nonexistent_server_file_returns_404() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/server-files/{}", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+/// `server_file=false`(他エンドポイント由来、例: media添付)のdrive_files行は
+/// server-filesエンドポイントの対象外としてPython版と同じく404を返す。
+#[tokio::test]
+async fn admin_delete_non_server_drive_file_returns_404() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let s3_key = format!("media/not-a-server-file-{}.png", Uuid::new_v4().simple());
+    let file_id = seed_drive_file(&db, &s3_key, "image/png").await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/server-files/{file_id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+
+    let remaining: Option<Uuid> = sqlx::query_scalar("SELECT id FROM drive_files WHERE id = $1")
+        .bind(file_id)
+        .fetch_optional(&db)
+        .await
+        .unwrap();
+    assert!(remaining.is_some());
+}
+
+#[tokio::test]
+async fn admin_delete_server_file_removes_s3_object_and_row() {
+    common::ensure_test_s3_bucket().await;
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (content_type, body) =
+        build_multipart_body(&[], Some(("file", "todel.png", "image/png", PNG_1X1)));
+    let upload_req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/server-files")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let upload_resp = app.clone().oneshot(upload_req).await.unwrap();
+    assert_eq!(upload_resp.status(), StatusCode::OK);
+    let uploaded = body_json(upload_resp).await;
+    let file_id = uploaded["id"].as_str().unwrap().to_string();
+
+    let del_req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/server-files/{file_id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let del_resp = app.oneshot(del_req).await.unwrap();
+    assert_eq!(del_resp.status(), StatusCode::OK);
+    assert_eq!(body_json(del_resp).await["ok"], true);
+
+    let remaining: Option<Uuid> = sqlx::query_scalar("SELECT id FROM drive_files WHERE id = $1")
+        .bind(Uuid::parse_str(&file_id).unwrap())
+        .fetch_optional(&db)
+        .await
+        .unwrap();
+    assert!(remaining.is_none());
 }
