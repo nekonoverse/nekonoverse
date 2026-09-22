@@ -58,6 +58,17 @@
 //! いずれも`is_system`チェックは無い(Python版の`approve_registration`/
 //! `reject_registration`が`_get_user`のみで`is_system`を見ていないのと同じ、
 //! システムアカウントは`approval_status`が常に`"approved"`のため実質到達不能)。
+//!
+//! 連合サーバー一覧/詳細(`list_federated_servers`/
+//! `get_federated_server_detail_endpoint`、`app.services.federation_service`)は
+//! `get_permitted_staff("federation")`(`require_permission`)配下の読み取り
+//! 専用エンドポイントで、書き込みや新たな対外通信能力を要しない
+//! (`actors`/`notes`/`delivery_queue`/`domain_blocks`の集計クエリのみ)ため、
+//! `admin_delete_user`等より先に着手した。`actors.domain`はローカルactorが
+//! 常に`NULL`という前提(ドメインブロック等ローカル分岐が無いことから確認済み)
+//! でリモートサーバー単位に集約する。`delivery_queue`側は
+//! `target_inbox_url`から正規表現(`substring(... from 'https?://([^/]+)')`)で
+//! ドメインを抽出する、Python版の`func.substring`と同じ手法。
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
@@ -134,6 +145,11 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/admin/registrations/:id/reject",
             post(reject_registration),
+        )
+        .route("/api/v1/admin/federation", get(list_federated_servers))
+        .route(
+            "/api/v1/admin/federation/*domain",
+            get(get_federated_server_detail_endpoint),
         )
 }
 
@@ -1768,4 +1784,373 @@ async fn reject_registration(
         .await?;
 
     Ok(Json(json!({ "ok": true })).into_response())
+}
+
+// ── 連合サーバー一覧/詳細 (`app.services.federation_service`) ──────────
+
+/// リモートサーバーの集計を行うCTE群。`domain`ごとに1行(`actor_agg`)を
+/// 基準に`note_agg`/`delivery_agg`/`domain_blocks`をLEFT JOINするため、
+/// 追加のJOINで行が増減することはない(いずれも`domain`単位でGROUP BY済み、
+/// `domain_blocks.domain`はUNIQUE制約)。ステータスフィルタは
+/// `$1::text`(`effective_status`、`None`なら無条件)で一覧・件数の両方から
+/// 共有する。
+const FEDERATION_AGG_CTE: &str = "
+    WITH actor_agg AS (
+        SELECT domain,
+               COUNT(id) AS user_count,
+               MAX(last_fetched_at) AS last_activity_at,
+               MIN(created_at) AS first_seen_at
+        FROM actors
+        WHERE domain IS NOT NULL
+          AND ($2::text IS NULL OR domain ILIKE $2)
+        GROUP BY domain
+    ),
+    note_agg AS (
+        SELECT a.domain AS domain, COUNT(n.id) AS note_count
+        FROM notes n
+        JOIN actors a ON a.id = n.actor_id
+        WHERE a.domain IS NOT NULL AND n.deleted_at IS NULL
+        GROUP BY a.domain
+    ),
+    delivery_agg AS (
+        SELECT substring(target_inbox_url from 'https?://([^/]+)') AS domain,
+               COUNT(*) FILTER (WHERE status = 'delivered') AS d_success,
+               COUNT(*) FILTER (WHERE status IN ('failed', 'processing')) AS d_failure,
+               COUNT(*) FILTER (WHERE status = 'pending') AS d_pending,
+               COUNT(*) FILTER (WHERE status = 'dead') AS d_dead
+        FROM delivery_queue
+        GROUP BY substring(target_inbox_url from 'https?://([^/]+)')
+    )
+    SELECT actor_agg.domain,
+           actor_agg.user_count,
+           actor_agg.last_activity_at,
+           actor_agg.first_seen_at,
+           COALESCE(note_agg.note_count, 0) AS note_count,
+           COALESCE(delivery_agg.d_success, 0) AS d_success,
+           COALESCE(delivery_agg.d_failure, 0) AS d_failure,
+           COALESCE(delivery_agg.d_pending, 0) AS d_pending,
+           COALESCE(delivery_agg.d_dead, 0) AS d_dead,
+           domain_blocks.severity AS block_severity
+    FROM actor_agg
+    LEFT JOIN note_agg ON actor_agg.domain = note_agg.domain
+    LEFT JOIN delivery_agg ON actor_agg.domain = delivery_agg.domain
+    LEFT JOIN domain_blocks ON actor_agg.domain = domain_blocks.domain
+    WHERE ($1::text IS NULL)
+       OR ($1 = 'active' AND domain_blocks.domain IS NULL)
+       OR ($1 = 'suspended' AND domain_blocks.severity = 'suspend')
+       OR ($1 = 'silenced' AND domain_blocks.severity = 'silence')
+";
+
+#[derive(sqlx::FromRow)]
+struct FederatedServerRow {
+    domain: String,
+    user_count: i64,
+    last_activity_at: Option<DateTime<Utc>>,
+    first_seen_at: Option<DateTime<Utc>>,
+    note_count: i64,
+    d_success: i64,
+    d_failure: i64,
+    d_pending: i64,
+    d_dead: i64,
+    block_severity: Option<String>,
+}
+
+/// `app.services.federation_service`の`block_severity`→`status`変換を
+/// 移植したもの。
+fn federation_status(block_severity: Option<&str>) -> &'static str {
+    match block_severity {
+        Some("suspend") => "suspended",
+        Some("silence") => "silenced",
+        _ => "active",
+    }
+}
+
+/// `app.schemas.admin.FederatedServerResponse`を移植したもの。
+fn federated_server_json(row: &FederatedServerRow) -> Value {
+    json!({
+        "domain": row.domain,
+        "user_count": row.user_count,
+        "note_count": row.note_count,
+        "last_activity_at": row.last_activity_at.map(to_pydantic_isoformat),
+        "first_seen_at": row.first_seen_at.map(to_pydantic_isoformat),
+        "status": federation_status(row.block_severity.as_deref()),
+        "block_severity": row.block_severity,
+        "delivery_stats": {
+            "success": row.d_success,
+            "failure": row.d_failure,
+            "pending": row.d_pending,
+            "dead": row.d_dead,
+        },
+    })
+}
+
+#[derive(Deserialize)]
+struct FederationQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+    sort: Option<String>,
+    order: Option<String>,
+    search: Option<String>,
+    status: Option<String>,
+}
+
+struct ValidatedFederationQuery {
+    limit: i64,
+    offset: i64,
+    sort_col: &'static str,
+    ascending: bool,
+    search_pattern: Option<String>,
+    status: Option<&'static str>,
+}
+
+/// `Query(default=40, le=200, ge=1)`/`Query(default=0, ge=0)`/
+/// `search: Query(max_length=255)`(FastAPI、Python版の`list_federated_servers`)
+/// の範囲検証を移植したもの。
+fn validate_federation_query(
+    params: &FederationQuery,
+) -> Result<ValidatedFederationQuery, AppError> {
+    let limit = params.limit.unwrap_or(40);
+    if !(1..=200).contains(&limit) {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "limit must be between 1 and 200",
+        ));
+    }
+    let offset = params.offset.unwrap_or(0);
+    if offset < 0 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "offset must be greater than or equal to 0",
+        ));
+    }
+
+    let sort = match params.sort.as_deref().unwrap_or("user_count") {
+        "domain" => "domain",
+        "user_count" => "user_count",
+        "note_count" => "note_count",
+        "last_activity" => "last_activity",
+        _ => {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "sort must be one of: domain, user_count, note_count, last_activity",
+            ))
+        }
+    };
+    let ascending = match params.order.as_deref().unwrap_or("desc") {
+        "asc" => true,
+        "desc" => false,
+        _ => {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "order must be one of: asc, desc",
+            ))
+        }
+    };
+
+    if let Some(search) = &params.search {
+        if search.chars().count() > 255 {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "search must be at most 255 characters",
+            ));
+        }
+    }
+    let search_pattern = params.search.as_ref().map(|s| {
+        let escaped = s.replace('%', "\\%").replace('_', "\\_");
+        format!("%{escaped}%")
+    });
+
+    let status = match params.status.as_deref() {
+        None | Some("all") => None,
+        Some("active") => Some("active"),
+        Some("suspended") => Some("suspended"),
+        Some("silenced") => Some("silenced"),
+        _ => {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "status must be one of: all, active, suspended, silenced",
+            ))
+        }
+    };
+
+    Ok(ValidatedFederationQuery {
+        limit,
+        offset,
+        sort_col: sort,
+        ascending,
+        search_pattern,
+        status,
+    })
+}
+
+/// `app.services.federation_service.get_federated_servers` を移植したもの。
+async fn list_federated_servers(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Query(params): Query<FederationQuery>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "federation").await?;
+    let ValidatedFederationQuery {
+        limit,
+        offset,
+        sort_col: sort,
+        ascending,
+        search_pattern,
+        status,
+    } = validate_federation_query(&params)?;
+
+    let total: i64 = sqlx::query_scalar(&format!("SELECT COUNT(*) FROM ({FEDERATION_AGG_CTE}) t"))
+        .bind(status)
+        .bind(&search_pattern)
+        .fetch_one(&state.db)
+        .await?;
+
+    let sort_col = match sort {
+        "domain" => "domain",
+        "user_count" => "user_count",
+        "note_count" => "note_count",
+        _ => "last_activity_at",
+    };
+    let order_clause = if ascending {
+        format!("{sort_col} ASC NULLS LAST")
+    } else {
+        format!("{sort_col} DESC NULLS FIRST")
+    };
+
+    let rows: Vec<FederatedServerRow> = sqlx::query_as(&format!(
+        "{FEDERATION_AGG_CTE} ORDER BY {order_clause} LIMIT $3 OFFSET $4"
+    ))
+    .bind(status)
+    .bind(&search_pattern)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "servers": rows.iter().map(federated_server_json).collect::<Vec<_>>(),
+        "total": total,
+    }))
+    .into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct FederationActorAggRow {
+    user_count: i64,
+    last_activity_at: Option<DateTime<Utc>>,
+    first_seen_at: Option<DateTime<Utc>>,
+}
+
+#[derive(sqlx::FromRow)]
+struct FederationDeliveryAggRow {
+    d_success: i64,
+    d_failure: i64,
+    d_pending: i64,
+    d_dead: i64,
+}
+
+#[derive(sqlx::FromRow)]
+struct DomainBlockInfoRow {
+    severity: String,
+    reason: Option<String>,
+}
+
+#[derive(sqlx::FromRow)]
+struct ActorSummaryRow {
+    username: String,
+    display_name: Option<String>,
+    ap_id: String,
+    last_fetched_at: Option<DateTime<Utc>>,
+}
+
+fn actor_summary_json(row: &ActorSummaryRow) -> Value {
+    json!({
+        "username": row.username,
+        "display_name": row.display_name,
+        "ap_id": row.ap_id,
+        "last_fetched_at": row.last_fetched_at.map(to_pydantic_isoformat),
+    })
+}
+
+/// `app.services.federation_service.get_federated_server_detail` を移植したもの。
+async fn get_federated_server_detail_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(domain): Path<String>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "federation").await?;
+
+    // GROUP BY無しの集計クエリは対象0件でも必ず1行返る(COUNTは0)ため、
+    // Python版の`agg.user_count == 0`と同じ条件で404にする。
+    let agg: FederationActorAggRow = sqlx::query_as(
+        "SELECT COUNT(id) AS user_count, \
+                MAX(last_fetched_at) AS last_activity_at, \
+                MIN(created_at) AS first_seen_at \
+         FROM actors WHERE domain = $1",
+    )
+    .bind(&domain)
+    .fetch_one(&state.db)
+    .await?;
+    if agg.user_count == 0 {
+        return Err(AppError::not_found("Server not found"));
+    }
+
+    let note_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(n.id) FROM notes n \
+         JOIN actors a ON a.id = n.actor_id \
+         WHERE a.domain = $1 AND n.deleted_at IS NULL",
+    )
+    .bind(&domain)
+    .fetch_one(&state.db)
+    .await?;
+
+    let delivery: FederationDeliveryAggRow = sqlx::query_as(
+        "SELECT COUNT(*) FILTER (WHERE status = 'delivered') AS d_success, \
+                COUNT(*) FILTER (WHERE status IN ('failed', 'processing')) AS d_failure, \
+                COUNT(*) FILTER (WHERE status = 'pending') AS d_pending, \
+                COUNT(*) FILTER (WHERE status = 'dead') AS d_dead \
+         FROM delivery_queue \
+         WHERE substring(target_inbox_url from 'https?://([^/]+)') = $1",
+    )
+    .bind(&domain)
+    .fetch_one(&state.db)
+    .await?;
+
+    let block: Option<DomainBlockInfoRow> =
+        sqlx::query_as("SELECT severity, reason FROM domain_blocks WHERE domain = $1")
+            .bind(&domain)
+            .fetch_optional(&state.db)
+            .await?;
+
+    let actors: Vec<ActorSummaryRow> = sqlx::query_as(
+        "SELECT username, display_name, ap_id, last_fetched_at \
+         FROM actors WHERE domain = $1 \
+         ORDER BY last_fetched_at DESC NULLS LAST LIMIT 10",
+    )
+    .bind(&domain)
+    .fetch_all(&state.db)
+    .await?;
+
+    let block_severity = block.as_ref().map(|b| b.severity.as_str());
+
+    Ok(Json(json!({
+        "domain": domain,
+        "user_count": agg.user_count,
+        "note_count": note_count,
+        "last_activity_at": agg.last_activity_at.map(to_pydantic_isoformat),
+        "first_seen_at": agg.first_seen_at.map(to_pydantic_isoformat),
+        "status": federation_status(block_severity),
+        "block_severity": block_severity,
+        "block_reason": block.as_ref().and_then(|b| b.reason.as_deref()),
+        "delivery_stats": {
+            "success": delivery.d_success,
+            "failure": delivery.d_failure,
+            "pending": delivery.d_pending,
+            "dead": delivery.d_dead,
+        },
+        "recent_actors": actors.iter().map(actor_summary_json).collect::<Vec<_>>(),
+    }))
+    .into_response())
 }
