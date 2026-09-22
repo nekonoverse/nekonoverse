@@ -87,6 +87,22 @@
 //! `get_system_stats`のDBプール統計はsqlxに`overflow`の概念が無い
 //! (SQLAlchemyの`QueuePool.max_overflow`と異なり単一の接続上限のみ)ため
 //! `db_pool_overflow`は常に`0`を返す。
+//!
+//! お知らせ管理系(`list_announcements_admin`/`create_announcement`/
+//! `get_announcement`/`update_announcement`/`delete_announcement`、
+//! `app.services.announcement_service`)は全て`get_permitted_staff(
+//! "announcements")`(`require_permission`)配下。`content`(Markdown原文)を
+//! `content_html`にレンダリングする`_render_content`(`markdown.markdown`+
+//! `bleach.clean`)は`crate::announcement::render_content`
+//! (`pulldown-cmark`+`ammonia`、モジュールdoc参照の既知の差異あり)へ移植した。
+//! `update_announcement`はPython版の`model_dump(exclude_unset=True)`+
+//! 「非nullableフィールドへの明示的な`null`は無視、`starts_at`/`ends_at`
+//! だけは明示的な`null`でクリア可能」という挙動を再現するため、型付き
+//! structではなく生の`Value`をパースする(`server_settings`の
+//! `parse_settings_update`と同じ理由・同じ手法)。作成/更新で
+//! `published`(またはPATCH後に`published`のまま)なら`_render_content`後の
+//! `content_html`をSSE用にValkeyへpublishする(`publish_announcement_event`、
+//! `valkey::channels::ANNOUNCEMENTS`はStage 1〜3から先行して用意済み)。
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
@@ -105,6 +121,7 @@ use crate::activitypub::render_delete_activity;
 use crate::admin_auth::{
     require_admin_role, require_moderation_staff, require_permission, require_staff,
 };
+use crate::announcement::render_content;
 use crate::auth::CurrentUser;
 use crate::config::Config;
 use crate::db;
@@ -116,6 +133,7 @@ use crate::mastodon_time::to_pydantic_isoformat;
 use crate::moderation::{self, log_action};
 use crate::server_settings::{get_all_settings, set_setting, vapid_public_key_base64url};
 use crate::state::AppState;
+use crate::valkey::{channels, publish_envelope, Envelope};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -179,6 +197,16 @@ pub fn router() -> Router<AppState> {
         )
         .route("/api/v1/admin/stats", get(get_admin_stats))
         .route("/api/v1/admin/system/stats", get(get_system_stats))
+        .route(
+            "/api/v1/admin/announcements",
+            get(list_announcements_admin).post(create_announcement),
+        )
+        .route(
+            "/api/v1/admin/announcements/:id",
+            get(get_announcement)
+                .patch(update_announcement)
+                .delete(delete_announcement),
+        )
 }
 
 #[derive(sqlx::FromRow)]
@@ -2755,4 +2783,348 @@ async fn get_system_stats(
         "worker_last_heartbeat": heartbeat,
     }))
     .into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct AnnouncementRow {
+    id: Uuid,
+    title: String,
+    content: String,
+    content_html: String,
+    published: bool,
+    all_day: bool,
+    starts_at: Option<DateTime<Utc>>,
+    ends_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+    updated_at: DateTime<Utc>,
+}
+
+/// `app.schemas.admin.AnnouncementAdminResponse` を移植したもの。
+fn announcement_json(row: &AnnouncementRow) -> Value {
+    json!({
+        "id": row.id,
+        "title": row.title,
+        "content": row.content,
+        "content_html": row.content_html,
+        "published": row.published,
+        "all_day": row.all_day,
+        "starts_at": row.starts_at.map(to_pydantic_isoformat),
+        "ends_at": row.ends_at.map(to_pydantic_isoformat),
+        "created_at": to_pydantic_isoformat(row.created_at),
+        "updated_at": to_pydantic_isoformat(row.updated_at),
+    })
+}
+
+const ANNOUNCEMENT_COLUMNS: &str =
+    "id, title, content, content_html, published, all_day, starts_at, ends_at, created_at, updated_at";
+
+async fn fetch_announcement_row(
+    db: &sqlx::PgPool,
+    id: Uuid,
+) -> Result<Option<AnnouncementRow>, AppError> {
+    let row = sqlx::query_as(&format!(
+        "SELECT {ANNOUNCEMENT_COLUMNS} FROM announcements WHERE id = $1"
+    ))
+    .bind(id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row)
+}
+
+/// `app.services.announcement_service.publish_announcement_event` を
+/// 移植したもの(ベストエフォート、`valkey::publish_envelope`と同じく
+/// 失敗しても呼び出し元を失敗させない)。
+async fn publish_announcement_event(redis: &redis::aio::ConnectionManager, row: &AnnouncementRow) {
+    let envelope = Envelope {
+        event: "announcement",
+        payload: json!({
+            "id": row.id,
+            "content": row.content_html,
+            "starts_at": row.starts_at.map(to_pydantic_isoformat),
+            "ends_at": row.ends_at.map(to_pydantic_isoformat),
+            "all_day": row.all_day,
+            "published_at": to_pydantic_isoformat(row.created_at),
+            "updated_at": to_pydantic_isoformat(row.updated_at),
+        }),
+    };
+    publish_envelope(redis, channels::ANNOUNCEMENTS, &envelope).await;
+}
+
+/// `app.api.admin.list_announcements_admin` を移植したもの。
+async fn list_announcements_admin(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "announcements").await?;
+
+    let rows: Vec<AnnouncementRow> = sqlx::query_as(&format!(
+        "SELECT {ANNOUNCEMENT_COLUMNS} FROM announcements ORDER BY created_at DESC"
+    ))
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows.iter().map(announcement_json).collect::<Vec<_>>()).into_response())
+}
+
+/// `app.api.admin.get_announcement` を移植したもの。
+async fn get_announcement(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "announcements").await?;
+
+    let row = fetch_announcement_row(&state.db, id)
+        .await?
+        .ok_or_else(|| AppError::not_found("Announcement not found"))?;
+    Ok(Json(announcement_json(&row)).into_response())
+}
+
+#[derive(Deserialize)]
+struct AnnouncementCreateRequest {
+    title: String,
+    content: String,
+    #[serde(default)]
+    published: bool,
+    #[serde(default)]
+    all_day: bool,
+    starts_at: Option<DateTime<Utc>>,
+    ends_at: Option<DateTime<Utc>>,
+}
+
+/// `app.schemas.announcement.AnnouncementCreateRequest`の`Field`制約を
+/// 移植したもの。
+fn validate_announcement_create(body: &AnnouncementCreateRequest) -> Result<(), AppError> {
+    let title_len = body.title.chars().count();
+    if !(1..=500).contains(&title_len) {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "title must be between 1 and 500 characters",
+        ));
+    }
+    let content_len = body.content.chars().count();
+    if !(1..=10000).contains(&content_len) {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "content must be between 1 and 10000 characters",
+        ));
+    }
+    Ok(())
+}
+
+/// `app.services.announcement_service.create_announcement` を移植したもの。
+async fn create_announcement(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Json(body): Json<AnnouncementCreateRequest>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "announcements").await?;
+    validate_announcement_create(&body)?;
+
+    let id = Uuid::new_v4();
+    let now = Utc::now();
+    let content_html = render_content(&body.content);
+
+    sqlx::query(
+        "INSERT INTO announcements \
+            (id, title, content, content_html, published, all_day, starts_at, ends_at, \
+             created_at, updated_at) \
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $9)",
+    )
+    .bind(id)
+    .bind(&body.title)
+    .bind(&body.content)
+    .bind(&content_html)
+    .bind(body.published)
+    .bind(body.all_day)
+    .bind(body.starts_at)
+    .bind(body.ends_at)
+    .bind(now)
+    .execute(&state.db)
+    .await?;
+
+    let row = fetch_announcement_row(&state.db, id)
+        .await?
+        .ok_or_else(|| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"))?;
+
+    if row.published {
+        publish_announcement_event(&state.redis, &row).await;
+    }
+
+    Ok((StatusCode::CREATED, Json(announcement_json(&row))).into_response())
+}
+
+/// `AnnouncementUpdateRequest`の`title`/`content`/`published`/`all_day`
+/// (非nullable)フィールド用。present+non-nullなら適用、present+nullは
+/// Python版の`if value is not None or key in nullable_fields`により無視、
+/// absentも無視(`exclude_unset=True`)。
+fn get_optional_non_nullable_string(
+    map: &Map<String, Value>,
+    key: &str,
+    max_len: usize,
+) -> Result<Option<String>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::Null => Ok(None),
+        Value::String(s) => {
+            let len = s.chars().count();
+            if !(1..=max_len).contains(&len) {
+                return Err(AppError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("{key} must be between 1 and {max_len} characters"),
+                ));
+            }
+            Ok(Some(s.clone()))
+        }
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be a string"),
+        )),
+    }
+}
+
+fn get_optional_non_nullable_bool(
+    map: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<bool>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::Null => Ok(None),
+        Value::Bool(b) => Ok(Some(*b)),
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be a boolean"),
+        )),
+    }
+}
+
+/// `starts_at`/`ends_at`(Python版の`nullable_fields`)用。absentは`None`
+/// (未変更)、present+nullは`Some(None)`(クリア)、present+日時文字列は
+/// `Some(Some(dt))`を返す。
+fn get_nullable_datetime(
+    map: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<Option<DateTime<Utc>>>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::Null => Ok(Some(None)),
+        Value::String(_) => {
+            let dt: DateTime<Utc> = serde_json::from_value(value.clone()).map_err(|_| {
+                AppError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("{key} must be a valid datetime"),
+                )
+            })?;
+            Ok(Some(Some(dt)))
+        }
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be a datetime string or null"),
+        )),
+    }
+}
+
+/// `app.services.announcement_service.update_announcement` を移植したもの。
+async fn update_announcement(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<Value>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "announcements").await?;
+
+    let Value::Object(map) = body else {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Request body must be a JSON object",
+        ));
+    };
+
+    let title = get_optional_non_nullable_string(&map, "title", 500)?;
+    let content = get_optional_non_nullable_string(&map, "content", 10000)?;
+    let published = get_optional_non_nullable_bool(&map, "published")?;
+    let all_day = get_optional_non_nullable_bool(&map, "all_day")?;
+    let starts_at = get_nullable_datetime(&map, "starts_at")?;
+    let ends_at = get_nullable_datetime(&map, "ends_at")?;
+
+    if fetch_announcement_row(&state.db, id).await?.is_none() {
+        return Err(AppError::not_found("Announcement not found"));
+    }
+
+    let content_html = content.as_deref().map(render_content);
+    let now = Utc::now();
+
+    sqlx::query(
+        "UPDATE announcements SET \
+            title = COALESCE($1, title), \
+            content = COALESCE($2, content), \
+            content_html = COALESCE($3, content_html), \
+            published = COALESCE($4, published), \
+            all_day = COALESCE($5, all_day), \
+            updated_at = $6 \
+         WHERE id = $7",
+    )
+    .bind(&title)
+    .bind(&content)
+    .bind(&content_html)
+    .bind(published)
+    .bind(all_day)
+    .bind(now)
+    .bind(id)
+    .execute(&state.db)
+    .await?;
+
+    if let Some(starts_at) = starts_at {
+        sqlx::query("UPDATE announcements SET starts_at = $1 WHERE id = $2")
+            .bind(starts_at)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(ends_at) = ends_at {
+        sqlx::query("UPDATE announcements SET ends_at = $1 WHERE id = $2")
+            .bind(ends_at)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
+
+    let row = fetch_announcement_row(&state.db, id)
+        .await?
+        .ok_or_else(|| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"))?;
+
+    if row.published {
+        publish_announcement_event(&state.redis, &row).await;
+    }
+
+    Ok(Json(announcement_json(&row)).into_response())
+}
+
+/// `app.services.announcement_service.delete_announcement` を移植したもの。
+async fn delete_announcement(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "announcements").await?;
+
+    let result = sqlx::query("DELETE FROM announcements WHERE id = $1")
+        .bind(id)
+        .execute(&state.db)
+        .await?;
+    if result.rows_affected() == 0 {
+        return Err(AppError::not_found("Announcement not found"));
+    }
+    Ok(StatusCode::NO_CONTENT.into_response())
 }

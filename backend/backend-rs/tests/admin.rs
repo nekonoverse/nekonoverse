@@ -3508,3 +3508,393 @@ async fn admin_system_stats_admin_returns_expected_shape() {
     assert!(data["uptime_seconds"].is_number());
     assert!(data["worker_alive"].is_boolean());
 }
+
+// --- お知らせ (announcements) ---
+
+#[tokio::test]
+async fn admin_announcements_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/announcements")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_announcements_plain_user_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("plain{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/announcements")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_custom_role_with_announcements_permission_can_create() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("announcer{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "announcements": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "announcer", &role_name).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/announcements")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "title": "Maintenance", "content": "We will be down." }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+}
+
+#[tokio::test]
+async fn admin_custom_role_without_announcements_permission_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("helper{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "reports": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "helper", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/announcements")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_create_announcement_renders_content_html_and_defaults() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/announcements")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "title": "Hello", "content": "**bold** text" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let json = body_json(resp).await;
+    assert_eq!(json["title"], "Hello");
+    assert_eq!(json["content"], "**bold** text");
+    assert_eq!(json["content_html"], "<p><strong>bold</strong> text</p>");
+    assert_eq!(json["published"], false);
+    assert_eq!(json["all_day"], false);
+    assert!(json["starts_at"].is_null());
+    assert!(json["ends_at"].is_null());
+    assert!(json["id"].is_string());
+    assert!(json["created_at"].is_string());
+    assert_eq!(json["created_at"], json["updated_at"]);
+}
+
+#[tokio::test]
+async fn admin_create_announcement_title_too_long_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/announcements")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "title": "x".repeat(501), "content": "body" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_create_announcement_empty_content_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/announcements")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "title": "x", "content": "" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+async fn seed_announcement_via_api(app: &axum::Router, session_id: &str, title: &str) -> Value {
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/announcements")
+        .header("cookie", cookie_header(session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "title": title, "content": "body" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    body_json(resp).await
+}
+
+#[tokio::test]
+async fn admin_list_announcements_orders_by_created_at_desc() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let first = seed_announcement_via_api(&app, &session_id, "First").await;
+    let second = seed_announcement_via_api(&app, &session_id, "Second").await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/announcements")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let ids: Vec<String> = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|a| a["id"].as_str().unwrap().to_string())
+        .collect();
+    let first_idx = ids
+        .iter()
+        .position(|id| id == first["id"].as_str().unwrap());
+    let second_idx = ids
+        .iter()
+        .position(|id| id == second["id"].as_str().unwrap());
+    assert!(second_idx < first_idx);
+}
+
+#[tokio::test]
+async fn admin_get_announcement_returns_404_for_missing() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/announcements/{}", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_get_announcement_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let created = seed_announcement_via_api(&app, &session_id, "Gettable").await;
+    let id = created["id"].as_str().unwrap();
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/announcements/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["id"], id);
+    assert_eq!(json["title"], "Gettable");
+}
+
+#[tokio::test]
+async fn admin_update_announcement_partially_updates_only_given_fields() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let created = seed_announcement_via_api(&app, &session_id, "Original").await;
+    let id = created["id"].as_str().unwrap();
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/announcements/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "published": true }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["published"], true);
+    // titleとcontentは変更されず維持される。
+    assert_eq!(json["title"], "Original");
+    assert_eq!(json["content"], "body");
+}
+
+#[tokio::test]
+async fn admin_update_announcement_content_rerenders_content_html() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let created = seed_announcement_via_api(&app, &session_id, "Rerender").await;
+    let id = created["id"].as_str().unwrap();
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/announcements/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "content": "# Heading" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["content"], "# Heading");
+    assert_eq!(json["content_html"], "<h1>Heading</h1>");
+}
+
+#[tokio::test]
+async fn admin_update_announcement_can_clear_starts_at_with_explicit_null() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let created = seed_announcement_via_api(&app, &session_id, "Scheduled").await;
+    let id = created["id"].as_str().unwrap();
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/announcements/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "starts_at": "2026-01-01T00:00:00Z" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["starts_at"], "2026-01-01T00:00:00+00:00");
+
+    // 明示的なnullでクリアできる。
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/announcements/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "starts_at": null }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert!(json["starts_at"].is_null());
+}
+
+#[tokio::test]
+async fn admin_update_announcement_ignores_explicit_null_for_non_nullable_field() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let created = seed_announcement_via_api(&app, &session_id, "KeepsTitle").await;
+    let id = created["id"].as_str().unwrap();
+
+    // Python版の`update_announcement`は非nullableフィールドへの明示的な
+    // `null`を無視する(`if value is not None or key in nullable_fields`)。
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/announcements/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "title": null }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["title"], "KeepsTitle");
+}
+
+#[tokio::test]
+async fn admin_update_nonexistent_announcement_returns_404() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/announcements/{}", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "title": "x" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_delete_announcement_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let created = seed_announcement_via_api(&app, &session_id, "Deletable").await;
+    let id = created["id"].as_str().unwrap();
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/announcements/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/announcements/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_delete_nonexistent_announcement_returns_404() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/announcements/{}", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}

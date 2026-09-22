@@ -1394,6 +1394,7 @@ dependencies = [
 name = "nekonoverse-backend-rs"
 version = "0.1.0"
 dependencies = [
+ "ammonia",
  "anyhow",
  "async-trait",
  "axum",
@@ -1410,6 +1411,7 @@ dependencies = [
  "nekonoverse-core",
  "p256",
  "pbkdf2",
+ "pulldown-cmark",
  "rand 0.8.8",
  "redis",
  "reqwest",
@@ -1723,6 +1725,24 @@ checksum = "985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9"
 dependencies = [
  "unicode-ident",
 ]
+
+[[package]]
+name = "pulldown-cmark"
+version = "0.12.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f86ba2052aebccc42cbbb3ed234b8b13ce76f75c3551a303cb2bcffcff12bb14"
+dependencies = [
+ "bitflags",
+ "memchr",
+ "pulldown-cmark-escape",
+ "unicase",
+]
+
+[[package]]
+name = "pulldown-cmark-escape"
+version = "0.11.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "007d8adb5ddab6f8e3f491ac63566a7d5002cc7ed73901f72057943fa71ae1ae"
 
 [[package]]
 name = "pyo3"
