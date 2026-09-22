@@ -33,9 +33,20 @@
 //! (非admin一般モデレーターはスタッフ保護対象に手を出せない)を課す。
 //! `admin_delete_user`(アカウント即時削除、`account_deletion_service.
 //! admin_force_delete`経由でフォロー整理・メディア削除・Undo Follow配送・
-//! Delete(Person)配送を伴う大きめの一枚岩)は本PRのスコープ外、
-//! 他の管理エンドポイント(emoji/announcements/queue/system統計等)と合わせ
+//! Delete(Person)配送を伴う大きめの一枚岩)は引き続き未移植、
+//! 他の管理エンドポイント(emoji/announcements/system統計等)と合わせ
 //! 必要になった時点で追加する。
+//!
+//! キュー管理系(`get_queue_stats`/`get_queue_jobs`/`retry_job`/
+//! `retry_all_dead`/`purge_delivered`、いずれも`app.services.queue_service`)
+//! は`get_admin_user`(`admin_auth::require_admin_role`)配下。対象は
+//! Stage 4の`delivery.rs`(pin/unpin等のプロデューサ)が書き込むのと同じ
+//! `delivery_queue`テーブルで、モデレーションログへの記録は行わない
+//! (Python版に該当呼び出しが無いことを確認済み)。`get_queue_stats`の
+//! `recent_delivered`/`recent_dead`は変数名に反し「直近1時間」ではなく
+//! 「今の時(hour)の開始時刻以降」(`datetime.now(UTC).replace(minute=0,
+//! second=0, microsecond=0)`)を境界に使うPython版の実際の挙動をそのまま
+//! 踏襲した。
 //!
 //! 登録承認系(`list_pending_registrations`/`approve_registration`/
 //! `reject_registration`)は`get_permitted_staff("registrations")`
@@ -54,7 +65,7 @@ use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
-use chrono::{DateTime, Utc};
+use chrono::{DateTime, Timelike, Utc};
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
@@ -107,6 +118,11 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/admin/users/:id/unsuspend", post(unsuspend_user))
         .route("/api/v1/admin/users/:id/silence", post(silence_user))
         .route("/api/v1/admin/users/:id/unsilence", post(unsilence_user))
+        .route("/api/v1/admin/queue/stats", get(get_queue_stats))
+        .route("/api/v1/admin/queue/jobs", get(list_queue_jobs))
+        .route("/api/v1/admin/queue/retry/:id", post(retry_queue_job))
+        .route("/api/v1/admin/queue/retry-all", post(retry_all_dead_jobs))
+        .route("/api/v1/admin/queue/purge", delete(purge_delivered_jobs))
         .route(
             "/api/v1/admin/registrations",
             get(list_pending_registrations),
@@ -1357,6 +1373,257 @@ async fn unsilence_user(
     moderation::unsilence_actor(&state, target.actor_id, current_user.id).await?;
 
     Ok(Json(json!({ "ok": true })).into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct QueueStatsRow {
+    pending: i64,
+    processing: i64,
+    delivered: i64,
+    dead: i64,
+    recent_delivered: i64,
+    recent_dead: i64,
+}
+
+/// `app.services.queue_service.get_queue_stats` を移植したもの。
+async fn get_queue_stats(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let hour_start = Utc::now()
+        .with_minute(0)
+        .unwrap()
+        .with_second(0)
+        .unwrap()
+        .with_nanosecond(0)
+        .unwrap();
+
+    let row: QueueStatsRow = sqlx::query_as(
+        "SELECT \
+            COUNT(*) FILTER (WHERE status = 'pending') AS pending, \
+            COUNT(*) FILTER (WHERE status = 'processing') AS processing, \
+            COUNT(*) FILTER (WHERE status = 'delivered') AS delivered, \
+            COUNT(*) FILTER (WHERE status = 'dead') AS dead, \
+            COUNT(*) FILTER (WHERE status = 'delivered' AND last_attempted_at >= $1) AS recent_delivered, \
+            COUNT(*) FILTER (WHERE status = 'dead' AND last_attempted_at >= $1) AS recent_dead \
+         FROM delivery_queue",
+    )
+    .bind(hour_start)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "pending": row.pending,
+        "processing": row.processing,
+        "delivered": row.delivered,
+        "dead": row.dead,
+        "total": row.pending + row.processing + row.delivered + row.dead,
+        "recent_delivered": row.recent_delivered,
+        "recent_dead": row.recent_dead,
+    }))
+    .into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct QueueJobRow {
+    id: Uuid,
+    target_inbox_url: String,
+    status: String,
+    attempts: i32,
+    max_attempts: i32,
+    error_message: Option<String>,
+    created_at: DateTime<Utc>,
+    last_attempted_at: Option<DateTime<Utc>>,
+    next_retry_at: Option<DateTime<Utc>>,
+}
+
+/// `app.schemas.admin.QueueJobResponse` を移植したもの。
+fn queue_job_json(row: &QueueJobRow) -> Value {
+    json!({
+        "id": row.id,
+        "target_inbox_url": row.target_inbox_url,
+        "status": row.status,
+        "attempts": row.attempts,
+        "max_attempts": row.max_attempts,
+        "error_message": row.error_message,
+        "created_at": to_pydantic_isoformat(row.created_at),
+        "last_attempted_at": row.last_attempted_at.map(to_pydantic_isoformat),
+        "next_retry_at": row.next_retry_at.map(to_pydantic_isoformat),
+    })
+}
+
+#[derive(Deserialize)]
+struct QueueJobsQuery {
+    status: Option<String>,
+    domain: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// `Query(50, ge=1, le=200)`/`Query(0, ge=0)`(FastAPI、Python版の
+/// `list_queue_jobs`)の範囲検証を移植したもの。
+fn validate_queue_jobs_query(
+    limit: Option<i64>,
+    offset: Option<i64>,
+) -> Result<(i64, i64), AppError> {
+    let limit = limit.unwrap_or(50);
+    if !(1..=200).contains(&limit) {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "limit must be between 1 and 200",
+        ));
+    }
+    let offset = offset.unwrap_or(0);
+    if offset < 0 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "offset must be greater than or equal to 0",
+        ));
+    }
+    Ok((limit, offset))
+}
+
+/// `domain`クエリパラメータを`app.services.queue_service`の
+/// `target_inbox_url.ilike(f"%://{domain}/%")`と同じILIKEパターンへ変換する。
+fn domain_ilike_pattern(domain: Option<&str>) -> Option<String> {
+    domain.map(|d| format!("%://{d}/%"))
+}
+
+/// `app.services.queue_service.get_queue_jobs` を移植したもの。
+async fn list_queue_jobs(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Query(params): Query<QueueJobsQuery>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+    let (limit, offset) = validate_queue_jobs_query(params.limit, params.offset)?;
+    let domain_pattern = domain_ilike_pattern(params.domain.as_deref());
+
+    let rows: Vec<QueueJobRow> = sqlx::query_as(
+        "SELECT id, target_inbox_url, status, attempts, max_attempts, error_message, \
+                created_at, last_attempted_at, next_retry_at \
+         FROM delivery_queue \
+         WHERE ($1::text IS NULL OR status = $1) \
+           AND ($2::text IS NULL OR target_inbox_url ILIKE $2) \
+         ORDER BY created_at DESC \
+         LIMIT $3 OFFSET $4",
+    )
+    .bind(&params.status)
+    .bind(&domain_pattern)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await?;
+
+    let total: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM delivery_queue \
+         WHERE ($1::text IS NULL OR status = $1) \
+           AND ($2::text IS NULL OR target_inbox_url ILIKE $2)",
+    )
+    .bind(&params.status)
+    .bind(&domain_pattern)
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "jobs": rows.iter().map(queue_job_json).collect::<Vec<_>>(),
+        "total": total,
+    }))
+    .into_response())
+}
+
+/// `app.services.queue_service.retry_job` を移植したもの。
+async fn retry_queue_job(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(job_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let result = sqlx::query(
+        "UPDATE delivery_queue \
+         SET status = 'pending', next_retry_at = NULL, attempts = 0, error_message = NULL \
+         WHERE id = $1 AND status = 'dead'",
+    )
+    .bind(job_id)
+    .execute(&state.db)
+    .await?;
+
+    if result.rows_affected() == 0 {
+        return Err(AppError::not_found("Job not found or not dead"));
+    }
+    Ok(Json(json!({ "ok": true })).into_response())
+}
+
+#[derive(Deserialize)]
+struct DomainQuery {
+    domain: Option<String>,
+}
+
+/// `app.services.queue_service.retry_all_dead` を移植したもの。
+async fn retry_all_dead_jobs(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Query(params): Query<DomainQuery>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+    let domain_pattern = domain_ilike_pattern(params.domain.as_deref());
+
+    let result = sqlx::query(
+        "UPDATE delivery_queue \
+         SET status = 'pending', next_retry_at = NULL, attempts = 0, error_message = NULL \
+         WHERE status = 'dead' AND ($1::text IS NULL OR target_inbox_url ILIKE $1)",
+    )
+    .bind(&domain_pattern)
+    .execute(&state.db)
+    .await?;
+
+    Ok(Json(json!({ "ok": true, "retried": result.rows_affected() })).into_response())
+}
+
+#[derive(Deserialize)]
+struct PurgeQuery {
+    older_than_hours: Option<i64>,
+}
+
+/// `Query(24, ge=1)`(FastAPI、Python版の`purge_delivered_jobs`)の範囲検証を
+/// 移植したもの。
+fn validate_older_than_hours(value: Option<i64>) -> Result<i64, AppError> {
+    let hours = value.unwrap_or(24);
+    if hours < 1 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "older_than_hours must be greater than or equal to 1",
+        ));
+    }
+    Ok(hours)
+}
+
+/// `app.services.queue_service.purge_delivered` を移植したもの。
+async fn purge_delivered_jobs(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Query(params): Query<PurgeQuery>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+    let hours = validate_older_than_hours(params.older_than_hours)?;
+
+    let cutoff = Utc::now().with_nanosecond(0).unwrap() - chrono::Duration::hours(hours);
+
+    let result =
+        sqlx::query("DELETE FROM delivery_queue WHERE status = 'delivered' AND created_at < $1")
+            .bind(cutoff)
+            .execute(&state.db)
+            .await?;
+
+    Ok(Json(json!({ "ok": true, "purged": result.rows_affected() })).into_response())
 }
 
 #[derive(sqlx::FromRow)]
