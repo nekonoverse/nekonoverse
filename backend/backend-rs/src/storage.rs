@@ -1,8 +1,10 @@
-//! `app/storage.py` のうち `ensure_bucket`/`upload_file`/`delete_file` を
-//! 移植したもの。手書き AWS SigV4 (boto3 非依存) を `reqwest` で踏襲する。
-//! `download_file`/`get_file_stream`/`generate_presigned_get_url` はまだ
-//! backend-rs 側に呼び出し元が無いため未移植(`drive::delete_drive_file`は
-//! ダウンロードを要しない)。
+//! `app/storage.py` のうち `ensure_bucket`/`upload_file`/`delete_file`/
+//! `download_file` を移植したもの。手書き AWS SigV4 (boto3 非依存) を
+//! `reqwest` で踏襲する。`get_file_stream`/`generate_presigned_get_url` は
+//! まだ backend-rs 側に呼び出し元が無いため未移植(`download_file`はemoji
+//! エクスポート(#1139 Stage 4、`admin.rs`の`export_emojis_endpoint`)が
+//! ZIPに書き出す前に画像を丸ごとメモリに読む用途のみで、ストリーミングは
+//! 要しない)。
 
 use std::sync::OnceLock;
 use std::time::Duration;
@@ -236,6 +238,39 @@ pub async fn delete_file(config: &Config, key: &str) -> Result<(), AppError> {
 /// `app.storage.get_public_url`を移植したもの。
 pub fn public_url(config: &Config, key: &str) -> String {
     format!("{}/{key}", config.media_url())
+}
+
+/// `app.storage.download_file`を移植したもの。`404`は`None`として返す
+/// (Python版は`resp.raise_for_status()`で例外化するが、呼び出し元の
+/// `export_emojis_endpoint`は「S3上に実体が無ければそのカスタム絵文字を
+/// ZIPから静かに除外する」ベストエフォート処理のため、backend-rs側は
+/// エラーと未検出を呼び出し元で区別できるよう`Option`にした)。
+/// Python版の`download_file`/`get_file_stream`と同じく`content_sha256`に
+/// 実ハッシュではなく`"UNSIGNED-PAYLOAD"`を使う(GETはボディが無いため
+/// `upload_file`/`delete_file`の空文字列ハッシュと等価だが、Python版の
+/// 実際の挙動をそのまま踏襲する)。
+pub async fn get_file(config: &Config, key: &str) -> Result<Option<Vec<u8>>, AppError> {
+    let path = format!("/{}/{key}", config.s3_bucket);
+    let encoded_path = uri_encode_path(&path);
+    let headers = auth_headers(config, "GET", &encoded_path, "UNSIGNED-PAYLOAD", &[])?;
+
+    let mut req = http_client().get(build_url(config, &encoded_path));
+    for (k, v) in &headers {
+        req = req.header(k.as_str(), v.as_str());
+    }
+    let resp = req.send().await.map_err(request_error)?;
+    if resp.status() == StatusCode::NOT_FOUND {
+        return Ok(None);
+    }
+    if !resp.status().is_success() {
+        tracing::error!(status = %resp.status(), key, "S3 get failed");
+        return Err(AppError::new(
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "Internal server error",
+        ));
+    }
+    let bytes = resp.bytes().await.map_err(request_error)?;
+    Ok(Some(bytes.to_vec()))
 }
 
 #[cfg(test)]
