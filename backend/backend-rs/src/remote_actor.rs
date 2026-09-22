@@ -161,7 +161,7 @@ async fn fetch_actor_row(db: &PgPool, ap_id: &str) -> Result<Option<FullActorRow
                following_url, public_key_pem, public_key_ed25519_multibase, key_id_ed25519,
                is_cat, is_bot, require_signin_to_view, make_notes_followers_only_before,
                make_notes_hidden_before, manually_approves_followers, discoverable, fields,
-               birthday, last_fetched_at, featured_url, moved_to_ap_id, also_known_as
+               birthday, last_fetched_at, featured_url, moved_to_ap_id, also_known_as, deleted_at
         FROM actors WHERE ap_id = $1
         "#,
     )
@@ -171,10 +171,11 @@ async fn fetch_actor_row(db: &PgPool, ap_id: &str) -> Result<Option<FullActorRow
     Ok(row)
 }
 
-/// `actors`テーブルの全カラムに対応する行。現時点で外部から実際に読まれる
-/// フィールドは`get_actor_public_key`が使う一部のみだが、この構造体自体は
-/// `upsert_remote_actor`が書き込む値の正しさを表明する意味を持ち、かつ
-/// inboxルート配線(次PR)がactorのdomain/summary等を必要とする見込みのため
+/// `actors`テーブルの全カラムに対応する行。`get_actor_public_key`に加えて
+/// `inbox.rs`のFollow/Block/Delete/Flag/Undoハンドラーがactorのdomain/
+/// inbox_url/manually_approves_followers等を広く読む。一部フィールド
+/// (例: `birthday`)は現時点でどの呼び出し元も読まないが、この構造体自体は
+/// `upsert_remote_actor`が書き込む値の正しさを表明する意味を持つため
 /// `#[allow(dead_code)]`で保持する(未使用フィールド警告の抑制目的の
 /// プレースホルダーではない)。
 #[derive(sqlx::FromRow, Clone)]
@@ -211,6 +212,7 @@ pub struct FullActorRow {
     pub featured_url: Option<String>,
     pub moved_to_ap_id: Option<String>,
     pub also_known_as: Option<Value>,
+    pub deleted_at: Option<DateTime<Utc>>,
 }
 
 fn truthy_str(v: Option<&Value>) -> Option<String> {
@@ -566,6 +568,7 @@ pub async fn upsert_remote_actor(
             featured_url,
             moved_to_ap_id,
             also_known_as,
+            deleted_at: existing.deleted_at,
         }));
     }
 
@@ -716,7 +719,52 @@ pub async fn upsert_remote_actor(
         featured_url,
         moved_to_ap_id,
         also_known_as,
+        deleted_at: None,
     }))
+}
+
+/// `app.services.actor_service.get_actor_by_ap_id` を移植したもの。ネットワーク
+/// フェッチは行わない(既知のactorのローカル解決専用)。inbox受信処理
+/// (`inbox.rs`)がactivityの`actor`/`object`フィールドを解決する際、未知の
+/// リモートactorへは`fetch_remote_actor`へフォールバックする形で使う。
+pub async fn get_actor_by_ap_id(
+    state: &AppState,
+    ap_id: &str,
+) -> Result<Option<FullActorRow>, AppError> {
+    if let Some(actor) = fetch_actor_row(&state.db, ap_id).await? {
+        return Ok(Some(actor));
+    }
+
+    // フォールバック: ap_id がローカルアクターURLの形式であれば、ユーザー名で検索する
+    // (保存された ap_id の http/https スキーム不一致に対応)。
+    let Ok(parsed) = reqwest::Url::parse(ap_id) else {
+        return Ok(None);
+    };
+    if parsed.host_str() != Some(state.config.domain.as_str()) {
+        return Ok(None);
+    }
+    let Some(username) = parsed.path().strip_prefix("/users/") else {
+        return Ok(None);
+    };
+    let username = username.trim_end_matches('/');
+    if username.is_empty() {
+        return Ok(None);
+    }
+    let row: Option<FullActorRow> = sqlx::query_as(
+        r#"
+        SELECT id, ap_id, type, username, domain, display_name, summary, avatar_url,
+               header_url, inbox_url, outbox_url, shared_inbox_url, followers_url,
+               following_url, public_key_pem, public_key_ed25519_multibase, key_id_ed25519,
+               is_cat, is_bot, require_signin_to_view, make_notes_followers_only_before,
+               make_notes_hidden_before, manually_approves_followers, discoverable, fields,
+               birthday, last_fetched_at, featured_url, moved_to_ap_id, also_known_as, deleted_at
+        FROM actors WHERE username = $1 AND domain IS NULL
+        "#,
+    )
+    .bind(username.to_lowercase())
+    .fetch_optional(&state.db)
+    .await?;
+    Ok(row)
 }
 
 /// `app.services.actor_service.fetch_remote_actor` を移植したもの。

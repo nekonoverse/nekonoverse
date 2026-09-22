@@ -3,6 +3,7 @@ pub mod actor;
 pub mod auth;
 pub mod authorized_apps;
 pub mod health;
+pub mod inbox;
 pub mod media_proxy;
 pub mod nodeinfo;
 pub mod statuses;

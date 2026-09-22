@@ -110,6 +110,36 @@ pub fn render_announce_activity(
     })
 }
 
+/// `app.activitypub.renderer.render_accept_activity` を移植したもの。
+pub fn render_accept_activity(
+    activity_id: &str,
+    actor_ap_id: &str,
+    follow_activity: &Value,
+) -> Value {
+    json!({
+        "@context": AP_CONTEXT.clone(),
+        "id": activity_id,
+        "type": "Accept",
+        "actor": actor_ap_id,
+        "object": follow_activity,
+    })
+}
+
+/// `app.activitypub.renderer.render_reject_activity` を移植したもの。
+pub fn render_reject_activity(
+    activity_id: &str,
+    actor_ap_id: &str,
+    follow_activity: &Value,
+) -> Value {
+    json!({
+        "@context": AP_CONTEXT.clone(),
+        "id": activity_id,
+        "type": "Reject",
+        "actor": actor_ap_id,
+        "object": follow_activity,
+    })
+}
+
 /// `app.activitypub.renderer.render_undo_activity` を移植したもの。
 pub fn render_undo_activity(activity_id: &str, actor_ap_id: &str, inner_activity: &Value) -> Value {
     json!({
