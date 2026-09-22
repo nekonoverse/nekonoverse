@@ -647,3 +647,29 @@ pub async fn seed_poll_vote(db: &PgPool, note_id: Uuid, actor_id: Uuid, choice_i
     .expect("failed to seed test poll vote");
     id
 }
+
+/// `delivery_queue` テーブル (id/created_at に `server_default` が無い) に
+/// テスト用の配送ジョブを1件投入する。`attempts`/`max_attempts`は
+/// テーブル側の `server_default` (0/10) 任せ。
+#[allow(dead_code)]
+pub async fn seed_delivery_job(
+    db: &PgPool,
+    actor_id: Uuid,
+    target_inbox_url: &str,
+    status: &str,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO delivery_queue (id, actor_id, target_inbox_url, payload, status, created_at) \
+         VALUES ($1, $2, $3, $4, $5, now())",
+    )
+    .bind(id)
+    .bind(actor_id)
+    .bind(target_inbox_url)
+    .bind(sqlx::types::Json(serde_json::json!({})))
+    .bind(status)
+    .execute(db)
+    .await
+    .expect("failed to seed test delivery job");
+    id
+}
