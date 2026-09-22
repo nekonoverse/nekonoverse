@@ -249,8 +249,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # `driver: docker` を使うとDocker Engine組み込みのBuildKitをそのまま使い、
+      # 別途 `moby/buildkit:buildx-stable-1` イメージをDocker Hubから
+      # pullする専用builderコンテナを作らずに済む。このジョブは
+      # `docker compose build` のみでキャッシュ共有やマルチプラットフォーム
+      # ビルドを使わないため、デフォルトの `docker-container` driverが必要な
+      # 機能には依存しておらず、切り替えても挙動は変わらない
+      # (Docker Hubからの一時的な接続断でこのbuilder自体のpullが失敗し、
+      # ジョブ全体がこけていたのを回避する)。
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
+        with:
+          driver: docker
 
       - name: Build images
         run: docker compose -f docker-compose.e2e.yml build
