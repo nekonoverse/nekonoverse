@@ -47,6 +47,9 @@ pub struct Config {
     /// この値を下げると既存の暗号化済みsecretと導出鍵が一致しなくなるため
     /// 変更してはならない)。
     pub totp_pbkdf2_iterations: u32,
+    /// `app.config.Settings.vapid_private_key`。DB保存分・派生分に次ぐ
+    /// 最終フォールバック(`server_settings.rs`の`resolve_vapid_private_key`)。
+    pub vapid_private_key: Option<String>,
 }
 
 impl Config {
@@ -93,6 +96,7 @@ impl Config {
                 .ok()
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(crate::totp::PBKDF2_ITERATIONS_DEFAULT),
+            vapid_private_key: env::var("VAPID_PRIVATE_KEY").ok().filter(|v| !v.is_empty()),
         }
     }
 

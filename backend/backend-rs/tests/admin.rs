@@ -12,6 +12,8 @@ use chrono::Utc;
 use redis::AsyncCommands;
 use serde_json::{json, Value};
 use sqlx::PgPool;
+use std::sync::LazyLock;
+use tokio::sync::Mutex;
 use tower::ServiceExt;
 use uuid::Uuid;
 
@@ -2920,4 +2922,589 @@ async fn admin_federation_detail_not_found() {
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+// --- サーバー設定 / 統計 / システム統計 ---
+
+/// `server_settings`テーブルは固定キーでテストDB全体を通じて共有される
+/// (Python側は`db`フィクスチャのトランザクションROLLBACKで分離しているが、
+/// こちらはコミット直書きのため分離できない、`tests/nodeinfo.rs`と同じ事情)。
+/// これらを読み書きするテストは並列実行させず直列化する。
+static SETTINGS_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
+
+const SETTINGS_KEYS: &[&str] = &[
+    "server_name",
+    "server_description",
+    "tos_url",
+    "terms_of_service",
+    "privacy_policy",
+    "registration_open",
+    "registration_mode",
+    "invite_create_role",
+    "server_theme_color",
+    "push_enabled",
+    "timeline_default_limit",
+    "timeline_max_limit",
+    "katex_enabled",
+];
+
+async fn clear_settings(db: &PgPool) {
+    sqlx::query("DELETE FROM server_settings WHERE key = ANY($1)")
+        .bind(SETTINGS_KEYS)
+        .execute(db)
+        .await
+        .expect("failed to clear test settings");
+}
+
+#[tokio::test]
+async fn admin_settings_get_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/settings")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_settings_get_plain_user_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("plain{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_settings_get_custom_admin_permission_role_is_forbidden() {
+    // require_admin_role は role == "admin" のみを許可し、roles.is_admin 列は見ない
+    // (Python版 get_admin_user と同じ、他の /admin/settings 以外のエンドポイントの
+    // require_permission/require_moderation_staff とは異なる判定基準)。
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("superrole{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, true, json!({})).await;
+    let username = format!("superuser{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    set_user_role(&db, user_id, &role_name).await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_settings_get_returns_defaults_when_unset() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    clear_settings(&db).await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let data = body_json(resp).await;
+    assert_eq!(data["server_name"], Value::Null);
+    assert_eq!(data["registration_open"], true);
+    assert_eq!(data["registration_mode"], "open");
+    assert_eq!(data["invite_create_role"], "admin");
+    assert_eq!(data["push_enabled"], true);
+    assert_eq!(data["katex_enabled"], false);
+    assert_eq!(data["timeline_default_limit"], 20);
+    assert_eq!(data["timeline_max_limit"], 40);
+    assert!(data["vapid_public_key"].is_string());
+
+    clear_settings(&db).await;
+}
+
+#[tokio::test]
+async fn admin_settings_update_roundtrip() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    clear_settings(&db).await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let body = json!({
+        "server_name": "My Test Server",
+        "server_description": "A description",
+        "tos_url": "https://example.com/tos",
+        "server_theme_color": "#112233",
+        "invite_create_role": "moderator",
+        "push_enabled": false,
+        "timeline_default_limit": 15,
+        "timeline_max_limit": 99,
+        "katex_enabled": true,
+    });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let data = body_json(resp).await;
+    assert_eq!(data["server_name"], "My Test Server");
+    assert_eq!(data["server_description"], "A description");
+    assert_eq!(data["tos_url"], "https://example.com/tos");
+    assert_eq!(data["server_theme_color"], "#112233");
+    assert_eq!(data["invite_create_role"], "moderator");
+    assert_eq!(data["push_enabled"], false);
+    assert_eq!(data["timeline_default_limit"], 15);
+    assert_eq!(data["timeline_max_limit"], 99);
+    assert_eq!(data["katex_enabled"], true);
+
+    // GETで永続化を再確認する。
+    let (app2, _db2) = test_app_with_db().await;
+    let get_req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let get_resp = app2.oneshot(get_req).await.unwrap();
+    let get_data = body_json(get_resp).await;
+    assert_eq!(get_data["server_name"], "My Test Server");
+    assert_eq!(get_data["timeline_max_limit"], 99);
+
+    // moderation_log に記録されていることを確認する。
+    let logged: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM moderation_log WHERE action = 'update_settings' AND target_id = 'settings'",
+    )
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(logged >= 1);
+
+    clear_settings(&db).await;
+}
+
+#[tokio::test]
+async fn admin_settings_clear_nullable_string_with_explicit_null() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    clear_settings(&db).await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    sqlx::query(
+        "INSERT INTO server_settings (key, value, updated_at) VALUES ('server_name', 'Old Name', now())",
+    )
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let body = json!({ "server_name": null });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let data = body_json(resp).await;
+    assert_eq!(data["server_name"], Value::Null);
+
+    clear_settings(&db).await;
+}
+
+#[tokio::test]
+async fn admin_settings_registration_mode_open_approves_pending_users() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    clear_settings(&db).await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let username = format!("pending{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let pending_user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    sqlx::query("UPDATE users SET approval_status = 'pending' WHERE id = $1")
+        .bind(pending_user_id)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let body = json!({ "registration_mode": "open" });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let approval_status: String =
+        sqlx::query_scalar("SELECT approval_status FROM users WHERE id = $1")
+            .bind(pending_user_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(approval_status, "approved");
+
+    let logged: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM moderation_log WHERE action = 'approve_registration' AND target_id = $1",
+    )
+    .bind(pending_user_id.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(logged >= 1);
+
+    clear_settings(&db).await;
+}
+
+#[tokio::test]
+async fn admin_settings_registration_mode_closed_rejects_pending_users() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    clear_settings(&db).await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let username = format!("pending{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let pending_user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    sqlx::query("UPDATE users SET approval_status = 'pending' WHERE id = $1")
+        .bind(pending_user_id)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let body = json!({ "registration_mode": "closed" });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let data = body_json(resp).await;
+    assert_eq!(data["registration_open"], false);
+
+    let remaining_users: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE id = $1")
+        .bind(pending_user_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(remaining_users, 0);
+    let remaining_actors: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM actors WHERE id = $1")
+        .bind(actor_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(remaining_actors, 0);
+
+    clear_settings(&db).await;
+}
+
+#[tokio::test]
+async fn admin_settings_registration_mode_approval_does_not_resolve_pending() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    clear_settings(&db).await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let username = format!("pending{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let pending_user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    sqlx::query("UPDATE users SET approval_status = 'pending' WHERE id = $1")
+        .bind(pending_user_id)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let body = json!({ "registration_mode": "approval" });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let approval_status: String =
+        sqlx::query_scalar("SELECT approval_status FROM users WHERE id = $1")
+            .bind(pending_user_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(approval_status, "pending");
+
+    clear_settings(&db).await;
+}
+
+#[tokio::test]
+async fn admin_settings_invalid_registration_mode_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let body = json!({ "registration_mode": "bogus" });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_settings_invalid_theme_color_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let body = json!({ "server_theme_color": "not-a-color" });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_settings_timeline_limit_out_of_range_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let _guard = SETTINGS_LOCK.lock().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let body = json!({ "timeline_default_limit": 0 });
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/settings")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_stats_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/stats")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_stats_plain_user_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("plain{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/stats")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_stats_custom_role_with_users_permission_can_read() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("statsrole{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "users": true })).await;
+    let username = format!("statsmod{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    set_user_role(&db, user_id, &role_name).await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/stats")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admin_stats_counts_reflect_new_local_users_and_notes() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    async fn fetch_stats(app: axum::Router, session_id: &str) -> (i64, i64) {
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/v1/admin/stats")
+            .header("cookie", cookie_header(session_id))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let data = body_json(resp).await;
+        (
+            data["user_count"].as_i64().unwrap(),
+            data["note_count"].as_i64().unwrap(),
+        )
+    }
+
+    let (app_before, _) = test_app_with_db().await;
+    let (before_users, before_notes) = fetch_stats(app_before, &session_id).await;
+
+    let username = format!("statsuser{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    seed_note_with_visibility(&db, actor_id, "public", Utc::now()).await;
+
+    let (after_users, after_notes) = fetch_stats(app, &session_id).await;
+    // `users`/`notes`はテストDB全体で共有されるグローバル集計のため、他の
+    // テストが並行してシードした分も混ざりうる。自分が追加した分が確実に
+    // 反映されていることだけを検証する(厳密な差分ではなく下限)。
+    assert!(after_users > before_users);
+    assert!(after_notes > before_notes);
+}
+
+#[tokio::test]
+async fn admin_stats_domain_count_reflects_new_remote_follow_relationship() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    async fn fetch_domain_count(app: axum::Router, session_id: &str) -> i64 {
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/v1/admin/stats")
+            .header("cookie", cookie_header(session_id))
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        let data = body_json(resp).await;
+        data["domain_count"].as_i64().unwrap()
+    }
+
+    let (app_before, _) = test_app_with_db().await;
+    let before = fetch_domain_count(app_before, &session_id).await;
+
+    let local_username = format!("localuser{}", Uuid::new_v4().simple());
+    let local_actor_id = seed_local_actor(&db, &local_username).await;
+    let domain = format!("remote-{}.example", Uuid::new_v4().simple());
+    let remote_actor_id = seed_remote_actor(
+        &db,
+        &format!("remoteuser{}", Uuid::new_v4().simple()),
+        &domain,
+    )
+    .await;
+    seed_follow(&db, local_actor_id, remote_actor_id).await;
+
+    let after = fetch_domain_count(app, &session_id).await;
+    // 他の並行テストも独自のユニークなリモートドメインを追加しうるため、
+    // 厳密な差分ではなく自分の分が反映されていることだけを検証する。
+    assert!(after > before);
+}
+
+#[tokio::test]
+async fn admin_system_stats_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/system/stats")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_system_stats_plain_user_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("plain{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/system/stats")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_system_stats_admin_returns_expected_shape() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/system/stats")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let data = body_json(resp).await;
+    assert!(data["db_pool_size"].as_i64().unwrap() >= 1);
+    assert_eq!(data["db_pool_overflow"], 0);
+    assert!(data["load_avg_1m"].is_number());
+    assert!(data["memory_total_mb"].is_number());
+    assert!(data["uptime_seconds"].is_number());
+    assert!(data["worker_alive"].is_boolean());
 }
