@@ -3898,3 +3898,431 @@ async fn admin_delete_nonexistent_announcement_returns_404() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// --- カスタム絵文字 (emoji) ---
+
+#[tokio::test]
+async fn admin_emoji_list_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/list")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_emoji_list_plain_user_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("plain{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/list")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_custom_role_with_emoji_permission_can_list() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("emojiist{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "emoji": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "emojiist", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/list")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admin_custom_role_without_emoji_permission_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("helper{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "reports": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "helper", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/list")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_emoji_list_returns_only_local_ordered_by_category_then_shortcode() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let local_b = common::seed_custom_emoji(
+        &db,
+        &format!("local_b_{suffix}"),
+        None,
+        "https://example.test/b.png",
+    )
+    .await;
+    let local_a = common::seed_custom_emoji(
+        &db,
+        &format!("local_a_{suffix}"),
+        None,
+        "https://example.test/a.png",
+    )
+    .await;
+    common::seed_custom_emoji(
+        &db,
+        &format!("remote_{suffix}"),
+        Some("remote.example"),
+        "https://remote.example/e.png",
+    )
+    .await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/list")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let entries = json.as_array().unwrap();
+    let ids: Vec<String> = entries
+        .iter()
+        .map(|e| e["id"].as_str().unwrap().to_string())
+        .collect();
+    assert!(ids.contains(&local_a.to_string()));
+    assert!(ids.contains(&local_b.to_string()));
+    // ドメイン無し(ローカル)同士は同じcategory(NULL)内でshortcode昇順。
+    let a_idx = ids
+        .iter()
+        .position(|id| id == &local_a.to_string())
+        .unwrap();
+    let b_idx = ids
+        .iter()
+        .position(|id| id == &local_b.to_string())
+        .unwrap();
+    assert!(a_idx < b_idx);
+    for entry in entries {
+        assert!(entry["domain"].is_null() || entry.get("domain").is_none());
+    }
+}
+
+#[tokio::test]
+async fn admin_emoji_remote_filters_by_domain_and_search() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let domain_a = format!("a-{suffix}.example");
+    let domain_b = format!("b-{suffix}.example");
+    common::seed_custom_emoji(
+        &db,
+        &format!("blobcat_{suffix}"),
+        Some(&domain_a),
+        "https://a.example/blobcat.png",
+    )
+    .await;
+    common::seed_custom_emoji(
+        &db,
+        &format!("partyparrot_{suffix}"),
+        Some(&domain_a),
+        "https://a.example/party.png",
+    )
+    .await;
+    common::seed_custom_emoji(
+        &db,
+        &format!("blobcat_{suffix}"),
+        Some(&domain_b),
+        "https://b.example/blobcat.png",
+    )
+    .await;
+
+    // domain フィルタ。
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/emoji/remote?domain={domain_a}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 2);
+    assert!(entries.iter().all(|e| e["domain"] == domain_a));
+
+    // search フィルタ(ILIKE部分一致)。
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/emoji/remote?domain={domain_a}&search=party"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let entries = json.as_array().unwrap();
+    assert_eq!(entries.len(), 1);
+    assert_eq!(entries[0]["shortcode"], format!("partyparrot_{suffix}"));
+}
+
+#[tokio::test]
+async fn admin_emoji_remote_limit_over_200_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/remote?limit=201")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_emoji_remote_negative_offset_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/remote?offset=-1")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_emoji_remote_domains_returns_distinct_sorted_domains() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let domain_a = format!("aa-{suffix}.example");
+    let domain_b = format!("zz-{suffix}.example");
+    common::seed_custom_emoji(
+        &db,
+        &format!("one_{suffix}"),
+        Some(&domain_b),
+        "https://b/one.png",
+    )
+    .await;
+    common::seed_custom_emoji(
+        &db,
+        &format!("two_{suffix}"),
+        Some(&domain_a),
+        "https://a/two.png",
+    )
+    .await;
+    common::seed_custom_emoji(
+        &db,
+        &format!("three_{suffix}"),
+        Some(&domain_a),
+        "https://a/three.png",
+    )
+    .await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/remote/domains")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let domains: Vec<String> = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|d| d.as_str().unwrap().to_string())
+        .collect();
+    let a_idx = domains.iter().position(|d| d == &domain_a).unwrap();
+    let b_idx = domains.iter().position(|d| d == &domain_b).unwrap();
+    assert!(a_idx < b_idx);
+    // domain_aは2件投入したが、DISTINCTで1件のみ出現する。
+    assert_eq!(domains.iter().filter(|d| *d == &domain_a).count(), 1);
+}
+
+#[tokio::test]
+async fn admin_update_emoji_partially_updates_only_given_fields() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let shortcode = format!("orig_{suffix}");
+    let id = common::seed_custom_emoji(&db, &shortcode, None, "https://example.test/e.png").await;
+    sqlx::query("UPDATE custom_emojis SET category = 'animals', license = 'CC-BY' WHERE id = $1")
+        .bind(id)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/emoji/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "is_sensitive": true }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["is_sensitive"], true);
+    // 与えられなかったフィールドは維持される。
+    assert_eq!(json["shortcode"], shortcode);
+    assert_eq!(json["category"], "animals");
+    assert_eq!(json["license"], "CC-BY");
+}
+
+#[tokio::test]
+async fn admin_update_emoji_explicit_null_clears_nullable_field() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let shortcode = format!("clearable_{suffix}");
+    let id = common::seed_custom_emoji(&db, &shortcode, None, "https://example.test/e.png").await;
+    sqlx::query("UPDATE custom_emojis SET category = 'animals' WHERE id = $1")
+        .bind(id)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/emoji/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "category": null }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert!(json["category"].is_null());
+}
+
+#[tokio::test]
+async fn admin_update_emoji_ignores_explicit_null_for_non_nullable_field() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let shortcode = format!("keeps_{suffix}");
+    let id = common::seed_custom_emoji(&db, &shortcode, None, "https://example.test/e.png").await;
+
+    // shortcode(DB上NOT NULL)への明示的なnullはannouncementsのtitle等と
+    // 同じく無視される。
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/emoji/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "shortcode": null }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["shortcode"], shortcode);
+}
+
+#[tokio::test]
+async fn admin_update_emoji_invalid_shortcode_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let id = common::seed_custom_emoji(
+        &db,
+        &format!("valid_{}", Uuid::new_v4().simple()),
+        None,
+        "https://example.test/e.png",
+    )
+    .await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/emoji/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "shortcode": "not valid!" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_update_emoji_accepts_but_does_not_persist_usage_info_and_is_based_on() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let id = common::seed_custom_emoji(
+        &db,
+        &format!("dropped_{}", Uuid::new_v4().simple()),
+        None,
+        "https://example.test/e.png",
+    )
+    .await;
+
+    // Python版の`_EMOJI_UPDATABLE_FIELDS`が`usage_info`/`is_based_on`を
+    // 含まないため、受理・検証はされるが永続化されない既知の挙動。
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/emoji/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "usage_info": "for fun", "is_based_on": "https://example.test/base" })
+                .to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert!(json["usage_info"].is_null());
+    assert!(json["is_based_on"].is_null());
+}
+
+#[tokio::test]
+async fn admin_update_nonexistent_emoji_returns_404() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/emoji/{}", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "category": "x" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
