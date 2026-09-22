@@ -17,8 +17,9 @@ use uuid::Uuid;
 
 mod common;
 use common::{
-    seed_follow, seed_local_actor, seed_note_with_visibility, seed_oauth_application,
-    seed_oauth_token, seed_remote_actor, seed_report, seed_session, seed_user, test_app_with_db,
+    seed_delivery_job, seed_follow, seed_local_actor, seed_note_with_visibility,
+    seed_oauth_application, seed_oauth_token, seed_remote_actor, seed_report, seed_session,
+    seed_user, test_app_with_db,
 };
 
 async fn body_json(response: axum::response::Response<Body>) -> Value {
@@ -1862,4 +1863,409 @@ async fn admin_suspend_user_returns_404_for_missing_user() {
         .unwrap();
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+// --- キュー管理 (queue_service) ---
+
+#[tokio::test]
+async fn admin_queue_stats_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/queue/stats")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_queue_stats_requires_literal_admin_role_not_permission() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    // "queue"権限相当のものはPython版に存在せず、get_admin_user
+    // (role文字列が"admin"かどうか)のみが判定基準。permissions JSONBで
+    // is_adminを立てたカスタムroleでも通らないことを確認する。
+    let role_name = format!("queueadmin{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, true, json!({})).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "queuenotadmin", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/queue/stats")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_queue_stats_response_shape_is_internally_consistent() {
+    // `delivery_queue` はテーブル全体を集計する(テストごとに隔離されていない)
+    // ため、他のテストと並列実行しているとpending/processing/delivered/dead
+    // の絶対値・差分は両方とも揺れうる。ここでは単一レスポンス内で常に
+    // 成り立つはずの不変条件(total = 内訳の合計)のみを検証する。
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/queue/stats")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+
+    let field = |key: &str| json[key].as_i64().unwrap();
+    assert_eq!(
+        field("total"),
+        field("pending") + field("processing") + field("delivered") + field("dead")
+    );
+    assert!(field("recent_delivered") <= field("delivered"));
+    assert!(field("recent_dead") <= field("dead"));
+}
+
+#[tokio::test]
+async fn admin_queue_stats_recent_counts_use_current_hour_start_as_boundary() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let actor_id = seed_local_actor(&db, &format!("queuestats{}", Uuid::new_v4().simple())).await;
+    let inbox = format!("https://stats-{}.example/inbox", Uuid::new_v4().simple());
+
+    // `last_attempted_at`を明示的にセットするテストは他に存在しないため、
+    // `recent_dead`はこのテスト自身が挿入する行以外では並列実行中の他テストと
+    // 衝突しにくい(それらは`last_attempted_at`をNULLのまま`pending`で
+    // 投入するのみで、seed直後は集計対象にならない)。それでもUPDATEの前後で
+    // 差分を取ることで、たとえ他の要因で絶対値が動いても検証できるようにする。
+    let dead_recent = seed_delivery_job(&db, actor_id, &inbox, "dead").await;
+    let dead_stale = seed_delivery_job(&db, actor_id, &inbox, "dead").await;
+
+    let before = {
+        let req = Request::builder()
+            .method("GET")
+            .uri("/api/v1/admin/queue/stats")
+            .header("cookie", cookie_header(&session_id))
+            .body(Body::empty())
+            .unwrap();
+        body_json(app.clone().oneshot(req).await.unwrap()).await
+    };
+
+    // 「直近」判定は現在時刻の1時間前ではなく「今の時(hour)の開始時刻」を
+    // 境界に使う(Python版 `queue_service.get_queue_stats` の実際の挙動)。
+    // 境界内(今の時の開始時刻ちょうど)は集計対象、境界より前(前の時の
+    // 最後の1秒)は対象外になることを確認する。
+    sqlx::query(
+        "UPDATE delivery_queue SET last_attempted_at = date_trunc('hour', now()) WHERE id = $1",
+    )
+    .bind(dead_recent)
+    .execute(&db)
+    .await
+    .unwrap();
+    sqlx::query(
+        "UPDATE delivery_queue SET last_attempted_at = date_trunc('hour', now()) - interval '1 second' WHERE id = $1",
+    )
+    .bind(dead_stale)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/queue/stats")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let after = body_json(resp).await;
+
+    assert_eq!(
+        after["recent_dead"].as_i64().unwrap() - before["recent_dead"].as_i64().unwrap(),
+        1
+    );
+}
+
+#[tokio::test]
+async fn admin_queue_jobs_lists_ordered_desc_with_total() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let actor_id = seed_local_actor(&db, &format!("queuejobs{}", Uuid::new_v4().simple())).await;
+    // `domain`でこのテスト専有のホストに絞り込み、`delivery_queue`が
+    // テスト間で共有される(ワークスペース全体を並列実行すると他ファイルの
+    // テストも行を挿入する)ことの影響を受けないようにする。デフォルトの
+    // limit=50に頼ると、大量に挿入された他テストの行に押し出されて自分の
+    // 行が結果に含まれない場合がある。
+    let domain = format!("jobs-{}.example", Uuid::new_v4().simple());
+    let inbox = format!("https://{domain}/inbox");
+
+    let older = seed_delivery_job(&db, actor_id, &inbox, "pending").await;
+    sqlx::query("UPDATE delivery_queue SET created_at = now() - interval '1 hour' WHERE id = $1")
+        .bind(older)
+        .execute(&db)
+        .await
+        .unwrap();
+    let newer = seed_delivery_job(&db, actor_id, &inbox, "pending").await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/queue/jobs?domain={domain}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let jobs = json["jobs"].as_array().unwrap();
+    let ids: Vec<String> = jobs
+        .iter()
+        .map(|j| j["id"].as_str().unwrap().to_string())
+        .collect();
+    let newer_pos = ids.iter().position(|id| id == &newer.to_string()).unwrap();
+    let older_pos = ids.iter().position(|id| id == &older.to_string()).unwrap();
+    assert!(newer_pos < older_pos);
+    assert_eq!(json["total"], 2);
+}
+
+#[tokio::test]
+async fn admin_queue_jobs_filters_by_status_and_domain() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let actor_id = seed_local_actor(&db, &format!("queuefilter{}", Uuid::new_v4().simple())).await;
+    let domain = format!("filter-{}.example", Uuid::new_v4().simple());
+    let matching_inbox = format!("https://{domain}/inbox");
+    let other_inbox = format!("https://other-{}.example/inbox", Uuid::new_v4().simple());
+
+    let matching = seed_delivery_job(&db, actor_id, &matching_inbox, "dead").await;
+    seed_delivery_job(&db, actor_id, &matching_inbox, "pending").await;
+    seed_delivery_job(&db, actor_id, &other_inbox, "dead").await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/queue/jobs?status=dead&domain={domain}"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let jobs = json["jobs"].as_array().unwrap();
+    assert_eq!(jobs.len(), 1);
+    assert_eq!(jobs[0]["id"], matching.to_string());
+    assert_eq!(json["total"], 1);
+}
+
+#[tokio::test]
+async fn admin_queue_jobs_limit_out_of_range_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/queue/jobs?limit=201")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_queue_jobs_negative_offset_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/queue/jobs?offset=-1")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_retry_queue_job_resets_dead_job_to_pending() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let actor_id = seed_local_actor(&db, &format!("queueretry{}", Uuid::new_v4().simple())).await;
+    let inbox = format!("https://retry-{}.example/inbox", Uuid::new_v4().simple());
+    let job_id = seed_delivery_job(&db, actor_id, &inbox, "dead").await;
+    sqlx::query(
+        "UPDATE delivery_queue SET attempts = 10, error_message = 'boom', \
+         next_retry_at = now() WHERE id = $1",
+    )
+    .bind(job_id)
+    .execute(&db)
+    .await
+    .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/queue/retry/{job_id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let row: (String, i32, Option<String>, Option<chrono::DateTime<Utc>>) = sqlx::query_as(
+        "SELECT status, attempts, error_message, next_retry_at FROM delivery_queue WHERE id = $1",
+    )
+    .bind(job_id)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(row.0, "pending");
+    assert_eq!(row.1, 0);
+    assert!(row.2.is_none());
+    assert!(row.3.is_none());
+}
+
+#[tokio::test]
+async fn admin_retry_queue_job_returns_404_when_not_dead() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let actor_id = seed_local_actor(&db, &format!("queuenotdead{}", Uuid::new_v4().simple())).await;
+    let inbox = format!("https://notdead-{}.example/inbox", Uuid::new_v4().simple());
+    let job_id = seed_delivery_job(&db, actor_id, &inbox, "pending").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/queue/retry/{job_id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_retry_queue_job_returns_404_for_missing_job() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/queue/retry/{}", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_retry_all_dead_jobs_filters_by_domain() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let actor_id =
+        seed_local_actor(&db, &format!("queueretryall{}", Uuid::new_v4().simple())).await;
+    let domain = format!("retryall-{}.example", Uuid::new_v4().simple());
+    let matching_inbox = format!("https://{domain}/inbox");
+    let other_inbox = format!("https://other-{}.example/inbox", Uuid::new_v4().simple());
+
+    let matching = seed_delivery_job(&db, actor_id, &matching_inbox, "dead").await;
+    let other = seed_delivery_job(&db, actor_id, &other_inbox, "dead").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/queue/retry-all?domain={domain}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["retried"], 1);
+
+    let matching_status: String =
+        sqlx::query_scalar("SELECT status FROM delivery_queue WHERE id = $1")
+            .bind(matching)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(matching_status, "pending");
+    let other_status: String =
+        sqlx::query_scalar("SELECT status FROM delivery_queue WHERE id = $1")
+            .bind(other)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(other_status, "dead");
+}
+
+#[tokio::test]
+async fn admin_purge_delivered_jobs_removes_only_old_delivered() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let actor_id = seed_local_actor(&db, &format!("queuepurge{}", Uuid::new_v4().simple())).await;
+    let inbox = format!("https://purge-{}.example/inbox", Uuid::new_v4().simple());
+
+    let old_delivered = seed_delivery_job(&db, actor_id, &inbox, "delivered").await;
+    sqlx::query("UPDATE delivery_queue SET created_at = now() - interval '48 hours' WHERE id = $1")
+        .bind(old_delivered)
+        .execute(&db)
+        .await
+        .unwrap();
+    let recent_delivered = seed_delivery_job(&db, actor_id, &inbox, "delivered").await;
+    let old_dead = seed_delivery_job(&db, actor_id, &inbox, "dead").await;
+    sqlx::query("UPDATE delivery_queue SET created_at = now() - interval '48 hours' WHERE id = $1")
+        .bind(old_dead)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/admin/queue/purge?older_than_hours=24")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["purged"], 1);
+
+    let remaining: Vec<Uuid> =
+        sqlx::query_scalar("SELECT id FROM delivery_queue WHERE id = ANY($1)")
+            .bind(&[old_delivered, recent_delivered, old_dead][..])
+            .fetch_all(&db)
+            .await
+            .unwrap();
+    assert!(!remaining.contains(&old_delivered));
+    assert!(remaining.contains(&recent_delivered));
+    assert!(remaining.contains(&old_dead));
+}
+
+#[tokio::test]
+async fn admin_purge_delivered_jobs_older_than_hours_below_minimum_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/admin/queue/purge?older_than_hours=0")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
