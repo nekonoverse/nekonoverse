@@ -47,3 +47,4 @@ http-body-util = "0.1"
 tower = { version = "0.5", features = ["util"] }
 futures-util = "0.3"
 rand = "0.8"
+wiremock = "0.6"

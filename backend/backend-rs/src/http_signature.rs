@@ -1,20 +1,17 @@
 //! `app/activitypub/http_signature.py` の検証側 (`parse_signature_header`/
-//! `verify_signature`) と `app/activitypub/routes.py` の `_verify_digest` を
-//! 移植したもの。
+//! `verify_signature`) と署名側 (`sign_request`、RSA-SHA256のみ)、
+//! `app/activitypub/routes.py` の `_verify_digest` を移植したもの。
 //!
 //! cavage形式 HTTP Signature の検証(RSA-PKCS1v15+SHA256、Ed25519/FEP-521a
 //! Multikey の2方式)は、inbox 受信処理(`activitypub/handlers/`)を
-//! Rust化する前提となる基盤部品(Issue #1139 Stage 4)。`get_actor_public_key`
-//! (鍵IDからactorを引く経路)は未知のリモートactorに対して署名付きHTTPで
-//! 取り込む`fetch_remote_actor`に依存しており、これは`resolve_webfinger`と
-//! 同種の新たな対外通信能力を要する別の大きな一枚岩のため、本PRでは検証
-//! ロジック本体(鍵材料は呼び出し側から渡される前提)のみを切り出す。
-//! `sign_request`(配送用の署名生成側)は実配送が引き続きPython側の
-//! delivery workerで行われるため未移植。
+//! Rust化する前提となる基盤部品(Issue #1139 Stage 4)として#1151で先行移植した。
+//! `sign_request`は`remote_actor.rs`の`fetch_remote_actor`(未知のリモートactorを
+//! 署名付きHTTP GETで取り込む)が使う、配送(delivery worker、引き続きPython側)
+//! とは独立した用途。
 //!
-//! なお `verify_signature`/`_verify_digest` は inbox エンドポイントという
-//! 連合の認証境界を担うセキュリティ上重要なロジックのため、Python実装との
-//! 一言一句の挙動一致(異常系のフォールスルー含む)を優先して移植している。
+//! なお `verify_signature`/`_verify_digest`/`sign_request` は連合の認証境界を
+//! 担うセキュリティ上重要なロジックのため、Python実装との一言一句の挙動一致
+//! (異常系のフォールスルー含む)を優先して移植している。
 
 use std::collections::{HashMap, HashSet};
 
@@ -24,7 +21,7 @@ use chrono::{DateTime, Utc};
 use ed25519_dalek::{Signature as Ed25519Signature, Verifier, VerifyingKey};
 use rsa::pkcs1::DecodeRsaPublicKey;
 use rsa::pkcs1v15::Pkcs1v15Sign;
-use rsa::pkcs8::DecodePublicKey;
+use rsa::pkcs8::{DecodePrivateKey, DecodePublicKey};
 use rsa::RsaPublicKey;
 use sha2::{Digest, Sha256};
 
@@ -217,9 +214,81 @@ pub fn verify_digest(body: &[u8], digest_header: Option<&str>) -> bool {
     constant_time_eq(actual_b64.as_bytes(), expected_b64.as_bytes())
 }
 
+/// `app.activitypub.http_signature.sign_request` を移植したもの。RSA-SHA256の
+/// みをサポートする(Ed25519分岐はPython版にもあるが、唯一の呼び出し元
+/// `actor_service._signed_get`がアルゴリズムを明示指定せず常にデフォルトの
+/// "rsa-sha256"を使うため、この関数の実際の呼び出し元である`remote_actor.rs`の
+/// 署名付きGETでは到達しない)。成功時は`Host`/`Date`/`Digest`(bodyがある
+/// 場合のみ)/`Signature`ヘッダーを返す。
+pub fn sign_request(
+    private_key_pem: &str,
+    key_id: &str,
+    method: &str,
+    url: &str,
+    body: Option<&[u8]>,
+) -> Option<Vec<(String, String)>> {
+    sign_request_at(private_key_pem, key_id, method, url, body, Utc::now())
+}
+
+/// `sign_request` の本体。`now` を明示注入できるようにしてあるのはテスト専用
+/// (Python版に同等の引数は無い、`sign_request`が常に`Utc::now()`を渡す) —
+/// 固定タイムスタンプでないと署名がテスト実行のたびに変わり、Python生成の
+/// オラクル値と突き合わせられないため。
+fn sign_request_at(
+    private_key_pem: &str,
+    key_id: &str,
+    method: &str,
+    url: &str,
+    body: Option<&[u8]>,
+    now: DateTime<Utc>,
+) -> Option<Vec<(String, String)>> {
+    let parsed = url::Url::parse(url).ok()?;
+    let mut path = parsed.path().to_string();
+    if let Some(query) = parsed.query() {
+        path.push('?');
+        path.push_str(query);
+    }
+    let host = parsed.host_str()?.to_string();
+
+    // `email.utils.format_datetime(..., usegmt=True)` (RFC 2822、常にGMT) 相当。
+    let date = now.format("%a, %d %b %Y %H:%M:%S GMT").to_string();
+
+    let mut headers_to_sign = vec!["(request-target)", "host", "date"];
+    let mut signed_parts = vec![
+        format!("(request-target): {} {path}", method.to_lowercase()),
+        format!("host: {host}"),
+        format!("date: {date}"),
+    ];
+    let mut result_headers = vec![("Host".to_string(), host), ("Date".to_string(), date)];
+
+    if let Some(body) = body {
+        let digest = format!("SHA-256={}", BASE64.encode(Sha256::digest(body)));
+        headers_to_sign.push("digest");
+        signed_parts.push(format!("digest: {digest}"));
+        result_headers.push(("Digest".to_string(), digest));
+    }
+
+    let signed_string = signed_parts.join("\n");
+    let private_key = rsa::RsaPrivateKey::from_pkcs8_pem(private_key_pem).ok()?;
+    let hashed = Sha256::digest(signed_string.as_bytes());
+    let signature = private_key
+        .sign(Pkcs1v15Sign::new::<Sha256>(), &hashed)
+        .ok()?;
+    let signature_b64 = BASE64.encode(signature);
+
+    let headers_str = headers_to_sign.join(" ");
+    let sig_header = format!(
+        r#"keyId="{key_id}",algorithm="rsa-sha256",headers="{headers_str}",signature="{signature_b64}""#
+    );
+    result_headers.push(("Signature".to_string(), sig_header));
+
+    Some(result_headers)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use chrono::TimeZone;
 
     fn headers_map(pairs: &[(&str, &str)]) -> HashMap<String, String> {
         pairs
@@ -593,5 +662,121 @@ RwIDAQAB\n\
             ]),
             Some("rsa-sha256"),
         ));
+    }
+
+    // オラクル値: 下記PRIVATE_PEMを使い、Python版の`sign_request`と全く同じ
+    // アルゴリズムを固定タイムスタンプ(2026-01-15T10:30:00Z)で手動実行して
+    // 生成した署名(RSA-PKCS1v15は決定的なため、同一鍵+メッセージなら
+    // Rust側も1バイト単位で一致するはず)。
+    const SIGN_ORACLE_PRIVATE_PEM: &str = r#"-----BEGIN PRIVATE KEY-----
+MIIEvgIBADANBgkqhkiG9w0BAQEFAASCBKgwggSkAgEAAoIBAQCfYgv9nZ8WGbFQ
+UVfmuGbROeQhUNcsW3Aahsd3xcsX9uTzMRtwuxobY1GIFYkQ/iUu6N0nGicXhVr0
+CcKimFk4IkZP6hrmwAjz1tPTkWh0PfuuIOLaubGIb2pEO/iQJ1PsdPGPEC2VDOkK
+rWGEQvTLdVQjriOFntt2VDBP2SQ+rD/0OWa3cBlf/VCKQmSJ0f7X6hbqQ1v7svzr
+XHdAVnzLNUvAe0Q8BOSNeuDdSY6v2jsf3ST0V8samks7TLmBfAS5k2QOf0+yWDxc
+qKdx8S4Hj89BmAoTyzBFxJkqUs9EkUmNdZtAnqrFpja3evSqn5FC0QkYXFgU56Z3
+/sfH1DhbAgMBAAECggEAQDQe4Gs+SojPBKu/3RErWd0YKNOH2jZ7UjQ45eaniV/L
+mquNgjvcqGu5zDfgnxfBosPrUnUWikMOAIBuB1GXnyUvbcHAVHPHJ3LCoddRXIIb
+gGl++N0UxwEaraH63xb4l6gEJr09n20z8zkkr0LJmawJ2NWtOYZkoaYIUCIIl7Xo
+zjeLsbneDB3WqVpexSswKjn+CtXTQuZMOQVfM0PqZJE10xlgUHh5uCyvw+2g5nwn
+Pa3D9WE7wxnYAesAJHDjk+hBtVvFJKtorFrmU3fJfd0BrJY0bYpeAt14b7SGBBEa
+iKpDoscPsir33h4hZ777+nWfJtey4e8xshIw6IHnAQKBgQDLyc7QTNAze3d28USr
+rlYkbTdVTG+VGYBVLb/tfpTyQc8p5uoVoT3h24ZFNlqHtoVdV1rLL1NtGxEP6hr8
+mj/QQe0fdb3rsZFdp6aciKe+AVA0NOSGUSl1ubbnWHCgJSN1MlF9zc9EQe7DJehL
+xZ4tk6uCCXeUkDmiLtWLHp6KnwKBgQDIN8GIDXrRqjnMfsKvjYBNBXDkUtoAXDWc
+k4zJwCyeUFiIhLT9K8JB1eN24A4CvrZ6i8vgaR30w3AlBDXAeidWPnBgPJ6wpMRC
+FXpCUPJFnP4i3ot5y1T4yihtHXjH3Rw7v1KKjHYqEjKLX7YJ9mDtNkSerO0z6OMy
+0agfO8z0xQKBgQChTZGXqtU5isbarMowIgQpPRGJQMEpgU/lHBtIvuLihliV0CMF
+D+XNeldjPUyXE0+ovFYvcbxVJhFxSVonC2jrTOOF/Upg3uIzAVqNmFU9vghf6mXg
+Mynf9ynhIE21VPAl+bgrHdarLozwhnbCUx+K79HXUesG+snDp9J7Fbdj/QKBgEK9
+gz+s7qHxUm7+WjtWucvy4lzZ2V2BX0WgUa/25Wioc7qeMg6qhYiYmchIi6MSm5Vi
+AEYABEJQ25MbQie1EGPJUIBj9KoBYoJ80lJE1V2rJXPOJ0QkKWD9Ulh9GIPXCtBH
+yGXyyHjhtAONlgrgHBM2oc0a678ABKwuAxLWRk3ZAoGBAJGMG8rWTB2Ab8nr9SrE
+8HgA5aYGbmgUsvZXVjqepDttFQ9+4uJOB0TDR83SydVqz+4Wpoxjci6uZDkvHEP5
+96/HfrX4tlwWwXYo1i/wzkCogkQZPFX7zZS5Y6IhtgxCLmIHyRs5UENHr3rwmrFJ
+rRWQGgoh8ZoYs94aTM3K2EEt
+-----END PRIVATE KEY-----
+"#;
+    const SIGN_ORACLE_EXPECTED_SIG_HEADER: &str = r#"keyId="https://neko.example/users/local#main-key",algorithm="rsa-sha256",headers="(request-target) host date",signature="HsJ7m+kVEpzFEG2XCInRezByUIWLCE2d//M2o9xDAJ5mxS52Bku2lgavsKskYVzV5gdKiHvtEJj9MxOyKXFoKUSrmu0814sAbOH7jzCbJ5Q53U8nXSI67twl0PzEf45hPYAhaGmI7OnTyPpPtiLHjF7M/zHYlpz+tzw0+jTMVeJzZ4mQss8sXfXnWa8BhUeLiO+j9A0jMcweQTQGM4JDZdDIt8VNpl5DQqJLbNc6QwB/ww9TXi2mqZiC7A19wleLTAznYdcEU6NJS5ALMBuOqDPyaRIWiCmMGnobOOgECyX4e9icBeXEmBey63bC4Ar/J9NrzFC1LJn9/tDnerKW8Q==""#;
+
+    #[test]
+    fn sign_request_matches_python_oracle_for_get_without_body() {
+        let fixed_now = Utc
+            .with_ymd_and_hms(2026, 1, 15, 10, 30, 0)
+            .single()
+            .unwrap();
+        let headers = sign_request_at(
+            SIGN_ORACLE_PRIVATE_PEM,
+            "https://neko.example/users/local#main-key",
+            "GET",
+            "https://remote.example/users/alice",
+            None,
+            fixed_now,
+        )
+        .expect("sign_request_at should succeed");
+
+        let as_map: HashMap<&str, &str> = headers
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+        assert_eq!(as_map["Host"], "remote.example");
+        assert_eq!(as_map["Date"], "Thu, 15 Jan 2026 10:30:00 GMT");
+        assert!(!as_map.contains_key("Digest"));
+        assert_eq!(as_map["Signature"], SIGN_ORACLE_EXPECTED_SIG_HEADER);
+    }
+
+    #[test]
+    fn sign_request_with_body_includes_digest_and_verifies() {
+        use rsa::pkcs8::EncodePublicKey;
+        use rsa::RsaPrivateKey;
+
+        let private_key = RsaPrivateKey::from_pkcs8_pem(SIGN_ORACLE_PRIVATE_PEM).unwrap();
+        let public_key = RsaPublicKey::from(&private_key);
+        let public_key_pem = public_key
+            .to_public_key_pem(rsa::pkcs8::LineEnding::LF)
+            .unwrap();
+
+        let body = br#"{"type":"Follow"}"#;
+        let now = Utc::now();
+        let headers = sign_request_at(
+            SIGN_ORACLE_PRIVATE_PEM,
+            "https://neko.example/users/local#main-key",
+            "POST",
+            "https://remote.example/users/bob/inbox",
+            Some(body),
+            now,
+        )
+        .expect("sign_request_at should succeed");
+        let as_map: HashMap<&str, &str> = headers
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect();
+
+        assert!(verify_digest(body, Some(as_map["Digest"])));
+        assert!(verify_signature(
+            &public_key_pem,
+            as_map["Signature"],
+            "POST",
+            "/users/bob/inbox",
+            &headers_map(&[
+                ("host", as_map["Host"]),
+                ("date", as_map["Date"]),
+                ("digest", as_map["Digest"]),
+            ]),
+            Some("rsa-sha256"),
+        ));
+    }
+
+    #[test]
+    fn sign_request_at_rejects_invalid_url() {
+        assert!(sign_request_at(
+            SIGN_ORACLE_PRIVATE_PEM,
+            "https://neko.example/users/local#main-key",
+            "GET",
+            "not a url",
+            None,
+            Utc::now(),
+        )
+        .is_none());
     }
 }
