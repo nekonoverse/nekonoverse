@@ -130,6 +130,16 @@
 //! `update_emoji`サービスにUNIQUE制約違反を捕捉するtry/exceptが無いため
 //! backend-rs側も捕捉せず、素の500として扱う(`create_domain_block`とは
 //! 異なりPython版に該当の防御コードが無いことを確認済み)。
+//!
+//! サーバーファイル管理系(`list_server_files`/`upload_server_file`/
+//! `delete_server_file_endpoint`)は`get_admin_user`(`require_admin_role`)
+//! 配下。`drive::upload_drive_file`/`drive::get_drive_file`/
+//! `drive::delete_drive_file`/`drive::file_to_url`(いずれもemoji
+//! add/delete(#1175)で新規移植済み、owner無し`server_file=true`共通基盤)を
+//! そのまま再利用するだけの薄いラッパーで、`custom_emojis`のような紐づく
+//! 別テーブルが無い点のみが異なる。`delete_server_file_endpoint`は対象の
+//! `drive_files`行が存在しても`server_file=false`(他エンドポイント由来の
+//! アップロード)ならPython版と同じく404を返す。
 
 use axum::body::Bytes;
 use axum::extract::{Multipart, Path, Query, State};
@@ -248,6 +258,14 @@ pub fn router() -> Router<AppState> {
         .route(
             "/api/v1/admin/emoji/:id",
             patch(update_emoji_endpoint).delete(delete_emoji_endpoint),
+        )
+        .route(
+            "/api/v1/admin/server-files",
+            get(list_server_files).post(upload_server_file),
+        )
+        .route(
+            "/api/v1/admin/server-files/:id",
+            delete(delete_server_file_endpoint),
         )
 }
 
@@ -3752,6 +3770,114 @@ async fn delete_emoji_endpoint(
         .await?;
 
     invalidate_emoji_cache(&state).await;
+
+    Ok(Json(json!({ "ok": true })).into_response())
+}
+
+fn server_file_json(config: &Config, file: &drive::DriveFile) -> Value {
+    json!({
+        "id": file.id.to_string(),
+        "filename": file.filename,
+        "mime_type": file.mime_type,
+        "size_bytes": file.size_bytes,
+        "url": drive::file_to_url(config, file),
+        "created_at": to_pydantic_isoformat(file.created_at),
+    })
+}
+
+/// `app.api.admin.list_server_files`を移植したもの。
+async fn list_server_files(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let files: Vec<drive::DriveFile> = sqlx::query_as(
+        "SELECT id, owner_id, s3_key, filename, mime_type, size_bytes, width, height, \
+                description, server_file, thumbnail_s3_key, created_at \
+         FROM drive_files WHERE server_file = true ORDER BY created_at DESC",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let json: Vec<Value> = files
+        .iter()
+        .map(|f| server_file_json(&state.config, f))
+        .collect();
+    Ok(Json(json).into_response())
+}
+
+/// `app.api.admin.upload_server_file`を移植したもの。
+async fn upload_server_file(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    mut multipart: Multipart,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut file_content_type: Option<String> = None;
+    let mut filename: Option<String> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Invalid multipart body"))?
+    {
+        if field.name().unwrap_or("") == "file" {
+            filename = field.file_name().map(str::to_string);
+            file_content_type = field.content_type().map(str::to_string);
+            file_data = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|_| {
+                        AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Invalid file field")
+                    })?
+                    .to_vec(),
+            );
+        }
+    }
+
+    let Some(file_data) = file_data else {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "file is required",
+        ));
+    };
+
+    let drive_file = drive::upload_drive_file(
+        &state,
+        file_data,
+        filename.as_deref().unwrap_or("server-file"),
+        file_content_type
+            .as_deref()
+            .unwrap_or("application/octet-stream"),
+        None,
+        true,
+    )
+    .await?;
+
+    Ok(Json(server_file_json(&state.config, &drive_file)).into_response())
+}
+
+/// `app.api.admin.delete_server_file_endpoint`を移植したもの。
+async fn delete_server_file_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let drive_file = drive::get_drive_file(&state, id).await?;
+    let Some(drive_file) = drive_file.filter(|f| f.server_file) else {
+        return Err(AppError::not_found("Server file not found"));
+    };
+
+    drive::delete_drive_file(&state, &drive_file).await?;
 
     Ok(Json(json!({ "ok": true })).into_response())
 }
