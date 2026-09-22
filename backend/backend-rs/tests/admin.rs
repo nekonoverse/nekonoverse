@@ -2477,3 +2477,447 @@ async fn admin_registrations_unauthenticated_returns_401() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
 }
+
+// --- 連合サーバー一覧/詳細 (federation) ---
+
+/// `domain_blocks`にseverity/reasonを指定してテスト用のドメインブロックを
+/// 1件投入する(`common::seed_domain_block`はseverity列のDB defaultである
+/// `'suspend'`固定・reasonなしのため、silence系のテストには使えない)。
+async fn seed_domain_block_full(db: &PgPool, domain: &str, severity: &str, reason: Option<&str>) {
+    sqlx::query(
+        "INSERT INTO domain_blocks (id, domain, severity, reason, created_at) \
+         VALUES ($1, $2, $3, $4, now())",
+    )
+    .bind(Uuid::new_v4())
+    .bind(domain)
+    .bind(severity)
+    .bind(reason)
+    .execute(db)
+    .await
+    .unwrap();
+}
+
+/// `local = false`のノートを1件投入する(`common::seed_note_with_visibility`は
+/// `local`を常に`true`固定のため、連合サーバー一覧の`note_count`集計テストには
+/// 使えない)。
+async fn seed_remote_note(db: &PgPool, actor_id: Uuid) -> Uuid {
+    let id = Uuid::new_v4();
+    let ap_id = format!("https://remote.example/notes/{id}");
+    sqlx::query(
+        r#"
+        INSERT INTO notes (
+            id, ap_id, actor_id, content, visibility, sensitive, "to", cc, published,
+            replies_count, reactions_count, renotes_count, local, is_poll, poll_multiple, is_talk
+        ) VALUES (
+            $1, $2, $3, 'remote note', 'public', false, '[]'::jsonb, '[]'::jsonb, now(),
+            0, 0, 0, false, false, false, false
+        )
+        "#,
+    )
+    .bind(id)
+    .bind(&ap_id)
+    .bind(actor_id)
+    .execute(db)
+    .await
+    .unwrap();
+    id
+}
+
+#[tokio::test]
+async fn admin_federation_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/federation")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_federation_forbidden_for_plain_user() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "plainfed", "user").await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/federation")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_federation_requires_federation_permission_not_users() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("usersonlyfed{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "users": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "usersonlyfedmod", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/federation")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_federation_list_empty() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let domain = format!("nomatch-{}.example", Uuid::new_v4().simple());
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/federation?search={domain}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let data = body_json(resp).await;
+    assert_eq!(data["servers"], json!([]));
+    assert_eq!(data["total"], 0);
+}
+
+#[tokio::test]
+async fn admin_federation_list_with_remote_actors_and_note_count() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let misskey = format!("misskey-{suffix}.example");
+    let mastodon = format!("mastodon-{suffix}.example");
+
+    let actor1 = seed_remote_actor(&db, "user1", &misskey).await;
+    seed_remote_actor(&db, "user2", &misskey).await;
+    let actor3 = seed_remote_actor(&db, "user3", &mastodon).await;
+    seed_remote_note(&db, actor1).await;
+    seed_remote_note(&db, actor3).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/federation?search={suffix}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let data = body_json(resp).await;
+    assert_eq!(data["total"], 2);
+
+    let servers = data["servers"].as_array().unwrap();
+    let misskey_row = servers
+        .iter()
+        .find(|s| s["domain"] == json!(misskey))
+        .unwrap();
+    assert_eq!(misskey_row["user_count"], 2);
+    assert_eq!(misskey_row["note_count"], 1);
+    assert_eq!(misskey_row["status"], "active");
+    assert_eq!(misskey_row["delivery_stats"]["success"], 0);
+}
+
+#[tokio::test]
+async fn admin_federation_list_status_filter() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let good = format!("good-{suffix}.example");
+    let blocked = format!("blocked-{suffix}.example");
+
+    seed_remote_actor(&db, "u1", &good).await;
+    seed_remote_actor(&db, "u2", &blocked).await;
+    seed_domain_block_full(&db, &blocked, "suspend", None).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/federation?search={suffix}&status=active"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    assert_eq!(data["total"], 1);
+    assert_eq!(data["servers"][0]["domain"], json!(good));
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/federation?search={suffix}&status=suspended"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    assert_eq!(data["total"], 1);
+    assert_eq!(data["servers"][0]["domain"], json!(blocked));
+    assert_eq!(data["servers"][0]["status"], "suspended");
+}
+
+#[tokio::test]
+async fn admin_federation_list_silenced_filter() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let good = format!("good2-{suffix}.example");
+    let quiet = format!("quiet-{suffix}.example");
+
+    seed_remote_actor(&db, "u1", &good).await;
+    seed_remote_actor(&db, "u2", &quiet).await;
+    seed_domain_block_full(&db, &quiet, "silence", Some("noisy")).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/federation?search={suffix}&status=silenced"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    assert_eq!(data["total"], 1);
+    assert_eq!(data["servers"][0]["domain"], json!(quiet));
+    assert_eq!(data["servers"][0]["status"], "silenced");
+    assert_eq!(data["servers"][0]["block_severity"], "silence");
+}
+
+#[tokio::test]
+async fn admin_federation_list_sort_domain_asc_and_desc() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let beta = format!("beta-{suffix}.example");
+    let alpha = format!("alpha-{suffix}.example");
+    let gamma = format!("gamma-{suffix}.example");
+
+    seed_remote_actor(&db, "u1", &beta).await;
+    seed_remote_actor(&db, "u2", &alpha).await;
+    seed_remote_actor(&db, "u3", &gamma).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/federation?search={suffix}&sort=domain&order=asc"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    let domains: Vec<String> = data["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["domain"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(domains, vec![alpha.clone(), beta.clone(), gamma.clone()]);
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/federation?search={suffix}&sort=domain&order=desc"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    let domains_desc: Vec<String> = data["servers"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["domain"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(domains_desc, vec![gamma, beta, alpha]);
+}
+
+#[tokio::test]
+async fn admin_federation_list_pagination() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let suffix = Uuid::new_v4().simple().to_string();
+    let mut domains = Vec::new();
+    for i in 0..5 {
+        let domain = format!("d{i}-{suffix}.example");
+        seed_remote_actor(&db, &format!("u{i}"), &domain).await;
+        domains.push(domain);
+    }
+    domains.sort();
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/federation?search={suffix}&limit=2&offset=0&sort=domain&order=asc"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    assert_eq!(data["total"], 5);
+    let page1 = data["servers"].as_array().unwrap();
+    assert_eq!(page1.len(), 2);
+    assert_eq!(page1[0]["domain"], json!(domains[0]));
+    assert_eq!(page1[1]["domain"], json!(domains[1]));
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/federation?search={suffix}&limit=2&offset=4&sort=domain&order=asc"
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    assert_eq!(data["servers"].as_array().unwrap().len(), 1);
+}
+
+#[tokio::test]
+async fn admin_federation_list_limit_out_of_range_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/federation?limit=201")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_federation_list_invalid_sort_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/federation?sort=bogus")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_federation_list_delivery_stats() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let domain = format!("target-{}.example", Uuid::new_v4().simple());
+    let actor = seed_remote_actor(&db, "u1", &domain).await;
+
+    let inbox = format!("https://{domain}/inbox");
+    for _ in 0..3 {
+        seed_delivery_job(&db, actor, &inbox, "delivered").await;
+    }
+    seed_delivery_job(&db, actor, &inbox, "dead").await;
+    for _ in 0..2 {
+        seed_delivery_job(&db, actor, &inbox, "pending").await;
+    }
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/federation?search={domain}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    let srv = &data["servers"][0];
+    assert_eq!(srv["domain"], json!(domain));
+    assert_eq!(srv["delivery_stats"]["success"], 3);
+    assert_eq!(srv["delivery_stats"]["dead"], 1);
+    assert_eq!(srv["delivery_stats"]["pending"], 2);
+}
+
+#[tokio::test]
+async fn admin_federation_detail_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let domain = format!("detail-{}.example", Uuid::new_v4().simple());
+    let actor = seed_remote_actor(&db, "testuser", &domain).await;
+    seed_remote_note(&db, actor).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/federation/{domain}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let data = body_json(resp).await;
+    assert_eq!(data["domain"], json!(domain));
+    assert_eq!(data["user_count"], 1);
+    assert_eq!(data["note_count"], 1);
+    assert_eq!(data["status"], "active");
+    let actors = data["recent_actors"].as_array().unwrap();
+    assert_eq!(actors.len(), 1);
+    assert_eq!(actors[0]["username"], "testuser");
+}
+
+#[tokio::test]
+async fn admin_federation_detail_with_block_info() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let domain = format!("bad-{}.example", Uuid::new_v4().simple());
+    seed_remote_actor(&db, "u1", &domain).await;
+    seed_domain_block_full(&db, &domain, "suspend", Some("spam server")).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!("/api/v1/admin/federation/{domain}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let data = body_json(resp).await;
+    assert_eq!(data["status"], "suspended");
+    assert_eq!(data["block_severity"], "suspend");
+    assert_eq!(data["block_reason"], "spam server");
+}
+
+#[tokio::test]
+async fn admin_federation_detail_not_found() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/federation/nonexistent-{}.example",
+            Uuid::new_v4().simple()
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
