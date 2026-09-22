@@ -22,14 +22,26 @@
 //! "announcements"を含まない7キーだけを読み書きする
 //! `permission_service.MODERATOR_PERMISSIONS`が対象)はGETが`get_staff_user`
 //! (`require_staff`)、PATCHが`get_admin_user`(`require_admin_role`)配下。
-//! 他の管理エンドポイント(users/emoji/announcements等)は本PRのスコープ外、
+//! ユーザー管理系(`list_users`/`change_user_role`/`suspend_user`/
+//! `unsuspend_user`/`silence_user`/`unsilence_user`)は`list_users`/
+//! `suspend_user`/`unsuspend_user`/`silence_user`/`unsilence_user`が
+//! `get_permitted_staff("users")`(`require_permission`)、
+//! `change_user_role`のみ`get_admin_user`(`require_admin_role`)配下。
+//! いずれも対象は`is_system`(システムアカウント)不可、`suspend`/`silence`/
+//! `change_user_role`はさらに操作対象が自分自身なら拒否する。停止/サイレンス
+//! 系は投稿モデレーション系と同じ`check_moderation_permission`
+//! (非admin一般モデレーターはスタッフ保護対象に手を出せない)を課す。
+//! `admin_delete_user`(アカウント即時削除、`account_deletion_service.
+//! admin_force_delete`経由でフォロー整理・メディア削除・Undo Follow配送・
+//! Delete(Person)配送を伴う大きめの一枚岩)は本PRのスコープ外、
+//! 他の管理エンドポイント(emoji/announcements/queue/system統計等)と合わせ
 //! 必要になった時点で追加する。
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
-use axum::routing::{delete, get, post};
+use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
@@ -47,7 +59,7 @@ use crate::domain_block::invalidate_domain_block_cache;
 use crate::error::AppError;
 use crate::follows::get_follower_inboxes;
 use crate::mastodon_time::to_pydantic_isoformat;
-use crate::moderation::log_action;
+use crate::moderation::{self, log_action};
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -78,6 +90,12 @@ pub fn router() -> Router<AppState> {
             "/api/v1/admin/permissions",
             get(get_permissions).patch(update_permissions),
         )
+        .route("/api/v1/admin/users", get(list_users))
+        .route("/api/v1/admin/users/:id/role", patch(change_user_role))
+        .route("/api/v1/admin/users/:id/suspend", post(suspend_user))
+        .route("/api/v1/admin/users/:id/unsuspend", post(unsuspend_user))
+        .route("/api/v1/admin/users/:id/silence", post(silence_user))
+        .route("/api/v1/admin/users/:id/unsilence", post(unsilence_user))
 }
 
 #[derive(sqlx::FromRow)]
@@ -977,4 +995,343 @@ async fn update_permissions(
     }
 
     Ok(Json(moderator_permissions_json(&state.db).await?).into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct AdminUserRow {
+    id: Uuid,
+    username: String,
+    email: String,
+    display_name: Option<String>,
+    role: String,
+    is_active: bool,
+    is_system: bool,
+    suspended_at: Option<DateTime<Utc>>,
+    silenced_at: Option<DateTime<Utc>>,
+    created_at: DateTime<Utc>,
+}
+
+/// `app.schemas.admin.AdminUserResponse` を移植したもの。`storage_usage_bytes`
+/// はPython版のスキーマ上のデフォルト値(`list_users`は渡さない)で固定。
+fn admin_user_json(row: &AdminUserRow) -> Value {
+    json!({
+        "id": row.id,
+        "username": row.username,
+        "email": row.email,
+        "display_name": row.display_name,
+        "role": row.role,
+        "is_active": row.is_active,
+        "is_system": row.is_system,
+        "suspended": row.suspended_at.is_some(),
+        "silenced": row.silenced_at.is_some(),
+        "storage_usage_bytes": 0,
+        "created_at": to_pydantic_isoformat(row.created_at),
+    })
+}
+
+#[derive(Deserialize)]
+struct UsersQuery {
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// `Query(default=50, le=100)`/`Query(default=0, ge=0)`(FastAPI、Python版の
+/// `list_users`)の範囲検証を移植したもの。Python版は`limit`に下限が無く
+/// `offset`に上限が無い、非対称な制約をそのまま踏襲する。
+fn validate_users_query(limit: Option<i64>, offset: Option<i64>) -> Result<(i64, i64), AppError> {
+    let limit = limit.unwrap_or(50);
+    if limit > 100 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "limit must be at most 100",
+        ));
+    }
+    let offset = offset.unwrap_or(0);
+    if offset < 0 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "offset must be greater than or equal to 0",
+        ));
+    }
+    Ok((limit, offset))
+}
+
+async fn list_users(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Query(params): Query<UsersQuery>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "users").await?;
+    let (limit, offset) = validate_users_query(params.limit, params.offset)?;
+
+    let rows: Vec<AdminUserRow> = sqlx::query_as(
+        "SELECT u.id, a.username, u.email, a.display_name, u.role, u.is_active, u.is_system, \
+                a.suspended_at, a.silenced_at, u.created_at \
+         FROM users u \
+         JOIN actors a ON a.id = u.actor_id \
+         ORDER BY u.created_at DESC \
+         LIMIT $1 OFFSET $2",
+    )
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows.iter().map(admin_user_json).collect::<Vec<_>>()).into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct TargetUserRow {
+    id: Uuid,
+    actor_id: Uuid,
+    username: String,
+    role: String,
+    is_system: bool,
+    suspended_at: Option<DateTime<Utc>>,
+    silenced_at: Option<DateTime<Utc>>,
+}
+
+/// `app.api.admin._get_user` を移植したもの。
+async fn fetch_target_user(
+    db: &sqlx::PgPool,
+    user_id: Uuid,
+) -> Result<Option<TargetUserRow>, AppError> {
+    let row = sqlx::query_as(
+        "SELECT u.id, u.actor_id, a.username, u.role, u.is_system, a.suspended_at, a.silenced_at \
+         FROM users u JOIN actors a ON a.id = u.actor_id WHERE u.id = $1",
+    )
+    .bind(user_id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row)
+}
+
+#[derive(Deserialize)]
+struct RoleChangeRequest {
+    role: String,
+}
+
+/// `app.schemas.admin.RoleChangeRequest`の`Field`制約(`validate_role_create`の
+/// name制約と同一パターン)を移植したもの。
+fn validate_role_change(body: &RoleChangeRequest) -> Result<(), AppError> {
+    let len = body.role.chars().count();
+    let valid = (1..=50).contains(&len)
+        && body
+            .role
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase())
+        && body
+            .role
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    if !valid {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "role must match ^[a-z][a-z0-9_]*$ and be at most 50 characters",
+        ));
+    }
+    Ok(())
+}
+
+async fn change_user_role(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(user_id): Path<Uuid>,
+    Json(body): Json<RoleChangeRequest>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+    validate_role_change(&body)?;
+
+    let target = fetch_target_user(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    if target.is_system {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot modify system account",
+        ));
+    }
+    if target.id == current_user.id {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot change own role",
+        ));
+    }
+    if fetch_role_row(&state.db, &body.role).await?.is_none() {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Role '{}' does not exist", body.role),
+        ));
+    }
+
+    sqlx::query("UPDATE users SET role = $1 WHERE id = $2")
+        .bind(&body.role)
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
+
+    log_action(
+        &state,
+        current_user.id,
+        "role_change",
+        "actor",
+        &target.actor_id.to_string(),
+        Some(&format!("{} -> {}", target.role, body.role)),
+    )
+    .await?;
+
+    Ok(Json(json!({ "ok": true, "role": body.role })).into_response())
+}
+
+async fn suspend_user(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(user_id): Path<Uuid>,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "users").await?;
+    let action = parse_moderation_action(&body)?;
+
+    let target = fetch_target_user(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    if target.is_system {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot modify system account",
+        ));
+    }
+    if target.suspended_at.is_some() {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Already suspended",
+        ));
+    }
+    if target.id == current_user.id {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot suspend self",
+        ));
+    }
+    check_moderation_permission(&state, &current_user, Some(&target.role)).await?;
+
+    moderation::suspend_actor(
+        &state,
+        target.actor_id,
+        &target.username,
+        target.id,
+        current_user.id,
+        action.reason.as_deref(),
+    )
+    .await?;
+
+    Ok(Json(json!({ "ok": true })).into_response())
+}
+
+async fn unsuspend_user(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(user_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "users").await?;
+
+    let target = fetch_target_user(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    if target.is_system {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot modify system account",
+        ));
+    }
+    if target.suspended_at.is_none() {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Not suspended",
+        ));
+    }
+    check_moderation_permission(&state, &current_user, Some(&target.role)).await?;
+
+    moderation::unsuspend_actor(&state, target.actor_id, current_user.id).await?;
+
+    Ok(Json(json!({ "ok": true })).into_response())
+}
+
+async fn silence_user(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(user_id): Path<Uuid>,
+    body: Bytes,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "users").await?;
+    let action = parse_moderation_action(&body)?;
+
+    let target = fetch_target_user(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    if target.is_system {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot modify system account",
+        ));
+    }
+    if target.silenced_at.is_some() {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Already silenced",
+        ));
+    }
+    if target.id == current_user.id {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot silence self",
+        ));
+    }
+    check_moderation_permission(&state, &current_user, Some(&target.role)).await?;
+
+    moderation::silence_actor(
+        &state,
+        target.actor_id,
+        current_user.id,
+        action.reason.as_deref(),
+    )
+    .await?;
+
+    Ok(Json(json!({ "ok": true })).into_response())
+}
+
+async fn unsilence_user(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(user_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "users").await?;
+
+    let target = fetch_target_user(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    if target.is_system {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot modify system account",
+        ));
+    }
+    if target.silenced_at.is_none() {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Not silenced",
+        ));
+    }
+    check_moderation_permission(&state, &current_user, Some(&target.role)).await?;
+
+    moderation::unsilence_actor(&state, target.actor_id, current_user.id).await?;
+
+    Ok(Json(json!({ "ok": true })).into_response())
 }
