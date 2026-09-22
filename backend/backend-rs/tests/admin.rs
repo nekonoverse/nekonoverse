@@ -2269,3 +2269,211 @@ async fn admin_purge_delivered_jobs_older_than_hours_below_minimum_returns_422()
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+// --- 登録承認 (registrations) ---
+
+async fn seed_pending_user(
+    db: &PgPool,
+    prefix: &str,
+    reason: Option<&str>,
+) -> (Uuid, Uuid, String) {
+    let (user_id, actor_id, username) = seed_target_user(db, prefix).await;
+    sqlx::query(
+        "UPDATE users SET approval_status = 'pending', registration_reason = $2 WHERE id = $1",
+    )
+    .bind(user_id)
+    .bind(reason)
+    .execute(db)
+    .await
+    .unwrap();
+    (user_id, actor_id, username)
+}
+
+#[tokio::test]
+async fn admin_list_pending_registrations_returns_pending_only() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (pending_id, _actor_id, pending_username) =
+        seed_pending_user(&db, "pendingreg", Some("please let me in")).await;
+    let (approved_id, _approved_actor, _approved_username) =
+        seed_target_user(&db, "approvedreg").await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/registrations")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let entries = json.as_array().unwrap();
+    assert!(entries.iter().all(|r| r["id"] != approved_id.to_string()));
+    let entry = entries
+        .iter()
+        .find(|r| r["id"] == pending_id.to_string())
+        .expect("seeded pending registration present in list");
+    assert_eq!(entry["username"], pending_username);
+    assert_eq!(entry["reason"], "please let me in");
+}
+
+#[tokio::test]
+async fn admin_approve_registration_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, _target_actor, _username) = seed_pending_user(&db, "approvee", None).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/registrations/{target_user}/approve"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let approval_status: String =
+        sqlx::query_scalar("SELECT approval_status FROM users WHERE id = $1")
+            .bind(target_user)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(approval_status, "approved");
+
+    let log_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM moderation_log \
+         WHERE action = 'approve_registration' AND target_id = $1",
+    )
+    .bind(target_user.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_count, 1);
+}
+
+#[tokio::test]
+async fn admin_approve_registration_already_approved_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, _target_actor, _username) = seed_target_user(&db, "alreadyapproved").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/registrations/{target_user}/approve"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_approve_registration_returns_404_for_missing_user() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/v1/admin/registrations/{}/approve",
+            Uuid::new_v4()
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_reject_registration_deletes_user_and_actor() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, target_actor, _username) = seed_pending_user(&db, "rejectee", None).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/registrations/{target_user}/reject"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let user_exists: bool = sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM users WHERE id = $1)")
+        .bind(target_user)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(!user_exists);
+    let actor_exists: bool =
+        sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM actors WHERE id = $1)")
+            .bind(target_actor)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(!actor_exists);
+
+    let log_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM moderation_log \
+         WHERE action = 'reject_registration' AND target_id = $1",
+    )
+    .bind(target_user.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_count, 1);
+}
+
+#[tokio::test]
+async fn admin_reject_registration_already_handled_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, _target_actor, _username) = seed_target_user(&db, "handledreject").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/registrations/{target_user}/reject"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_registrations_require_registrations_permission_not_users() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("usersonlyreg{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "users": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "usersonlyregmod", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/registrations")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_registrations_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/registrations")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}

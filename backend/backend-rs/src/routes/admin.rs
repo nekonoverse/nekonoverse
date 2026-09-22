@@ -47,6 +47,17 @@
 //! 「今の時(hour)の開始時刻以降」(`datetime.now(UTC).replace(minute=0,
 //! second=0, microsecond=0)`)を境界に使うPython版の実際の挙動をそのまま
 //! 踏襲した。
+//!
+//! 登録承認系(`list_pending_registrations`/`approve_registration`/
+//! `reject_registration`)は`get_permitted_staff("registrations")`
+//! (`require_permission`)配下。対象は`approval_status == "pending"`の
+//! ユーザーのみで、承認は`approval_status`を`"approved"`に更新するだけ、
+//! 却下はユーザー本体と紐づくactorを削除する(Python版の
+//! `db.delete(target); db.delete(actor)`と同じ、未承認ユーザーはまだ
+//! フォロー等の関連行を持ちえないため追加のクリーンアップは不要)。
+//! いずれも`is_system`チェックは無い(Python版の`approve_registration`/
+//! `reject_registration`が`_get_user`のみで`is_system`を見ていないのと同じ、
+//! システムアカウントは`approval_status`が常に`"approved"`のため実質到達不能)。
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
@@ -112,6 +123,18 @@ pub fn router() -> Router<AppState> {
         .route("/api/v1/admin/queue/retry/:id", post(retry_queue_job))
         .route("/api/v1/admin/queue/retry-all", post(retry_all_dead_jobs))
         .route("/api/v1/admin/queue/purge", delete(purge_delivered_jobs))
+        .route(
+            "/api/v1/admin/registrations",
+            get(list_pending_registrations),
+        )
+        .route(
+            "/api/v1/admin/registrations/:id/approve",
+            post(approve_registration),
+        )
+        .route(
+            "/api/v1/admin/registrations/:id/reject",
+            post(reject_registration),
+        )
 }
 
 #[derive(sqlx::FromRow)]
@@ -1601,4 +1624,148 @@ async fn purge_delivered_jobs(
             .await?;
 
     Ok(Json(json!({ "ok": true, "purged": result.rows_affected() })).into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct PendingRegistrationRow {
+    id: Uuid,
+    username: String,
+    email: String,
+    reason: Option<String>,
+    created_at: DateTime<Utc>,
+}
+
+/// `app.schemas.admin.PendingRegistrationResponse` を移植したもの。
+fn pending_registration_json(row: &PendingRegistrationRow) -> Value {
+    json!({
+        "id": row.id,
+        "username": row.username,
+        "email": row.email,
+        "reason": row.reason,
+        "created_at": to_pydantic_isoformat(row.created_at),
+    })
+}
+
+/// `app.api.admin.list_pending_registrations` を移植したもの。
+async fn list_pending_registrations(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "registrations").await?;
+
+    let rows: Vec<PendingRegistrationRow> = sqlx::query_as(
+        "SELECT u.id, a.username, u.email, u.registration_reason AS reason, u.created_at \
+         FROM users u \
+         JOIN actors a ON a.id = u.actor_id \
+         WHERE u.approval_status = 'pending' \
+         ORDER BY u.created_at ASC",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(
+        rows.iter()
+            .map(pending_registration_json)
+            .collect::<Vec<_>>(),
+    )
+    .into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct PendingUserRow {
+    id: Uuid,
+    actor_id: Uuid,
+    approval_status: String,
+}
+
+async fn fetch_pending_user(
+    db: &sqlx::PgPool,
+    user_id: Uuid,
+) -> Result<Option<PendingUserRow>, AppError> {
+    let row = sqlx::query_as("SELECT id, actor_id, approval_status FROM users WHERE id = $1")
+        .bind(user_id)
+        .fetch_optional(db)
+        .await?;
+    Ok(row)
+}
+
+/// `app.api.admin.approve_registration` を移植したもの。
+async fn approve_registration(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(user_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "registrations").await?;
+
+    let target = fetch_pending_user(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    if target.approval_status != "pending" {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "User is not pending approval",
+        ));
+    }
+
+    sqlx::query("UPDATE users SET approval_status = 'approved' WHERE id = $1")
+        .bind(user_id)
+        .execute(&state.db)
+        .await?;
+
+    log_action(
+        &state,
+        current_user.id,
+        "approve_registration",
+        "user",
+        &target.id.to_string(),
+        None,
+    )
+    .await?;
+
+    Ok(Json(json!({ "ok": true })).into_response())
+}
+
+/// `app.api.admin.reject_registration` を移植したもの。ログ記録の後、
+/// ユーザー本体と紐づくactorを削除する(Python版の`db.delete(target)` →
+/// `db.delete(actor)`と同じ順序)。
+async fn reject_registration(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(user_id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "registrations").await?;
+
+    let target = fetch_pending_user(&state.db, user_id)
+        .await?
+        .ok_or_else(|| AppError::not_found("User not found"))?;
+    if target.approval_status != "pending" {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "User is not pending approval",
+        ));
+    }
+
+    log_action(
+        &state,
+        current_user.id,
+        "reject_registration",
+        "user",
+        &target.id.to_string(),
+        None,
+    )
+    .await?;
+
+    sqlx::query("DELETE FROM users WHERE id = $1")
+        .bind(target.id)
+        .execute(&state.db)
+        .await?;
+    sqlx::query("DELETE FROM actors WHERE id = $1")
+        .bind(target.actor_id)
+        .execute(&state.db)
+        .await?;
+
+    Ok(Json(json!({ "ok": true })).into_response())
 }
