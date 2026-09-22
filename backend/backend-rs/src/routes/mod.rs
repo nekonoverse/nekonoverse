@@ -1,5 +1,6 @@
 pub mod accounts;
 pub mod actor;
+pub mod admin;
 pub mod auth;
 pub mod authorized_apps;
 pub mod health;

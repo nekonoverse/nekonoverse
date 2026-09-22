@@ -1,4 +1,5 @@
 pub mod activitypub;
+pub mod admin_auth;
 pub mod auth;
 pub mod config;
 pub mod db;
@@ -11,6 +12,7 @@ pub mod hmac_sig;
 pub mod http_signature;
 pub mod inbox;
 pub mod mastodon_time;
+pub mod moderation;
 pub mod note_response;
 pub mod note_visibility;
 pub mod notification;
@@ -34,6 +36,7 @@ pub fn build_router(state: AppState) -> Router {
     Router::new()
         .merge(routes::accounts::router())
         .merge(routes::actor::router())
+        .merge(routes::admin::router())
         .merge(routes::auth::router())
         .merge(routes::health::router())
         .merge(routes::inbox::router())
