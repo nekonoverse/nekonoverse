@@ -1,0 +1,56 @@
+name: "CodeQL Advanced"
+
+# CONTRIBUTING.md の「ブランチ戦略」の通り、PRは常に develop 向けに作られ、
+# main は develop からのリリースマージ (タグ付け) でのみ更新される
+# (main 単独の commit は存在しない)。main を push/pull_request のトリガーに
+# 含めると、develop 側で既に解析済みのコミットを二重解析するだけでなく、
+# code scanning のブランチ別ベースライン比較がずれて "configuration ...
+# was not found" のような不整合を起こしやすくなる (実際に #1161 で発生)。
+# そのため他のセキュリティ系ワークフロー (security-audit.yml) と同じく
+# develop のみをトリガーにする。schedule はデフォルトブランチ (develop) を
+# 対象に週次でフォールバック解析する。
+on:
+  push:
+    branches: [ "develop" ]
+  pull_request:
+    branches: [ "develop" ]
+  schedule:
+    - cron: '23 2 * * 3'
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      packages: read
+      actions: read
+      contents: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+        - language: actions
+          build-mode: none
+        - language: javascript-typescript
+          build-mode: none
+        - language: python
+          build-mode: none
+        - language: rust
+          build-mode: none
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Initialize CodeQL
+      uses: github/codeql-action/init@v4
+      with:
+        languages: ${{ matrix.language }}
+        build-mode: ${{ matrix.build-mode }}
+
+    - name: Perform CodeQL Analysis
+      uses: github/codeql-action/analyze@v4
+      with:
+        category: "/language:${{matrix.language}}"
