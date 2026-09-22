@@ -9,6 +9,7 @@ pub mod follows;
 pub mod hashtag;
 pub mod hmac_sig;
 pub mod http_signature;
+pub mod inbox;
 pub mod mastodon_time;
 pub mod note_response;
 pub mod note_visibility;
@@ -35,6 +36,7 @@ pub fn build_router(state: AppState) -> Router {
         .merge(routes::actor::router())
         .merge(routes::auth::router())
         .merge(routes::health::router())
+        .merge(routes::inbox::router())
         .merge(routes::webfinger::router())
         .merge(routes::nodeinfo::router())
         .merge(routes::media_proxy::router())
