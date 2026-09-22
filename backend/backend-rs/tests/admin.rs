@@ -1,11 +1,14 @@
-//! `routes/admin.rs`(domain_blocks系)と`admin_auth::require_permission`の
-//! 結合テスト。`app/dependencies.get_permitted_staff("domains")`と同じ権限
-//! 判定(admin role即許可・非staffは拒否・カスタムroleはpermissions JSONB次第)
-//! およびOAuthトークン経由での`admin:read`/`admin:write`スコープ要求
-//! (`_require_admin_scope`)を検証する。
+//! `routes/admin.rs`(domain_blocks/reports/notes moderation/log系)と
+//! `admin_auth::require_permission`/`require_moderation_staff`の結合テスト。
+//! `app/dependencies.get_permitted_staff("domains"|"reports"|"content")`と
+//! 同じ権限判定(admin role即許可・非staffは拒否・カスタムroleは
+//! permissions JSONB次第)、`get_moderation_staff`(モデレーター権限を
+//! 何か1つでも持てば許可)、およびOAuthトークン経由での
+//! `admin:read`/`admin:write`スコープ要求(`_require_admin_scope`)を検証する。
 
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
+use chrono::Utc;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -13,9 +16,21 @@ use uuid::Uuid;
 
 mod common;
 use common::{
-    seed_local_actor, seed_oauth_application, seed_oauth_token, seed_session, seed_user,
-    test_app_with_db,
+    seed_follow, seed_local_actor, seed_note_with_visibility, seed_oauth_application,
+    seed_oauth_token, seed_remote_actor, seed_report, seed_session, seed_user, test_app_with_db,
 };
+
+async fn body_json(response: axum::response::Response<Body>) -> Value {
+    let body = http_body_util::BodyExt::collect(response.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+    if body.is_empty() {
+        Value::Null
+    } else {
+        serde_json::from_slice(&body).unwrap_or(Value::Null)
+    }
+}
 
 async fn set_user_role(db: &PgPool, user_id: Uuid, role: &str) {
     sqlx::query("UPDATE users SET role = $1 WHERE id = $2")
@@ -371,4 +386,483 @@ async fn admin_create_domain_block_invalidates_is_domain_blocked_cache() {
 
     // キャッシュが無効化され、TTL(300秒)を待たずに新しい状態が反映されるはず。
     assert!(is_domain_blocked(&state, &domain).await.unwrap());
+}
+
+/// 指定ロールのローカルユーザーをセッションCookie付きで1件用意する。
+async fn seed_role_session(
+    db: &PgPool,
+    redis: &redis::aio::ConnectionManager,
+    prefix: &str,
+    role: &str,
+) -> (Uuid, String) {
+    let username = format!("{prefix}{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(db, &username).await;
+    let user_id = seed_user(db, actor_id, &format!("{username}@example.com")).await;
+    set_user_role(db, user_id, role).await;
+    (user_id, seed_session(redis, user_id).await)
+}
+
+// --- 通報 (reports) ---
+
+#[tokio::test]
+async fn admin_list_reports_formats_acct_and_filters_by_status() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let reporter = seed_local_actor(&db, &format!("reporter{}", Uuid::new_v4().simple())).await;
+    let domain = format!("remote-reports-{}.example", Uuid::new_v4().simple());
+    let target = seed_remote_actor(&db, "reported", &domain).await;
+    let report_id = seed_report(&db, reporter, target, None, Some("spam")).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/reports?status=open")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let entry = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|r| r["id"] == report_id.to_string())
+        .expect("seeded report present in open list");
+    assert_eq!(entry["target"], format!("reported@{domain}"));
+    assert_eq!(entry["comment"], "spam");
+    assert_eq!(entry["status"], "open");
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/reports?status=resolved")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    let json = body_json(resp).await;
+    assert!(json
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|r| r["id"] != report_id.to_string()));
+}
+
+#[tokio::test]
+async fn admin_resolve_report_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let reporter = seed_local_actor(&db, &format!("resolver{}", Uuid::new_v4().simple())).await;
+    let target = seed_local_actor(&db, &format!("resolvee{}", Uuid::new_v4().simple())).await;
+    let report_id = seed_report(&db, reporter, target, None, None).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/reports/{report_id}/resolve"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let status: String = sqlx::query_scalar("SELECT status FROM reports WHERE id = $1")
+        .bind(report_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(status, "resolved");
+
+    let log_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM moderation_log WHERE action = 'resolve_report' AND target_id = $1",
+    )
+    .bind(report_id.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_count, 1);
+}
+
+#[tokio::test]
+async fn admin_reject_report_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let reporter = seed_local_actor(&db, &format!("rejecter{}", Uuid::new_v4().simple())).await;
+    let target = seed_local_actor(&db, &format!("rejectee{}", Uuid::new_v4().simple())).await;
+    let report_id = seed_report(&db, reporter, target, None, None).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/reports/{report_id}/reject"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let status: String = sqlx::query_scalar("SELECT status FROM reports WHERE id = $1")
+        .bind(report_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(status, "rejected");
+}
+
+#[tokio::test]
+async fn admin_resolve_already_handled_report_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let reporter = seed_local_actor(&db, &format!("dup{}", Uuid::new_v4().simple())).await;
+    let target = seed_local_actor(&db, &format!("dup{}", Uuid::new_v4().simple())).await;
+    let report_id = seed_report(&db, reporter, target, None, None).await;
+
+    for _ in 0..2 {
+        let req = Request::builder()
+            .method("POST")
+            .uri(format!("/api/v1/admin/reports/{report_id}/resolve"))
+            .header("cookie", cookie_header(&session_id))
+            .body(Body::empty())
+            .unwrap();
+        let _ = app.clone().oneshot(req).await.unwrap();
+    }
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/reports/{report_id}/resolve"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_resolve_nonexistent_report_returns_404() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/reports/{}/resolve", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_reports_require_reports_permission_not_content() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("contentonly{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "content": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "contentmod", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/reports")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+// --- 投稿モデレーション (notes) ---
+
+#[tokio::test]
+async fn admin_delete_note_soft_deletes_and_delivers_to_follower() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let author = seed_local_actor(&db, &format!("delnote{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, author, "public", Utc::now()).await;
+    let domain = format!("remote-delnote-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "follower-delnote", &domain).await;
+    seed_follow(&db, follower_id, author).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/notes/{note_id}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "reason": "rule violation" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let deleted_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT deleted_at FROM notes WHERE id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(deleted_at.is_some());
+
+    let log_row: (String, Option<String>) = sqlx::query_as(
+        "SELECT action, reason FROM moderation_log WHERE target_id = $1 \
+         AND action = 'delete_note'",
+    )
+    .bind(note_id.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_row.1.as_deref(), Some("rule violation"));
+
+    let delete_row: (String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type' FROM delivery_queue \
+         WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(author)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(delete_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(delete_row.1, "Delete");
+}
+
+#[tokio::test]
+async fn admin_delete_note_without_body_defaults_reason_none() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let author = seed_local_actor(&db, &format!("nobodynote{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, author, "public", Utc::now()).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/notes/{note_id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let reason: Option<String> = sqlx::query_scalar(
+        "SELECT reason FROM moderation_log WHERE target_id = $1 AND action = 'delete_note'",
+    )
+    .bind(note_id.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(reason.is_none());
+}
+
+#[tokio::test]
+async fn admin_delete_note_returns_404_for_missing_note() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/notes/{}", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_delete_note_protects_staff_target_unless_admin() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("contentmod{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "content": true })).await;
+    let (_uid, moderator_session) = seed_role_session(&db, &redis, "modacting", &role_name).await;
+
+    // ターゲットは非adminのstaff (別のカスタムロール)。
+    let target_role_name = format!("staffrole{}", Uuid::new_v4().simple());
+    seed_role(&db, &target_role_name, false, json!({})).await;
+    let target_username = format!("staffnote{}", Uuid::new_v4().simple());
+    let target_actor = seed_local_actor(&db, &target_username).await;
+    let target_user = seed_user(&db, target_actor, &format!("{target_username}@example.com")).await;
+    set_user_role(&db, target_user, &target_role_name).await;
+    let note_id = seed_note_with_visibility(&db, target_actor, "public", Utc::now()).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/notes/{note_id}"))
+        .header("cookie", cookie_header(&moderator_session))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let deleted_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT deleted_at FROM notes WHERE id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(deleted_at.is_none());
+
+    // adminはスタッフ保護をバイパスして削除できる。
+    let admin_session = seed_admin_session(&db, &redis).await;
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/notes/{note_id}"))
+        .header("cookie", cookie_header(&admin_session))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admin_force_note_sensitive_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let author = seed_local_actor(&db, &format!("sensitize{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, author, "public", Utc::now()).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/notes/{note_id}/sensitive"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let sensitive: bool = sqlx::query_scalar("SELECT sensitive FROM notes WHERE id = $1")
+        .bind(note_id)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert!(sensitive);
+
+    let log_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM moderation_log WHERE action = 'force_sensitive' AND target_id = $1",
+    )
+    .bind(note_id.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_count, 1);
+}
+
+#[tokio::test]
+async fn admin_notes_actions_require_content_permission_not_reports() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("reportsonly{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "reports": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "reportsmod", &role_name).await;
+    let author = seed_local_actor(&db, &format!("guardednote{}", Uuid::new_v4().simple())).await;
+    let note_id = seed_note_with_visibility(&db, author, "public", Utc::now()).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/notes/{note_id}/sensitive"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+// --- モデレーションログ (log) ---
+
+#[tokio::test]
+async fn admin_log_returns_recent_entries_for_admin() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let domain = format!("logentry-{}.example", Uuid::new_v4().simple());
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/domain_blocks")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "domain": domain }).to_string()))
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/log")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let entries = json.as_array().unwrap();
+    assert!(entries
+        .iter()
+        .any(|e| e["action"] == "domain_block" && e["target_id"] == domain));
+}
+
+#[tokio::test]
+async fn admin_log_accessible_with_any_single_moderator_permission() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("domainsonly{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "domains": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "logviewer", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/log")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admin_log_forbidden_for_role_without_any_permission() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("nopermsrole{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({})).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "noperms", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/log")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_log_limit_out_of_range_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/log?limit=0")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/log?limit=101")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }

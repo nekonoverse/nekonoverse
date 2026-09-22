@@ -268,6 +268,32 @@ pub async fn seed_domain_block(db: &PgPool, domain: &str) -> Uuid {
     id
 }
 
+/// `reports` テーブル (id/created_at に `server_default` が無い) にテスト用の
+/// 通報を1件投入する。`status` は常に `open` (`server_default`頼み)。
+#[allow(dead_code)]
+pub async fn seed_report(
+    db: &PgPool,
+    reporter_actor_id: Uuid,
+    target_actor_id: Uuid,
+    target_note_id: Option<Uuid>,
+    comment: Option<&str>,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO reports (id, reporter_actor_id, target_actor_id, target_note_id, comment, created_at) \
+         VALUES ($1, $2, $3, $4, $5, now())",
+    )
+    .bind(id)
+    .bind(reporter_actor_id)
+    .bind(target_actor_id)
+    .bind(target_note_id)
+    .bind(comment)
+    .execute(db)
+    .await
+    .expect("failed to seed test report");
+    id
+}
+
 /// `followers` テーブルに承認済みのフォロー関係を1件投入する。
 #[allow(dead_code)]
 pub async fn seed_follow(db: &PgPool, follower_id: Uuid, following_id: Uuid) -> Uuid {
