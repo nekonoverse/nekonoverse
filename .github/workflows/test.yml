@@ -121,10 +121,36 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+      # #1174系(admin.pyのカスタム絵文字add/delete)で導入したS3クライアント
+      # (`backend-rs/src/storage.rs`)の結合テスト用。Python側のpytestは
+      # `upload_file`/`delete_file`をmockして実S3を使わないが(#1139の
+      # 方針上「実DBに対するtower::ServiceExt::oneshotテスト」を貫く
+      # backend-rs側は本番と同じ経路で検証する)、docker-compose.yml.example
+      # と同じ軽量S3互換サーバーを使う。
+      nekono3s:
+        image: ghcr.io/nananek/nekono3s:latest
+        env:
+          S3_ACCESS_KEY_ID: nekonoverse
+          S3_SECRET_ACCESS_KEY: testpass-s3
+          S3_STORAGE_PATH: /data
+          S3_REGION: us-east-1
+          S3_XATTR_JCLOUDS_COMPAT: "true"
+        ports:
+          - 8080:8080
+        options: >-
+          --health-cmd "python -c \"import socket; s=socket.create_connection(('localhost',8080),2); s.close()\""
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
     env:
       DATABASE_URL: postgresql://nekonoverse:testpass@localhost:5432/nekonoverse_rs_test
       VALKEY_URL: redis://localhost:6379/0
       DOMAIN: localhost
+      S3_ENDPOINT_URL: http://localhost:8080
+      S3_ACCESS_KEY_ID: nekonoverse
+      S3_SECRET_ACCESS_KEY: testpass-s3
+      S3_BUCKET: nekonoverse-rs-test
+      S3_REGION: us-east-1
       # TOTPリカバリーコードのbcryptハッシュ化(8件、本番はコスト12)を結合テストで
       # 都度行うと無視できない実行時間になるため、CIでは最小コストに短縮する
       # (`backend-rs/src/config.rs`の`bcrypt_cost`、本番の実際のセキュリティ
@@ -170,6 +196,7 @@ jobs:
         run: |
           docker run --rm --network host -v "$PWD/backend:/workspace" -w /workspace \
             -e DATABASE_URL -e VALKEY_URL -e DOMAIN -e BCRYPT_COST -e TOTP_PBKDF2_ITERATIONS \
+            -e S3_ENDPOINT_URL -e S3_ACCESS_KEY_ID -e S3_SECRET_ACCESS_KEY -e S3_BUCKET -e S3_REGION \
             rust:1-slim cargo test --workspace --exclude nekonoverse-native
 
   alembic-migration:

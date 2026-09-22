@@ -105,17 +105,21 @@
 //! `valkey::channels::ANNOUNCEMENTS`はStage 1〜3から先行して用意済み)。
 //!
 //! カスタム絵文字管理系(`app.services.emoji_service`)は`get_permitted_staff(
-//! "emoji")`配下だが、このPRでは新規のS3書き込み能力を要しない部分(一覧
-//! `list_emojis`/`list_remote_emojis_endpoint`/
-//! `list_remote_emoji_domains_endpoint`、メタデータのみの
-//! `update_emoji_endpoint`)だけを先に移植した。`add`(アップロード)/
-//! `import-remote`/`import-by-shortcode`/`export`/`import`(ZIP)/
-//! `delete`(削除時に`drive_service.delete_drive_file`でS3オブジェクトも
-//! 削除する)はいずれも`app/storage.py`(手書きAWS SigV4 + httpx、boto3非依存)
-//! 相当のS3クライアントがbackend-rsにまだ無いため先送りする(S3クライアント
-//! 導入は`server-icon`/`server-files`/media添付作成等、他のアップロード系
-//! エンドポイントとも共有しうる基盤のため、必要になった時点でまとめて追加する
-//! 方針)。`update_emoji`の`_EMOJI_UPDATABLE_FIELDS`がリクエストスキーマ
+//! "emoji")`配下。一覧(`list_emojis`/`list_remote_emojis_endpoint`/
+//! `list_remote_emoji_domains_endpoint`)とメタデータのみの
+//! `update_emoji_endpoint`に続き、このPRで`app/storage.py`(手書きAWS SigV4 +
+//! httpx、boto3非依存)相当のS3クライアント(`crate::storage`)と
+//! `drive_service`相当(`crate::drive`)をbackend-rsに新規導入し、
+//! アップロードを伴う`add_emoji_endpoint`(`POST .../emoji/add`)と
+//! `delete_emoji_endpoint`(`DELETE .../emoji/:id`、関連する`drive_files`行が
+//! あればS3オブジェクトごと削除)を移植した。`crate::storage`/`crate::drive`
+//! は`server-icon`/`server-files`/media添付作成等、他のアップロード系
+//! エンドポイントとも共有できる基盤として設計してある(現状`owner`付き
+//! アップロード、すなわち`quota_service`連携は未移植のため`server_file=true`
+//! の呼び出し元のみ対応)。`import-remote`/`import-by-shortcode`(リモート
+//! 絵文字のSSRF安全なダウンロード取り込みを要する)と`export`/`import`
+//! (ZIPアーカイブ)は本PRのスコープ外として引き続きPython側に残す。
+//! `update_emoji`の`_EMOJI_UPDATABLE_FIELDS`がリクエストスキーマ
 //! `AdminEmojiUpdate`に存在する`usage_info`/`is_based_on`を含まない
 //! (両フィールドは受理・検証はされるが実際には永続化されない)Python版の
 //! 既知の挙動もそのまま再現した。`shortcode`/`visible_in_picker`/
@@ -128,7 +132,7 @@
 //! 異なりPython版に該当の防御コードが無いことを確認済み)。
 
 use axum::body::Bytes;
-use axum::extract::{Path, Query, State};
+use axum::extract::{Multipart, Path, Query, State};
 use axum::http::{Method, StatusCode};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
@@ -150,6 +154,7 @@ use crate::config::Config;
 use crate::db;
 use crate::delivery::enqueue_delivery;
 use crate::domain_block::invalidate_domain_block_cache;
+use crate::drive;
 use crate::error::AppError;
 use crate::follows::get_follower_inboxes;
 use crate::mastodon_time::to_pydantic_isoformat;
@@ -239,7 +244,11 @@ pub fn router() -> Router<AppState> {
             "/api/v1/admin/emoji/remote/domains",
             get(list_remote_emoji_domains_endpoint),
         )
-        .route("/api/v1/admin/emoji/:id", patch(update_emoji_endpoint))
+        .route("/api/v1/admin/emoji/add", post(add_emoji_endpoint))
+        .route(
+            "/api/v1/admin/emoji/:id",
+            patch(update_emoji_endpoint).delete(delete_emoji_endpoint),
+        )
 }
 
 #[derive(sqlx::FromRow)]
@@ -3524,4 +3533,225 @@ async fn update_emoji_endpoint(
         .await?
         .ok_or_else(|| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"))?;
     Ok(Json(admin_emoji_json(&row)).into_response())
+}
+
+/// `app.services.emoji_service.validate_shortcode`を移植したもの。
+fn validate_shortcode(shortcode: &str) -> Result<(), AppError> {
+    if shortcode.is_empty()
+        || shortcode.chars().count() > 255
+        || !shortcode
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Shortcode must be 1-255 alphanumeric/underscore characters: {shortcode:?}"),
+        ));
+    }
+    Ok(())
+}
+
+/// `multipart::Form`のテキストフィールドをUTF-8文字列として読む。
+async fn multipart_field_text(
+    field: axum::extract::multipart::Field<'_>,
+) -> Result<String, AppError> {
+    let bytes = field
+        .bytes()
+        .await
+        .map_err(|_| AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Invalid multipart field"))?;
+    String::from_utf8(bytes.to_vec()).map_err(|_| {
+        AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Invalid multipart field encoding",
+        )
+    })
+}
+
+/// FastAPI `Form(bool)`のpydantic文字列→bool変換を移植したもの
+/// (大文字小文字を問わず`true`/`1`/`yes`/`on`は真、それ以外は偽)。
+fn parse_form_bool(text: &str) -> bool {
+    matches!(
+        text.trim().to_ascii_lowercase().as_str(),
+        "true" | "1" | "yes" | "on"
+    )
+}
+
+/// `app.api.admin.add_emoji`を移植したもの。`drive_service.upload_drive_file`
+/// (このPRで`drive.rs`へ新規移植)経由でS3に画像をアップロードし、ローカル
+/// カスタム絵文字として登録する。`create_local_emoji`はPython版と同じく
+/// `usage_info`/`is_based_on`も(`update_emoji`と異なり)そのまま永続化する。
+async fn add_emoji_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    mut multipart: Multipart,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let mut file_data: Option<Vec<u8>> = None;
+    let mut file_content_type: Option<String> = None;
+    let mut shortcode: Option<String> = None;
+    let mut category: Option<String> = None;
+    let mut aliases_raw: Option<String> = None;
+    let mut license: Option<String> = None;
+    let mut is_sensitive = false;
+    let mut local_only = false;
+    let mut author: Option<String> = None;
+    let mut description: Option<String> = None;
+    let mut copy_permission: Option<String> = None;
+    let mut usage_info: Option<String> = None;
+    let mut is_based_on: Option<String> = None;
+
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Invalid multipart body"))?
+    {
+        let name = field.name().unwrap_or("").to_string();
+        match name.as_str() {
+            "file" => {
+                file_content_type = field.content_type().map(str::to_string);
+                file_data = Some(
+                    field
+                        .bytes()
+                        .await
+                        .map_err(|_| {
+                            AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Invalid file field")
+                        })?
+                        .to_vec(),
+                );
+            }
+            "shortcode" => shortcode = Some(multipart_field_text(field).await?),
+            "category" => category = Some(multipart_field_text(field).await?),
+            "aliases" => aliases_raw = Some(multipart_field_text(field).await?),
+            "license" => license = Some(multipart_field_text(field).await?),
+            "is_sensitive" => is_sensitive = parse_form_bool(&multipart_field_text(field).await?),
+            "local_only" => local_only = parse_form_bool(&multipart_field_text(field).await?),
+            "author" => author = Some(multipart_field_text(field).await?),
+            "description" => description = Some(multipart_field_text(field).await?),
+            "copy_permission" => copy_permission = Some(multipart_field_text(field).await?),
+            "usage_info" => usage_info = Some(multipart_field_text(field).await?),
+            "is_based_on" => is_based_on = Some(multipart_field_text(field).await?),
+            _ => {}
+        }
+    }
+
+    let Some(shortcode) = shortcode else {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "shortcode is required",
+        ));
+    };
+    let Some(file_data) = file_data else {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "file is required",
+        ));
+    };
+    validate_shortcode(&shortcode)?;
+
+    let existing: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM custom_emojis WHERE shortcode = $1 AND domain IS NULL")
+            .bind(&shortcode)
+            .fetch_optional(&state.db)
+            .await?;
+    if existing.is_some() {
+        return Err(AppError::new(
+            StatusCode::CONFLICT,
+            "Shortcode already exists",
+        ));
+    }
+
+    // Python版に`aliases`のJSONパース失敗を捕捉するtry/exceptが無いため
+    // (未捕捉の`json.JSONDecodeError`はFastAPIのデフォルト500になる)、
+    // backend-rs側も捕捉せず素の500として扱う。
+    let aliases: Option<Vec<String>> = aliases_raw
+        .map(|raw| {
+            serde_json::from_str::<Vec<String>>(&raw).map_err(|_| {
+                AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+            })
+        })
+        .transpose()?;
+
+    let mime_type = file_content_type.unwrap_or_else(|| "image/png".to_string());
+    let drive_file = drive::upload_drive_file(
+        &state,
+        file_data,
+        &format!("emoji_{shortcode}"),
+        &mime_type,
+        None,
+        true,
+    )
+    .await?;
+    let url = drive::file_to_url(&state.config, &drive_file);
+
+    let id = db::new_id();
+    let now = db::now();
+    sqlx::query(
+        "INSERT INTO custom_emojis (\
+            id, shortcode, domain, url, drive_file_id, visible_in_picker, \
+            category, aliases, license, is_sensitive, local_only, author, \
+            description, copy_permission, usage_info, is_based_on, created_at, updated_at\
+         ) VALUES ($1, $2, NULL, $3, $4, true, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $15)",
+    )
+    .bind(id)
+    .bind(&shortcode)
+    .bind(&url)
+    .bind(drive_file.id)
+    .bind(&category)
+    .bind(aliases.map(sqlx::types::Json))
+    .bind(&license)
+    .bind(is_sensitive)
+    .bind(local_only)
+    .bind(&author)
+    .bind(&description)
+    .bind(&copy_permission)
+    .bind(&usage_info)
+    .bind(&is_based_on)
+    .bind(now)
+    .execute(&state.db)
+    .await?;
+
+    invalidate_emoji_cache(&state).await;
+
+    let row = fetch_emoji_row(&state.db, id)
+        .await?
+        .ok_or_else(|| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"))?;
+    Ok((StatusCode::OK, Json(admin_emoji_json(&row))).into_response())
+}
+
+/// `app.api.admin.delete_emoji_endpoint`を移植したもの。関連する
+/// `drive_files`行があればS3オブジェクトごと削除する
+/// (`drive_service.delete_drive_file`、このPRで`drive.rs`へ新規移植)。
+async fn delete_emoji_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let drive_file_id: Option<Option<Uuid>> =
+        sqlx::query_scalar("SELECT drive_file_id FROM custom_emojis WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&state.db)
+            .await?;
+    let Some(drive_file_id) = drive_file_id else {
+        return Err(AppError::not_found("Emoji not found"));
+    };
+
+    if let Some(drive_file_id) = drive_file_id {
+        if let Some(drive_file) = drive::get_drive_file(&state, drive_file_id).await? {
+            drive::delete_drive_file(&state, &drive_file).await?;
+        }
+    }
+
+    sqlx::query("DELETE FROM custom_emojis WHERE id = $1")
+        .bind(id)
+        .execute(&state.db)
+        .await?;
+
+    invalidate_emoji_cache(&state).await;
+
+    Ok(Json(json!({ "ok": true })).into_response())
 }

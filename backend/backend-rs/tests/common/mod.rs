@@ -1,5 +1,5 @@
 use chrono::{DateTime, Utc};
-use nekonoverse_backend_rs::{build_router, config::Config, db, state::AppState, valkey};
+use nekonoverse_backend_rs::{build_router, config::Config, db, state::AppState, storage, valkey};
 use redis::AsyncCommands;
 use sha2::{Digest, Sha256};
 use sqlx::PgPool;
@@ -37,6 +37,18 @@ pub async fn test_app_with_db() -> (axum::Router, sqlx::PgPool) {
         config,
     };
     (build_router(state), db_pool)
+}
+
+/// `storage::ensure_bucket`を呼び、S3(結合テストでは`nekono3s`)の
+/// テスト用バケットが存在することを保証する。バケット作成は冪等
+/// (既存なら`409`もPython版と同じく正常系)なので、S3を使うテストの
+/// 冒頭で毎回呼んでよい。
+#[allow(dead_code)]
+pub async fn ensure_test_s3_bucket() {
+    let config = Config::from_env();
+    storage::ensure_bucket(&config)
+        .await
+        .expect("failed to ensure test S3 bucket");
 }
 
 /// `actors` テーブル (id/ap_id/username 等に `server_default` が無いため

@@ -1,4 +1,4 @@
-use nekonoverse_backend_rs::{build_router, config::Config, db, state::AppState, valkey};
+use nekonoverse_backend_rs::{build_router, config::Config, db, state::AppState, storage, valkey};
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -9,6 +9,11 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = Config::from_env();
+
+    // `app.main.lifespan`と同じくベストエフォート(失敗してもプロセス起動は続行する)。
+    if let Err(err) = storage::ensure_bucket(&config).await {
+        tracing::warn!(?err, "Could not ensure S3 bucket");
+    }
 
     let db_pool = db::connect(&config).await?;
     let redis_conn = valkey::connect(&config).await?;
