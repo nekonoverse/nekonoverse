@@ -155,6 +155,14 @@ mod tests {
             bcrypt_cost: 4,
             totp_pbkdf2_iterations: 1000,
             vapid_private_key: None,
+            s3_endpoint_url: String::new(),
+            s3_access_key_id: String::new(),
+            s3_secret_access_key: String::new(),
+            s3_bucket: String::new(),
+            s3_region: String::new(),
+            max_image_size_mb: 10,
+            max_video_size_mb: 40,
+            max_audio_size_mb: 10,
         }
     }
 

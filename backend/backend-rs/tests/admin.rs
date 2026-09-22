@@ -4326,3 +4326,305 @@ async fn admin_update_nonexistent_emoji_returns_404() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
+
+// --- カスタム絵文字 add/delete (S3アップロードを伴う) ---
+
+// Python版 `backend/tests/test_service_drive.py` の `PNG_1x1` と同一のバイト列
+// (1x1ピクセルの最小有効PNG)。
+const PNG_1X1: &[u8] = b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x02\x00\x00\x00\x90wS\xde";
+
+/// `multipart/form-data`のリクエストボディを手組みする。`fields`は通常の
+/// テキストフィールド、`file`は`(フィールド名, ファイル名, Content-Type, バイト列)`。
+fn build_multipart_body(
+    fields: &[(&str, &str)],
+    file: Option<(&str, &str, &str, &[u8])>,
+) -> (String, Vec<u8>) {
+    let boundary = format!("testboundary{}", Uuid::new_v4().simple());
+    let mut body = Vec::new();
+    for (name, value) in fields {
+        body.extend_from_slice(
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"{name}\"\r\n\r\n{value}\r\n")
+                .as_bytes(),
+        );
+    }
+    if let Some((field_name, filename, content_type, data)) = file {
+        body.extend_from_slice(
+            format!(
+                "--{boundary}\r\nContent-Disposition: form-data; name=\"{field_name}\"; \
+                 filename=\"{filename}\"\r\nContent-Type: {content_type}\r\n\r\n"
+            )
+            .as_bytes(),
+        );
+        body.extend_from_slice(data);
+        body.extend_from_slice(b"\r\n");
+    }
+    body.extend_from_slice(format!("--{boundary}--\r\n").as_bytes());
+    (format!("multipart/form-data; boundary={boundary}"), body)
+}
+
+#[tokio::test]
+async fn admin_add_emoji_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let (content_type, body) = build_multipart_body(
+        &[("shortcode", "nekotest")],
+        Some(("file", "e.png", "image/png", PNG_1X1)),
+    );
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/add")
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_add_emoji_plain_user_is_forbidden() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("plain{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    let session_id = seed_session(&redis, user_id).await;
+    let (content_type, body) = build_multipart_body(
+        &[("shortcode", "nekotest2")],
+        Some(("file", "e.png", "image/png", PNG_1X1)),
+    );
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/add")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_add_emoji_uploads_to_s3_and_creates_local_emoji() {
+    common::ensure_test_s3_bucket().await;
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let shortcode = format!("upload_{}", Uuid::new_v4().simple());
+    let (content_type, body) = build_multipart_body(
+        &[
+            ("shortcode", shortcode.as_str()),
+            ("category", "animals"),
+            ("is_sensitive", "true"),
+            ("aliases", "[\"cat\",\"neko\"]"),
+            ("usage_info", "free to use"),
+        ],
+        Some(("file", "e.png", "image/png", PNG_1X1)),
+    );
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/add")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["shortcode"], shortcode);
+    assert_eq!(json["category"], "animals");
+    assert_eq!(json["is_sensitive"], true);
+    assert_eq!(json["visible_in_picker"], true);
+    assert_eq!(json["aliases"], json!(["cat", "neko"]));
+    // `create_local_emoji`は`update_emoji`と異なり`usage_info`もそのまま永続化する。
+    assert_eq!(json["usage_info"], "free to use");
+    let url = json["url"].as_str().unwrap().to_string();
+    assert!(url.contains("/media/server/"));
+
+    let (drive_file_id, size_bytes): (Option<Uuid>, i64) = sqlx::query_as(
+        "SELECT df.id, df.size_bytes FROM custom_emojis ce \
+         JOIN drive_files df ON df.id = ce.drive_file_id \
+         WHERE ce.shortcode = $1",
+    )
+    .bind(&shortcode)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(drive_file_id.is_some());
+    assert_eq!(size_bytes, PNG_1X1.len() as i64);
+}
+
+#[tokio::test]
+async fn admin_add_emoji_duplicate_shortcode_returns_409() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let shortcode = format!("dup_{}", Uuid::new_v4().simple());
+    common::seed_custom_emoji(&db, &shortcode, None, "https://example.test/e.png").await;
+    let (content_type, body) = build_multipart_body(
+        &[("shortcode", shortcode.as_str())],
+        Some(("file", "e.png", "image/png", PNG_1X1)),
+    );
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/add")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CONFLICT);
+}
+
+#[tokio::test]
+async fn admin_add_emoji_invalid_shortcode_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (content_type, body) = build_multipart_body(
+        &[("shortcode", "not valid!")],
+        Some(("file", "e.png", "image/png", PNG_1X1)),
+    );
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/add")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_add_emoji_missing_file_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (content_type, body) = build_multipart_body(&[("shortcode", "nofile")], None);
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/add")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_delete_emoji_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/emoji/{}", Uuid::new_v4()))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_delete_nonexistent_emoji_returns_404() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/emoji/{}", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_delete_emoji_without_drive_file_removes_row() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let shortcode = format!("nodrive_{}", Uuid::new_v4().simple());
+    let id = common::seed_custom_emoji(&db, &shortcode, None, "https://example.test/e.png").await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/emoji/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["ok"], true);
+
+    let remaining: Option<Uuid> = sqlx::query_scalar("SELECT id FROM custom_emojis WHERE id = $1")
+        .bind(id)
+        .fetch_optional(&db)
+        .await
+        .unwrap();
+    assert!(remaining.is_none());
+}
+
+#[tokio::test]
+async fn admin_delete_emoji_removes_s3_object_and_drive_file_row() {
+    common::ensure_test_s3_bucket().await;
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    // add_emojiで実際にS3へアップロード済みの絵文字を用意してから削除する
+    // (アップロード経路と削除経路の両方を実S3で検証する)。
+    let shortcode = format!("todelete_{}", Uuid::new_v4().simple());
+    let (content_type, body) = build_multipart_body(
+        &[("shortcode", shortcode.as_str())],
+        Some(("file", "e.png", "image/png", PNG_1X1)),
+    );
+    let add_req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/add")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let add_resp = app.clone().oneshot(add_req).await.unwrap();
+    assert_eq!(add_resp.status(), StatusCode::OK);
+    let created = body_json(add_resp).await;
+    let id = Uuid::parse_str(created["id"].as_str().unwrap()).unwrap();
+
+    let drive_file_id: Uuid =
+        sqlx::query_scalar("SELECT drive_file_id FROM custom_emojis WHERE id = $1")
+            .bind(id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+
+    let del_req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/emoji/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let del_resp = app.oneshot(del_req).await.unwrap();
+    assert_eq!(del_resp.status(), StatusCode::OK);
+
+    let remaining_emoji: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM custom_emojis WHERE id = $1")
+            .bind(id)
+            .fetch_optional(&db)
+            .await
+            .unwrap();
+    assert!(remaining_emoji.is_none());
+    let remaining_drive_file: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM drive_files WHERE id = $1")
+            .bind(drive_file_id)
+            .fetch_optional(&db)
+            .await
+            .unwrap();
+    assert!(remaining_drive_file.is_none());
+}

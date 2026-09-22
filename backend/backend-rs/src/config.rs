@@ -50,6 +50,19 @@ pub struct Config {
     /// `app.config.Settings.vapid_private_key`。DB保存分・派生分に次ぐ
     /// 最終フォールバック(`server_settings.rs`の`resolve_vapid_private_key`)。
     pub vapid_private_key: Option<String>,
+    /// `app.config.Settings.s3_endpoint_url`。`storage.rs`の手書きAWS SigV4
+    /// クライアント(boto3非依存、`app/storage.py`と同じ設計)が使う。
+    pub s3_endpoint_url: String,
+    pub s3_access_key_id: String,
+    pub s3_secret_access_key: String,
+    pub s3_bucket: String,
+    pub s3_region: String,
+    /// `app.config.Settings.max_image_size_mb`/`max_video_size_mb`/
+    /// `max_audio_size_mb`(アップロード上限、MB単位)。`drive.rs`の
+    /// `upload_drive_file`が使う。
+    pub max_image_size_mb: u64,
+    pub max_video_size_mb: u64,
+    pub max_audio_size_mb: u64,
 }
 
 impl Config {
@@ -97,6 +110,25 @@ impl Config {
                 .and_then(|v| v.parse().ok())
                 .unwrap_or(crate::totp::PBKDF2_ITERATIONS_DEFAULT),
             vapid_private_key: env::var("VAPID_PRIVATE_KEY").ok().filter(|v| !v.is_empty()),
+            s3_endpoint_url: env::var("S3_ENDPOINT_URL")
+                .unwrap_or_else(|_| "http://nekono3s:8080".into()),
+            s3_access_key_id: env::var("S3_ACCESS_KEY_ID").unwrap_or_else(|_| "nekonoverse".into()),
+            s3_secret_access_key: env::var("S3_SECRET_ACCESS_KEY")
+                .unwrap_or_else(|_| "changeme-s3".into()),
+            s3_bucket: env::var("S3_BUCKET").unwrap_or_else(|_| "nekonoverse".into()),
+            s3_region: env::var("S3_REGION").unwrap_or_else(|_| "us-east-1".into()),
+            max_image_size_mb: env::var("MAX_IMAGE_SIZE_MB")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
+            max_video_size_mb: env::var("MAX_VIDEO_SIZE_MB")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(40),
+            max_audio_size_mb: env::var("MAX_AUDIO_SIZE_MB")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(10),
         }
     }
 
