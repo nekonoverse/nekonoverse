@@ -103,6 +103,29 @@
 //! `published`(またはPATCH後に`published`のまま)なら`_render_content`後の
 //! `content_html`をSSE用にValkeyへpublishする(`publish_announcement_event`、
 //! `valkey::channels::ANNOUNCEMENTS`はStage 1〜3から先行して用意済み)。
+//!
+//! カスタム絵文字管理系(`app.services.emoji_service`)は`get_permitted_staff(
+//! "emoji")`配下だが、このPRでは新規のS3書き込み能力を要しない部分(一覧
+//! `list_emojis`/`list_remote_emojis_endpoint`/
+//! `list_remote_emoji_domains_endpoint`、メタデータのみの
+//! `update_emoji_endpoint`)だけを先に移植した。`add`(アップロード)/
+//! `import-remote`/`import-by-shortcode`/`export`/`import`(ZIP)/
+//! `delete`(削除時に`drive_service.delete_drive_file`でS3オブジェクトも
+//! 削除する)はいずれも`app/storage.py`(手書きAWS SigV4 + httpx、boto3非依存)
+//! 相当のS3クライアントがbackend-rsにまだ無いため先送りする(S3クライアント
+//! 導入は`server-icon`/`server-files`/media添付作成等、他のアップロード系
+//! エンドポイントとも共有しうる基盤のため、必要になった時点でまとめて追加する
+//! 方針)。`update_emoji`の`_EMOJI_UPDATABLE_FIELDS`がリクエストスキーマ
+//! `AdminEmojiUpdate`に存在する`usage_info`/`is_based_on`を含まない
+//! (両フィールドは受理・検証はされるが実際には永続化されない)Python版の
+//! 既知の挙動もそのまま再現した。`shortcode`/`visible_in_picker`/
+//! `is_sensitive`/`local_only`はDB上NOT NULLのため明示的な`null`は
+//! announcementsの`title`/`published`と同じく無視、`category`/`aliases`/
+//! `license`/`author`/`description`/`copy_permission`はNULL許容カラムの
+//! ため明示的な`null`でクリアできる。shortcode重複時、Python版の
+//! `update_emoji`サービスにUNIQUE制約違反を捕捉するtry/exceptが無いため
+//! backend-rs側も捕捉せず、素の500として扱う(`create_domain_block`とは
+//! 異なりPython版に該当の防御コードが無いことを確認済み)。
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
@@ -207,6 +230,16 @@ pub fn router() -> Router<AppState> {
                 .patch(update_announcement)
                 .delete(delete_announcement),
         )
+        .route("/api/v1/admin/emoji/list", get(list_emojis))
+        .route(
+            "/api/v1/admin/emoji/remote",
+            get(list_remote_emojis_endpoint),
+        )
+        .route(
+            "/api/v1/admin/emoji/remote/domains",
+            get(list_remote_emoji_domains_endpoint),
+        )
+        .route("/api/v1/admin/emoji/:id", patch(update_emoji_endpoint))
 }
 
 #[derive(sqlx::FromRow)]
@@ -3127,4 +3160,368 @@ async fn delete_announcement(
         return Err(AppError::not_found("Announcement not found"));
     }
     Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+// --- カスタム絵文字管理 ---
+
+#[derive(sqlx::FromRow)]
+struct CustomEmojiRow {
+    id: Uuid,
+    shortcode: String,
+    domain: Option<String>,
+    url: String,
+    static_url: Option<String>,
+    visible_in_picker: bool,
+    category: Option<String>,
+    aliases: Option<Value>,
+    license: Option<String>,
+    is_sensitive: bool,
+    local_only: bool,
+    author: Option<String>,
+    description: Option<String>,
+    copy_permission: Option<String>,
+    usage_info: Option<String>,
+    is_based_on: Option<String>,
+    import_from: Option<String>,
+    created_at: DateTime<Utc>,
+}
+
+/// `app.schemas.admin.AdminEmojiResponse`を移植したもの。
+fn admin_emoji_json(row: &CustomEmojiRow) -> Value {
+    json!({
+        "id": row.id,
+        "shortcode": row.shortcode,
+        "url": row.url,
+        "static_url": row.static_url,
+        "visible_in_picker": row.visible_in_picker,
+        "category": row.category,
+        "aliases": row.aliases,
+        "license": row.license,
+        "is_sensitive": row.is_sensitive,
+        "local_only": row.local_only,
+        "author": row.author,
+        "description": row.description,
+        "copy_permission": row.copy_permission,
+        "usage_info": row.usage_info,
+        "is_based_on": row.is_based_on,
+        "import_from": row.import_from,
+        "created_at": to_pydantic_isoformat(row.created_at),
+    })
+}
+
+/// `app.schemas.admin.AdminRemoteEmojiResponse`を移植したもの。
+fn admin_remote_emoji_json(row: &CustomEmojiRow) -> Value {
+    json!({
+        "id": row.id,
+        "shortcode": row.shortcode,
+        "domain": row.domain,
+        "url": row.url,
+        "static_url": row.static_url,
+        "category": row.category,
+        "aliases": row.aliases,
+        "license": row.license,
+        "is_sensitive": row.is_sensitive,
+        "author": row.author,
+        "description": row.description,
+        "copy_permission": row.copy_permission,
+        "created_at": to_pydantic_isoformat(row.created_at),
+    })
+}
+
+async fn fetch_emoji_row(db: &sqlx::PgPool, id: Uuid) -> Result<Option<CustomEmojiRow>, AppError> {
+    let row = sqlx::query_as(
+        "SELECT id, shortcode, domain, url, static_url, visible_in_picker, category, aliases, \
+                license, is_sensitive, local_only, author, description, copy_permission, \
+                usage_info, is_based_on, import_from, created_at \
+         FROM custom_emojis WHERE id = $1",
+    )
+    .bind(id)
+    .fetch_optional(db)
+    .await?;
+    Ok(row)
+}
+
+/// `app.services.emoji_service.list_all_local_emojis`を移植したもの。
+async fn list_emojis(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let rows: Vec<CustomEmojiRow> = sqlx::query_as(
+        "SELECT id, shortcode, domain, url, static_url, visible_in_picker, category, aliases, \
+                license, is_sensitive, local_only, author, description, copy_permission, \
+                usage_info, is_based_on, import_from, created_at \
+         FROM custom_emojis \
+         WHERE domain IS NULL ORDER BY category, shortcode",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows.iter().map(admin_emoji_json).collect::<Vec<_>>()).into_response())
+}
+
+#[derive(Deserialize)]
+struct RemoteEmojiQuery {
+    domain: Option<String>,
+    search: Option<String>,
+    limit: Option<i64>,
+    offset: Option<i64>,
+}
+
+/// `search.replace("%", r"\%").replace("_", r"\_")` を`%...%`で包んだ
+/// Python版と同じILIKEパターン(PostgreSQLのLIKE/ILIKEデフォルトの
+/// エスケープ文字はバックスラッシュのため`ESCAPE`句は不要)。
+fn emoji_search_pattern(search: Option<&str>) -> Option<String> {
+    search.map(|s| format!("%{}%", s.replace('%', "\\%").replace('_', "\\_")))
+}
+
+/// `app.services.emoji_service.list_remote_emojis`を移植したもの。
+async fn list_remote_emojis_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Query(params): Query<RemoteEmojiQuery>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let limit = params.limit.unwrap_or(100);
+    if limit > 200 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "limit must be at most 200",
+        ));
+    }
+    let offset = params.offset.unwrap_or(0);
+    if offset < 0 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "offset must be greater than or equal to 0",
+        ));
+    }
+    let search_pattern = emoji_search_pattern(params.search.as_deref());
+
+    let rows: Vec<CustomEmojiRow> = sqlx::query_as(
+        "SELECT id, shortcode, domain, url, static_url, visible_in_picker, category, aliases, \
+                license, is_sensitive, local_only, author, description, copy_permission, \
+                usage_info, is_based_on, import_from, created_at \
+         FROM custom_emojis \
+         WHERE domain IS NOT NULL \
+           AND ($1::text IS NULL OR domain = $1) \
+           AND ($2::text IS NULL OR shortcode ILIKE $2) \
+         ORDER BY domain, shortcode \
+         LIMIT $3 OFFSET $4",
+    )
+    .bind(&params.domain)
+    .bind(&search_pattern)
+    .bind(limit)
+    .bind(offset)
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows.iter().map(admin_remote_emoji_json).collect::<Vec<_>>()).into_response())
+}
+
+/// `app.services.emoji_service.list_remote_emoji_domains`を移植したもの。
+async fn list_remote_emoji_domains_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let domains: Vec<String> = sqlx::query_scalar(
+        "SELECT DISTINCT domain FROM custom_emojis WHERE domain IS NOT NULL ORDER BY domain",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(domains).into_response())
+}
+
+/// `app.services.emoji_service._invalidate_emoji_cache`を移植したもの。
+/// Python版と同じく例外を握りつぶすベストエフォート処理(呼び出し元の
+/// 更新自体は失敗させない)。
+async fn invalidate_emoji_cache(state: &AppState) {
+    let mut conn = state.redis.clone();
+    let _: Result<(), redis::RedisError> =
+        redis::AsyncCommands::del(&mut conn, "perf:custom_emojis").await;
+    publish_envelope(
+        &state.redis,
+        channels::EMOJI_UPDATE,
+        &Envelope {
+            event: "emoji_update",
+            payload: json!({}),
+        },
+    )
+    .await;
+}
+
+/// 配列(`aliases`)版の`get_nullable_string`(欠落は`None`、`null`は
+/// `Some(None)`、文字列配列は`Some(Some(values))`)。
+fn get_nullable_string_array(
+    map: &Map<String, Value>,
+    key: &str,
+) -> Result<Option<Option<Vec<String>>>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::Null => Ok(Some(None)),
+        Value::Array(items) => {
+            let mut out = Vec::with_capacity(items.len());
+            for item in items {
+                match item.as_str() {
+                    Some(s) => out.push(s.to_string()),
+                    None => {
+                        return Err(AppError::new(
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            format!("{key} must be an array of strings"),
+                        ))
+                    }
+                }
+            }
+            Ok(Some(Some(out)))
+        }
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be an array of strings or null"),
+        )),
+    }
+}
+
+/// 列挙値版の`get_nullable_string`(`copy_permission`の
+/// `Field(None, pattern=r"^(allow|deny|conditional)$")`用、`null`は許可し
+/// クリアを表す)。
+fn get_nullable_enum(
+    map: &Map<String, Value>,
+    key: &str,
+    allowed: &[&str],
+) -> Result<Option<Option<String>>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::Null => Ok(Some(None)),
+        Value::String(s) if allowed.iter().any(|a| a == s) => Ok(Some(Some(s.clone()))),
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be one of {allowed:?}"),
+        )),
+    }
+}
+
+/// `app.services.emoji_service.update_emoji`を移植したもの
+/// (モジュールdoc参照、`usage_info`/`is_based_on`は検証のみで永続化しない)。
+async fn update_emoji_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(id): Path<Uuid>,
+    Json(body): Json<Value>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let Value::Object(map) = body else {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Request body must be a JSON object",
+        ));
+    };
+
+    let shortcode = get_optional_non_nullable_string(&map, "shortcode", 100)?;
+    if let Some(sc) = &shortcode {
+        if sc.is_empty() || !sc.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "shortcode must contain only alphanumerics and underscores",
+            ));
+        }
+    }
+    let category = get_nullable_string(&map, "category", 100)?;
+    let visible_in_picker = get_optional_non_nullable_bool(&map, "visible_in_picker")?;
+    let aliases = get_nullable_string_array(&map, "aliases")?;
+    let license = get_nullable_string(&map, "license", 1024)?;
+    let is_sensitive = get_optional_non_nullable_bool(&map, "is_sensitive")?;
+    let local_only = get_optional_non_nullable_bool(&map, "local_only")?;
+    let author = get_nullable_string(&map, "author", 128)?;
+    let description = get_nullable_string(&map, "description", 512)?;
+    let copy_permission =
+        get_nullable_enum(&map, "copy_permission", &["allow", "deny", "conditional"])?;
+    // `_EMOJI_UPDATABLE_FIELDS`に含まれないため、検証はするが永続化しない。
+    get_nullable_string(&map, "usage_info", 512)?;
+    get_nullable_string(&map, "is_based_on", 1024)?;
+
+    if fetch_emoji_row(&state.db, id).await?.is_none() {
+        return Err(AppError::not_found("Emoji not found"));
+    }
+
+    sqlx::query(
+        "UPDATE custom_emojis SET \
+            shortcode = COALESCE($1, shortcode), \
+            visible_in_picker = COALESCE($2, visible_in_picker), \
+            is_sensitive = COALESCE($3, is_sensitive), \
+            local_only = COALESCE($4, local_only), \
+            updated_at = $5 \
+         WHERE id = $6",
+    )
+    .bind(&shortcode)
+    .bind(visible_in_picker)
+    .bind(is_sensitive)
+    .bind(local_only)
+    .bind(Utc::now())
+    .bind(id)
+    .execute(&state.db)
+    .await?;
+
+    if let Some(category) = category {
+        sqlx::query("UPDATE custom_emojis SET category = $1 WHERE id = $2")
+            .bind(category)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(aliases) = aliases {
+        sqlx::query("UPDATE custom_emojis SET aliases = $1 WHERE id = $2")
+            .bind(aliases.map(sqlx::types::Json))
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(license) = license {
+        sqlx::query("UPDATE custom_emojis SET license = $1 WHERE id = $2")
+            .bind(license)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(author) = author {
+        sqlx::query("UPDATE custom_emojis SET author = $1 WHERE id = $2")
+            .bind(author)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(description) = description {
+        sqlx::query("UPDATE custom_emojis SET description = $1 WHERE id = $2")
+            .bind(description)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
+    if let Some(copy_permission) = copy_permission {
+        sqlx::query("UPDATE custom_emojis SET copy_permission = $1 WHERE id = $2")
+            .bind(copy_permission)
+            .bind(id)
+            .execute(&state.db)
+            .await?;
+    }
+
+    invalidate_emoji_cache(&state).await;
+
+    let row = fetch_emoji_row(&state.db, id)
+        .await?
+        .ok_or_else(|| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"))?;
+    Ok(Json(admin_emoji_json(&row)).into_response())
 }
