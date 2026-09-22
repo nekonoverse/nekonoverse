@@ -9,6 +9,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::Utc;
+use redis::AsyncCommands;
 use serde_json::{json, Value};
 use sqlx::PgPool;
 use tower::ServiceExt;
@@ -35,6 +36,14 @@ async fn body_json(response: axum::response::Response<Body>) -> Value {
 async fn set_user_role(db: &PgPool, user_id: Uuid, role: &str) {
     sqlx::query("UPDATE users SET role = $1 WHERE id = $2")
         .bind(role)
+        .bind(user_id)
+        .execute(db)
+        .await
+        .unwrap();
+}
+
+async fn set_user_is_system(db: &PgPool, user_id: Uuid) {
+    sqlx::query("UPDATE users SET is_system = true WHERE id = $1")
         .bind(user_id)
         .execute(db)
         .await
@@ -1288,4 +1297,569 @@ async fn admin_update_permissions_sets_known_keys_and_ignores_unknown() {
             .unwrap();
     assert_eq!(stored["domains"], false);
     assert!(stored.get(&marker).is_none());
+}
+
+// --- ユーザー管理 (users) ---
+
+#[tokio::test]
+async fn admin_list_users_returns_seeded_user() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let username = format!("listee{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/users")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let entry = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|u| u["id"] == user_id.to_string())
+        .expect("seeded user present in list");
+    assert_eq!(entry["username"], username);
+    assert_eq!(entry["role"], "user");
+    assert_eq!(entry["is_active"], true);
+    assert_eq!(entry["is_system"], false);
+    assert_eq!(entry["suspended"], false);
+    assert_eq!(entry["silenced"], false);
+    assert_eq!(entry["storage_usage_bytes"], 0);
+}
+
+#[tokio::test]
+async fn admin_list_users_limit_over_100_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/users?limit=101")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_users_endpoints_require_users_permission_not_content() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("contentonly{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "content": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "contentmod", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/users")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+async fn seed_target_user(db: &PgPool, prefix: &str) -> (Uuid, Uuid, String) {
+    let username = format!("{prefix}{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(db, &username).await;
+    let user_id = seed_user(db, actor_id, &format!("{username}@example.com")).await;
+    (user_id, actor_id, username)
+}
+
+#[tokio::test]
+async fn admin_change_user_role_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, target_actor, _username) = seed_target_user(&db, "rolechange").await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/users/{target_user}/role"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "role": "moderator" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["ok"], true);
+    assert_eq!(json["role"], "moderator");
+
+    let role: String = sqlx::query_scalar("SELECT role FROM users WHERE id = $1")
+        .bind(target_user)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(role, "moderator");
+
+    let log_row: (String, Option<String>) = sqlx::query_as(
+        "SELECT action, reason FROM moderation_log WHERE target_id = $1 AND action = 'role_change'",
+    )
+    .bind(target_actor.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_row.1.as_deref(), Some("user -> moderator"));
+}
+
+#[tokio::test]
+async fn admin_change_user_role_nonexistent_role_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, _target_actor, _username) = seed_target_user(&db, "badrole").await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/users/{target_user}/role"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "role": format!("nosuchrole{}", Uuid::new_v4().simple()) }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_change_user_role_cannot_change_own_role_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("selfrole{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    set_user_role(&db, user_id, "admin").await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/users/{user_id}/role"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "role": "moderator" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_change_user_role_requires_admin_not_just_users_permission() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("usersonly{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "users": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "usersmod", &role_name).await;
+    let (target_user, _target_actor, _username) = seed_target_user(&db, "roleforbidden").await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/users/{target_user}/role"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "role": "moderator" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_change_user_role_returns_404_for_missing_user() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/users/{}/role", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "role": "moderator" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_suspend_user_soft_deletes_notes_invalidates_sessions_and_delivers_delete() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, target_actor, target_username) = seed_target_user(&db, "suspendee").await;
+    let note_id = seed_note_with_visibility(&db, target_actor, "public", Utc::now()).await;
+    let domain = format!("remote-suspend-{}.example", Uuid::new_v4().simple());
+    let follower_id = seed_remote_actor(&db, "follower-suspend", &domain).await;
+    seed_follow(&db, follower_id, target_actor).await;
+    let target_session = seed_session(&redis, target_user).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/suspend"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "reason": "spam" }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let suspended_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT suspended_at FROM actors WHERE id = $1")
+            .bind(target_actor)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(suspended_at.is_some());
+
+    let deleted_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT deleted_at FROM notes WHERE id = $1")
+            .bind(note_id)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(deleted_at.is_some());
+
+    let log_row: (String, Option<String>) = sqlx::query_as(
+        "SELECT action, reason FROM moderation_log WHERE target_id = $1 AND action = 'suspend'",
+    )
+    .bind(target_actor.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_row.1.as_deref(), Some("spam"));
+
+    let mut conn = redis.clone();
+    let exists: bool = conn
+        .exists(format!("session:{target_session}"))
+        .await
+        .unwrap();
+    assert!(!exists, "suspended user's session should be invalidated");
+
+    let delete_row: (String, String, String) = sqlx::query_as(
+        "SELECT target_inbox_url, payload->>'type', payload->'object'->>'id' FROM delivery_queue \
+         WHERE actor_id = $1 ORDER BY created_at DESC LIMIT 1",
+    )
+    .bind(target_actor)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(delete_row.0, format!("https://{domain}/inbox"));
+    assert_eq!(delete_row.1, "Delete");
+    assert_eq!(
+        delete_row.2,
+        format!("https://localhost/users/{target_username}")
+    );
+}
+
+#[tokio::test]
+async fn admin_suspend_user_already_suspended_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, _target_actor, _username) = seed_target_user(&db, "resuspend").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/suspend"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/suspend"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_suspend_user_cannot_suspend_self_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("selfsuspend{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    set_user_role(&db, user_id, "admin").await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{user_id}/suspend"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_suspend_user_rejects_system_account() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, _target_actor, _username) = seed_target_user(&db, "systemacct").await;
+    set_user_is_system(&db, target_user).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/suspend"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_suspend_user_protects_staff_target_unless_admin() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("usersmod{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "users": true })).await;
+    let (_uid, moderator_session) = seed_role_session(&db, &redis, "actingmod", &role_name).await;
+
+    let target_role_name = format!("staffrole{}", Uuid::new_v4().simple());
+    seed_role(&db, &target_role_name, false, json!({})).await;
+    let (target_user, target_actor, _username) = seed_target_user(&db, "staffsuspend").await;
+    set_user_role(&db, target_user, &target_role_name).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/suspend"))
+        .header("cookie", cookie_header(&moderator_session))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.clone().oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+
+    let suspended_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT suspended_at FROM actors WHERE id = $1")
+            .bind(target_actor)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(suspended_at.is_none());
+
+    let admin_session = seed_admin_session(&db, &redis).await;
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/suspend"))
+        .header("cookie", cookie_header(&admin_session))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admin_unsuspend_user_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, target_actor, _username) = seed_target_user(&db, "unsuspend").await;
+    sqlx::query("UPDATE actors SET suspended_at = now() WHERE id = $1")
+        .bind(target_actor)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/unsuspend"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let suspended_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT suspended_at FROM actors WHERE id = $1")
+            .bind(target_actor)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(suspended_at.is_none());
+
+    let log_count: i64 = sqlx::query_scalar(
+        "SELECT COUNT(*) FROM moderation_log WHERE action = 'unsuspend' AND target_id = $1",
+    )
+    .bind(target_actor.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_count, 1);
+}
+
+#[tokio::test]
+async fn admin_unsuspend_user_not_suspended_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, _target_actor, _username) = seed_target_user(&db, "notsuspended").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/unsuspend"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_silence_user_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, target_actor, _username) = seed_target_user(&db, "silencee").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/silence"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "reason": "repeated rule violations" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let silenced_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT silenced_at FROM actors WHERE id = $1")
+            .bind(target_actor)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(silenced_at.is_some());
+
+    let log_row: (String, Option<String>) = sqlx::query_as(
+        "SELECT action, reason FROM moderation_log WHERE target_id = $1 AND action = 'silence'",
+    )
+    .bind(target_actor.to_string())
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert_eq!(log_row.1.as_deref(), Some("repeated rule violations"));
+}
+
+#[tokio::test]
+async fn admin_silence_user_already_silenced_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, target_actor, _username) = seed_target_user(&db, "resilence").await;
+    sqlx::query("UPDATE actors SET silenced_at = now() WHERE id = $1")
+        .bind(target_actor)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/silence"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_silence_user_cannot_silence_self_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let username = format!("selfsilence{}", Uuid::new_v4().simple());
+    let actor_id = seed_local_actor(&db, &username).await;
+    let user_id = seed_user(&db, actor_id, &format!("{username}@example.com")).await;
+    set_user_role(&db, user_id, "admin").await;
+    let session_id = seed_session(&redis, user_id).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{user_id}/silence"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_unsilence_user_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, target_actor, _username) = seed_target_user(&db, "unsilence").await;
+    sqlx::query("UPDATE actors SET silenced_at = now() WHERE id = $1")
+        .bind(target_actor)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/unsilence"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+
+    let silenced_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT silenced_at FROM actors WHERE id = $1")
+            .bind(target_actor)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert!(silenced_at.is_none());
+}
+
+#[tokio::test]
+async fn admin_unsilence_user_not_silenced_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (target_user, _target_actor, _username) = seed_target_user(&db, "notsilenced").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{target_user}/unsilence"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_suspend_user_returns_404_for_missing_user() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/users/{}/suspend", Uuid::new_v4()))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
 }
