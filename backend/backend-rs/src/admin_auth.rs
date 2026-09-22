@@ -4,9 +4,10 @@
 //! `require_permission(&state, &current_user, &method, "domains").await?`
 //! のように呼ぶ(`CurrentUser::require_scope`と同じ利用パターン)。
 //!
-//! `get_admin_user`/`get_staff_user`/`get_moderation_staff`(`has_any_permission`
-//! 経由でモデレーター権限を何か1つでも持つか確認する版)は、対応する管理
-//! エンドポイント(役割変更・凍結等)を移植する際に必要になった時点で追加する。
+//! `get_moderation_staff`(`has_any_permission`経由でモデレーター権限を何か
+//! 1つでも持つか確認する版、`GET /api/v1/admin/log`が使う)も移植済み。
+//! `get_admin_user`/`get_staff_user`は、対応する管理エンドポイント
+//! (役割変更・凍結等)を移植する際に必要になった時点で追加する。
 
 use axum::http::{Method, StatusCode};
 use serde_json::Value;
@@ -94,6 +95,58 @@ pub async fn require_permission(
         .and_then(|p| p.get(permission))
         .and_then(Value::as_bool)
         .unwrap_or(false);
+    if allowed {
+        Ok(())
+    } else {
+        Err(AppError::new(StatusCode::FORBIDDEN, "Permission denied"))
+    }
+}
+
+/// `app.services.role_service.MODERATOR_PERMISSIONS` を移植したもの。
+const MODERATOR_PERMISSIONS: [&str; 8] = [
+    "users",
+    "reports",
+    "content",
+    "domains",
+    "federation",
+    "emoji",
+    "registrations",
+    "announcements",
+];
+
+/// `app.dependencies.get_moderation_staff` (`get_staff_user` + `has_any_permission`)
+/// を移植したもの。`role == "admin"`は常に許可、`role == "user"`は常に拒否、
+/// それ以外は`roles.is_admin`列またはモデレーター権限リストのいずれか1つが
+/// `permissions` JSONBで真であれば許可する。
+pub async fn require_moderation_staff(
+    state: &AppState,
+    current_user: &CurrentUser,
+    method: &Method,
+) -> Result<(), AppError> {
+    let role: String = sqlx::query_scalar("SELECT role FROM users WHERE id = $1")
+        .bind(current_user.id)
+        .fetch_one(&state.db)
+        .await?;
+
+    if role == "user" {
+        return Err(AppError::new(StatusCode::FORBIDDEN, "Staff only"));
+    }
+    require_admin_scope(current_user, method)?;
+    if role == "admin" {
+        return Ok(());
+    }
+
+    let Some(role_row) = fetch_role(&state.db, &role).await? else {
+        return Err(AppError::new(StatusCode::FORBIDDEN, "Permission denied"));
+    };
+    if role_row.is_admin {
+        return Ok(());
+    }
+    let allowed = role_row.permissions.as_ref().is_some_and(|p| {
+        MODERATOR_PERMISSIONS
+            .iter()
+            .any(|perm| p.get(*perm).and_then(Value::as_bool).unwrap_or(false))
+    });
     if allowed {
         Ok(())
     } else {
