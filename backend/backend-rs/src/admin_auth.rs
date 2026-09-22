@@ -5,9 +5,9 @@
 //! のように呼ぶ(`CurrentUser::require_scope`と同じ利用パターン)。
 //!
 //! `get_moderation_staff`(`has_any_permission`経由でモデレーター権限を何か
-//! 1つでも持つか確認する版、`GET /api/v1/admin/log`が使う)も移植済み。
-//! `get_admin_user`/`get_staff_user`は、対応する管理エンドポイント
-//! (役割変更・凍結等)を移植する際に必要になった時点で追加する。
+//! 1つでも持つか確認する版、`GET /api/v1/admin/log`が使う)、`get_admin_user`
+//! (`role == "admin"`のみ許可、`roles` CRUD系が使う)、`get_staff_user`
+//! (`role != "user"`なら許可、`GET /api/v1/admin/permissions`が使う)も移植済み。
 
 use axum::http::{Method, StatusCode};
 use serde_json::Value;
@@ -152,4 +152,38 @@ pub async fn require_moderation_staff(
     } else {
         Err(AppError::new(StatusCode::FORBIDDEN, "Permission denied"))
     }
+}
+
+/// `app.dependencies.get_admin_user` を移植したもの。`role == "admin"`のみ
+/// 許可する(カスタムroleの`roles.is_admin`列は見ない、Python版と同じ)。
+pub async fn require_admin_role(
+    state: &AppState,
+    current_user: &CurrentUser,
+    method: &Method,
+) -> Result<(), AppError> {
+    let role: String = sqlx::query_scalar("SELECT role FROM users WHERE id = $1")
+        .bind(current_user.id)
+        .fetch_one(&state.db)
+        .await?;
+    if role != "admin" {
+        return Err(AppError::new(StatusCode::FORBIDDEN, "Admin only"));
+    }
+    require_admin_scope(current_user, method)
+}
+
+/// `app.dependencies.get_staff_user` を移植したもの。`role != "user"`であれば
+/// 許可する(具体的な権限は見ない)。
+pub async fn require_staff(
+    state: &AppState,
+    current_user: &CurrentUser,
+    method: &Method,
+) -> Result<(), AppError> {
+    let role: String = sqlx::query_scalar("SELECT role FROM users WHERE id = $1")
+        .bind(current_user.id)
+        .fetch_one(&state.db)
+        .await?;
+    if role == "user" {
+        return Err(AppError::new(StatusCode::FORBIDDEN, "Staff only"));
+    }
+    require_admin_scope(current_user, method)
 }

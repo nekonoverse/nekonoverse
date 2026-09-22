@@ -866,3 +866,426 @@ async fn admin_log_limit_out_of_range_returns_422() {
     let resp = app.oneshot(req).await.unwrap();
     assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
 }
+
+// --- ロール (roles) ---
+
+#[tokio::test]
+async fn admin_list_roles_orders_builtins_by_priority_desc() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/roles")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let names: Vec<String> = json
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["name"].as_str().unwrap().to_string())
+        .collect();
+    // 組み込みroleのpriority: admin=100, moderator=50, user=0。
+    let admin_idx = names.iter().position(|n| n == "admin").unwrap();
+    let moderator_idx = names.iter().position(|n| n == "moderator").unwrap();
+    let user_idx = names.iter().position(|n| n == "user").unwrap();
+    assert!(admin_idx < moderator_idx);
+    assert!(moderator_idx < user_idx);
+}
+
+#[tokio::test]
+async fn admin_get_role_returns_404_for_missing_role() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri(format!(
+            "/api/v1/admin/roles/nosuchrole{}",
+            Uuid::new_v4().simple()
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+#[tokio::test]
+async fn admin_get_role_returns_builtin_admin_role() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/roles/admin")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["name"], "admin");
+    assert_eq!(json["is_admin"], true);
+    assert_eq!(json["is_system"], true);
+    assert_eq!(json["priority"], 100);
+}
+
+#[tokio::test]
+async fn admin_create_role_with_defaults() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let name = format!("newrole{}", Uuid::new_v4().simple());
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/roles")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "name": name, "display_name": "New Role" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let json = body_json(resp).await;
+    assert_eq!(json["name"], name);
+    assert_eq!(json["display_name"], "New Role");
+    assert_eq!(json["permissions"], json!({}));
+    assert_eq!(json["quota_bytes"], 1_073_741_824i64);
+    assert_eq!(json["priority"], 0);
+    assert_eq!(json["is_system"], false);
+}
+
+#[tokio::test]
+async fn admin_create_role_with_copy_from_inherits_source_fields() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let source_name = format!("source{}", Uuid::new_v4().simple());
+    seed_role(&db, &source_name, false, json!({ "content": true })).await;
+    sqlx::query("UPDATE roles SET quota_bytes = 999, priority = 7 WHERE name = $1")
+        .bind(&source_name)
+        .execute(&db)
+        .await
+        .unwrap();
+
+    let new_name = format!("copy{}", Uuid::new_v4().simple());
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/roles")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "name": new_name, "display_name": "Copy", "copy_from": source_name })
+                .to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::CREATED);
+    let json = body_json(resp).await;
+    assert_eq!(json["permissions"], json!({ "content": true }));
+    assert_eq!(json["quota_bytes"], 999);
+    assert_eq!(json["priority"], 7);
+}
+
+#[tokio::test]
+async fn admin_create_role_duplicate_name_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let name = format!("dup{}", Uuid::new_v4().simple());
+    seed_role(&db, &name, false, json!({})).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/roles")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "name": name, "display_name": "Dup" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_create_role_invalid_name_pattern_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/roles")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "name": "Invalid-Name", "display_name": "x" }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_roles_endpoints_require_literal_admin_role_not_is_admin_flag() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    // permissions JSONBのis_adminフラグを立てたカスタムroleでも、
+    // get_admin_user相当(role文字列が"admin"かどうか)は満たさない。
+    let role_name = format!("superadmin{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, true, json!({})).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "notreallyadmin", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/roles")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+#[tokio::test]
+async fn admin_update_role_partially_updates_only_given_fields() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let name = format!("updatable{}", Uuid::new_v4().simple());
+    seed_role(&db, &name, false, json!({ "content": true })).await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!("/api/v1/admin/roles/{name}"))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "priority": 42 }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["priority"], 42);
+    // display_name/permissionsは変更されず維持される。
+    assert_eq!(json["display_name"], name);
+    assert_eq!(json["permissions"], json!({ "content": true }));
+}
+
+#[tokio::test]
+async fn admin_update_nonexistent_role_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri(format!(
+            "/api/v1/admin/roles/nosuchrole{}",
+            Uuid::new_v4().simple()
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "priority": 1 }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_delete_role_happy_path() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let name = format!("deletable{}", Uuid::new_v4().simple());
+    seed_role(&db, &name, false, json!({})).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/roles/{name}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NO_CONTENT);
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM roles WHERE name = $1")
+        .bind(&name)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(count, 0);
+}
+
+#[tokio::test]
+async fn admin_delete_role_nonexistent_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!(
+            "/api/v1/admin/roles/nosuchrole{}",
+            Uuid::new_v4().simple()
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_delete_builtin_role_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri("/api/v1/admin/roles/moderator")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM roles WHERE name = 'moderator'")
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(count, 1);
+}
+
+#[tokio::test]
+async fn admin_delete_role_with_assigned_users_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let name = format!("occupied{}", Uuid::new_v4().simple());
+    seed_role(&db, &name, false, json!({})).await;
+    let (_uid, _session) = seed_role_session(&db, &redis, "occupant", &name).await;
+
+    let req = Request::builder()
+        .method("DELETE")
+        .uri(format!("/api/v1/admin/roles/{name}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+// --- レガシーのモデレーター権限ショートカット (permissions) ---
+
+#[tokio::test]
+async fn admin_get_permissions_returns_seven_known_keys_as_booleans() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/permissions")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    let obj = json.as_object().unwrap();
+    for key in [
+        "users",
+        "reports",
+        "content",
+        "domains",
+        "federation",
+        "emoji",
+        "registrations",
+    ] {
+        assert!(obj.get(key).unwrap().is_boolean(), "missing key {key}");
+    }
+    // role_service側の8キーには含まれる"announcements"はレガシー版に含まない。
+    assert!(!obj.contains_key("announcements"));
+}
+
+#[tokio::test]
+async fn admin_get_permissions_accessible_to_non_admin_staff() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("juststaff{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({})).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "juststaff", &role_name).await;
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/permissions")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+}
+
+#[tokio::test]
+async fn admin_update_permissions_requires_admin_not_just_staff() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let role_name = format!("modonly{}", Uuid::new_v4().simple());
+    seed_role(&db, &role_name, false, json!({ "users": true })).await;
+    let (_uid, session_id) = seed_role_session(&db, &redis, "modonly", &role_name).await;
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/permissions")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(json!({ "users": false }).to_string()))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::FORBIDDEN);
+}
+
+/// "moderator" roleの`permissions`は他の権限系テストとも共有される単一行
+/// なので、レース回避のためPATCHして検証するテストはこの1本にまとめる。
+#[tokio::test]
+async fn admin_update_permissions_sets_known_keys_and_ignores_unknown() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let marker = format!("probe-{}", Uuid::new_v4().simple());
+
+    let req = Request::builder()
+        .method("PATCH")
+        .uri("/api/v1/admin/permissions")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({ "domains": false, "emoji": true, marker.clone(): true }).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["domains"], false);
+    assert_eq!(json["emoji"], true);
+    assert!(json.as_object().unwrap().get(&marker).is_none());
+
+    let stored: Value =
+        sqlx::query_scalar("SELECT permissions FROM roles WHERE name = 'moderator'")
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(stored["domains"], false);
+    assert!(stored.get(&marker).is_none());
+}

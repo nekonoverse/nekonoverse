@@ -14,8 +14,16 @@
 //! (`admin_auth::require_moderation_staff`、モデレーター権限を何か1つでも
 //! 持てば閲覧可)配下。`admin_delete_note`のフォロワーへのDelete配送は
 //! `delete_status`(#1154)と同型(`render_delete_activity`+
-//! `get_follower_inboxes`+`enqueue_delivery`)。他の管理エンドポイント
-//! (users/emoji等)は本PRのスコープ外、必要になった時点で追加する。
+//! `get_follower_inboxes`+`enqueue_delivery`)。ロール管理系(`list_roles`/
+//! `get_role`/`create_role`/`update_role`/`delete_role`)は`get_admin_user`
+//! (`admin_auth::require_admin_role`)配下、レガシーのモデレーター権限
+//! ショートカット(`get_permissions`/`update_permissions`、"moderator" role の
+//! `permissions`のうち`role_service.MODERATOR_PERMISSIONS`とは異なり
+//! "announcements"を含まない7キーだけを読み書きする
+//! `permission_service.MODERATOR_PERMISSIONS`が対象)はGETが`get_staff_user`
+//! (`require_staff`)、PATCHが`get_admin_user`(`require_admin_role`)配下。
+//! 他の管理エンドポイント(users/emoji/announcements等)は本PRのスコープ外、
+//! 必要になった時点で追加する。
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
@@ -25,11 +33,13 @@ use axum::routing::{delete, get, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Utc};
 use serde::Deserialize;
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
 use crate::activitypub::render_delete_activity;
-use crate::admin_auth::{require_moderation_staff, require_permission};
+use crate::admin_auth::{
+    require_admin_role, require_moderation_staff, require_permission, require_staff,
+};
 use crate::auth::CurrentUser;
 use crate::db;
 use crate::delivery::enqueue_delivery;
@@ -59,6 +69,15 @@ pub fn router() -> Router<AppState> {
             post(force_note_sensitive),
         )
         .route("/api/v1/admin/log", get(get_moderation_log))
+        .route("/api/v1/admin/roles", get(list_roles).post(create_role))
+        .route(
+            "/api/v1/admin/roles/:name",
+            get(get_role).patch(update_role).delete(delete_role),
+        )
+        .route(
+            "/api/v1/admin/permissions",
+            get(get_permissions).patch(update_permissions),
+        )
 }
 
 #[derive(sqlx::FromRow)]
@@ -609,4 +628,353 @@ async fn get_moderation_log(
     .await?;
 
     Ok(Json(rows.iter().map(moderation_log_json).collect::<Vec<_>>()).into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct RoleRow {
+    name: String,
+    display_name: String,
+    permissions: Value,
+    is_admin: bool,
+    quota_bytes: i64,
+    priority: i32,
+    is_system: bool,
+    created_at: DateTime<Utc>,
+}
+
+/// `app.schemas.admin.RoleResponse` を移植したもの。
+fn role_json(row: &RoleRow) -> Value {
+    json!({
+        "name": row.name,
+        "display_name": row.display_name,
+        "permissions": row.permissions,
+        "is_admin": row.is_admin,
+        "quota_bytes": row.quota_bytes,
+        "priority": row.priority,
+        "is_system": row.is_system,
+        "created_at": to_pydantic_isoformat(row.created_at),
+    })
+}
+
+async fn fetch_role_row(db: &sqlx::PgPool, name: &str) -> Result<Option<RoleRow>, AppError> {
+    let row = sqlx::query_as(
+        "SELECT name, display_name, permissions, is_admin, quota_bytes, priority, is_system, \
+                created_at \
+         FROM roles WHERE name = $1",
+    )
+    .bind(name)
+    .fetch_optional(db)
+    .await?;
+    Ok(row)
+}
+
+async fn list_roles(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let rows: Vec<RoleRow> = sqlx::query_as(
+        "SELECT name, display_name, permissions, is_admin, quota_bytes, priority, is_system, \
+                created_at \
+         FROM roles ORDER BY priority DESC, name",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    Ok(Json(rows.iter().map(role_json).collect::<Vec<_>>()).into_response())
+}
+
+async fn get_role(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(name): Path<String>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let row = fetch_role_row(&state.db, &name)
+        .await?
+        .ok_or_else(|| AppError::not_found("Role not found"))?;
+    Ok(Json(role_json(&row)).into_response())
+}
+
+#[derive(Deserialize)]
+struct RoleCreateRequest {
+    name: String,
+    display_name: String,
+    copy_from: Option<String>,
+}
+
+/// `app.schemas.admin.RoleCreateRequest`の`Field`制約を移植したもの。
+fn validate_role_create(body: &RoleCreateRequest) -> Result<(), AppError> {
+    let name_len = body.name.chars().count();
+    let valid_name = (1..=50).contains(&name_len)
+        && body
+            .name
+            .chars()
+            .next()
+            .is_some_and(|c| c.is_ascii_lowercase())
+        && body
+            .name
+            .chars()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '_');
+    if !valid_name {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "name must match ^[a-z][a-z0-9_]*$ and be at most 50 characters",
+        ));
+    }
+    let display_len = body.display_name.chars().count();
+    if !(1..=100).contains(&display_len) {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "display_name must be between 1 and 100 characters",
+        ));
+    }
+    Ok(())
+}
+
+/// `app.services.role_service.create_role` を移植したもの。
+async fn create_role(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Json(body): Json<RoleCreateRequest>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+    validate_role_create(&body)?;
+
+    if fetch_role_row(&state.db, &body.name).await?.is_some() {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Role '{}' already exists", body.name),
+        ));
+    }
+
+    let (permissions, quota_bytes, priority) = match &body.copy_from {
+        Some(copy_from) => match fetch_role_row(&state.db, copy_from).await? {
+            Some(source) => (source.permissions, source.quota_bytes, source.priority),
+            None => (json!({}), 1_073_741_824i64, 0i32),
+        },
+        None => (json!({}), 1_073_741_824i64, 0i32),
+    };
+
+    sqlx::query(
+        "INSERT INTO roles (name, display_name, permissions, quota_bytes, priority, is_system) \
+         VALUES ($1, $2, $3, $4, $5, false)",
+    )
+    .bind(&body.name)
+    .bind(&body.display_name)
+    .bind(sqlx::types::Json(&permissions))
+    .bind(quota_bytes)
+    .bind(priority)
+    .execute(&state.db)
+    .await?;
+
+    let row = fetch_role_row(&state.db, &body.name)
+        .await?
+        .ok_or_else(|| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"))?;
+    Ok((StatusCode::CREATED, Json(role_json(&row))).into_response())
+}
+
+#[derive(Deserialize)]
+struct RoleUpdateRequest {
+    display_name: Option<String>,
+    permissions: Option<Value>,
+    quota_bytes: Option<i64>,
+    priority: Option<i32>,
+}
+
+/// `app.schemas.admin.RoleUpdateRequest`の`Field`制約を移植したもの。
+fn validate_role_update(body: &RoleUpdateRequest) -> Result<(), AppError> {
+    if let Some(display_name) = &body.display_name {
+        let len = display_name.chars().count();
+        if !(1..=100).contains(&len) {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "display_name must be between 1 and 100 characters",
+            ));
+        }
+    }
+    if let Some(quota_bytes) = body.quota_bytes {
+        if quota_bytes < 0 {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "quota_bytes must be greater than or equal to 0",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// `app.services.role_service.update_role` を移植したもの。`is_system`な
+/// role(admin/user/moderator)も含め、`display_name`/`permissions`/
+/// `quota_bytes`/`priority`のうち渡されたフィールドだけを更新する
+/// (Python版に`is_system`ガードは無い、削除のみ禁止)。
+async fn update_role(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(name): Path<String>,
+    Json(body): Json<RoleUpdateRequest>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+    validate_role_update(&body)?;
+
+    if fetch_role_row(&state.db, &name).await?.is_none() {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Role '{name}' not found"),
+        ));
+    }
+
+    sqlx::query(
+        "UPDATE roles SET \
+            display_name = COALESCE($1, display_name), \
+            permissions = COALESCE($2, permissions), \
+            quota_bytes = COALESCE($3, quota_bytes), \
+            priority = COALESCE($4, priority) \
+         WHERE name = $5",
+    )
+    .bind(&body.display_name)
+    .bind(body.permissions.as_ref().map(sqlx::types::Json))
+    .bind(body.quota_bytes)
+    .bind(body.priority)
+    .bind(&name)
+    .execute(&state.db)
+    .await?;
+
+    let row = fetch_role_row(&state.db, &name)
+        .await?
+        .ok_or_else(|| AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error"))?;
+    Ok(Json(role_json(&row)).into_response())
+}
+
+/// `app.services.role_service.delete_role` を移植したもの。未発見・
+/// 組み込みrole・割り当て中ユーザーありのいずれも(404ではなく)422で
+/// 返す、Python版が`ValueError`を422にマップしているのと同じ。
+async fn delete_role(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(name): Path<String>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let role = fetch_role_row(&state.db, &name).await?.ok_or_else(|| {
+        AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Role '{name}' not found"),
+        )
+    })?;
+    if role.is_system {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Cannot delete a built-in role",
+        ));
+    }
+
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users WHERE role = $1")
+        .bind(&name)
+        .fetch_one(&state.db)
+        .await?;
+    if user_count > 0 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Cannot delete role '{name}': {user_count} user(s) assigned"),
+        ));
+    }
+
+    sqlx::query("DELETE FROM roles WHERE name = $1")
+        .bind(&name)
+        .execute(&state.db)
+        .await?;
+
+    Ok(StatusCode::NO_CONTENT.into_response())
+}
+
+/// `app.services.permission_service.MODERATOR_PERMISSIONS` を移植したもの。
+/// `admin_auth::MODERATOR_PERMISSIONS`(`role_service`側、8キー)とは異なり
+/// "announcements"を含まない7キー。順序もPython版のdictキー順と揃える。
+const LEGACY_MODERATOR_PERMISSIONS: [&str; 7] = [
+    "users",
+    "reports",
+    "content",
+    "domains",
+    "federation",
+    "emoji",
+    "registrations",
+];
+
+/// `app.services.permission_service.get_moderator_permissions` を移植した
+/// もの。"moderator" roleが無ければ全キーtrue、あれば各キーごとに
+/// `permissions.get(perm, True)`(未設定なら既定でtrue)。
+async fn moderator_permissions_json(db: &sqlx::PgPool) -> Result<Value, AppError> {
+    let role = fetch_role_row(db, "moderator").await?;
+    let mut map = Map::new();
+    for perm in LEGACY_MODERATOR_PERMISSIONS {
+        let value = role
+            .as_ref()
+            .and_then(|r| r.permissions.get(perm))
+            .and_then(Value::as_bool)
+            .unwrap_or(true);
+        map.insert(perm.to_string(), Value::Bool(value));
+    }
+    Ok(Value::Object(map))
+}
+
+async fn get_permissions(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_staff(&state, &current_user, &method).await?;
+    Ok(Json(moderator_permissions_json(&state.db).await?).into_response())
+}
+
+/// Pythonの`bool(value)`真偽変換を移植したもの
+/// (`app.services.permission_service.set_moderator_permissions`の
+/// `current[key] = bool(value)`)。null/false/0/空文字列/空配列/空オブジェクト
+/// はfalse、それ以外はtrue。
+fn python_truthy(value: &Value) -> bool {
+    match value {
+        Value::Null => false,
+        Value::Bool(b) => *b,
+        Value::Number(n) => n.as_f64().is_some_and(|f| f != 0.0),
+        Value::String(s) => !s.is_empty(),
+        Value::Array(a) => !a.is_empty(),
+        Value::Object(o) => !o.is_empty(),
+    }
+}
+
+/// `app.services.permission_service.set_moderator_permissions` を移植した
+/// もの。"moderator" roleが存在しなければ何もしない(Python版と同じ、
+/// is_system=trueのため実運用では起こらない)。未知キーは無視する。
+async fn update_permissions(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Json(body): Json<Map<String, Value>>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    if let Some(role) = fetch_role_row(&state.db, "moderator").await? {
+        let mut current = match role.permissions {
+            Value::Object(map) => map,
+            _ => Map::new(),
+        };
+        for perm in LEGACY_MODERATOR_PERMISSIONS {
+            if let Some(value) = body.get(perm) {
+                current.insert(perm.to_string(), Value::Bool(python_truthy(value)));
+            }
+        }
+        sqlx::query("UPDATE roles SET permissions = $1 WHERE name = 'moderator'")
+            .bind(sqlx::types::Json(Value::Object(current)))
+            .execute(&state.db)
+            .await?;
+    }
+
+    Ok(Json(moderator_permissions_json(&state.db).await?).into_response())
 }
