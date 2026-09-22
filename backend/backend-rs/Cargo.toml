@@ -41,6 +41,7 @@ pbkdf2 = { version = "0.12", features = ["hmac"] }
 bcrypt = "0.15"
 sha1 = "0.10"
 rand = "0.8"
+p256 = "0.13"
 
 [dev-dependencies]
 http-body-util = "0.1"

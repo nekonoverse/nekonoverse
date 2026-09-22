@@ -18,6 +18,7 @@ pub mod note_visibility;
 pub mod notification;
 pub mod remote_actor;
 pub mod routes;
+pub mod server_settings;
 pub mod session;
 pub mod shortcode;
 pub mod ssrf;

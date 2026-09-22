@@ -69,6 +69,24 @@
 //! でリモートサーバー単位に集約する。`delivery_queue`側は
 //! `target_inbox_url`から正規表現(`substring(... from 'https?://([^/]+)')`)で
 //! ドメインを抽出する、Python版の`func.substring`と同じ手法。
+//!
+//! サーバー設定(`get_server_settings`/`update_server_settings`、
+//! `app.services.server_settings_service`)、統計(`get_admin_stats`)、
+//! システム統計(`get_system_stats`)は`get_admin_user`
+//! (`require_admin_role`、`get_admin_stats`のみ`get_permitted_staff("users")`)
+//! 配下。`update_server_settings`内の`_resolve_pending_users`
+//! (承認制モードから離脱時、承認待ちユーザーを一括承認/却下する処理)は
+//! `reject_registration`(#1169)と同じユーザー+actor削除パターンを流用した。
+//! VAPID鍵生成(`POST /admin/push/generate-vapid-key`)はPython側の
+//! プロセス内メモリキャッシュ(`push_service._cached_db_vapid_key`)と
+//! backend-rsが別プロセスであるため生成後の反映タイミングがズレる懸念があり
+//! (実際のプッシュ配送は引き続きPython側が担当)、意図的に未移植のまま
+//! Python側に残す(`crate::server_settings`のモジュールdoc参照)。
+//! `get_server_settings`が返す`vapid_public_key`はDB保存済み秘密鍵からの
+//! 純粋な読み取り専用導出のためこの懸念に該当せず、移植済み。
+//! `get_system_stats`のDBプール統計はsqlxに`overflow`の概念が無い
+//! (SQLAlchemyの`QueuePool.max_overflow`と異なり単一の接続上限のみ)ため
+//! `db_pool_overflow`は常に`0`を返す。
 
 use axum::body::Bytes;
 use axum::extract::{Path, Query, State};
@@ -77,8 +95,10 @@ use axum::response::{IntoResponse, Response};
 use axum::routing::{delete, get, patch, post};
 use axum::{Json, Router};
 use chrono::{DateTime, Timelike, Utc};
+use redis::AsyncCommands;
 use serde::Deserialize;
 use serde_json::{json, Map, Value};
+use std::collections::HashMap;
 use uuid::Uuid;
 
 use crate::activitypub::render_delete_activity;
@@ -86,6 +106,7 @@ use crate::admin_auth::{
     require_admin_role, require_moderation_staff, require_permission, require_staff,
 };
 use crate::auth::CurrentUser;
+use crate::config::Config;
 use crate::db;
 use crate::delivery::enqueue_delivery;
 use crate::domain_block::invalidate_domain_block_cache;
@@ -93,6 +114,7 @@ use crate::error::AppError;
 use crate::follows::get_follower_inboxes;
 use crate::mastodon_time::to_pydantic_isoformat;
 use crate::moderation::{self, log_action};
+use crate::server_settings::{get_all_settings, set_setting, vapid_public_key_base64url};
 use crate::state::AppState;
 
 pub fn router() -> Router<AppState> {
@@ -151,6 +173,12 @@ pub fn router() -> Router<AppState> {
             "/api/v1/admin/federation/*domain",
             get(get_federated_server_detail_endpoint),
         )
+        .route(
+            "/api/v1/admin/settings",
+            get(get_server_settings).patch(update_server_settings),
+        )
+        .route("/api/v1/admin/stats", get(get_admin_stats))
+        .route("/api/v1/admin/system/stats", get(get_system_stats))
 }
 
 #[derive(sqlx::FromRow)]
@@ -2151,6 +2179,580 @@ async fn get_federated_server_detail_endpoint(
             "dead": delivery.d_dead,
         },
         "recent_actors": actors.iter().map(actor_summary_json).collect::<Vec<_>>(),
+    }))
+    .into_response())
+}
+
+// --- サーバー設定 ---
+
+/// `app.api.admin.get_server_settings`/`update_server_settings`が返す
+/// `ServerSettingsResponse`を組み立てる。`settings.get(key, default)`という
+/// Pythonのdict.get 2引数版の挙動(defaultはキーが「存在しない」場合のみ
+/// 適用され、キーが存在して値がNULL/Noneの場合は適用されない)を
+/// フィールドごとに再現する。
+fn build_settings_response(settings: &HashMap<String, Option<String>>, config: &Config) -> Value {
+    let get_flat = |key: &str| -> Option<String> { settings.get(key).cloned().flatten() };
+    let get_with_default = |key: &str, default: &str| -> Option<String> {
+        match settings.get(key) {
+            Some(v) => v.clone(),
+            None => Some(default.to_string()),
+        }
+    };
+
+    let mode = get_flat("registration_mode").unwrap_or_else(|| {
+        let reg_open = get_with_default("registration_open", "true").as_deref() == Some("true");
+        (if reg_open { "open" } else { "closed" }).to_string()
+    });
+    let invite_create_role =
+        get_with_default("invite_create_role", "admin").unwrap_or_else(|| "admin".to_string());
+    let push_enabled = get_with_default("push_enabled", "true").as_deref() == Some("true");
+    let katex_enabled = get_with_default("katex_enabled", "false").as_deref() == Some("true");
+    let timeline_default_limit = get_with_default("timeline_default_limit", "20")
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(20);
+    let timeline_max_limit = get_with_default("timeline_max_limit", "40")
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(40);
+    let vapid_public_key =
+        vapid_public_key_base64url(config, get_flat("vapid_private_key").as_deref());
+
+    json!({
+        "server_name": get_flat("server_name"),
+        "server_description": get_flat("server_description"),
+        "tos_url": get_flat("tos_url"),
+        "terms_of_service": get_flat("terms_of_service"),
+        "privacy_policy": get_flat("privacy_policy"),
+        "registration_open": mode != "closed",
+        "registration_mode": mode,
+        "invite_create_role": invite_create_role,
+        "server_icon_url": get_flat("server_icon_url"),
+        "server_theme_color": get_flat("server_theme_color"),
+        "push_enabled": push_enabled,
+        "vapid_public_key": vapid_public_key,
+        "timeline_default_limit": timeline_default_limit,
+        "timeline_max_limit": timeline_max_limit,
+        "katex_enabled": katex_enabled,
+    })
+}
+
+/// `app.api.admin.get_server_settings` を移植したもの。
+async fn get_server_settings(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+    let settings = get_all_settings(&state.db).await?;
+    Ok(Json(build_settings_response(&settings, &state.config)).into_response())
+}
+
+/// `app.schemas.admin.ServerSettingsUpdate`の各フィールドを`exclude_unset=True`
+/// 相当(リクエストJSONにキーが存在する場合のみ`Some`)でパースした結果。
+/// 検証は全フィールド分をハンドラー本体の実処理より先に完了させる
+/// (FastAPI/pydanticがハンドラー呼び出し前にボディ全体を検証するのと同じ、
+/// 一部だけ適用された中途半端な更新を防ぐ)。
+#[derive(Default)]
+struct ParsedSettingsUpdate {
+    server_name: Option<Option<String>>,
+    server_description: Option<Option<String>>,
+    tos_url: Option<Option<String>>,
+    terms_of_service: Option<Option<String>>,
+    privacy_policy: Option<Option<String>>,
+    registration_open: Option<bool>,
+    registration_mode: Option<String>,
+    invite_create_role: Option<String>,
+    server_theme_color: Option<Option<String>>,
+    push_enabled: Option<bool>,
+    timeline_default_limit: Option<i64>,
+    timeline_max_limit: Option<i64>,
+    katex_enabled: Option<bool>,
+}
+
+fn get_nullable_string(
+    map: &Map<String, Value>,
+    key: &str,
+    max_len: usize,
+) -> Result<Option<Option<String>>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::Null => Ok(Some(None)),
+        Value::String(s) => {
+            if s.chars().count() > max_len {
+                return Err(AppError::new(
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    format!("{key} must be at most {max_len} characters"),
+                ));
+            }
+            Ok(Some(Some(s.clone())))
+        }
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be a string or null"),
+        )),
+    }
+}
+
+/// bool|Noneフィールド。Pythonの`"true" if value else "false"`という
+/// truthy/falsy評価に合わせ、明示的な`null`は`false`として扱う。
+fn get_optional_bool(map: &Map<String, Value>, key: &str) -> Result<Option<bool>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::Null => Ok(Some(false)),
+        Value::Bool(b) => Ok(Some(*b)),
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be a boolean"),
+        )),
+    }
+}
+
+/// `registration_mode`/`invite_create_role`の`Field(None, pattern=...)`を
+/// 移植したもの。Python版はNoneに対してはpatternを適用せず後続処理で
+/// 未定義動作(前者はDB値をNULL化した上で承認待ちユーザーを一括却下、
+/// 後者は`ServerSettingsResponse`構築時にpydantic検証エラーで500)になるが、
+/// 実運用のUIから到達しない経路のため、backend-rsでは明示的な`null`は
+/// 422として拒否する(意図的な簡略化)。
+fn get_enum_string(
+    map: &Map<String, Value>,
+    key: &str,
+    allowed: &[&str],
+) -> Result<Option<String>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value {
+        Value::String(s) if allowed.iter().any(|a| a == s) => Ok(Some(s.clone())),
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be one of {allowed:?}"),
+        )),
+    }
+}
+
+/// `Field(None, ge=1, le=1000)`を移植したもの。明示的な`null`はPython版だと
+/// `int(None)`で500になるため(`get_enum_string`と同じ理由で)422として拒否する。
+fn get_bounded_int(
+    map: &Map<String, Value>,
+    key: &str,
+    min: i64,
+    max: i64,
+) -> Result<Option<i64>, AppError> {
+    let Some(value) = map.get(key) else {
+        return Ok(None);
+    };
+    match value.as_i64() {
+        Some(n) if (min..=max).contains(&n) => Ok(Some(n)),
+        _ => Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("{key} must be between {min} and {max}"),
+        )),
+    }
+}
+
+fn is_valid_theme_color(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    bytes.len() == 7 && bytes[0] == b'#' && bytes[1..].iter().all(u8::is_ascii_hexdigit)
+}
+
+fn parse_settings_update(map: &Map<String, Value>) -> Result<ParsedSettingsUpdate, AppError> {
+    let server_theme_color = match get_nullable_string(map, "server_theme_color", 7)? {
+        Some(Some(s)) if !is_valid_theme_color(&s) => {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "server_theme_color must match ^#[0-9a-fA-F]{6}$",
+            ))
+        }
+        other => other,
+    };
+
+    Ok(ParsedSettingsUpdate {
+        server_name: get_nullable_string(map, "server_name", 255)?,
+        server_description: get_nullable_string(map, "server_description", 2000)?,
+        tos_url: get_nullable_string(map, "tos_url", 2048)?,
+        terms_of_service: get_nullable_string(map, "terms_of_service", 50000)?,
+        privacy_policy: get_nullable_string(map, "privacy_policy", 50000)?,
+        registration_open: get_optional_bool(map, "registration_open")?,
+        registration_mode: get_enum_string(
+            map,
+            "registration_mode",
+            &["open", "invite", "closed", "approval"],
+        )?,
+        invite_create_role: get_enum_string(
+            map,
+            "invite_create_role",
+            &["admin", "moderator", "user"],
+        )?,
+        server_theme_color,
+        push_enabled: get_optional_bool(map, "push_enabled")?,
+        timeline_default_limit: get_bounded_int(map, "timeline_default_limit", 1, 1000)?,
+        timeline_max_limit: get_bounded_int(map, "timeline_max_limit", 1, 1000)?,
+        katex_enabled: get_optional_bool(map, "katex_enabled")?,
+    })
+}
+
+fn bool_str(flag: bool) -> &'static str {
+    if flag {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+/// `app.api.admin._resolve_pending_users` を移植したもの。承認制モードから
+/// 離脱する際、承認待ちユーザーを一括処理する: `open`への変更は全員承認、
+/// それ以外(`closed`/`invite`)は全員却下(ユーザー+actor削除、
+/// `reject_registration`(#1169)と同じ削除パターン)。
+async fn resolve_pending_users(
+    state: &AppState,
+    moderator_id: Uuid,
+    new_mode: &str,
+) -> Result<(), AppError> {
+    let pending: Vec<PendingUserRow> = sqlx::query_as(
+        "SELECT id, actor_id, approval_status FROM users WHERE approval_status = 'pending'",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    for user in pending {
+        if new_mode == "open" {
+            sqlx::query("UPDATE users SET approval_status = 'approved' WHERE id = $1")
+                .bind(user.id)
+                .execute(&state.db)
+                .await?;
+            log_action(
+                state,
+                moderator_id,
+                "approve_registration",
+                "user",
+                &user.id.to_string(),
+                None,
+            )
+            .await?;
+        } else {
+            log_action(
+                state,
+                moderator_id,
+                "reject_registration",
+                "user",
+                &user.id.to_string(),
+                None,
+            )
+            .await?;
+            sqlx::query("DELETE FROM users WHERE id = $1")
+                .bind(user.id)
+                .execute(&state.db)
+                .await?;
+            sqlx::query("DELETE FROM actors WHERE id = $1")
+                .bind(user.actor_id)
+                .execute(&state.db)
+                .await?;
+        }
+    }
+    Ok(())
+}
+
+/// `app.api.admin.update_server_settings`の更新ループ本体を移植したもの
+/// (pydanticのフィールド宣言順 = `model_dump(exclude_unset=True)`の
+/// 反復順と同じ順序で適用する)。
+async fn apply_settings_update(
+    state: &AppState,
+    moderator_id: Uuid,
+    parsed: ParsedSettingsUpdate,
+) -> Result<(), AppError> {
+    if let Some(v) = &parsed.server_name {
+        set_setting(&state.db, &state.redis, "server_name", v.as_deref()).await?;
+    }
+    if let Some(v) = &parsed.server_description {
+        set_setting(&state.db, &state.redis, "server_description", v.as_deref()).await?;
+    }
+    if let Some(v) = &parsed.tos_url {
+        set_setting(&state.db, &state.redis, "tos_url", v.as_deref()).await?;
+    }
+    if let Some(v) = &parsed.terms_of_service {
+        set_setting(&state.db, &state.redis, "terms_of_service", v.as_deref()).await?;
+    }
+    if let Some(v) = &parsed.privacy_policy {
+        set_setting(&state.db, &state.redis, "privacy_policy", v.as_deref()).await?;
+    }
+    if let Some(flag) = parsed.registration_open {
+        set_setting(
+            &state.db,
+            &state.redis,
+            "registration_open",
+            Some(bool_str(flag)),
+        )
+        .await?;
+    }
+    if let Some(mode) = &parsed.registration_mode {
+        set_setting(
+            &state.db,
+            &state.redis,
+            "registration_mode",
+            Some(mode.as_str()),
+        )
+        .await?;
+        set_setting(
+            &state.db,
+            &state.redis,
+            "registration_open",
+            Some(bool_str(mode != "closed")),
+        )
+        .await?;
+        if mode != "approval" {
+            resolve_pending_users(state, moderator_id, mode).await?;
+        }
+    }
+    if let Some(role) = &parsed.invite_create_role {
+        set_setting(
+            &state.db,
+            &state.redis,
+            "invite_create_role",
+            Some(role.as_str()),
+        )
+        .await?;
+    }
+    if let Some(v) = &parsed.server_theme_color {
+        set_setting(&state.db, &state.redis, "server_theme_color", v.as_deref()).await?;
+    }
+    if let Some(flag) = parsed.push_enabled {
+        set_setting(
+            &state.db,
+            &state.redis,
+            "push_enabled",
+            Some(bool_str(flag)),
+        )
+        .await?;
+    }
+    if let Some(n) = parsed.timeline_default_limit {
+        set_setting(
+            &state.db,
+            &state.redis,
+            "timeline_default_limit",
+            Some(n.to_string().as_str()),
+        )
+        .await?;
+    }
+    if let Some(n) = parsed.timeline_max_limit {
+        set_setting(
+            &state.db,
+            &state.redis,
+            "timeline_max_limit",
+            Some(n.to_string().as_str()),
+        )
+        .await?;
+    }
+    if let Some(flag) = parsed.katex_enabled {
+        set_setting(
+            &state.db,
+            &state.redis,
+            "katex_enabled",
+            Some(bool_str(flag)),
+        )
+        .await?;
+    }
+    Ok(())
+}
+
+/// `app.api.admin.update_server_settings` を移植したもの。
+async fn update_server_settings(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Json(body): Json<Map<String, Value>>,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+    let parsed = parse_settings_update(&body)?;
+    apply_settings_update(&state, current_user.id, parsed).await?;
+
+    log_action(
+        &state,
+        current_user.id,
+        "update_settings",
+        "server",
+        "settings",
+        None,
+    )
+    .await?;
+
+    // instance_infoキャッシュを無効化 (設定変更を即時反映、失敗してもベストエフォート)
+    let mut conn = state.redis.clone();
+    let _: Result<(), redis::RedisError> = conn.del("perf:instance_info_v1").await;
+    let _: Result<(), redis::RedisError> = conn.del("perf:instance_info_v2").await;
+
+    let settings = get_all_settings(&state.db).await?;
+    Ok(Json(build_settings_response(&settings, &state.config)).into_response())
+}
+
+// --- 統計 ---
+
+/// `app.api.admin.get_admin_stats` を移植したもの。
+async fn get_admin_stats(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "users").await?;
+
+    let user_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+        .fetch_one(&state.db)
+        .await?;
+
+    let note_count: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM notes WHERE deleted_at IS NULL AND local = true")
+            .fetch_one(&state.db)
+            .await?;
+
+    let domain_count: i64 = sqlx::query_scalar(
+        r#"
+        SELECT COUNT(DISTINCT domain) FROM (
+            SELECT substring(target_inbox_url from 'https?://([^/]+)') AS domain
+            FROM delivery_queue
+            WHERE status IN ('delivered', 'pending', 'processing')
+            UNION
+            SELECT a.domain AS domain
+            FROM followers f
+            JOIN actors a ON a.id = f.following_id
+            WHERE f.follower_id IN (SELECT id FROM actors WHERE domain IS NULL)
+              AND a.domain IS NOT NULL
+            UNION
+            SELECT a.domain AS domain
+            FROM followers f
+            JOIN actors a ON a.id = f.follower_id
+            WHERE f.following_id IN (SELECT id FROM actors WHERE domain IS NULL)
+              AND a.domain IS NOT NULL
+        ) AS active_domains
+        "#,
+    )
+    .fetch_one(&state.db)
+    .await?;
+
+    Ok(Json(json!({
+        "user_count": user_count,
+        "note_count": note_count,
+        "domain_count": domain_count,
+    }))
+    .into_response())
+}
+
+/// `app.api.admin.get_system_stats` の `/proc` 読み取り部分を移植したもの。
+/// Python版と同じく各読み取りはベストエフォート(失敗してもデフォルト値
+/// のまま処理を続ける)。
+fn read_loadavg() -> Option<(f64, f64, f64)> {
+    let content = std::fs::read_to_string("/proc/loadavg").ok()?;
+    let mut parts = content.split_whitespace();
+    let one = parts.next()?.parse().ok()?;
+    let five = parts.next()?.parse().ok()?;
+    let fifteen = parts.next()?.parse().ok()?;
+    Some((one, five, fifteen))
+}
+
+struct MemInfo {
+    total_mb: i64,
+    available_mb: i64,
+    percent: f64,
+}
+
+fn read_meminfo() -> Option<MemInfo> {
+    let content = std::fs::read_to_string("/proc/meminfo").ok()?;
+    let mut total_kb: Option<i64> = None;
+    let mut available_kb: Option<i64> = None;
+    for line in content.lines() {
+        let mut parts = line.splitn(2, ':');
+        let key = parts.next()?.trim();
+        let rest = parts.next();
+        if key == "MemTotal" || key == "MemAvailable" {
+            let value = rest?.split_whitespace().next()?.parse::<i64>().ok()?;
+            if key == "MemTotal" {
+                total_kb = Some(value);
+            } else {
+                available_kb = Some(value);
+            }
+        }
+    }
+    let total_kb = total_kb?;
+    let available_kb = available_kb?;
+    let percent = if total_kb > 0 {
+        (1.0 - available_kb as f64 / total_kb as f64) * 100.0
+    } else {
+        0.0
+    };
+    Some(MemInfo {
+        total_mb: total_kb / 1024,
+        available_mb: available_kb / 1024,
+        percent: (percent * 10.0).round() / 10.0,
+    })
+}
+
+fn read_uptime_seconds() -> Option<f64> {
+    let content = std::fs::read_to_string("/proc/uptime").ok()?;
+    content.split_whitespace().next()?.parse().ok()
+}
+
+/// `app.api.admin.get_system_stats` を移植したもの。
+async fn get_system_stats(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_admin_role(&state, &current_user, &method).await?;
+
+    let db_pool_size = state.db.size();
+    let db_pool_checked_in = state.db.num_idle() as u32;
+    let db_pool_checked_out = db_pool_size.saturating_sub(db_pool_checked_in);
+
+    let mut conn = state.redis.clone();
+    let info_text: String = redis::cmd("INFO")
+        .query_async(&mut conn)
+        .await
+        .unwrap_or_default();
+    let mut valkey_connected_clients: i64 = 0;
+    let mut valkey_used_memory_human = String::new();
+    let mut valkey_total_keys: i64 = 0;
+    for line in info_text.lines() {
+        let Some((key, value)) = line.split_once(':') else {
+            continue;
+        };
+        if key == "connected_clients" {
+            valkey_connected_clients = value.trim().parse().unwrap_or(0);
+        } else if key == "used_memory_human" {
+            valkey_used_memory_human = value.trim().to_string();
+        } else if key.starts_with("db") {
+            for field in value.split(',') {
+                if let Some(count) = field.strip_prefix("keys=") {
+                    valkey_total_keys += count.trim().parse::<i64>().unwrap_or(0);
+                }
+            }
+        }
+    }
+
+    let (load_avg_1m, load_avg_5m, load_avg_15m) = read_loadavg().unwrap_or((0.0, 0.0, 0.0));
+    let mem = read_meminfo();
+    let uptime_seconds = read_uptime_seconds().unwrap_or(0.0);
+
+    let heartbeat: Option<String> = conn.get("worker:heartbeat").await.unwrap_or(None);
+    let worker_alive = heartbeat.is_some();
+
+    Ok(Json(json!({
+        "db_pool_size": db_pool_size,
+        "db_pool_checked_in": db_pool_checked_in,
+        "db_pool_checked_out": db_pool_checked_out,
+        "db_pool_overflow": 0,
+        "valkey_connected_clients": valkey_connected_clients,
+        "valkey_used_memory_human": valkey_used_memory_human,
+        "valkey_total_keys": valkey_total_keys,
+        "load_avg_1m": load_avg_1m,
+        "load_avg_5m": load_avg_5m,
+        "load_avg_15m": load_avg_15m,
+        "memory_total_mb": mem.as_ref().map(|m| m.total_mb).unwrap_or(0),
+        "memory_available_mb": mem.as_ref().map(|m| m.available_mb).unwrap_or(0),
+        "memory_percent": mem.as_ref().map(|m| m.percent).unwrap_or(0.0),
+        "uptime_seconds": uptime_seconds,
+        "worker_alive": worker_alive,
+        "worker_last_heartbeat": heartbeat,
     }))
     .into_response())
 }
