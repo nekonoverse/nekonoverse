@@ -1,5 +1,6 @@
 pub mod activitypub;
 pub mod admin_auth;
+pub mod announcement;
 pub mod auth;
 pub mod config;
 pub mod db;
