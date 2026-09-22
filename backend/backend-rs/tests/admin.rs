@@ -9,6 +9,7 @@
 use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use chrono::Utc;
+use nekonoverse_backend_rs::{build_router, config::Config, state::AppState, valkey};
 use redis::AsyncCommands;
 use serde_json::{json, Value};
 use sqlx::PgPool;
@@ -16,6 +17,8 @@ use std::sync::LazyLock;
 use tokio::sync::Mutex;
 use tower::ServiceExt;
 use uuid::Uuid;
+use wiremock::matchers::{method, path};
+use wiremock::{Mock, MockServer, ResponseTemplate};
 
 mod common;
 use common::{
@@ -77,6 +80,19 @@ async fn seed_admin_session(db: &PgPool, redis: &redis::aio::ConnectionManager) 
 
 fn cookie_header(session_id: &str) -> String {
     format!("nekonoverse_session={session_id}")
+}
+
+/// SSRF保護でwiremockの`127.0.0.1`宛リクエストがブロックされないよう
+/// `allow_private_networks: true`にした`Router`を組み立てる
+/// (`tests/remote_actor.rs`の`test_state`と同じ手法、既存の`db`プールを
+/// 共有する)。
+async fn test_app_allow_private_networks(db: PgPool) -> axum::Router {
+    let mut config = Config::from_env();
+    config.allow_private_networks = true;
+    let redis = valkey::connect(&config)
+        .await
+        .expect("failed to connect to test valkey");
+    build_router(AppState { db, redis, config })
 }
 
 #[tokio::test]
@@ -4627,6 +4643,541 @@ async fn admin_delete_emoji_removes_s3_object_and_drive_file_row() {
             .await
             .unwrap();
     assert!(remaining_drive_file.is_none());
+}
+
+// --- カスタム絵文字 import-remote/import-by-shortcode/export/import (ZIP) ---
+
+/// `custom_emojis`にリモート絵文字行を1件投入する(テストの都度異なる
+/// `category`/`aliases`等が要らない`common::seed_custom_emoji`と異なり、
+/// `copy_permission`まで指定できる)。
+async fn seed_remote_emoji(
+    db: &PgPool,
+    shortcode: &str,
+    domain: &str,
+    url: &str,
+    copy_permission: Option<&str>,
+) -> Uuid {
+    let id = Uuid::new_v4();
+    sqlx::query(
+        "INSERT INTO custom_emojis \
+            (id, shortcode, domain, url, visible_in_picker, category, copy_permission, is_sensitive) \
+         VALUES ($1, $2, $3, $4, true, 'animals', $5, false)",
+    )
+    .bind(id)
+    .bind(shortcode)
+    .bind(domain)
+    .bind(url)
+    .bind(copy_permission)
+    .execute(db)
+    .await
+    .unwrap();
+    id
+}
+
+/// `meta.json` + 画像ファイルからなるMisskey互換の絵文字エクスポートZIPを
+/// テスト用に組み立てる。
+fn build_emoji_zip(meta: &Value, files: &[(&str, &[u8])]) -> Vec<u8> {
+    let mut buf = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut writer = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("meta.json", options).unwrap();
+        std::io::Write::write_all(&mut writer, meta.to_string().as_bytes()).unwrap();
+        for (name, data) in files {
+            writer.start_file(*name, options).unwrap();
+            std::io::Write::write_all(&mut writer, data).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+    buf
+}
+
+#[tokio::test]
+async fn admin_emoji_import_remote_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/v1/admin/emoji/import-remote/{}",
+            Uuid::new_v4()
+        ))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_emoji_import_remote_not_found_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!(
+            "/api/v1/admin/emoji/import-remote/{}",
+            Uuid::new_v4()
+        ))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+/// `domain IS NULL`(ローカル絵文字)を対象に指定した場合も、Python版の
+/// `remote.domain is None`チェックと同じく"remote not found"(422)になる。
+#[tokio::test]
+async fn admin_emoji_import_remote_local_emoji_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let shortcode = format!("localonly_{}", Uuid::new_v4().simple());
+    let id = common::seed_custom_emoji(&db, &shortcode, None, "https://example.test/e.png").await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/emoji/import-remote/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_emoji_import_remote_deny_copy_permission_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let shortcode = format!("denyperm_{}", Uuid::new_v4().simple());
+    let id = seed_remote_emoji(
+        &db,
+        &shortcode,
+        "remote.example",
+        "https://remote.example/e.png",
+        Some("deny"),
+    )
+    .await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/emoji/import-remote/{id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_emoji_import_remote_duplicate_local_shortcode_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let shortcode = format!("duplocal_{}", Uuid::new_v4().simple());
+    common::seed_custom_emoji(&db, &shortcode, None, "https://example.test/local.png").await;
+    let remote_id = seed_remote_emoji(
+        &db,
+        &shortcode,
+        "remote.example",
+        "https://remote.example/e.png",
+        None,
+    )
+    .await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/emoji/import-remote/{remote_id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_emoji_import_remote_fetches_and_creates_local_copy() {
+    common::ensure_test_s3_bucket().await;
+    let (_app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let app = test_app_allow_private_networks(db.clone()).await;
+
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/emoji.png"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(PNG_1X1)
+                .insert_header("content-type", "image/png"),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let shortcode = format!("remoteimport_{}", Uuid::new_v4().simple());
+    let remote_id = seed_remote_emoji(
+        &db,
+        &shortcode,
+        "remote.example",
+        &format!("{}/emoji.png", mock_server.uri()),
+        None,
+    )
+    .await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri(format!("/api/v1/admin/emoji/import-remote/{remote_id}"))
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["shortcode"], shortcode);
+    assert_eq!(json["import_from"], "remote.example");
+
+    let (domain, drive_file_id): (Option<String>, Option<Uuid>) = sqlx::query_as(
+        "SELECT domain, drive_file_id FROM custom_emojis WHERE shortcode = $1 AND domain IS NULL",
+    )
+    .bind(&shortcode)
+    .fetch_one(&db)
+    .await
+    .unwrap();
+    assert!(domain.is_none());
+    assert!(drive_file_id.is_some());
+}
+
+#[tokio::test]
+async fn admin_emoji_import_by_shortcode_not_found_returns_404() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/import-by-shortcode")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({"shortcode": "doesnotexist", "domain": "remote.example"}).to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::NOT_FOUND);
+}
+
+/// メタデータの上書き(`author`/`is_sensitive`)がインポート前に**リモート**
+/// 絵文字行へ適用され、かつ生成後のローカル絵文字に`shortcode_override`が
+/// 反映されることを検証する(Python版`import_remote_emoji_by_shortcode`の
+/// 実際の挙動)。
+#[tokio::test]
+async fn admin_emoji_import_by_shortcode_applies_overrides_and_shortcode_override() {
+    common::ensure_test_s3_bucket().await;
+    let (_app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let app = test_app_allow_private_networks(db.clone()).await;
+
+    let mock_server = MockServer::start().await;
+    Mock::given(method("GET"))
+        .and(path("/emoji2.png"))
+        .respond_with(
+            ResponseTemplate::new(200)
+                .set_body_bytes(PNG_1X1)
+                .insert_header("content-type", "image/png"),
+        )
+        .mount(&mock_server)
+        .await;
+
+    let shortcode = format!("byshort_{}", Uuid::new_v4().simple());
+    let override_shortcode = format!("renamed_{}", Uuid::new_v4().simple());
+    let domain = format!("byshort-{}.example", Uuid::new_v4().simple());
+    seed_remote_emoji(
+        &db,
+        &shortcode,
+        &domain,
+        &format!("{}/emoji2.png", mock_server.uri()),
+        None,
+    )
+    .await;
+
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/import-by-shortcode")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", "application/json")
+        .body(Body::from(
+            json!({
+                "shortcode": shortcode,
+                "domain": domain,
+                "shortcode_override": override_shortcode,
+                "author": "overridden author",
+                "is_sensitive": true,
+            })
+            .to_string(),
+        ))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["shortcode"], override_shortcode);
+    assert_eq!(json["author"], "overridden author");
+    assert_eq!(json["is_sensitive"], true);
+
+    let remote_author: Option<String> =
+        sqlx::query_scalar("SELECT author FROM custom_emojis WHERE shortcode = $1 AND domain = $2")
+            .bind(&shortcode)
+            .bind(&domain)
+            .fetch_one(&db)
+            .await
+            .unwrap();
+    assert_eq!(remote_author.as_deref(), Some("overridden author"));
+}
+
+#[tokio::test]
+async fn admin_emoji_export_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/export")
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_emoji_export_returns_zip_with_meta_and_image() {
+    common::ensure_test_s3_bucket().await;
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    // add_emojiで実際にS3へアップロード済みのローカル絵文字を用意する
+    // (export_emojis_endpointはS3から実際にダウンロードして詰め直すため)。
+    let shortcode = format!("export_{}", Uuid::new_v4().simple());
+    let (content_type, body) = build_multipart_body(
+        &[("shortcode", shortcode.as_str()), ("category", "animals")],
+        Some(("file", "e.png", "image/png", PNG_1X1)),
+    );
+    let add_req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/add")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let add_resp = app.clone().oneshot(add_req).await.unwrap();
+    assert_eq!(add_resp.status(), StatusCode::OK);
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/api/v1/admin/emoji/export")
+        .header("cookie", cookie_header(&session_id))
+        .body(Body::empty())
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    assert_eq!(
+        resp.headers().get("content-type").unwrap(),
+        "application/zip"
+    );
+    let bytes = http_body_util::BodyExt::collect(resp.into_body())
+        .await
+        .unwrap()
+        .to_bytes();
+
+    let cursor = std::io::Cursor::new(bytes.to_vec());
+    let mut archive = zip::ZipArchive::new(cursor).unwrap();
+    let meta: Value = {
+        let mut f = archive.by_name("meta.json").unwrap();
+        let mut s = String::new();
+        std::io::Read::read_to_string(&mut f, &mut s).unwrap();
+        serde_json::from_str(&s).unwrap()
+    };
+    assert_eq!(meta["metaVersion"], 2);
+    let entries = meta["emojis"].as_array().unwrap();
+    let entry = entries
+        .iter()
+        .find(|e| e["emoji"]["name"] == shortcode)
+        .expect("exported emoji entry not found");
+    assert_eq!(entry["downloaded"], true);
+    assert_eq!(entry["emoji"]["category"], "animals");
+    let filename = entry["fileName"].as_str().unwrap().to_string();
+    let mut image_file = archive.by_name(&filename).unwrap();
+    let mut image_data = Vec::new();
+    std::io::Read::read_to_end(&mut image_file, &mut image_data).unwrap();
+    assert_eq!(image_data, PNG_1X1);
+}
+
+#[tokio::test]
+async fn admin_emoji_import_unauthenticated_returns_401() {
+    let (app, _db) = test_app_with_db().await;
+    let (content_type, body) =
+        build_multipart_body(&[], Some(("file", "e.zip", "application/zip", b"notazip")));
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/import")
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
+}
+
+#[tokio::test]
+async fn admin_emoji_import_invalid_zip_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+    let (content_type, body) = build_multipart_body(
+        &[],
+        Some(("file", "e.zip", "application/zip", b"not a zip file")),
+    );
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/import")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_emoji_import_missing_meta_json_returns_422() {
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let mut buf = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut buf);
+        let mut writer = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default();
+        writer.start_file("readme.txt", options).unwrap();
+        std::io::Write::write_all(&mut writer, b"no meta here").unwrap();
+        writer.finish().unwrap();
+    }
+
+    let (content_type, body) =
+        build_multipart_body(&[], Some(("file", "e.zip", "application/zip", &buf)));
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/import")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::UNPROCESSABLE_ENTITY);
+}
+
+#[tokio::test]
+async fn admin_emoji_import_creates_local_emoji_from_zip() {
+    common::ensure_test_s3_bucket().await;
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let shortcode = format!("zipimport_{}", Uuid::new_v4().simple());
+    let filename = format!("{shortcode}.png");
+    let meta = json!({
+        "metaVersion": 2,
+        "host": "otherserver.example",
+        "exportedAt": "2026-01-01T00:00:00+00:00",
+        "emojis": [
+            {
+                "downloaded": true,
+                "fileName": filename,
+                "emoji": {
+                    "name": shortcode,
+                    "category": "imported",
+                    "aliases": ["neko"],
+                    "isSensitive": true,
+                }
+            }
+        ]
+    });
+    let zip_bytes = build_emoji_zip(&meta, &[(filename.as_str(), PNG_1X1)]);
+
+    let (content_type, body) = build_multipart_body(
+        &[],
+        Some(("file", "import.zip", "application/zip", &zip_bytes)),
+    );
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/import")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["imported"], 1);
+    assert_eq!(json["skipped"], 0);
+    assert_eq!(json["errors"], json!([]));
+
+    let (category, is_sensitive, import_from): (Option<String>, bool, Option<String>) =
+        sqlx::query_as(
+            "SELECT category, is_sensitive, import_from FROM custom_emojis \
+             WHERE shortcode = $1 AND domain IS NULL",
+        )
+        .bind(&shortcode)
+        .fetch_one(&db)
+        .await
+        .unwrap();
+    assert_eq!(category.as_deref(), Some("imported"));
+    assert!(is_sensitive);
+    assert_eq!(import_from.as_deref(), Some("otherserver.example"));
+}
+
+#[tokio::test]
+async fn admin_emoji_import_skips_existing_shortcode() {
+    common::ensure_test_s3_bucket().await;
+    let (app, db) = test_app_with_db().await;
+    let redis = common::connect_redis().await;
+    let session_id = seed_admin_session(&db, &redis).await;
+
+    let shortcode = format!("zipexisting_{}", Uuid::new_v4().simple());
+    common::seed_custom_emoji(&db, &shortcode, None, "https://example.test/e.png").await;
+
+    let filename = format!("{shortcode}.png");
+    let meta = json!({
+        "metaVersion": 2,
+        "host": "otherserver.example",
+        "exportedAt": "2026-01-01T00:00:00+00:00",
+        "emojis": [
+            {
+                "downloaded": true,
+                "fileName": filename,
+                "emoji": { "name": shortcode }
+            }
+        ]
+    });
+    let zip_bytes = build_emoji_zip(&meta, &[(filename.as_str(), PNG_1X1)]);
+
+    let (content_type, body) = build_multipart_body(
+        &[],
+        Some(("file", "import.zip", "application/zip", &zip_bytes)),
+    );
+    let req = Request::builder()
+        .method("POST")
+        .uri("/api/v1/admin/emoji/import")
+        .header("cookie", cookie_header(&session_id))
+        .header("content-type", content_type)
+        .body(Body::from(body))
+        .unwrap();
+    let resp = app.oneshot(req).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let json = body_json(resp).await;
+    assert_eq!(json["imported"], 0);
+    assert_eq!(json["skipped"], 1);
 }
 
 // --- サーバーファイル管理 (server-files, S3アップロードを伴う) ---

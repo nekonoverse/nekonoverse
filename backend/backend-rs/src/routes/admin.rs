@@ -116,10 +116,32 @@
 //! は`server-icon`/`server-files`/media添付作成等、他のアップロード系
 //! エンドポイントとも共有できる基盤として設計してある(現状`owner`付き
 //! アップロード、すなわち`quota_service`連携は未移植のため`server_file=true`
-//! の呼び出し元のみ対応)。`import-remote`/`import-by-shortcode`(リモート
-//! 絵文字のSSRF安全なダウンロード取り込みを要する)と`export`/`import`
-//! (ZIPアーカイブ)は本PRのスコープ外として引き続きPython側に残す。
-//! `update_emoji`の`_EMOJI_UPDATABLE_FIELDS`がリクエストスキーマ
+//! の呼び出し元のみ対応)。続くPRで`import_remote_emoji_endpoint`
+//! (`POST .../emoji/import-remote/:id`)/`import_remote_emoji_by_shortcode_endpoint`
+//! (`POST .../emoji/import-by-shortcode`)/`export_emojis_endpoint`
+//! (`GET .../emoji/export`)/`import_emojis_endpoint`(`POST .../emoji/import`)
+//! も移植した。前者2つはリモート絵文字画像のSSRF安全なダウンロード取り込み
+//! (`fetch_remote_emoji_image`、Stage 2 media proxy由来の
+//! `routes::media_proxy::{build_client_for, is_host_blocked}`を再利用、
+//! リダイレクトは`app.services.emoji_service.import_remote_emoji_to_local`と
+//! 同じく最大1ホップのみ追跡)を要する。エラー経路の非対称性
+//! (`import_remote_emoji`はPython版が`import_remote_emoji_to_local`内の
+//! `ValueError`を`except`で捕捉するため"remote not found"すら422、
+//! `import_remote_emoji_by_shortcode`は`get_custom_emoji`の結果を
+//! ルート本体が直接見るため"remote not found"は404、S3 GET/PUTの失敗や
+//! HTTPステータスエラーはいずれの経路もPython版に`except`が無いため素の500)
+//! をそのまま再現している。`import_remote_emoji_by_shortcode`はさらに
+//! インポート前に(ローカルではなく)**リモート**絵文字行のメタデータへ
+//! 上書きを適用する(`update_emoji`経由、Python版の実際の挙動)ため、
+//! `apply_remote_emoji_overrides`で対応するフィールドのみ`COALESCE`で
+//! 部分更新する。`export_emojis_endpoint`は`crate::storage::get_file`
+//! (このPRで新規移植)でS3から画像を読み、`zip`クレート(deflate機能のみ)で
+//! Misskey互換の`meta.json`(`metaVersion: 2`)込みZIPを組み立てる。
+//! `import_emojis_endpoint`はその逆で、アップロードされたZIPの`meta.json`を
+//! 読み各エントリを`create_local_emoji`相当の経路でインポートする
+//! (1件の失敗が他のエントリを巻き込まないよう、SQLAlchemyセッションの
+//! ような共有トランザクションは使わず1件ごとに独立してコミットされる、
+//! Python版より安全側の意図的な差分)。`update_emoji`の`_EMOJI_UPDATABLE_FIELDS`がリクエストスキーマ
 //! `AdminEmojiUpdate`に存在する`usage_info`/`is_based_on`を含まない
 //! (両フィールドは受理・検証はされるが実際には永続化されない)Python版の
 //! 既知の挙動もそのまま再現した。`shortcode`/`visible_in_picker`/
@@ -169,8 +191,10 @@ use crate::error::AppError;
 use crate::follows::get_follower_inboxes;
 use crate::mastodon_time::to_pydantic_isoformat;
 use crate::moderation::{self, log_action};
+use crate::routes::media_proxy::{build_client_for, is_host_blocked};
 use crate::server_settings::{get_all_settings, set_setting, vapid_public_key_base64url};
 use crate::state::AppState;
+use crate::storage;
 use crate::valkey::{channels, publish_envelope, Envelope};
 
 pub fn router() -> Router<AppState> {
@@ -255,6 +279,16 @@ pub fn router() -> Router<AppState> {
             get(list_remote_emoji_domains_endpoint),
         )
         .route("/api/v1/admin/emoji/add", post(add_emoji_endpoint))
+        .route(
+            "/api/v1/admin/emoji/import-remote/:id",
+            post(import_remote_emoji_endpoint),
+        )
+        .route(
+            "/api/v1/admin/emoji/import-by-shortcode",
+            post(import_remote_emoji_by_shortcode_endpoint),
+        )
+        .route("/api/v1/admin/emoji/export", get(export_emojis_endpoint))
+        .route("/api/v1/admin/emoji/import", post(import_emojis_endpoint))
         .route(
             "/api/v1/admin/emoji/:id",
             patch(update_emoji_endpoint).delete(delete_emoji_endpoint),
@@ -3772,6 +3806,695 @@ async fn delete_emoji_endpoint(
     invalidate_emoji_cache(&state).await;
 
     Ok(Json(json!({ "ok": true })).into_response())
+}
+
+fn internal_error() -> AppError {
+    AppError::new(StatusCode::INTERNAL_SERVER_ERROR, "Internal server error")
+}
+
+/// `app.utils.network.is_safe_url`を移植したもの(http/https、かつ
+/// `allow_private_networks`でなければ`routes::media_proxy::is_host_blocked`
+/// (`app.utils.network.is_private_host`相当)を通らないホストを拒否)。
+async fn is_emoji_url_safe(state: &AppState, url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    if parsed.scheme() != "http" && parsed.scheme() != "https" {
+        return false;
+    }
+    let Some(host) = parsed.host_str() else {
+        return false;
+    };
+    state.config.allow_private_networks || !is_host_blocked(host).await
+}
+
+/// `app.services.emoji_service.import_remote_emoji_to_local`の対外HTTP取得
+/// 部分(`is_safe_url`チェック→GET→リダイレクトなら`is_safe_url`を再検証して
+/// 1回だけ追跡→`raise_for_status`)を移植したもの。Python版はリダイレクト先
+/// 検証失敗のみ`ValueError`(呼び出し元で422)、それ以外(接続エラー・非2xx
+/// ステータス)は`except`が無く素の500になる非対称なエラー経路をそのまま
+/// 再現する。SSRF対策(DNS解決結果への`resolve()`固定)はStage 2由来の
+/// `routes::media_proxy::build_client_for`を再利用する。
+async fn fetch_remote_emoji_image(
+    state: &AppState,
+    url: &str,
+) -> Result<(String, Vec<u8>), AppError> {
+    if !is_emoji_url_safe(state, url).await {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Remote emoji URL points to a private or invalid host",
+        ));
+    }
+
+    let parsed = reqwest::Url::parse(url).map_err(|_| internal_error())?;
+    let client = build_client_for(&parsed, state.config.allow_private_networks)
+        .await
+        .map_err(|_| internal_error())?;
+    let mut resp = client
+        .get(parsed.clone())
+        .send()
+        .await
+        .map_err(|_| internal_error())?;
+
+    if matches!(resp.status().as_u16(), 301 | 302 | 303 | 307 | 308) {
+        let location = resp
+            .headers()
+            .get(reqwest::header::LOCATION)
+            .and_then(|v| v.to_str().ok())
+            .ok_or_else(internal_error)?
+            .to_string();
+        let redirect_url = parsed.join(&location).map_err(|_| internal_error())?;
+        if !is_emoji_url_safe(state, redirect_url.as_str()).await {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "Redirect to unsafe URL",
+            ));
+        }
+        let redirect_client = build_client_for(&redirect_url, state.config.allow_private_networks)
+            .await
+            .map_err(|_| internal_error())?;
+        resp = redirect_client
+            .get(redirect_url)
+            .send()
+            .await
+            .map_err(|_| internal_error())?;
+    }
+
+    if !resp.status().is_success() {
+        return Err(internal_error());
+    }
+
+    let content_type = resp
+        .headers()
+        .get(reqwest::header::CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("image/png")
+        .split(';')
+        .next()
+        .unwrap_or("image/png")
+        .trim()
+        .to_string();
+    let data = resp.bytes().await.map_err(|_| internal_error())?.to_vec();
+    Ok((content_type, data))
+}
+
+/// `app.services.emoji_service.import_remote_emoji_to_local`を移植したもの。
+/// 呼び出し元(`import_remote_emoji_endpoint`/
+/// `import_remote_emoji_by_shortcode_endpoint`)双方から共有する。
+async fn import_remote_emoji_to_local(
+    state: &AppState,
+    remote: &CustomEmojiRow,
+) -> Result<CustomEmojiRow, AppError> {
+    if remote.copy_permission.as_deref() == Some("deny") {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Import denied by author (copy_permission=deny)",
+        ));
+    }
+
+    let existing: Option<Uuid> =
+        sqlx::query_scalar("SELECT id FROM custom_emojis WHERE shortcode = $1 AND domain IS NULL")
+            .bind(&remote.shortcode)
+            .fetch_optional(&state.db)
+            .await?;
+    if existing.is_some() {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Local emoji :{}: already exists", remote.shortcode),
+        ));
+    }
+
+    let (mime_type, data) = fetch_remote_emoji_image(state, &remote.url).await?;
+    if !drive::ALLOWED_IMAGE_TYPES.contains(&mime_type.as_str()) {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            format!("Unsupported image type: {mime_type}"),
+        ));
+    }
+
+    let drive_file = drive::upload_drive_file(
+        state,
+        data,
+        &format!("emoji_{}", remote.shortcode),
+        &mime_type,
+        None,
+        true,
+    )
+    .await?;
+    let url = drive::file_to_url(&state.config, &drive_file);
+
+    let id = db::new_id();
+    let now = db::now();
+    sqlx::query(
+        "INSERT INTO custom_emojis (\
+            id, shortcode, domain, url, drive_file_id, visible_in_picker, \
+            category, aliases, license, is_sensitive, local_only, author, \
+            description, copy_permission, usage_info, is_based_on, import_from, \
+            created_at, updated_at\
+         ) VALUES ($1, $2, NULL, $3, $4, true, $5, $6, $7, $8, false, $9, $10, $11, $12, $13, $14, $15, $15)",
+    )
+    .bind(id)
+    .bind(&remote.shortcode)
+    .bind(&url)
+    .bind(drive_file.id)
+    .bind(&remote.category)
+    .bind(remote.aliases.clone().map(sqlx::types::Json))
+    .bind(&remote.license)
+    .bind(remote.is_sensitive)
+    .bind(&remote.author)
+    .bind(&remote.description)
+    .bind(&remote.copy_permission)
+    .bind(&remote.usage_info)
+    .bind(&remote.is_based_on)
+    .bind(&remote.domain)
+    .bind(now)
+    .execute(&state.db)
+    .await?;
+
+    invalidate_emoji_cache(state).await;
+
+    fetch_emoji_row(&state.db, id)
+        .await?
+        .ok_or_else(internal_error)
+}
+
+/// `app.api.admin.import_remote_emoji`を移植したもの。"remote not found"を
+/// 含めPython版の`import_remote_emoji_to_local`内の`ValueError`はいずれも
+/// 422にマップされる(サービス関数側で捕捉されるため)。
+async fn import_remote_emoji_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Path(id): Path<Uuid>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let row = fetch_emoji_row(&state.db, id).await?;
+    let Some(remote) = row.filter(|r| r.domain.is_some()) else {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "Remote emoji not found",
+        ));
+    };
+
+    let local = import_remote_emoji_to_local(&state, &remote).await?;
+    Ok((StatusCode::OK, Json(admin_emoji_json(&local))).into_response())
+}
+
+#[derive(Deserialize)]
+struct ImportByShortcodeRequest {
+    shortcode: String,
+    domain: String,
+    shortcode_override: Option<String>,
+    category: Option<String>,
+    author: Option<String>,
+    license: Option<String>,
+    description: Option<String>,
+    is_sensitive: Option<bool>,
+    aliases: Option<Vec<String>>,
+}
+
+fn validate_import_by_shortcode(body: &ImportByShortcodeRequest) -> Result<(), AppError> {
+    if body.shortcode.is_empty() || body.shortcode.chars().count() > 100 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "shortcode must be 1-100 characters",
+        ));
+    }
+    if body.domain.is_empty() || body.domain.chars().count() > 255 {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "domain must be 1-255 characters",
+        ));
+    }
+    if let Some(sc) = &body.shortcode_override {
+        if sc.is_empty()
+            || sc.chars().count() > 100
+            || !sc.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+        {
+            return Err(AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "shortcode_override must be 1-100 alphanumeric/underscore characters",
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Python版`import_remote_emoji_by_shortcode`が`update_emoji(db, remote.id,
+/// overrides)`でインポート前に**リモート**絵文字行へ適用するメタデータ
+/// 上書き(`overrides`は`body.X is not None`のフィールドのみ)を移植したもの。
+/// 未指定フィールドは`COALESCE`で現状値を維持する。
+async fn apply_remote_emoji_overrides(
+    state: &AppState,
+    id: Uuid,
+    body: &ImportByShortcodeRequest,
+) -> Result<(), AppError> {
+    if body.category.is_none()
+        && body.author.is_none()
+        && body.license.is_none()
+        && body.description.is_none()
+        && body.is_sensitive.is_none()
+        && body.aliases.is_none()
+    {
+        return Ok(());
+    }
+
+    sqlx::query(
+        "UPDATE custom_emojis SET \
+            category = COALESCE($2, category), \
+            author = COALESCE($3, author), \
+            license = COALESCE($4, license), \
+            description = COALESCE($5, description), \
+            is_sensitive = COALESCE($6, is_sensitive), \
+            aliases = COALESCE($7::jsonb, aliases), \
+            updated_at = now() \
+         WHERE id = $1",
+    )
+    .bind(id)
+    .bind(&body.category)
+    .bind(&body.author)
+    .bind(&body.license)
+    .bind(&body.description)
+    .bind(body.is_sensitive)
+    .bind(body.aliases.clone().map(sqlx::types::Json))
+    .execute(&state.db)
+    .await?;
+    Ok(())
+}
+
+/// `app.api.admin.import_remote_emoji_by_shortcode`を移植したもの。"remote
+/// not found"がルート本体の直接チェックで404になる点(`import_remote_emoji`の
+/// 422と非対称)、`shortcode_override`適用がインポート後の追加`UPDATE`である点
+/// (重複時、`update_emoji_endpoint`と同じくUNIQUE制約違反を捕捉せず素の500)を
+/// 含め、Python版の実際の挙動をそのまま再現する。
+async fn import_remote_emoji_by_shortcode_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    Json(body): Json<ImportByShortcodeRequest>,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+    validate_import_by_shortcode(&body)?;
+
+    let remote: Option<CustomEmojiRow> = sqlx::query_as(
+        "SELECT id, shortcode, domain, url, static_url, visible_in_picker, category, aliases, \
+                license, is_sensitive, local_only, author, description, copy_permission, \
+                usage_info, is_based_on, import_from, created_at \
+         FROM custom_emojis WHERE shortcode = $1 AND domain = $2",
+    )
+    .bind(&body.shortcode)
+    .bind(&body.domain)
+    .fetch_optional(&state.db)
+    .await?;
+    let Some(remote) = remote else {
+        return Err(AppError::not_found("Remote emoji not found"));
+    };
+
+    apply_remote_emoji_overrides(&state, remote.id, &body).await?;
+    let remote = fetch_emoji_row(&state.db, remote.id)
+        .await?
+        .ok_or_else(internal_error)?;
+
+    let local = import_remote_emoji_to_local(&state, &remote).await?;
+
+    let final_row = match &body.shortcode_override {
+        Some(shortcode_override) if shortcode_override != &body.shortcode => {
+            sqlx::query(
+                "UPDATE custom_emojis SET shortcode = $2, updated_at = now() WHERE id = $1",
+            )
+            .bind(local.id)
+            .bind(shortcode_override)
+            .execute(&state.db)
+            .await?;
+            fetch_emoji_row(&state.db, local.id)
+                .await?
+                .ok_or_else(internal_error)?
+        }
+        _ => local,
+    };
+
+    Ok((StatusCode::OK, Json(admin_emoji_json(&final_row))).into_response())
+}
+
+#[derive(sqlx::FromRow)]
+struct ExportEmojiRow {
+    shortcode: String,
+    url: String,
+    drive_file_id: Option<Uuid>,
+    category: Option<String>,
+    aliases: Option<Value>,
+    license: Option<String>,
+    is_sensitive: bool,
+    local_only: bool,
+    author: Option<String>,
+    description: Option<String>,
+    copy_permission: Option<String>,
+    usage_info: Option<String>,
+    is_based_on: Option<String>,
+}
+
+fn zip_write_error(err: std::io::Error) -> AppError {
+    tracing::error!(error = %err, "emoji export ZIP write failed");
+    internal_error()
+}
+
+/// `app.api.admin.export_emojis`を移植したもの。S3から画像が読めない
+/// (`drive_file_id`が無い/`drive_files`行が無い/オブジェクトが取得できない)
+/// 絵文字は、Python版の`except Exception: pass`による黙ったスキップと同じく
+/// ZIPから静かに除外する。
+async fn export_emojis_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let rows: Vec<ExportEmojiRow> = sqlx::query_as(
+        "SELECT shortcode, url, drive_file_id, category, aliases, license, is_sensitive, \
+                local_only, author, description, copy_permission, usage_info, is_based_on \
+         FROM custom_emojis \
+         WHERE domain IS NULL ORDER BY category, shortcode",
+    )
+    .fetch_all(&state.db)
+    .await?;
+
+    let mut zip_buf: Vec<u8> = Vec::new();
+    {
+        let cursor = std::io::Cursor::new(&mut zip_buf);
+        let mut writer = zip::ZipWriter::new(cursor);
+        let options = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+
+        let mut meta_emojis = Vec::new();
+        for row in &rows {
+            let Some(drive_file_id) = row.drive_file_id else {
+                continue;
+            };
+            let Some(drive_file) = drive::get_drive_file(&state, drive_file_id).await? else {
+                continue;
+            };
+            let Some(image_data) = storage::get_file(&state.config, &drive_file.s3_key)
+                .await
+                .unwrap_or(None)
+            else {
+                continue;
+            };
+
+            let ext = if row.url.contains('.') {
+                row.url.rsplit('.').next().unwrap_or("png").to_string()
+            } else {
+                "png".to_string()
+            };
+            let filename = format!("{}.{ext}", row.shortcode);
+
+            writer
+                .start_file(&filename, options)
+                .map_err(|e| zip_write_error(e.into()))?;
+            std::io::Write::write_all(&mut writer, &image_data).map_err(zip_write_error)?;
+
+            meta_emojis.push(json!({
+                "downloaded": true,
+                "fileName": filename,
+                "emoji": {
+                    "name": row.shortcode,
+                    "category": row.category,
+                    "aliases": row.aliases.clone().unwrap_or_else(|| json!([])),
+                    "license": row.license,
+                    "isSensitive": row.is_sensitive,
+                    "localOnly": row.local_only,
+                    "author": row.author,
+                    "description": row.description,
+                    "copyPermission": row.copy_permission,
+                    "usageInfo": row.usage_info,
+                    "isBasedOn": row.is_based_on,
+                }
+            }));
+        }
+
+        let meta = json!({
+            "metaVersion": 2,
+            "host": state.config.domain,
+            "exportedAt": Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Micros, false),
+            "emojis": meta_emojis,
+        });
+        writer
+            .start_file("meta.json", options)
+            .map_err(|e| zip_write_error(e.into()))?;
+        std::io::Write::write_all(
+            &mut writer,
+            serde_json::to_string_pretty(&meta)
+                .unwrap_or_default()
+                .as_bytes(),
+        )
+        .map_err(zip_write_error)?;
+
+        writer.finish().map_err(|e| zip_write_error(e.into()))?;
+    }
+
+    Ok((
+        StatusCode::OK,
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                "application/zip".to_string(),
+            ),
+            (
+                axum::http::header::CONTENT_DISPOSITION,
+                format!("attachment; filename=emojis-{}.zip", state.config.domain),
+            ),
+        ],
+        zip_buf,
+    )
+        .into_response())
+}
+
+/// `app.services.emoji_service.sanitize_shortcode`を移植したもの。
+fn sanitize_emoji_shortcode(shortcode: &str) -> String {
+    let replaced: String = shortcode
+        .chars()
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    replaced.trim_matches('_').to_string()
+}
+
+/// ZIPエントリのファイル名拡張子からMIMEタイプを推定する
+/// (`app.api.admin.import_emojis`内の`mime_map`と同一、未知の拡張子は
+/// `image/png`にフォールバックする点も同じ)。
+fn emoji_mime_from_extension(filename: &str) -> &'static str {
+    let ext = filename
+        .rsplit('.')
+        .next()
+        .unwrap_or("")
+        .to_ascii_lowercase();
+    match ext.as_str() {
+        "jpg" | "jpeg" => "image/jpeg",
+        "gif" => "image/gif",
+        "webp" => "image/webp",
+        "avif" => "image/avif",
+        _ => "image/png",
+    }
+}
+
+/// `app.api.admin.import_emojis`を移植したもの。Python版はSQLAlchemyの
+/// 単一セッション内で全エントリを処理し最後に1回`commit`するが、backend-rs
+/// 側は1エントリ1トランザクション(自動コミット)で処理する
+/// (1件の失敗が後続のエントリを巻き込まない、より安全側の意図的な差分。
+/// モジュールdoc参照)。
+async fn import_emojis_endpoint(
+    State(state): State<AppState>,
+    method: Method,
+    current_user: CurrentUser,
+    mut multipart: Multipart,
+) -> Result<Response, AppError> {
+    require_permission(&state, &current_user, &method, "emoji").await?;
+
+    let mut file_data: Option<Vec<u8>> = None;
+    while let Some(field) = multipart
+        .next_field()
+        .await
+        .map_err(|_| AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Invalid multipart body"))?
+    {
+        if field.name().unwrap_or("") == "file" {
+            file_data = Some(
+                field
+                    .bytes()
+                    .await
+                    .map_err(|_| {
+                        AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Invalid file field")
+                    })?
+                    .to_vec(),
+            );
+        }
+    }
+    let Some(file_data) = file_data else {
+        return Err(AppError::new(
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "file is required",
+        ));
+    };
+
+    let cursor = std::io::Cursor::new(file_data);
+    let mut archive = zip::ZipArchive::new(cursor)
+        .map_err(|_| AppError::new(StatusCode::UNPROCESSABLE_ENTITY, "Invalid ZIP file"))?;
+
+    let meta: Value = {
+        let mut meta_file = archive.by_name("meta.json").map_err(|_| {
+            AppError::new(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "meta.json not found in ZIP",
+            )
+        })?;
+        let mut buf = Vec::new();
+        std::io::Read::read_to_end(&mut meta_file, &mut buf).map_err(|_| internal_error())?;
+        drop(meta_file);
+        serde_json::from_slice(&buf).map_err(|_| internal_error())?
+    };
+
+    let import_host = meta.get("host").and_then(Value::as_str).map(str::to_string);
+    let emojis = meta
+        .get("emojis")
+        .and_then(Value::as_array)
+        .cloned()
+        .unwrap_or_default();
+
+    let mut imported = 0i64;
+    let mut skipped = 0i64;
+    let mut errors: Vec<String> = Vec::new();
+
+    for entry in emojis {
+        let downloaded = entry
+            .get("downloaded")
+            .and_then(Value::as_bool)
+            .unwrap_or(false);
+        if !downloaded {
+            skipped += 1;
+            continue;
+        }
+
+        let emoji_data = entry.get("emoji").cloned().unwrap_or_else(|| json!({}));
+        let original_shortcode = emoji_data
+            .get("name")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let filename = entry
+            .get("fileName")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let (Some(original_shortcode), Some(filename)) = (original_shortcode, filename) else {
+            errors.push("Missing name or fileName".to_string());
+            continue;
+        };
+
+        let shortcode = sanitize_emoji_shortcode(&original_shortcode);
+        if validate_shortcode(&shortcode).is_err() {
+            errors.push(format!(":{original_shortcode}: — invalid shortcode"));
+            continue;
+        }
+
+        let existing: Option<Uuid> = sqlx::query_scalar(
+            "SELECT id FROM custom_emojis WHERE shortcode = $1 AND domain IS NULL",
+        )
+        .bind(&shortcode)
+        .fetch_optional(&state.db)
+        .await?;
+        if existing.is_some() {
+            skipped += 1;
+            continue;
+        }
+
+        let image_data = match archive.by_name(&filename) {
+            Ok(mut zf) => {
+                let mut buf = Vec::new();
+                if std::io::Read::read_to_end(&mut zf, &mut buf).is_err() {
+                    errors.push(format!("File {filename} not found in ZIP"));
+                    continue;
+                }
+                buf
+            }
+            Err(_) => {
+                errors.push(format!("File {filename} not found in ZIP"));
+                continue;
+            }
+        };
+
+        let mime_type = emoji_mime_from_extension(&filename);
+        let aliases = emoji_data
+            .get("aliases")
+            .and_then(Value::as_array)
+            .map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_str().map(str::to_string))
+                    .collect::<Vec<_>>()
+            });
+
+        let drive_file = match drive::upload_drive_file(
+            &state,
+            image_data,
+            &format!("emoji_{shortcode}"),
+            mime_type,
+            None,
+            true,
+        )
+        .await
+        {
+            Ok(f) => f,
+            Err(_) => {
+                errors.push(format!("{shortcode}: import failed"));
+                continue;
+            }
+        };
+        let url = drive::file_to_url(&state.config, &drive_file);
+
+        let id = db::new_id();
+        let now = db::now();
+        let insert_result = sqlx::query(
+            "INSERT INTO custom_emojis (\
+                id, shortcode, domain, url, drive_file_id, visible_in_picker, \
+                category, aliases, license, is_sensitive, local_only, author, \
+                description, copy_permission, usage_info, is_based_on, import_from, \
+                created_at, updated_at\
+             ) VALUES ($1, $2, NULL, $3, $4, true, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $16)",
+        )
+        .bind(id)
+        .bind(&shortcode)
+        .bind(&url)
+        .bind(drive_file.id)
+        .bind(emoji_data.get("category").and_then(Value::as_str))
+        .bind(aliases.map(sqlx::types::Json))
+        .bind(emoji_data.get("license").and_then(Value::as_str))
+        .bind(emoji_data.get("isSensitive").and_then(Value::as_bool).unwrap_or(false))
+        .bind(emoji_data.get("localOnly").and_then(Value::as_bool).unwrap_or(false))
+        .bind(emoji_data.get("author").and_then(Value::as_str))
+        .bind(emoji_data.get("description").and_then(Value::as_str))
+        .bind(emoji_data.get("copyPermission").and_then(Value::as_str))
+        .bind(emoji_data.get("usageInfo").and_then(Value::as_str))
+        .bind(emoji_data.get("isBasedOn").and_then(Value::as_str))
+        .bind(&import_host)
+        .bind(now)
+        .execute(&state.db)
+        .await;
+
+        match insert_result {
+            Ok(_) => imported += 1,
+            Err(err) => {
+                tracing::error!(error = %err, shortcode, "emoji import insert failed");
+                errors.push(format!("{shortcode}: import failed"));
+            }
+        }
+    }
+
+    if imported > 0 {
+        invalidate_emoji_cache(&state).await;
+    }
+
+    Ok(Json(json!({ "imported": imported, "skipped": skipped, "errors": errors })).into_response())
 }
 
 fn server_file_json(config: &Config, file: &drive::DriveFile) -> Value {
